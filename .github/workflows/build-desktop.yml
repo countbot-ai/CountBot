@@ -1,0 +1,350 @@
+name: 构建并发布桌面应用
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+  # 注意：此工作流仅在打 tag 或手动触发时运行，不会在每次 push 时运行
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # 检查并构建前端
+  build-frontend:
+    name: 检查并构建前端
+    runs-on: ubuntu-latest
+    outputs:
+      has-frontend-source: ${{ steps.check-frontend.outputs.has-source }}
+      
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 检查前端源代码
+      id: check-frontend
+      run: |
+        if [ -f "frontend/package.json" ] && [ -d "frontend/src" ]; then
+          echo "has-source=true" >> $GITHUB_OUTPUT
+          echo "✓ 检测到前端源代码"
+        else
+          echo "has-source=false" >> $GITHUB_OUTPUT
+          echo "✓ 使用已编译的前端代码"
+        fi
+    
+    - name: 设置 Node.js
+      if: steps.check-frontend.outputs.has-source == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: 安装前端依赖
+      if: steps.check-frontend.outputs.has-source == 'true'
+      working-directory: frontend
+      run: npm ci
+    
+    - name: 构建前端
+      if: steps.check-frontend.outputs.has-source == 'true'
+      working-directory: frontend
+      run: npm run build
+    
+    - name: 上传前端构建产物
+      if: steps.check-frontend.outputs.has-source == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-dist
+        path: frontend/dist/
+        retention-days: 1
+
+  # 构建多平台桌面应用
+  build-desktop:
+    name: 构建 ${{ matrix.platform }} 版本
+    needs: build-frontend
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: Linux
+            artifact-name: CountBot-Linux-x64
+          - os: windows-latest
+            platform: Windows
+            artifact-name: CountBot-Windows-x64
+          - os: macos-latest
+            platform: macOS
+            artifact-name: CountBot-macOS-x64
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 下载前端构建产物
+      if: needs.build-frontend.outputs.has-frontend-source == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-dist
+        path: frontend/dist/
+    
+    - name: 验证前端文件
+      run: |
+        if [ -d "frontend/dist" ]; then
+          echo "✓ 前端文件存在"
+          ls -la frontend/dist/
+        else
+          echo "✗ 前端文件不存在"
+          exit 1
+        fi
+      shell: bash
+    
+    - name: 设置 Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: 安装 Python 依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: 设置图标路径
+      id: icon
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          echo "path=resources/countbot.icns" >> $GITHUB_OUTPUT
+        elif [ "$RUNNER_OS" == "Windows" ]; then
+          echo "path=resources/countbot.ico" >> $GITHUB_OUTPUT
+        else
+          echo "path=resources/countbot.png" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 构建可执行文件 (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        pyinstaller --clean --noconfirm \
+          --name=CountBot \
+          --onedir  \
+          --windowed \
+          --icon="${{ steps.icon.outputs.path }}" \
+          --add-data="frontend/dist:frontend/dist" \
+          --add-data="skills:skills" \
+          --add-data="memory:memory" \
+          --add-data="resources:resources" \
+          --collect-data dateparser \
+          --collect-data tiktoken_ext \
+          --collect-all greenlet \
+          --collect-all cryptography \
+          --collect-all tiktoken \
+          --hidden-import=tiktoken_ext.openai_public \
+          --hidden-import=tiktoken_ext \
+          --hidden-import=greenlet \
+          --hidden-import=greenlet._greenlet \
+          --hidden-import=backend \
+          --hidden-import=backend.app \
+          --hidden-import=backend.database \
+          --hidden-import=backend.api.auth \
+          --hidden-import=backend.api.chat \
+          --hidden-import=backend.api.channels \
+          --hidden-import=backend.api.settings \
+          --hidden-import=backend.api.tools \
+          --hidden-import=backend.api.skills \
+          --hidden-import=backend.api.memory \
+          --hidden-import=backend.api.tasks \
+          --hidden-import=backend.api.system \
+          --hidden-import=backend.api.audio \
+          --hidden-import=backend.api.queue \
+          --hidden-import=backend.api.cron \
+          --hidden-import=backend.models.message \
+          --hidden-import=backend.models.session \
+          --hidden-import=backend.models.setting \
+          --hidden-import=backend.models.task \
+          --hidden-import=backend.models.cron_job \
+          --hidden-import=backend.models.tool_conversation \
+          --hidden-import=uvicorn \
+          --hidden-import=uvicorn.logging \
+          --hidden-import=uvicorn.loops \
+          --hidden-import=uvicorn.loops.auto \
+          --hidden-import=uvicorn.protocols \
+          --hidden-import=uvicorn.protocols.http \
+          --hidden-import=uvicorn.protocols.http.auto \
+          --hidden-import=uvicorn.protocols.websockets \
+          --hidden-import=uvicorn.protocols.websockets.auto \
+          --hidden-import=uvicorn.lifespan \
+          --hidden-import=uvicorn.lifespan.on \
+          --hidden-import=fastapi \
+          --hidden-import=sqlalchemy.ext.asyncio \
+          --hidden-import=aiosqlite \
+          start_desktop.py
+    
+    - name: 构建可执行文件 (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller --clean --noconfirm `
+          --name=CountBot `
+          --onedir `
+          --windowed `
+          --icon="${{ steps.icon.outputs.path }}" `
+          --add-data="frontend/dist;frontend/dist" `
+          --add-data="skills;skills" `
+          --add-data="memory;memory" `
+          --add-data="resources;resources" `
+          --collect-data dateparser `
+          --collect-data tiktoken_ext `
+          --collect-all greenlet `
+          --collect-all cryptography `
+          --collect-all tiktoken `
+          --hidden-import=tiktoken_ext.openai_public `
+          --hidden-import=tiktoken_ext `
+          --hidden-import=backend `
+          --hidden-import=backend.app `
+          --hidden-import=backend.database `
+          --hidden-import=backend.api.auth `
+          --hidden-import=backend.api.chat `
+          --hidden-import=backend.api.channels `
+          --hidden-import=backend.api.settings `
+          --hidden-import=backend.api.tools `
+          --hidden-import=backend.api.skills `
+          --hidden-import=backend.api.memory `
+          --hidden-import=backend.api.tasks `
+          --hidden-import=backend.api.system `
+          --hidden-import=backend.api.audio `
+          --hidden-import=backend.api.queue `
+          --hidden-import=backend.api.cron `
+          --hidden-import=backend.models.message `
+          --hidden-import=backend.models.session `
+          --hidden-import=backend.models.setting `
+          --hidden-import=backend.models.task `
+          --hidden-import=backend.models.cron_job `
+          --hidden-import=backend.models.tool_conversation `
+          --hidden-import=uvicorn `
+          --hidden-import=uvicorn.logging `
+          --hidden-import=uvicorn.loops `
+          --hidden-import=uvicorn.loops.auto `
+          --hidden-import=uvicorn.protocols `
+          --hidden-import=uvicorn.protocols.http `
+          --hidden-import=uvicorn.protocols.http.auto `
+          --hidden-import=uvicorn.protocols.websockets `
+          --hidden-import=uvicorn.protocols.websockets.auto `
+          --hidden-import=uvicorn.lifespan `
+          --hidden-import=uvicorn.lifespan.on `
+          --hidden-import=fastapi `
+          --hidden-import=sqlalchemy.ext.asyncio `
+          --hidden-import=aiosqlite `
+          start_desktop.py
+    
+    - name: 打包发布文件 (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        cd dist
+        tar -czf ${{ matrix.artifact-name }}.tar.gz CountBot/
+        ls -lh *.tar.gz
+    
+    - name: 打包发布文件 (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cd dist
+        Compress-Archive -Path CountBot -DestinationPath ${{ matrix.artifact-name }}.zip
+        Get-ChildItem *.zip
+    
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact-name }}
+        path: |
+          dist/*.tar.gz
+          dist/*.zip
+        retention-days: 7
+
+  # 创建 GitHub Release
+  create-release:
+    name: 创建 GitHub Release
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: 设置版本号
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          echo "is_manual=true" >> $GITHUB_OUTPUT
+        else
+          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "is_manual=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+    
+    - name: 显示构建产物
+      run: |
+        echo "构建产物列表："
+        find artifacts -type f
+        echo ""
+        echo "文件详情："
+        find artifacts -type f -exec ls -lh {} \;
+    
+    - name: 创建 Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: CountBot ${{ steps.version.outputs.version }}
+        files: |
+          artifacts/*/*.tar.gz
+          artifacts/*/*.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        body: |
+          ## CountBot ${{ steps.version.outputs.version }}
+          
+          ### 下载说明
+          
+          - **Linux**: 下载 `CountBot-Linux-x64.tar.gz` (45 MB)
+          - **Windows**: 下载 `CountBot-Windows-x64.zip` (27 MB)
+          - **macOS**: 下载 `CountBot-macOS-x64.tar.gz` (48 MB)
+          
+          ### 安装方法
+          
+          #### Linux / macOS
+          ```bash
+          # 解压
+          tar -xzf CountBot-*.tar.gz
+          
+          # 添加执行权限
+          chmod +x CountBot
+          
+          # 运行
+          ./CountBot
+          ```
+          
+          #### Windows
+          ```cmd
+          # 解压 zip 文件
+          # 双击运行 CountBot.exe
+          ```
+          
+          ### 更新日志
+          
+          详见下方自动生成的更新说明。
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
