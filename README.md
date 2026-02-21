@@ -3,6 +3,10 @@
   <p>轻量级、可扩展的 AI Agent 框架 | 专为中文用户和国内大模型优化</p>
 
   <p>
+    中文 | <a href="README_EN.md">English</a>
+  </p>
+
+  <p>
     <a href="https://github.com/countbot-ai/countbot/stargazers"><img src="https://img.shields.io/github/stars/countbot-ai/countbot?style=social" alt="GitHub stars"></a>
     <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python"></a>
     <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/代码量-~21K行-brightgreen.svg" alt="代码量"></a>
