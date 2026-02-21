@@ -23,6 +23,10 @@
 
 ---
 
+
+https://github.com/user-attachments/assets/575eafa3-30c9-4985-b129-1f18b8275f4a
+
+
 ## CountBot 是什么？
 
 CountBot 是一个轻量级、可扩展的 AI Agent 框架，专为中文用户和国内大模型优化。仅用约 21,000 行 Python 代码，就实现了生产级的智能助手基础设施，具备：
