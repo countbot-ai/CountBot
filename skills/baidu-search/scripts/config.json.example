@@ -1,0 +1,5 @@
+{
+  "api_key": "bce-v3/YOUR_API_KEY_HERE",
+  "default_max_results": 10,
+  "safe_search": false
+}

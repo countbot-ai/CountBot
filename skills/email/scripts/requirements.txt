@@ -1,0 +1,2 @@
+# 邮箱管理所需的 Python 包
+# 注意: imaplib, smtplib, email 是 Python 标准库，无需安装
