@@ -1,7 +1,5 @@
 <div align="center">
-  <img src="website/landing/img/logo.svg" alt="CountBot Logo" width="180">
-  <h1>CountBot</h1>
-  <p><strong>654321，AI 即可达成</strong></p>
+  <img src="https://github.com/user-attachments/assets/d42ee929-a9a9-4017-a07b-9eb66670bcc3" alt="CountBot Logo" width="180">
   <p>轻量级、可扩展的 AI Agent 框架 | 专为中文用户和国内大模型优化</p>
 
   <p>
@@ -18,8 +16,6 @@
 
 - 2026年2月21日 - CountBot 正式开源，代码规范化重构
 - 2026年2月19日 - CountBot 项目正式上线
-
-> **关于前端代码：** 当前仓库仅包含前端构建后的 HTML 文件（`frontend/dist/`），不影响正常使用。前端原始源代码（Vue 3 + TypeScript）正在进行最后的全力优化，优化完成后将全量上传至仓库。
 
 ---
 
@@ -207,13 +203,22 @@ git clone https://github.com/countbot-ai/countbot.git
 cd countbot
 
 # 安装依赖
-pip install -r requirements.txt
+pip install -r requirements.txt （建议使用国内镜像 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/ ）
 
 # 启动（自动打开浏览器）
 python start_app.py
 ```
 
 访问 `http://localhost:8000`，在设置页面配置 LLM 提供商即可使用。
+
+### 下载桌面版
+
+```
+https://github.com/countbot-ai/CountBot/releases
+支持 Windows/macOS/Linux
+```
+
+### 一下载
 
 ### 推荐配置
 
@@ -513,7 +518,6 @@ CountBot 秉承开源精神，致力于让 AI Agent 技术更加透明、可控�
 ---
 
 <div align="center">
-  <p>CountBot — 654321，AI 即可达成</p>
   <p>轻量级、可扩展的 AI Agent 框架 | 专为中文用户和国内大模型优化</p>
   <br>
   <p>
