@@ -1,0 +1,40 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+sqlalchemy>=2.0.36
+alembic>=1.14.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+loguru>=0.7.3
+python-dotenv>=1.0.1
+aiohttp>=3.11.0
+httpx>=0.28.0
+litellm>=1.50.0
+tiktoken>=0.9.0
+openai>=1.58.0
+requests>=2.32.0
+pyyaml>=6.0.2
+python-multipart>=0.0.20
+aiosqlite>=0.20.0
+greenlet>=3.1.0
+cryptography>=44.0.0
+asyncpg>=0.30.0
+psycopg2-binary>=2.9.10
+tenacity>=9.0.0
+croniter>=5.0.0
+pywebview>=5.3
+
+# 网页内容提取（web 工具）
+trafilatura>=1.6.0
+readability-lxml>=0.8.1
+lxml_html_clean>=0.4.0  # readability-lxml 的依赖
+
+# 渠道 SDK
+qq-botpy>=1.2.1
+dingtalk-stream>=0.24.3
+lark-oapi>=1.5.3
+python-telegram-bot>=20.7
+
+# Skills 依赖（按技能分组）
+# baidu-search / map / image-analysis: 使用 requests（已在上方）
+# email: 纯标准库（imaplib, poplib, smtplib）
+# weather / news / web-design / image-gen: 纯标准库（urllib）

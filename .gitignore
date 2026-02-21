@@ -1,0 +1,94 @@
+# ============================================
+# CountBot .gitignore
+# ============================================
+
+# ── Python ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ── 虚拟环境 ────────────────────────────────
+venv/
+ENV/
+env/
+.venv/
+
+# ── IDE ─────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.kiro/
+
+# ── OS ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── 日志 ────────────────────────────────────
+*.log
+data/logs/
+data/audit_logs/
+
+# ── 数据库 ──────────────────────────────────
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.db.backup
+data/*.db.bak
+data/*.db_*
+
+# ── 运行时 ──────────────────────────────────
+*.pid
+data/.secret_key
+data/.*.pid
+
+# ── Node ────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── 前端源代码（优化完成后将全量上传）──────
+frontend/src/
+frontend/public/
+frontend/index.html
+frontend/package.json
+frontend/package-lock.json
+frontend/tsconfig.json
+frontend/tsconfig.node.json
+frontend/vite.config.ts
+frontend/.vite/
+
+# ── 网站 ────────────────────────────────────
+website/
+
+# ── 临时文件 ────────────────────────────────
+data/temp/
+data/workspace/
+temp/
+*.tmp
+
+# ── 构建产物 ────────────────────────────────
+dist/
+!frontend/dist/
+*.spec
