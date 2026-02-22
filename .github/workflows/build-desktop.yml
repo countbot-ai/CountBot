@@ -143,9 +143,15 @@ jobs:
           --add-data="resources:resources" \
           --collect-data dateparser \
           --collect-data tiktoken_ext \
+          --collect-data litellm \
+          --collect-data trafilatura \
+          --collect-data lxml \
+          --collect-data croniter \
           --collect-all greenlet \
           --collect-all cryptography \
           --collect-all tiktoken \
+          --collect-all pydantic \
+          --collect-all pydantic_core \
           --hidden-import=tiktoken_ext.openai_public \
           --hidden-import=tiktoken_ext \
           --hidden-import=greenlet \
@@ -201,9 +207,17 @@ jobs:
           --add-data="resources;resources" `
           --collect-data dateparser `
           --collect-data tiktoken_ext `
+          --collect-data litellm `
+          --collect-data trafilatura `
+          --collect-data lxml `
+          --collect-data croniter `
           --collect-all greenlet `
           --collect-all cryptography `
           --collect-all tiktoken `
+          --collect-all pydantic `
+          --collect-all pydantic_core `
+          --collect-all pythonnet `
+          --collect-all clr_loader `
           --hidden-import=tiktoken_ext.openai_public `
           --hidden-import=tiktoken_ext `
           --hidden-import=backend `
@@ -241,6 +255,12 @@ jobs:
           --hidden-import=fastapi `
           --hidden-import=sqlalchemy.ext.asyncio `
           --hidden-import=aiosqlite `
+          --hidden-import=webview `
+          --hidden-import=webview.platforms.edgechromium `
+          --hidden-import=webview.platforms.winforms `
+          --hidden-import=pythonnet `
+          --hidden-import=clr `
+          --hidden-import=clr_loader `
           start_desktop.py
     
     - name: 打包发布文件 (Linux/macOS)
@@ -317,34 +337,113 @@ jobs:
         body: |
           ## CountBot ${{ steps.version.outputs.version }}
           
-          ### 下载说明
+          ### ⚠️ 重要提示
           
-          - **Linux**: 下载 `CountBot-Linux-x64.tar.gz` (45 MB)
-          - **Windows**: 下载 `CountBot-Windows-x64.zip` (27 MB)
-          - **macOS**: 下载 `CountBot-macOS-x64.tar.gz` (48 MB)
+          **桌面版目前处于测试阶段，可能存在兼容性问题。**
           
-          ### 安装方法
+          如果您在使用桌面版时遇到问题，我们强烈建议：
           
-          #### Linux / macOS
-          ```bash
-          # 解压
-          tar -xzf CountBot-*.tar.gz
+          1. **使用 Python 源码运行**（推荐）：
+             ```bash
+             git clone https://github.com/countbot-ai/CountBot.git
+             cd CountBot
+             pip install -r requirements.txt
+             python start_desktop.py
+             ```
           
-          # 添加执行权限
-          chmod +x CountBot
+          2. **反馈问题帮助我们改进**：
+             - 遇到错误请在 [Issues](https://github.com/countbot-ai/CountBot/issues) 反馈
+             - 提供错误信息、系统版本等详细信息
+             - 您的反馈将帮助我们完善桌面版，降低 AI Agent 的使用门槛
           
-          # 运行
-          ./CountBot
-          ```
+          ---
+          
+          
+          ### 🚀 快速开始
           
           #### Windows
           ```cmd
-          # 解压 zip 文件
-          # 双击运行 CountBot.exe
+          # 1. 解压 zip 文件
+          # 2. 双击运行 CountBot.exe
+          # 3. 如果遇到问题，请使用 Python 源码运行
           ```
           
-          ### 更新日志
+          **常见问题：**
+          - 缺少 Edge WebView2：[下载安装](https://go.microsoft.com/fwlink/p/?LinkId=2124703)
+          - 端口被占用：设置环境变量 `PORT=8001`
+          - 防火墙拦截：允许 CountBot 访问网络
+          
+          #### macOS
+          ```bash
+          # 解压
+          tar -xzf CountBot-macOS-x64.tar.gz
+          
+          # 添加执行权限
+          chmod +x CountBot/CountBot
+          
+          # 运行
+          ./CountBot/CountBot
+          ```
+          
+          **常见问题：**
+          - "无法打开，因为无法验证开发者"：
+            ```bash
+            xattr -cr CountBot/CountBot
+            ```
+          - 系统版本要求：macOS 10.13 或更高
+          
+          #### Linux
+          ```bash
+          # 解压
+          tar -xzf CountBot-Linux-x64.tar.gz
+          
+          # 添加执行权限
+          chmod +x CountBot/CountBot
+          
+          # 运行
+          ./CountBot/CountBot
+          ```
+          
+          **常见问题：**
+          - 缺少 WebKit2GTK：
+            ```bash
+            # Ubuntu/Debian
+            sudo apt install webkit2gtk-4.0
+            
+            # Fedora
+            sudo dnf install webkit2gtk3
+            ```
+          
+          ---
+          
+          ### 🐛 遇到问题？
+          
+          1. **查看日志**：`data/logs/CountBot_*.log`
+          2. **提交 Issue**：[GitHub Issues](https://github.com/countbot-ai/CountBot/issues)
+          3. **使用源码运行**：更稳定，更容易调试
+          
+          ### 💡 为什么推荐源码运行？
+          
+          - ✅ 兼容性更好，避免打包问题
+          - ✅ 错误信息更详细，便于排查
+          - ✅ 可以随时更新到最新版本
+          - ✅ 支持所有 Python 环境和依赖
+          
+          ---
+          
+          ### 📝 更新日志
           
           详见下方自动生成的更新说明。
+          
+          ---
+          
+          ### 🙏 感谢您的支持
+          
+          CountBot 致力于降低 AI Agent 的使用门槛。您的反馈和建议对我们至关重要！
+          
+          - ⭐ 如果觉得有用，请给我们一个 Star
+          - 🐛 遇到问题，请提交 Issue
+          - 💬 有想法，欢迎参与讨论
+          - 🤝 想贡献，查看 [CONTRIBUTING.md](https://github.com/countbot-ai/CountBot/blob/main/CONTRIBUTING.md)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
