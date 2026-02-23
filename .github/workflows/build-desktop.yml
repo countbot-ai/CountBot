@@ -141,17 +141,12 @@ jobs:
           --add-data="skills:skills" \
           --add-data="memory:memory" \
           --add-data="resources:resources" \
+          --collect-data litellm \
           --collect-data dateparser \
           --collect-data tiktoken_ext \
-          --collect-data litellm \
+          --collect-data croniter \
           --collect-data trafilatura \
           --collect-data lxml \
-          --collect-data croniter \
-          --collect-all greenlet \
-          --collect-all cryptography \
-          --collect-all tiktoken \
-          --collect-all pydantic \
-          --collect-all pydantic_core \
           --hidden-import=tiktoken_ext.openai_public \
           --hidden-import=tiktoken_ext \
           --hidden-import=greenlet \
@@ -159,6 +154,8 @@ jobs:
           --hidden-import=backend \
           --hidden-import=backend.app \
           --hidden-import=backend.database \
+          --hidden-import=backend.utils.paths \
+          --hidden-import=backend.utils.logger \
           --hidden-import=backend.api.auth \
           --hidden-import=backend.api.chat \
           --hidden-import=backend.api.channels \
@@ -171,12 +168,14 @@ jobs:
           --hidden-import=backend.api.audio \
           --hidden-import=backend.api.queue \
           --hidden-import=backend.api.cron \
+          --hidden-import=backend.api.personalities \
           --hidden-import=backend.models.message \
           --hidden-import=backend.models.session \
           --hidden-import=backend.models.setting \
           --hidden-import=backend.models.task \
           --hidden-import=backend.models.cron_job \
           --hidden-import=backend.models.tool_conversation \
+          --hidden-import=backend.models.personality \
           --hidden-import=uvicorn \
           --hidden-import=uvicorn.logging \
           --hidden-import=uvicorn.loops \
@@ -191,6 +190,22 @@ jobs:
           --hidden-import=fastapi \
           --hidden-import=sqlalchemy.ext.asyncio \
           --hidden-import=aiosqlite \
+          --exclude-module=playwright \
+          --exclude-module=pandas \
+          --exclude-module=numpy \
+          --exclude-module=PyQt5 \
+          --exclude-module=PyQt6 \
+          --exclude-module=PySide2 \
+          --exclude-module=PySide6 \
+          --exclude-module=tkinter \
+          --exclude-module=matplotlib \
+          --exclude-module=scipy \
+          --exclude-module=PIL.ImageQt \
+          --exclude-module=transformers \
+          --exclude-module=torch \
+          --exclude-module=tensorflow \
+          --exclude-module=psycopg2 \
+          --exclude-module=asyncpg \
           start_desktop.py
     
     - name: 构建可执行文件 (Windows)
@@ -205,24 +220,21 @@ jobs:
           --add-data="skills;skills" `
           --add-data="memory;memory" `
           --add-data="resources;resources" `
+          --collect-data litellm `
           --collect-data dateparser `
           --collect-data tiktoken_ext `
-          --collect-data litellm `
+          --collect-data croniter `
           --collect-data trafilatura `
           --collect-data lxml `
-          --collect-data croniter `
-          --collect-all greenlet `
-          --collect-all cryptography `
-          --collect-all tiktoken `
-          --collect-all pydantic `
-          --collect-all pydantic_core `
-          --collect-all pythonnet `
-          --collect-all clr_loader `
           --hidden-import=tiktoken_ext.openai_public `
           --hidden-import=tiktoken_ext `
+          --hidden-import=greenlet `
+          --hidden-import=greenlet._greenlet `
           --hidden-import=backend `
           --hidden-import=backend.app `
           --hidden-import=backend.database `
+          --hidden-import=backend.utils.paths `
+          --hidden-import=backend.utils.logger `
           --hidden-import=backend.api.auth `
           --hidden-import=backend.api.chat `
           --hidden-import=backend.api.channels `
@@ -235,12 +247,14 @@ jobs:
           --hidden-import=backend.api.audio `
           --hidden-import=backend.api.queue `
           --hidden-import=backend.api.cron `
+          --hidden-import=backend.api.personalities `
           --hidden-import=backend.models.message `
           --hidden-import=backend.models.session `
           --hidden-import=backend.models.setting `
           --hidden-import=backend.models.task `
           --hidden-import=backend.models.cron_job `
           --hidden-import=backend.models.tool_conversation `
+          --hidden-import=backend.models.personality `
           --hidden-import=uvicorn `
           --hidden-import=uvicorn.logging `
           --hidden-import=uvicorn.loops `
@@ -258,13 +272,33 @@ jobs:
           --hidden-import=webview `
           --hidden-import=webview.platforms.edgechromium `
           --hidden-import=webview.platforms.winforms `
-          --hidden-import=pythonnet `
-          --hidden-import=clr `
-          --hidden-import=clr_loader `
+          --exclude-module=playwright `
+          --exclude-module=pandas `
+          --exclude-module=numpy `
+          --exclude-module=PyQt5 `
+          --exclude-module=PyQt6 `
+          --exclude-module=PySide2 `
+          --exclude-module=PySide6 `
+          --exclude-module=tkinter `
+          --exclude-module=matplotlib `
+          --exclude-module=scipy `
+          --exclude-module=PIL.ImageQt `
+          --exclude-module=transformers `
+          --exclude-module=torch `
+          --exclude-module=tensorflow `
+          --exclude-module=psycopg2 `
+          --exclude-module=asyncpg `
           start_desktop.py
     
-    - name: 打包发布文件 (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: 打包发布文件 (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        cd dist
+        tar -czf ${{ matrix.artifact-name }}.tar.gz CountBot.app/
+        ls -lh *.tar.gz
+    
+    - name: 打包发布文件 (Linux)
+      if: runner.os == 'Linux'
       run: |
         cd dist
         tar -czf ${{ matrix.artifact-name }}.tar.gz CountBot/

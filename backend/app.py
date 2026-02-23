@@ -24,6 +24,7 @@ def _create_shared_components(config):
     from backend.modules.agent.skills import SkillsLoader
     from backend.modules.agent.subagent import SubagentManager
     from backend.modules.tools.setup import register_all_tools
+    from backend.utils.paths import WORKSPACE_DIR
 
     logger.info("Getting provider metadata...")
     provider_id = config.model.provider
@@ -38,7 +39,12 @@ def _create_shared_components(config):
     )
 
     logger.info("Setting up workspace...")
-    workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+    # 使用统一的工作区路径，如果配置中指定了路径则使用配置的
+    if config.workspace.path:
+        workspace = Path(config.workspace.path)
+    else:
+        workspace = WORKSPACE_DIR  # 使用统一路径管理的默认工作区
+    workspace.mkdir(parents=True, exist_ok=True)
 
     logger.info("Creating LiteLLM provider...")
     provider = LiteLLMProvider(
@@ -479,7 +485,9 @@ async def health_check():
 
 
 # 挂载前端静态文件
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+from backend.utils.paths import APPLICATION_ROOT
+
+frontend_dist = APPLICATION_ROOT / "frontend" / "dist"
 if frontend_dist.exists():
     from fastapi.responses import FileResponse
     import mimetypes

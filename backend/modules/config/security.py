@@ -42,5 +42,9 @@ class SecurityManager:
             return ""
 
 
-DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
+from backend.modules.config.security import SecurityManager
+from backend.utils.paths import DATA_DIR
+
+
+DATA_DIR_OLD = Path(__file__).parent.parent.parent.parent / "data"  # 保留用于向后兼容
 security_manager = SecurityManager(DATA_DIR / ".secret_key")

@@ -21,6 +21,7 @@ from backend.modules.config.loader import config_loader
 from backend.modules.providers.litellm_provider import LiteLLMProvider
 from backend.modules.session.manager import SessionManager
 from backend.modules.tools.registry import ToolRegistry
+from backend.utils.paths import WORKSPACE_DIR
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -107,7 +108,7 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
         
         # 获取工作空间路径
         from pathlib import Path
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         workspace.mkdir(parents=True, exist_ok=True)
         
         # 初始化 LLM Provider
@@ -300,7 +301,7 @@ async def _maybe_auto_summarize(
             return
 
         config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)
@@ -389,7 +390,7 @@ async def send_message(
         if max_history > 0:
             try:
                 from pathlib import Path as _Path
-                _workspace = _Path(config.workspace.path) if config.workspace.path else _Path.cwd()
+                _workspace = _Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
                 _memory_dir = _workspace / "memory"
                 _memory_dir.mkdir(parents=True, exist_ok=True)
                 _overflow_memory = MemoryStore(_memory_dir)
@@ -1132,7 +1133,7 @@ async def summarize_session_to_memory(
         
         # 6. 写入记忆
         config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)

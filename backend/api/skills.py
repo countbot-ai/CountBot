@@ -103,10 +103,14 @@ class DeleteSkillResponse(BaseModel):
 # ============================================================================
 
 
+from backend.modules.config.loader import config_loader
+from backend.utils.paths import WORKSPACE_DIR
+
+
 def get_skills_loader() -> SkillsLoader:
     """获取技能加载器实例"""
     config = config_loader.config
-    workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
     workspace = workspace.resolve()  # 确保是绝对路径
     skills_dir = workspace / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
@@ -255,7 +259,7 @@ async def toggle_skill(name: str, request: ToggleSkillRequest) -> ToggleSkillRes
         
         # 持久化到配置文件
         config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         workspace = workspace.resolve()  # 确保是绝对路径
         config_file = workspace / ".skills_config.json"
         

@@ -49,9 +49,13 @@ class SearchResponse(BaseModel):
     total: int
 
 
+from backend.modules.config.loader import config_loader
+from backend.utils.paths import WORKSPACE_DIR
+
+
 def get_memory_store() -> MemoryStore:
     config = config_loader.config
-    workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
     memory_dir = workspace / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     return MemoryStore(memory_dir)

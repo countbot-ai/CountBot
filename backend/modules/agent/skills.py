@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from backend.utils.paths import APPLICATION_ROOT
 
-
-# 默认内置技能目录（相对于此文件）
-BUILTIN_SKILLS_DIR = Path(__file__).parent.parent.parent.parent / "skills"
+# 默认内置技能目录
+BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "skills"
 
 
 class Skill:
