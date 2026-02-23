@@ -112,7 +112,7 @@ def main() -> None:
     
     # 配置
     host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8002"))
+    port = int(os.getenv("PORT", "8000"))
     
     # 确保环境变量与实际绑定地址一致（供 app.py 读取）
     os.environ["HOST"] = host
