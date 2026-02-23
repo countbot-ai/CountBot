@@ -385,7 +385,7 @@ class AgentLoop:
         logger.debug(f"Executing tool: {tool_name}")
         
         try:
-            result = await self.tools.execute(tool_name, arguments)
+            result = await self.tools.execute(tool_name, arguments, auto_record=False)
             return result
             
         except Exception as e:
