@@ -1,0 +1,224 @@
+{
+  "main": {
+    "id": "e1b6ea2a7f22cbe7",
+    "type": "split",
+    "children": [
+      {
+        "id": "6f9d7b96da1b3cee",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b49a70c39f05f495",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "learning/01-项目总览与架构设计.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "01-项目总览与架构设计"
+            }
+          },
+          {
+            "id": "46d33ff301bf94f0",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "knowledge-base/07-数据库-SQLAlchemy标准配置模式.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "07-数据库-SQLAlchemy标准配置模式"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "e95b6b00c0e19b81",
+    "type": "split",
+    "children": [
+      {
+        "id": "045340c051e6f294",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "6b77baa425a0c4ca",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "ae58fdc7f7605557",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "4474911ce4dd8837",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "8e724710e18ecafb",
+    "type": "split",
+    "children": [
+      {
+        "id": "2d862af169ae32e2",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "fc32563f61d401a0",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "knowledge-base/07-数据库-SQLAlchemy标准配置模式.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "07-数据库-SQLAlchemy标准配置模式 的反向链接列表"
+            }
+          },
+          {
+            "id": "4c935c74dc918bab",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "knowledge-base/07-数据库-SQLAlchemy标准配置模式.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "07-数据库-SQLAlchemy标准配置模式 的出链列表"
+            }
+          },
+          {
+            "id": "61836d6090a3e720",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "9b2340b297bd605b",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "f33c03d56eec2e78",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "knowledge-base/07-数据库-SQLAlchemy标准配置模式.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "07-数据库-SQLAlchemy标准配置模式 的大纲"
+            }
+          }
+        ],
+        "currentTab": 4
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "46d33ff301bf94f0",
+  "lastOpenFiles": [
+    "learning/02-应用启动与生命周期.md",
+    "knowledge-base/07-数据库-SQLAlchemy标准配置模式.md",
+    "knowledge-base/06-Python基础-异步编程.md",
+    "knowledge-base/01-Web框架-FastAPI生命周期管理.md",
+    "knowledge-base/05-网络基础-IPv4与IPv6地址.md",
+    "knowledge-base/04-Python基础-应用启动初始化.md",
+    "knowledge-base/03-Python基础-环境变量读写.md",
+    "knowledge-base/02-Web框架-Uvicorn启动参数说明.md",
+    "learning/00-Python异步编程基础.md",
+    "learning/01-项目总览与架构设计.md",
+    "knowledge-base/fastapi-lifespan.md",
+    "knowledge-base/ipv4-ipv6.md",
+    "knowledge-base/python-startup-init.md",
+    "knowledge-base/uvicorn-run.md",
+    "knowledge-base/env-variables.md",
+    "knowledge-base",
+    "learning/03-3-记忆系统.md",
+    "learning/03-2-上下文构建器.md",
+    "learning/03-1-Agent主循环.md",
+    "learning/03-0-Agent核心系统.md"
+  ]
+}

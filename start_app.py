@@ -98,11 +98,11 @@ def main() -> None:
         
         # 启动服务器
         uvicorn.run(
-            "backend.app:app",
-            host=host,
-            port=port,
-            reload=False,
-            log_level="info"
+            "backend.app:app",  # 应用入口，指向 backend/app.py 中的 app 对象
+            host=host,          # 监听地址，如 127.0.0.1 仅本机，0.0.0.0 允许外部访问
+            port=port,          # 监听端口号
+            reload=False,       # 关闭热重载，代码修改后不会自动重启（生产模式）
+            log_level="info"    # 日志级别，记录 info 及以上级别的日志
         )
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")

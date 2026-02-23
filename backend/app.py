@@ -322,10 +322,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="CountBot Desktop API",
-    description="CountBot backend API",
-    version="0.1.0",
-    lifespan=lifespan,
+    title="CountBot Desktop API",   # 应用名称，显示在自动生成的 API 文档页面标题上
+    description="CountBot backend API",  # 应用描述，显示在 API 文档页面
+    version="0.1.0",                # API 版本号，显示在 API 文档页面
+    lifespan=lifespan,              # 生命周期管理器，控制应用启动和关闭时的初始化/清理逻辑
 )
 
 # 保存绑定地址用于认证判断
