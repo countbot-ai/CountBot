@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""CountBot 应用启动脚本"""
+"""
+CountBot 应用启动脚本
+生产模式启动，自动打开浏览器
+支持本地网络 IP 监控，类似 Vue3 启动模式
+"""
 
 import os
 import sys
 import webbrowser
 import threading
 from pathlib import Path
+from backend.utils.network import get_local_ips
 
+# 添加项目根目录到 Python 路径
 # Windows UTF-8 编码
 if sys.platform == "win32":
     os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -54,20 +60,43 @@ def main() -> None:
     port = int(os.getenv("PORT", "8000"))
     os.environ["HOST"] = host
     
+    # 获取本地 IP 地址
+    local_ips = get_local_ips()
+    
     # 打印启动信息
     logger.info("=" * 60)
     logger.info("CountBot 启动中...")
-    if host == "127.0.0.1":
-        logger.info("远程访问已开启 — 监听所有网络接口")
-        logger.info(f"本地访问: http://localhost:{port}")
-        logger.info(f"远程访问: http://<your-ip>:{port}")
-    else:
-        logger.info(f"访问地址: http://localhost:{port}")
-        logger.info("如需远程访问，请设置 HOST=0.0.0.0")
     logger.info("=" * 60)
-
     
     try:
+        # 启动服务器前显示"服务器启动完成"消息和访问地址
+        # 这样地址会在视觉上显示在启动完成之后
+        logger.info("服务器启动完成！")
+        logger.info("=" * 60)
+        
+        # 显示本地访问地址
+        logger.info(f"Local:   http://localhost:{port}")
+        
+        # 显示网络访问地址（如果监听了所有接口）
+        if host in ["0.0.0.0", "::"]:
+            if local_ips:
+                for ip in local_ips:
+                    logger.info(f"Network: http://{ip}:{port}")
+            else:
+                logger.info("Network: (无法检测到本地 IP 地址)")
+                logger.info(f"提示: 请检查网络连接或手动访问 http://<your-ip>:{port}")
+        else:
+            logger.info(f"Network: http://{host}:{port}")
+            logger.info("提示: 如需从其他设备访问，请设置 HOST=0.0.0.0")
+        
+        logger.info("-" * 60)
+        logger.info("按下 Ctrl+C 停止服务器")
+        logger.info("=" * 60)
+        
+        # 延迟打开浏览器
+        open_browser_delayed(f"http://localhost:{port}")
+        
+        # 启动服务器
         uvicorn.run(
             "backend.app:app",
             host=host,

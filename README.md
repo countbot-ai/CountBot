@@ -211,7 +211,9 @@ git clone https://github.com/countbot-ai/countbot.git
 cd countbot
 
 # 安装依赖
-pip install -r requirements.txt （建议使用国内镜像 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/ ）
+pip3 install -r requirements.txt 
+
+建议使用国内镜像进行安装，避免网络问题无法访问 pip3 install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 启动（自动打开浏览器）
 python start_app.py
@@ -219,7 +221,7 @@ python start_app.py
 
 访问 `http://localhost:8000`，在设置页面配置 LLM 提供商即可使用。
 
-### 下载桌面版
+### 下载桌面版（测试版，目前兼容性交差）
 
 ```
 https://github.com/countbot-ai/CountBot/releases
@@ -320,28 +322,19 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 
 | 提供商 | 模型示例 | 获取方式 |
 |--------|----------|----------|
-| 智谱 AI | glm-4.7-flash（免费）, GLM-5 | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| 智谱 AI | glm-4.7-flash（免费）、 GLM-5 | [open.bigmodel.cn](https://open.bigmodel.cn) |
 | 千问 | Qwen3.5-Plus | [dashscope.aliyun.com](https://dashscope.aliyun.com) |
 | Moonshot | Kimi K2.5 | [platform.moonshot.cn](https://platform.moonshot.cn) |
 | MiniMax | MiniMax-M2.5 | [platform.minimax.io](https://platform.minimax.io) |
-| DeepSeek | DeepSeek Chat | [platform.deepseek.com](https://platform.deepseek.com) |
-| 豆包 | Doubao-Pro-32K | [volcengine.com](https://volcengine.com) |
-| 百度文心 | ERNIE-4.0-8K | [qianfan.baidubce.com](https://qianfan.baidubce.com) |
-| 腾讯混元 | Hunyuan-Lite | [hunyuan.tencentcloudapi.com](https://hunyuan.tencentcloudapi.com) |
-| 零一万物 | Yi-Large | [platform.lingyiwanwu.com](https://platform.lingyiwanwu.com) |
-| 百川 | Baichuan4 | [platform.baichuan-ai.com](https://platform.baichuan-ai.com) |
+| DeepSeek | DeepSeek V3.2 | [platform.lingyiwanwu.com](https://platform.deepseek.com/) |
 
 ### 国际大模型
 
 | 提供商 | 模型示例 | 获取方式 |
 |--------|----------|----------|
 | OpenAI | gpt-5.3 | [platform.openai.com](https://platform.openai.com) |
-| Anthropic | Claude Sonnet 4 | [console.anthropic.com](https://console.anthropic.com) |
-| Gemini | Gemini 2.0 Flash | [aistudio.google.com](https://aistudio.google.com) |
-| Groq | Llama 3.3 70B | [console.groq.com](https://console.groq.com) |
-| Mistral | Mistral Large | [console.mistral.ai](https://console.mistral.ai) |
-| Cohere | Command R+ | [dashboard.cohere.com](https://dashboard.cohere.com) |
-| Together AI | Llama 3.3 70B Turbo | [api.together.xyz](https://api.together.xyz) |
+| Anthropic | Claude Sonnet | [console.anthropic.com](https://console.anthropic.com) |
+| Gemini | Gemini 3  | [aistudio.google.com](https://aistudio.google.com) |
 | OpenRouter | 多模型聚合 | [openrouter.ai](https://openrouter.ai) |
 
 
@@ -372,10 +365,10 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 | 钉钉 | Stream 模式 | Client ID + Client Secret |
 | QQ | 官方 SDK | App ID + Secret |
 | 微信(即将上线) | 公众号 API | App ID + App Secret + Token |
-| Telegram | Long Polling | Bot Token（支持代理） |
+| Telegram | Long Polling | Bot Token（支持自定义代理） |
 | Discord(即将上线) | Gateway | Bot Token |
 
-所有渠道支持 `allow_from` 白名单进行访问控制。
+渠道支持 `allow_from` 白名单进行访问控制。
 
 ---
 
@@ -395,7 +388,7 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 | `screenshot` | 截取屏幕 |
 | `file_search` | 搜索文件 |
 | `spawn` | 创建子代理 |
-| `send_media` | 发送媒体文件 |
+| `send_media` | 发送媒体文件到频道（目前适配飞书和钉钉） |
 
 ---
 
@@ -438,7 +431,7 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 
 ### 命令沙箱
 
-- 工作空间隔离（`restrict_to_workspace`）
+- 工作空间隔离（`restrict_to_workspace`） //默认关闭
 - 路径穿越检测
 - 空字节注入阻断
 - 命令白名单/黑名单
@@ -498,11 +491,13 @@ CountBot 的诞生离不开开源社区的启发和支持。
 
 ### 项目灵感
 
-- [PicoClaw](https://github.com/sipeed/picoclaw) - 感谢 PicoClaw 团队展示了超轻量级 AI Agent 的可能性。CountBot 的工具系统等核心架构深受其启发。
+- **[OpenClaw](https://github.com/openclaw/openclaw)** - 感谢 OpenClaw 团队开创性的 AI Agent 框架设计。CountBot 的 Agent Loop、工具系统等核心架构深受其启发。
 
 - [NanoBot](https://github.com/HKUDS/nanobot) - 感谢 NanoBot 团队展示了简洁的代码组织和模块化思想。
 
 - [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) - 感谢 ZeroClaw 团队在安全性和性能方面的探索。CountBot 的安全体系设计参考了其安全优先的架构理念。
+
+- [PicoClaw](https://github.com/sipeed/picoclaw) - 感谢 PicoClaw 团队展示了超轻量级 AI Agent 的可能性。CountBot 的工具系统等核心架构深受其启发。
 
 
 ### 技术栈
