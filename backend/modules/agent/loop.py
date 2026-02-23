@@ -189,7 +189,7 @@ class AgentLoop:
 
                         logger.info(
                             f"Executing tool {total_tool_calls}/{self.max_iterations}: "
-                            f"{tool_name} with args: {json.dumps(tool_args)}"
+                            f"{tool_name} with args: {json.dumps(tool_args, ensure_ascii=False)}"
                         )
                         
                         # 发送工具调用开始通知

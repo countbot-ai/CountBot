@@ -98,7 +98,7 @@ class ExecTool(Tool):
 
     @property
     def description(self) -> str:
-        return "在工作空间中执行 Shell 命令，返回 stdout 和 stderr 合并输出，默认阻止危险命令"
+        return "Execute a shell command in the workspace. REQUIRED: 'command' parameter must be provided with the shell command to execute."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -107,7 +107,7 @@ class ExecTool(Tool):
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The shell command to execute",
+                    "description": "The shell command to execute (REQUIRED)",
                 },
                 "working_dir": {
                     "type": "string",
@@ -115,6 +115,7 @@ class ExecTool(Tool):
                 },
             },
             "required": ["command"],
+            "additionalProperties": False,
         }
 
     async def execute(self, **kwargs: Any) -> str:

@@ -193,7 +193,6 @@ class LiteLLMProvider(LLMProvider):
                                 "name": "",
                                 "arguments": ""
                             }
-                            logger.debug(f"Initialized tool call buffer for key={key}, id={tc_id}")
                         
                         # 更新 ID (如果有)
                         if tc_id:
@@ -204,10 +203,8 @@ class LiteLLMProvider(LLMProvider):
                             function = tc_delta.function
                             if hasattr(function, "name") and function.name:
                                 tool_call_buffer[key]["name"] = function.name
-                                logger.debug(f"Tool call name: {function.name}")
                             if hasattr(function, "arguments") and function.arguments:
                                 tool_call_buffer[key]["arguments"] += function.arguments
-                                logger.debug(f"Tool call arguments chunk: {function.arguments}")
                 
                 # 检查是否完成
                 if choice.finish_reason:
@@ -215,16 +212,14 @@ class LiteLLMProvider(LLMProvider):
                     for tc_data in tool_call_buffer.values():
                         if tc_data["name"]:
                             args_str = tc_data["arguments"].strip()
-                            logger.debug(f"Parsing tool call arguments: {repr(args_str)}")
                             
-                            # 如果参数为空，使用空对象
+                            # Claude 模型可能返回空字符串而不是 "{}"
+                            # 根据 OpenAI 兼容标准，空字符串应该被视为空对象
                             if not args_str:
-                                logger.warning(f"Tool call {tc_data['name']} has empty arguments, using empty dict")
                                 arguments = {}
                             else:
                                 try:
                                     arguments = json.loads(args_str)
-                                    logger.debug(f"Successfully parsed arguments: {arguments}")
                                 except json.JSONDecodeError as e:
                                     logger.error(f"JSON parse failed: {e}, raw: {repr(args_str)}")
                                     arguments = {"raw": args_str}
