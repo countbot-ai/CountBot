@@ -18,6 +18,7 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from typing import Optional
 
 from loguru import logger
 
@@ -51,7 +52,7 @@ PROXY_HEADERS = {
 }
 
 
-def _get_real_client_ip(request: Request) -> str | None:
+def _get_real_client_ip(request: Request) -> Optional[str]:
     """获取真实的客户端 IP（仅从 TCP socket 层获取，不信任任何 HTTP 头）
     
     返回:
@@ -134,7 +135,7 @@ def _is_whitelisted(path: str) -> bool:
     return False
 
 
-def _get_token_from_request(request: Request) -> str | None:
+def _get_token_from_request(request: Request) -> Optional[str]:
     """从请求中提取 session token（Cookie 或 Header）"""
     # 1. 从 Cookie 获取
     token = request.cookies.get("CountBot_token")
