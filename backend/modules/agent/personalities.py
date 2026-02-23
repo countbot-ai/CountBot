@@ -195,6 +195,7 @@ def get_personality_prompt(personality_id: str, custom_text: str = "") -> str:
 
     return (
         f"性格: {preset['name']}\n"
+        f"描述: {preset['description']}\n"
         f"特征: {', '.join(preset['traits'])}\n"
         f"说话风格: {preset['speaking_style']}"
     )

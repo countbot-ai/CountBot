@@ -353,6 +353,7 @@ from backend.api.system import router as system_router
 from backend.api.channels import router as channels_router
 from backend.api.queue import router as queue_router
 from backend.api.auth import router as auth_router
+from backend.api.personalities import router as personalities_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
@@ -366,6 +367,7 @@ app.include_router(audio_router)
 app.include_router(system_router)
 app.include_router(channels_router)
 app.include_router(queue_router)
+app.include_router(personalities_router)
 
 
 # WebSocket 端点

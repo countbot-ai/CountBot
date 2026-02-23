@@ -64,6 +64,44 @@ class ContextBuilder:
         
         return system_prompt
 
+    def _get_personality_from_db(self, personality_id: str, custom_text: str = "") -> str:
+        """从数据库获取性格提示词（同步版本）"""
+        from backend.database import SessionLocal
+        from backend.models.personality import Personality
+        from sqlalchemy import select
+        
+        if personality_id == "custom":
+            if custom_text.strip():
+                return f"自定义性格: {custom_text.strip()}"
+            return "默认风格: 专业、友好、简洁。"
+        
+        try:
+            with SessionLocal() as session:
+                result = session.execute(
+                    select(Personality).where(
+                        Personality.id == personality_id,
+                        Personality.is_active == True  # noqa: E712
+                    )
+                )
+                personality = result.scalar_one_or_none()
+                
+                if not personality:
+                    # 降级到硬编码版本
+                    from backend.modules.agent.personalities import get_personality_prompt
+                    return get_personality_prompt(personality_id, custom_text)
+                
+                return (
+                    f"性格: {personality.name}\n"
+                    f"描述: {personality.description}\n"
+                    f"特征: {', '.join(personality.traits)}\n"
+                    f"说话风格: {personality.speaking_style}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to load personality from database: {e}, falling back to hardcoded")
+            # 降级到硬编码版本
+            from backend.modules.agent.personalities import get_personality_prompt
+            return get_personality_prompt(personality_id, custom_text)
+
     def _get_identity(self) -> str:
         """获取核心身份部分"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
@@ -85,9 +123,8 @@ class ContextBuilder:
             personality = self.persona_config.personality or "professional"
             custom_personality = self.persona_config.custom_personality or ""
         
-        # 使用新的性格配置系统
-        from backend.modules.agent.personalities import get_personality_prompt
-        personality_desc = get_personality_prompt(personality, custom_personality)
+        # 性格配置系统
+        personality_desc = self._get_personality_from_db(personality, custom_personality)
         
         # 构建用户信息部分
         user_info = f"- 用户称呼: {user_name}"
