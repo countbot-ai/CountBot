@@ -85,6 +85,13 @@ def main():
             reload_dirs=["backend"],  # 监控 backend 目录
             log_level="debug"
         )
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
+    except Exception as e:
+        logger.error(f"Server error: {e}")
+        raise
+    finally:
+        logger.info("Application shutdown complete")
 
 
 if __name__ == "__main__":
