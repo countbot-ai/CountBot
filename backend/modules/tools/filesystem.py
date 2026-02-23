@@ -68,10 +68,13 @@ class ReadFileTool(Tool):
     def description(self) -> str:
         return (
             "Read file contents with line numbers. "
-            "Supports reading specific line ranges with start_line/end_line (1-based, inclusive). "
-            "Examples: read full file → read_file(path='a.py'); "
-            "read lines 10-20 → read_file(path='a.py', start_line=10, end_line=20); "
-            "read from line 50 → read_file(path='a.py', start_line=50)"
+            "Supports single file or batch mode (multiple files in one call). "
+            "Line ranges: start_line/end_line (1-based, inclusive). "
+            "Examples:\n"
+            "- Single: read_file(path='a.py')\n"
+            "- Range: read_file(path='a.py', start_line=10, end_line=20)\n"
+            "- Batch: read_file(paths=['a.py', 'b.py', 'skills/weather/SKILL.md'])\n"
+            "Batch mode is more efficient for multiple files (saves tool calls)."
         )
 
     @property
@@ -81,30 +84,71 @@ class ReadFileTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file (relative to workspace or absolute)",
+                    "description": "Path to a single file (relative to workspace or absolute). Use this OR 'paths', not both.",
+                },
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of file paths for batch reading (more efficient than multiple calls). Use this OR 'path', not both.",
                 },
                 "start_line": {
                     "type": "integer",
-                    "description": "Start line number (1-based, inclusive). Omit to start from beginning.",
+                    "description": "Start line number (1-based, inclusive). Only works in single file mode. Omit to start from beginning.",
                 },
                 "end_line": {
                     "type": "integer",
-                    "description": "End line number (1-based, inclusive). Omit to read to end.",
+                    "description": "End line number (1-based, inclusive). Only works in single file mode. Omit to read to end.",
                 },
                 "show_line_numbers": {
                     "type": "boolean",
                     "description": "Show line numbers in output (default: true)",
                 },
             },
-            "required": ["path"],
+            "oneOf": [
+                {"required": ["path"]},
+                {"required": ["paths"]}
+            ],
         }
 
     async def execute(self, **kwargs: Any) -> str:
-        path_str = kwargs.get("path", "")
+        path_str = kwargs.get("path")
+        paths_list = kwargs.get("paths")
         start_line = kwargs.get("start_line")
         end_line = kwargs.get("end_line")
         show_line_numbers = kwargs.get("show_line_numbers", True)
 
+        # 参数验证：必须提供 path 或 paths 之一
+        if not path_str and not paths_list:
+            return "Error: Either 'path' or 'paths' parameter is required"
+        
+        if path_str and paths_list:
+            return "Error: Provide either 'path' or 'paths', not both"
+
+        # 批量模式：读取多个文件
+        if paths_list:
+            if not isinstance(paths_list, list):
+                return "Error: 'paths' must be an array of strings"
+            
+            if not paths_list:
+                return "Error: 'paths' array is empty"
+            
+            # 批量模式不支持行范围参数
+            if start_line is not None or end_line is not None:
+                return "Error: Line range parameters (start_line/end_line) are not supported in batch mode"
+            
+            return await self._read_multiple_files(paths_list, show_line_numbers)
+        
+        # 单文件模式：保持原有逻辑
+        return await self._read_single_file(path_str, start_line, end_line, show_line_numbers)
+
+    async def _read_single_file(
+        self, 
+        path_str: str, 
+        start_line: int | None, 
+        end_line: int | None, 
+        show_line_numbers: bool
+    ) -> str:
+        """读取单个文件（原有逻辑）"""
         if not path_str:
             return "Error: Path parameter is required"
 
@@ -165,6 +209,74 @@ class ReadFileTool(Tool):
         except Exception as ex:
             logger.error(f"Unexpected error reading file '{path_str}': {ex}")
             return f"Error reading file: {str(ex)}"
+
+    async def _read_multiple_files(self, paths_list: list[str], show_line_numbers: bool) -> str:
+        """批量读取多个文件"""
+        results = []
+        success_count = 0
+        error_count = 0
+
+        for path_str in paths_list:
+            try:
+                # 禁用技能检查
+                if self.skills_loader:
+                    file_path_check = Path(path_str)
+                    if not file_path_check.is_absolute():
+                        file_path_check = (self.validator.workspace / path_str).resolve()
+                    else:
+                        file_path_check = file_path_check.resolve()
+                    if file_path_check.name == "SKILL.md":
+                        skill_name = file_path_check.parent.name
+                        skill = self.skills_loader.get_skill(skill_name)
+                        if skill and not skill.enabled:
+                            logger.warning(f"Blocked read of disabled skill: {skill_name}")
+                            results.append(f"[File: {path_str}]\nError: Skill '{skill_name}' is disabled. Enable it first.")
+                            error_count += 1
+                            continue
+
+                file_path = self.validator.validate_path(path_str)
+                
+                if not file_path.exists():
+                    results.append(f"[File: {path_str}]\nError: File not found")
+                    error_count += 1
+                    continue
+                
+                if not file_path.is_file():
+                    results.append(f"[File: {path_str}]\nError: Not a file")
+                    error_count += 1
+                    continue
+
+                content = file_path.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                total = len(lines)
+
+                # 格式化输出
+                if show_line_numbers:
+                    w = len(str(total))
+                    output_lines = [f"{i + 1:>{w}}| {line}" for i, line in enumerate(lines)]
+                else:
+                    output_lines = lines
+
+                header = f"[File: {path_str} | Lines: {total}]"
+                results.append(header + "\n" + "\n".join(output_lines))
+                success_count += 1
+                logger.info(f"Read file (batch): {path_str} ({total} lines)")
+
+            except ValueError as ve:
+                logger.error(f"Failed to read file '{path_str}' in batch: {ve}")
+                results.append(f"[File: {path_str}]\nError: {ve}")
+                error_count += 1
+            except Exception as ex:
+                logger.error(f"Unexpected error reading file '{path_str}' in batch: {ex}")
+                results.append(f"[File: {path_str}]\nError: {str(ex)}")
+                error_count += 1
+
+        # 添加批量读取摘要
+        summary = f"\n{'='*60}\n[Batch Read Summary: {success_count} succeeded, {error_count} failed]\n{'='*60}"
+        
+        logger.info(f"Batch read completed: {success_count} succeeded, {error_count} failed out of {len(paths_list)} files")
+        
+        return "\n\n".join(results) + summary
 
 
 class WriteFileTool(Tool):

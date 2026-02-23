@@ -16,13 +16,15 @@ pyyaml>=6.0.2
 python-multipart>=0.0.20
 aiosqlite>=0.20.0
 greenlet>=3.1.0
-cryptography>=44.0.0
 asyncpg>=0.30.0
 psycopg2-binary>=2.9.10
 tenacity>=9.0.0
 croniter>=5.0.0
 pywebview>=5.3
 netifaces>=0.11.0  # 网络接口检测，用于本地 IP 监控
+
+# 可选依赖：API 密钥加密（编译版本不需要）
+# cryptography>=41.0.0
 
 # 网页内容提取（web 工具）
 trafilatura>=1.6.0

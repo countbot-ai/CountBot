@@ -55,7 +55,9 @@ class ContextBuilder:
 
 {skills_summary}
 
-**使用方法**: 当用户需求匹配某个技能时，使用 read_file 读取 skills/<技能名>/SKILL.md 获取详细说明。""")
+**使用方法**: 
+- 单个技能: read_file(path='skills/<技能名>/SKILL.md')
+- 批量读取（推荐，节省工具调用）: read_file(paths=['skills/weather/SKILL.md', 'skills/email/SKILL.md'])""")
             except Exception as e:
                 logger.warning(f"Failed to load skills: {e}")
         

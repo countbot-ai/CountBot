@@ -6,9 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-# 数据目录
-DATA_DIR = Path(__file__).parent.parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# 使用统一路径管理
+from backend.utils.paths import DATA_DIR
 
 # 数据库文件路径
 DATABASE_PATH = DATA_DIR / "countbot.db"

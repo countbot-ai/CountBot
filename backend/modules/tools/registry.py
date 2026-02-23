@@ -128,13 +128,14 @@ class ToolRegistry:
         logger.debug(f"Generated {len(definitions)} tool definitions")
         return definitions
 
-    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+    async def execute(self, tool_name: str, arguments: dict[str, Any], auto_record: bool = True) -> str:
         """
         执行工具
         
         Args:
             tool_name: 工具名称
             arguments: 工具参数
+            auto_record: 是否自动记录到工具对话历史（默认 True）
             
         Returns:
             str: 工具执行结果（包括错误信息）
@@ -169,6 +170,21 @@ class ToolRegistry:
                 error_msg = f"Error: Invalid parameters for tool '{tool_name}': " + "; ".join(errors)
                 logger.error(error_msg)
                 
+                # 记录到工具对话历史（参数验证失败）
+                if auto_record and self._session_id:
+                    try:
+                        from backend.modules.tools.conversation_history import get_conversation_history
+                        conversation_history = get_conversation_history()
+                        conversation_history.add_conversation(
+                            session_id=self._session_id,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            error=error_msg,
+                            duration_ms=0
+                        )
+                    except Exception as conv_err:
+                        logger.warning(f"Failed to record tool conversation: {conv_err}")
+                
                 return error_msg
             
             logger.info(f"Executing tool: {tool_name} with arguments: {arguments}")
@@ -180,6 +196,21 @@ class ToolRegistry:
             # 更新审计日志
             if self._audit_enabled:
                 file_audit_logger.update_result(call_id, result, "success", duration_ms=duration_ms)
+            
+            # 记录到工具对话历史（成功）
+            if auto_record and self._session_id:
+                try:
+                    from backend.modules.tools.conversation_history import get_conversation_history
+                    conversation_history = get_conversation_history()
+                    conversation_history.add_conversation(
+                        session_id=self._session_id,
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        result=result,
+                        duration_ms=duration_ms
+                    )
+                except Exception as conv_err:
+                    logger.warning(f"Failed to record tool conversation: {conv_err}")
             
             logger.info(f"Tool '{tool_name}' executed successfully")
             return result
@@ -194,6 +225,21 @@ class ToolRegistry:
             # 更新审计日志
             if self._audit_enabled:
                 file_audit_logger.update_result(call_id, str(e), "error", error=str(e), duration_ms=duration_ms)
+            
+            # 记录到工具对话历史（失败）
+            if auto_record and self._session_id:
+                try:
+                    from backend.modules.tools.conversation_history import get_conversation_history
+                    conversation_history = get_conversation_history()
+                    conversation_history.add_conversation(
+                        session_id=self._session_id,
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        error=error_msg,
+                        duration_ms=duration_ms
+                    )
+                except Exception as conv_err:
+                    logger.warning(f"Failed to record tool conversation: {conv_err}")
             
             return error_msg
 

@@ -74,9 +74,10 @@ def get_tool_registry() -> ToolRegistry:
     from backend.modules.tools.setup import register_all_tools
     from backend.api.chat import get_global_subagent_manager
     from backend.api.channels import get_channel_manager
+    from backend.utils.paths import WORKSPACE_DIR
     
     config = config_loader.config
-    workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
     workspace.mkdir(parents=True, exist_ok=True)
     
     # 获取全局 SubagentManager

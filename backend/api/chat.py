@@ -5,6 +5,7 @@ import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -21,6 +22,7 @@ from backend.modules.config.loader import config_loader
 from backend.modules.providers.litellm_provider import LiteLLMProvider
 from backend.modules.session.manager import SessionManager
 from backend.modules.tools.registry import ToolRegistry
+from backend.utils.paths import WORKSPACE_DIR
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -70,6 +72,18 @@ class SessionResponse(BaseModel):
     summary_updated_at: str | None = None
 
 
+class ToolCallResponse(BaseModel):
+    """工具调用响应"""
+    
+    id: str
+    name: str
+    arguments: dict[str, Any]
+    result: str | None = None
+    error: str | None = None
+    status: str = "success"
+    duration: int | None = None
+
+
 class MessageResponse(BaseModel):
     """消息响应"""
 
@@ -78,6 +92,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     created_at: str
+    tool_calls: list[ToolCallResponse] = Field(default_factory=list, description="工具调用记录")
 
 
 # ============================================================================
@@ -107,7 +122,7 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
         
         # 获取工作空间路径
         from pathlib import Path
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         workspace.mkdir(parents=True, exist_ok=True)
         
         # 初始化 LLM Provider
@@ -300,7 +315,7 @@ async def _maybe_auto_summarize(
             return
 
         config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)
@@ -389,7 +404,7 @@ async def send_message(
         if max_history > 0:
             try:
                 from pathlib import Path as _Path
-                _workspace = _Path(config.workspace.path) if config.workspace.path else _Path.cwd()
+                _workspace = _Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
                 _memory_dir = _workspace / "memory"
                 _memory_dir.mkdir(parents=True, exist_ok=True)
                 _overflow_memory = MemoryStore(_memory_dir)
@@ -688,7 +703,7 @@ async def get_session_messages(
     db: AsyncSession = Depends(get_db),
 ) -> list[MessageResponse]:
     """
-    获取会话的消息列表
+    获取会话的消息列表（包含工具调用记录）
     
     Args:
         session_id: 会话 ID
@@ -697,12 +712,15 @@ async def get_session_messages(
         db: 数据库会话
         
     Returns:
-        list[MessageResponse]: 消息列表
+        list[MessageResponse]: 消息列表（包含关联的工具调用）
         
     Raises:
         HTTPException: 会话不存在
     """
     try:
+        from sqlalchemy import select
+        from backend.models.tool_conversation import ToolConversation
+        
         session_manager = SessionManager(db)
         
         # 验证会话是否存在
@@ -720,16 +738,65 @@ async def get_session_messages(
             offset=offset,
         )
         
-        return [
-            MessageResponse(
-                id=msg.id,
-                session_id=msg.session_id,
-                role=msg.role,
-                content=msg.content,
-                created_at=msg.created_at.isoformat(),
+        # 获取该会话的所有工具调用记录
+        tool_calls_query = select(ToolConversation).where(
+            ToolConversation.session_id == session_id
+        ).order_by(ToolConversation.timestamp.asc())
+        
+        tool_calls_result = await db.execute(tool_calls_query)
+        all_tool_calls = tool_calls_result.scalars().all()
+        
+        # 按 message_id 分组工具调用
+        tool_calls_by_message: dict[int, list[ToolConversation]] = {}
+        for tc in all_tool_calls:
+            if tc.message_id is not None:
+                if tc.message_id not in tool_calls_by_message:
+                    tool_calls_by_message[tc.message_id] = []
+                tool_calls_by_message[tc.message_id].append(tc)
+        
+        # 构建响应，包含工具调用
+        response_messages = []
+        for msg in messages:
+            # 获取该消息关联的工具调用
+            msg_tool_calls = tool_calls_by_message.get(msg.id, [])
+            
+            # 转换工具调用为响应格式
+            tool_call_responses = []
+            for tc in msg_tool_calls:
+                try:
+                    arguments = json.loads(tc.arguments) if tc.arguments else {}
+                except json.JSONDecodeError:
+                    arguments = {}
+                
+                # 确定状态
+                status_value = "success"
+                if tc.error:
+                    status_value = "error"
+                
+                tool_call_responses.append(
+                    ToolCallResponse(
+                        id=tc.id,
+                        name=tc.tool_name,
+                        arguments=arguments,
+                        result=tc.result,
+                        error=tc.error,
+                        status=status_value,
+                        duration=tc.duration_ms,
+                    )
+                )
+            
+            response_messages.append(
+                MessageResponse(
+                    id=msg.id,
+                    session_id=msg.session_id,
+                    role=msg.role,
+                    content=msg.content,
+                    created_at=msg.created_at.isoformat(),
+                    tool_calls=tool_call_responses,
+                )
             )
-            for msg in messages
-        ]
+        
+        return response_messages
         
     except HTTPException:
         raise
@@ -1132,7 +1199,7 @@ async def summarize_session_to_memory(
         
         # 6. 写入记忆
         config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else Path.cwd()
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)

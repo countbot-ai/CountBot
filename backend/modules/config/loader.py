@@ -9,7 +9,6 @@ from sqlalchemy import select
 from backend.database import AsyncSessionLocal
 from backend.models.setting import Setting
 from backend.modules.config.schema import AppConfig
-from backend.modules.config.security import security_manager
 
 
 class ConfigLoader:
@@ -119,6 +118,9 @@ class ConfigLoader:
     
     def _decrypt_api_keys(self) -> None:
         """解密所有 provider 的 API 密钥"""
+        from backend.modules.config.security import get_security_manager
+        security_manager = get_security_manager()
+        
         for provider_name, provider_config in self.config.providers.items():
             if provider_config.api_key:
                 try:
@@ -131,6 +133,9 @@ class ConfigLoader:
     
     def _encrypt_api_keys_in_dict(self, config_dict: dict[str, Any]) -> dict[str, Any]:
         """加密配置字典中的 API 密钥"""
+        from backend.modules.config.security import get_security_manager
+        security_manager = get_security_manager()
+        
         if "providers" in config_dict:
             for provider_name, provider_data in config_dict["providers"].items():
                 if isinstance(provider_data, dict) and provider_data.get("api_key"):
