@@ -22,6 +22,9 @@ tenacity>=9.0.0
 croniter>=5.0.0
 pywebview>=5.3
 
+# 可选依赖：API 密钥加密（编译版本不需要）
+# cryptography>=41.0.0
+
 # 网页内容提取（web 工具）
 trafilatura>=1.6.0
 readability-lxml>=0.8.1
