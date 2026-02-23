@@ -22,6 +22,7 @@ psycopg2-binary>=2.9.10
 tenacity>=9.0.0
 croniter>=5.0.0
 pywebview>=5.3
+netifaces>=0.11.0  # 网络接口检测，用于本地 IP 监控
 
 # 网页内容提取（web 工具）
 trafilatura>=1.6.0
