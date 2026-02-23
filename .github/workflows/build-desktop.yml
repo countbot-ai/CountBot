@@ -370,7 +370,7 @@ jobs:
           
           **常见问题：**
           - 缺少 Edge WebView2：[下载安装](https://go.microsoft.com/fwlink/p/?LinkId=2124703)
-          - 端口被占用：设置环境变量 `PORT=8001`
+          - 端口被占用：修改默认的8000锻炼
           - 防火墙拦截：允许 CountBot 访问网络
           
           #### macOS

@@ -1,4 +1,4 @@
-"""System tray integration for desktop application."""
+"""桌面应用系统托盘集成"""
 
 from loguru import logger
 from typing import Callable, Optional
@@ -6,15 +6,14 @@ import threading
 
 
 class SystemTray:
-    """System tray manager for desktop application."""
+    """系统托盘管理器"""
     
     def __init__(self, window, app_name: str = "CountBot"):
-        """
-        Initialize system tray.
+        """初始化系统托盘
         
         Args:
-            window: pywebview window instance
-            app_name: Application name
+            window: pywebview 窗口实例
+            app_name: 应用名称
         """
         self.window = window
         self.app_name = app_name
@@ -23,7 +22,7 @@ class SystemTray:
         self.on_quit_callback: Optional[Callable] = None
     
     def create_menu(self):
-        """Create tray menu items."""
+        """创建托盘菜单项"""
         menu_items = [
             {
                 "title": "Show Window",
@@ -34,7 +33,7 @@ class SystemTray:
                 "action": self._on_hide
             },
             {
-                "title": "-"  # Separator
+                "title": "-"  # 分隔符
             },
             {
                 "title": "Quit",
@@ -44,7 +43,7 @@ class SystemTray:
         return menu_items
     
     def _on_show(self):
-        """Show window callback."""
+        """显示窗口回调"""
         try:
             self.window.show()
             if self.on_show_callback:
@@ -53,14 +52,14 @@ class SystemTray:
             logger.error(f"Failed to show window: {e}")
     
     def _on_hide(self):
-        """Hide window callback."""
+        """隐藏窗口回调"""
         try:
             self.window.hide()
         except Exception as e:
             logger.error(f"Failed to hide window: {e}")
     
     def _on_quit(self):
-        """Quit application callback."""
+        """退出应用回调"""
         try:
             if self.on_quit_callback:
                 self.on_quit_callback()
@@ -69,34 +68,33 @@ class SystemTray:
             logger.error(f"Failed to quit application: {e}")
     
     def set_callbacks(self, on_show: Optional[Callable] = None, on_quit: Optional[Callable] = None):
-        """Set callback functions."""
+        """设置回调函数"""
         self.on_show_callback = on_show
         self.on_quit_callback = on_quit
     
     def minimize_to_tray(self):
-        """Minimize window to system tray."""
+        """最小化到系统托盘"""
         self._on_hide()
     
     def restore_from_tray(self):
-        """Restore window from system tray."""
+        """从系统托盘恢复"""
         self._on_show()
 
 
 class HotkeyManager:
-    """Global hotkey manager."""
+    """全局快捷键管理器"""
     
     def __init__(self):
-        """Initialize hotkey manager."""
+        """初始化快捷键管理器"""
         self.hotkeys = {}
         self.enabled = False
     
     def register(self, hotkey: str, callback: Callable):
-        """
-        Register a global hotkey.
+        """注册全局快捷键
         
         Args:
-            hotkey: Hotkey combination (e.g., 'Ctrl+Shift+Space')
-            callback: Function to call when hotkey is pressed
+            hotkey: 快捷键组合 (如 'Ctrl+Shift+Space')
+            callback: 快捷键触发时调用的函数
         """
         try:
             self.hotkeys[hotkey] = callback
@@ -105,38 +103,37 @@ class HotkeyManager:
             logger.error(f"Failed to register hotkey {hotkey}: {e}")
     
     def unregister(self, hotkey: str):
-        """Unregister a global hotkey."""
+        """注销全局快捷键"""
         if hotkey in self.hotkeys:
             del self.hotkeys[hotkey]
             logger.info(f"Unregistered hotkey: {hotkey}")
     
     def enable(self):
-        """Enable hotkey listening."""
+        """启用快捷键监听"""
         self.enabled = True
         logger.info("Hotkeys enabled")
     
     def disable(self):
-        """Disable hotkey listening."""
+        """禁用快捷键监听"""
         self.enabled = False
         logger.info("Hotkeys disabled")
 
 
 class AutoStartManager:
-    """Auto-start manager for desktop application."""
+    """开机自启动管理器"""
     
     def __init__(self, app_name: str, app_path: str):
-        """
-        Initialize auto-start manager.
+        """初始化自启动管理器
         
         Args:
-            app_name: Application name
-            app_path: Path to application executable
+            app_name: 应用名称
+            app_path: 应用可执行文件路径
         """
         self.app_name = app_name
         self.app_path = app_path
     
     def is_enabled(self) -> bool:
-        """Check if auto-start is enabled."""
+        """检查是否已启用开机自启动"""
         import sys
         import os
         
@@ -176,7 +173,7 @@ class AutoStartManager:
             return False
     
     def enable(self) -> bool:
-        """Enable auto-start."""
+        """启用开机自启动"""
         import sys
         import os
         
@@ -214,7 +211,7 @@ class AutoStartManager:
     <true/>
 </dict>
 </plist>"""
-                with open(plist_path, "w") as f:
+                with open(plist_path, "w", encoding="utf-8") as f:
                     f.write(plist_content)
                 logger.info("Auto-start enabled (macOS)")
                 return True
@@ -232,7 +229,7 @@ Exec={self.app_path}
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true"""
-                with open(desktop_path, "w") as f:
+                with open(desktop_path, "w", encoding="utf-8") as f:
                     f.write(desktop_content)
                 logger.info("Auto-start enabled (Linux)")
                 return True
@@ -242,7 +239,7 @@ X-GNOME-Autostart-enabled=true"""
             return False
     
     def disable(self) -> bool:
-        """Disable auto-start."""
+        """禁用开机自启动"""
         import sys
         import os
         

@@ -242,7 +242,7 @@ def main():
         show_error_dialog("启动超时", error_msg)
         sys.exit(1)
     
-    logger.info("✓ 后端服务已就绪")
+    logger.info("后端服务已就绪")
 
     # 设置平台图标
     icon_path = get_icon_path()
@@ -269,7 +269,7 @@ def main():
         if icon_path:
             start_kwargs["icon"] = icon_path
         
-        logger.info("✓ CountBot Desktop 启动成功")
+        logger.info("CountBot Desktop 启动成功")
         logger.info(f"访问地址: http://{host}:{port}")
         webview.start(**start_kwargs)
         
