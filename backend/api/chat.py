@@ -808,6 +808,77 @@ async def get_session_messages(
         )
 
 
+@router.delete("/sessions/{session_id}/messages/{message_id}")
+async def delete_single_message(
+    session_id: str,
+    message_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    删除单条消息
+    
+    Args:
+        session_id: 会话 ID
+        message_id: 消息 ID
+        db: 数据库会话
+        
+    Returns:
+        dict: 操作结果
+        
+    Raises:
+        HTTPException: 会话或消息不存在
+    """
+    try:
+        from sqlalchemy import select, delete
+        from backend.models.message import Message
+        
+        # 验证会话是否存在
+        session_manager = SessionManager(db)
+        session = await session_manager.get_session(session_id)
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session '{session_id}' not found"
+            )
+        
+        # 查找消息
+        result = await db.execute(
+            select(Message).where(
+                Message.id == message_id,
+                Message.session_id == session_id
+            )
+        )
+        message = result.scalar_one_or_none()
+        
+        if message is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Message '{message_id}' not found in session '{session_id}'"
+            )
+        
+        # 删除消息
+        await db.execute(
+            delete(Message).where(Message.id == message_id)
+        )
+        await db.commit()
+        
+        logger.info(f"Deleted message {message_id} from session {session_id}")
+        
+        return {
+            "success": True,
+            "message": f"Message {message_id} deleted"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete message: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete message: {str(e)}"
+        )
+
+
 @router.delete("/sessions/{session_id}/messages")
 async def clear_session_messages(
     session_id: str,
