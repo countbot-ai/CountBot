@@ -35,7 +35,6 @@ env/
 *.swp
 *.swo
 *~
-.kiro/
 
 # ── OS ──────────────────────────────────────
 .DS_Store
@@ -53,8 +52,6 @@ data/audit_logs/
 *.sqlite
 *.sqlite3
 data/*.db
-data/*.db.backup
-data/*.db.bak
 data/*.db_*
 
 # ── 运行时 ──────────────────────────────────
@@ -68,19 +65,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ── 前端源代码（优化完成后将全量上传）──────
-frontend/src/
-frontend/public/
-frontend/index.html
-frontend/package.json
-frontend/package-lock.json
-frontend/tsconfig.json
-frontend/tsconfig.node.json
-frontend/vite.config.ts
+# ── 前端源代码（已开源）──────
+# frontend/src/
+# frontend/public/
+# frontend/index.html
+# frontend/package.json
+# frontend/package-lock.json
+# frontend/tsconfig.json
+# frontend/tsconfig.node.json
+# frontend/vite.config.ts
 frontend/.vite/
-
-# ── 网站 ────────────────────────────────────
-website/
 
 # ── 临时文件 ────────────────────────────────
 data/temp/

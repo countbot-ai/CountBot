@@ -1,0 +1,142 @@
+/* Light Theme - 浅色主题 (柔和现代配色) */
+:root[data-theme='light'] {
+    /* Background Colors - 温暖白色 */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --bg-hover: #f1f5f9;
+    --bg-active: #e2e8f0;
+
+    /* Text Colors - 柔和深灰 */
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-tertiary: #94a3b8;
+    --text-disabled: #cbd5e1;
+    --text-inverse: #ffffff;
+
+    /* Border Colors */
+    --border-primary: #e2e8f0;
+    --border-secondary: #cbd5e1;
+    --border-focus: #64748b;
+    --border-color: #e2e8f0;
+
+    /* Brand Colors - 柔和蓝灰系 */
+    --color-primary: #334155;
+    --color-primary-hover: #1e293b;
+    --color-primary-active: #0f172a;
+    --color-primary-dark: #020617;
+    --color-primary-light: #f1f5f9;
+
+    /* 辅助色 */
+    --color-secondary: #64748b;
+    --color-accent: #10b981;
+
+    /* Semantic Colors */
+    --color-success: #10b981;
+    --color-success-bg: #d1fae5;
+    --color-warning: #f59e0b;
+    --color-warning-bg: #fef3c7;
+    --color-error: #ef4444;
+    --color-error-bg: #fee2e2;
+    --color-info: #0ea5e9;
+
+    /* Hover Background */
+    --hover-bg: #f1f5f9;
+
+    /* Overlay */
+    --overlay: rgba(15, 23, 42, 0.5);
+}
+
+/* Dark Theme - 赛博朋克风格 */
+:root[data-theme='dark'] {
+    /* Background Colors */
+    --bg-primary: #0a0e1a;
+    --bg-secondary: #0e1422;
+    --bg-tertiary: #131b2c;
+    --bg-hover: #111828;
+    --bg-active: #152035;
+
+    /* Text Colors */
+    --text-primary: #d0e8f0;
+    --text-secondary: #7a9ab0;
+    --text-tertiary: #4a6578;
+    --text-disabled: #2a3e50;
+    --text-inverse: #0a0e1a;
+
+    /* Border Colors */
+    --border-primary: #152035;
+    --border-secondary: #1e2d45;
+    --border-focus: #00f0ff;
+    --border-color: #152035;
+
+    /* Brand Colors - 霓虹青 */
+    --color-primary: #00f0ff;
+    --color-primary-hover: #33f5ff;
+    --color-primary-active: #00d4e6;
+    --color-primary-dark: #0088aa;
+    --color-primary-light: #0d1a2a;
+
+    /* 辅助色 */
+    --color-secondary: #5eead4;
+    --color-accent: #00ff88;
+
+    /* Semantic Colors */
+    --color-success: #00ff88;
+    --color-success-bg: #002211;
+    --color-warning: #ff9500;
+    --color-warning-bg: #1a0f00;
+    --color-error: #ff2d6f;
+    --color-error-bg: #1a0010;
+    --color-info: #00b4ff;
+
+    /* Hover Background */
+    --hover-bg: #111828;
+
+    /* Overlay */
+    --overlay: rgba(5, 8, 18, 0.88);
+}
+
+/* 默认浅色主题（无 data-theme 属性时）- 柔和现代配色 */
+:root {
+    /* Background Colors - 温暖白色 */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --bg-hover: #f1f5f9;
+    --bg-active: #e2e8f0;
+
+    /* Text Colors - 柔和深灰 */
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-tertiary: #94a3b8;
+    --text-disabled: #cbd5e1;
+    --text-inverse: #ffffff;
+
+    /* Border Colors */
+    --border-primary: #e2e8f0;
+    --border-secondary: #cbd5e1;
+    --border-focus: #64748b;
+    --border-color: #e2e8f0;
+
+    /* Brand Colors - 柔和蓝灰系 */
+    --color-primary: #334155;
+    --color-primary-hover: #1e293b;
+    --color-primary-active: #0f172a;
+    --color-primary-dark: #020617;
+    --color-primary-light: #f1f5f9;
+
+    /* Semantic Colors */
+    --color-success: #10b981;
+    --color-success-bg: #d1fae5;
+    --color-warning: #f59e0b;
+    --color-warning-bg: #fef3c7;
+    --color-error: #ef4444;
+    --color-error-bg: #fee2e2;
+    --color-info: #0ea5e9;
+
+    /* Hover Background */
+    --hover-bg: #f1f5f9;
+
+    /* Overlay */
+    --overlay: rgba(15, 23, 42, 0.5);
+}

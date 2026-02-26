@@ -1,0 +1,90 @@
+/**
+ * 深色主题 -
+ * 深邃暗色背景 + 霓虹青强调色 + 高对比度
+ */
+
+[data-theme='dark'] {
+    /* 主色调 - 霓虹青 */
+    --color-primary: #00f0ff;
+    --color-primary-hover: #33f5ff;
+    --color-primary-active: #00d4e6;
+    --color-primary-light: #0d1a2a;
+    --color-primary-alpha: rgba(0, 240, 255, 0.10);
+
+    /* 辅助色 */
+    --color-secondary: #5eead4;
+    --color-secondary-hover: #99f6e4;
+    --color-secondary-light: #0d1a2a;
+
+    /* 成功色 - 霓虹绿 */
+    --color-success: #00ff88;
+    --color-success-hover: #33ffaa;
+    --color-success-light: #002211;
+
+    /* 警告色 - 霓虹橙 */
+    --color-warning: #ff9500;
+    --color-warning-hover: #ffaa33;
+    --color-warning-light: #1a0f00;
+
+    /* 错误色 - 霓虹红/粉 */
+    --color-error: #ff2d6f;
+    --color-error-hover: #ff5c8f;
+    --color-error-light: #1a0010;
+
+    /* 信息色 */
+    --color-info: #00b4ff;
+    --color-info-hover: #33c4ff;
+    --color-info-light: #001a2e;
+
+    /* 文本色 */
+    --color-text-primary: #d0e8f0;
+    --color-text-secondary: #7a9ab0;
+    --color-text-tertiary: #4a6578;
+    --color-text-disabled: #2a3e50;
+    --color-text-inverse: #0a0e1a;
+
+    /* 背景色 - 深邃暗色 */
+    --color-bg-primary: #0a0e1a;
+    --color-bg-secondary: #0e1422;
+    --color-bg-tertiary: #131b2c;
+    --color-bg-elevated: #111828;
+
+    /* 边框色 */
+    --color-border-primary: #152035;
+    --color-border-secondary: #1e2d45;
+    --color-border-focus: #00f0ff;
+
+    /* 阴影 */
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-hover: rgba(0, 240, 255, 0.08);
+
+    /* 覆盖层 */
+    --color-overlay: rgba(5, 8, 18, 0.88);
+
+    /* 代码高亮 */
+    --code-bg: #0e1422;
+    --code-text: #d0e8f0;
+    --code-comment: #4a6578;
+    --code-keyword: #ff2d6f;
+    --code-string: #00ff88;
+    --code-number: #ff9500;
+    --code-function: #00f0ff;
+
+    /* 滚动条 */
+    --scrollbar-track: #0a0e1a;
+    --scrollbar-thumb: #152035;
+    --scrollbar-thumb-hover: #1e2d45;
+
+    /* 特殊组件 */
+    --sidebar-bg: #0a0e1a;
+    --sidebar-border: #152035;
+    --sidebar-item-hover: #111828;
+    --sidebar-item-active: #131b2c;
+
+    --header-bg: #0a0e1a;
+    --header-border: #152035;
+
+    --card-bg: #0e1422;
+    --card-border: #152035;
+    --card-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}

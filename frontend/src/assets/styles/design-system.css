@@ -1,0 +1,978 @@
+/**
+ * Design System
+ * 专业、简洁、功能优先
+ */
+
+/* ==================== 设计原则 ==================== */
+/*
+1. 简洁性 - 去除不必要的装饰
+2. 功能性 - 每个元素都有明确的目的
+3. 可读性 - 高对比度，清晰的文本层次
+4. 一致性 - 统一的间距、圆角、阴影系统
+5. 响应性 - 流畅的交互反馈
+*/
+
+/* ==================== 精细化间距系统 ==================== */
+:root {
+  /* 基础间距单位 */
+  --space-unit: 4px;
+
+  /* 间距刻度 */
+  --space-1: 4px;
+  /* 0.25rem */
+  --space-2: 8px;
+  /* 0.5rem */
+  --space-3: 12px;
+  /* 0.75rem */
+  --space-4: 16px;
+  /* 1rem */
+  --space-5: 20px;
+  /* 1.25rem */
+  --space-6: 24px;
+  /* 1.5rem */
+  --space-8: 32px;
+  /* 2rem */
+  --space-10: 40px;
+  /* 2.5rem */
+  --space-12: 48px;
+  /* 3rem */
+
+  /* 圆角系统 */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* 阴影系统 - 更微妙 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* 边框系统 */
+  --border-width: 1px;
+  --border-width-thick: 2px;
+
+  /* 过渡系统 */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 字体权重 */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+}
+
+/* ==================== 聊天窗口优化 ==================== */
+
+.chat-window {
+  background: var(--bg-secondary, #fafafa) !important;
+}
+
+/* 头部优化 */
+.chat-window .header {
+  height: 64px !important;
+  padding: 0 var(--space-6) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  border-bottom: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.chat-window .title {
+  font-size: 20px !important;
+  font-weight: var(--font-weight-semibold) !important;
+  color: var(--text-primary, #0f1111) !important;
+  letter-spacing: -0.01em !important;
+}
+
+.chat-window .icon-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  padding: 0 !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--radius-md) !important;
+  background: transparent !important;
+  color: var(--text-secondary, #565959) !important;
+  transition: all var(--transition-fast) !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+
+.chat-window .icon-btn:hover {
+  background: var(--color-primary-light, #f4f4f5) !important;
+  color: var(--color-primary, #18181b) !important;
+  border-color: transparent !important;
+}
+
+/* 确保 SVG 图标完整显示 */
+.chat-window .icon-btn svg,
+.icon-btn svg {
+  width: 20px !important;
+  height: 20px !important;
+  flex-shrink: 0 !important;
+  display: block !important;
+}
+
+.chat-window .divider {
+  height: 24px !important;
+  background: var(--border-color, #e0e0e0) !important;
+}
+
+/* 消息区域优化 */
+.message-list-container {
+  background: var(--bg-secondary, #fafafa) !important;
+  padding: var(--space-6) !important;
+}
+
+/* 输入区域优化 */
+.chat-window .input-area {
+  padding: var(--space-5) var(--space-6) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  border-top: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+.chat-window .input-wrapper {
+  max-width: 900px !important;
+  margin: 0 auto !important;
+  gap: var(--space-3) !important;
+}
+
+.chat-window .input {
+  padding: var(--space-3) var(--space-4) !important;
+  border: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  color: var(--text-primary, #0f1111) !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  box-shadow: var(--shadow-xs) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.chat-window .input:focus {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-alpha, rgba(24, 24, 27, 0.08)), var(--shadow-sm) !important;
+  outline: none !important;
+}
+
+.chat-window .input::placeholder {
+  color: var(--text-tertiary, #6f7373) !important;
+}
+
+.chat-window .send-btn {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: var(--radius-md) !important;
+  border: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  background: var(--bg-secondary, #fafafa) !important;
+  color: var(--text-secondary, #565959) !important;
+  box-shadow: var(--shadow-xs) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.chat-window .send-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary, #f5f5f5) !important;
+  border-color: var(--border-secondary, #bdbdbd) !important;
+}
+
+.chat-window .send-btn.active {
+  background: var(--color-primary, #18181b) !important;
+  border-color: var(--color-primary, #18181b) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 5px rgba(24, 24, 27, 0.3) !important;
+}
+
+.chat-window .send-btn.active:hover {
+  background: var(--color-primary-hover, #27272a) !important;
+  box-shadow: 0 3px 8px rgba(24, 24, 27, 0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ==================== 卡片组件优化 ==================== */
+
+.skill-card,
+.tool-card,
+.session-card,
+.task-card,
+.history-item,
+.stat-card,
+.memory-card,
+.cron-card {
+  background: var(--bg-primary, #ffffff) !important;
+  border: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-xs) !important;
+  transition: all var(--transition-base) !important;
+}
+
+.skill-card:hover,
+.tool-card:hover,
+.session-card:hover,
+.task-card:hover,
+.history-item:hover,
+.stat-card:hover {
+  border-color: var(--border-secondary, #bdbdbd) !important;
+  box-shadow: var(--shadow-md) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ==================== 按钮系统优化 ==================== */
+
+/* 主按钮 - 现代中性系 */
+.btn-primary,
+.create-btn,
+.execute-btn,
+button[type="submit"],
+.primary-button,
+.save-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 100px !important;
+  height: auto !important;
+  padding: 10px 20px !important;
+  background: var(--color-primary, #18181b) !important;
+  border: var(--border-width) solid var(--color-primary, #18181b) !important;
+  border-radius: var(--radius-md) !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  font-weight: var(--font-weight-medium) !important;
+  line-height: 1.5 !important;
+  white-space: nowrap !important;
+  box-shadow: 0 2px 4px rgba(24, 24, 27, 0.2) !important;
+  transition: all var(--transition-fast) !important;
+  cursor: pointer !important;
+  overflow: visible !important;
+}
+
+.btn-primary:hover,
+.create-btn:hover,
+.execute-btn:hover:not(:disabled),
+button[type="submit"]:hover:not(:disabled),
+.primary-button:hover:not(:disabled),
+.save-button:hover:not(:disabled) {
+  background: var(--color-primary-hover, #27272a) !important;
+  box-shadow: 0 4px 8px rgba(24, 24, 27, 0.3) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* 确保按钮文字完整显示 */
+.button-text,
+.btn-primary .button-text,
+.create-btn .button-text {
+  display: inline-block !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* 次要按钮 */
+.btn-secondary,
+.refresh-btn,
+.clear-btn,
+.cancel-button,
+button[type="button"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 80px !important;
+  padding: var(--space-2) var(--space-4) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  border: var(--border-width) solid var(--border-color, #d5d9d9) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--text-primary, #0f1111) !important;
+  font-size: 14px !important;
+  font-weight: var(--font-weight-normal) !important;
+  line-height: 1.5 !important;
+  white-space: nowrap !important;
+  box-shadow: var(--shadow-xs) !important;
+  transition: all var(--transition-fast) !important;
+  cursor: pointer !important;
+}
+
+.btn-secondary:hover,
+.refresh-btn:hover:not(:disabled),
+.clear-btn:hover,
+.cancel-button:hover,
+button[type="button"]:hover:not(:disabled) {
+  background: var(--bg-tertiary, #f0f2f2) !important;
+  border-color: var(--border-secondary, #adb1b8) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ==================== 输入框系统优化 ==================== */
+
+.form-input,
+.form-textarea,
+.command-input {
+  padding: var(--space-3) var(--space-4) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  border: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--text-primary, #0f1111) !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  box-shadow: var(--shadow-xs) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.command-input:focus {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-alpha, rgba(24, 24, 27, 0.08)), var(--shadow-sm) !important;
+  outline: none !important;
+}
+
+/* ==================== 面板和容器优化 ==================== */
+
+.skills-library,
+.tools-panel,
+.file-operations,
+.shell-executor,
+.tool-history,
+.session-panel,
+.task-monitor,
+.settings-panel,
+.memory-panel,
+.cron-manager {
+  background: var(--bg-secondary, #fafafa) !important;
+}
+
+.skills-header,
+.tools-nav,
+.operations-tabs,
+.executor-header,
+.history-header,
+.session-header,
+.monitor-header,
+.settings-header,
+.memory-header,
+.cron-header,
+.panel-header {
+  padding: var(--space-5) var(--space-6) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  border-bottom: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ==================== 标签页优化 ==================== */
+
+.nav-btn,
+.op-tab {
+  position: relative !important;
+  padding: var(--space-3) var(--space-4) !important;
+  border: var(--border-width) solid transparent !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--text-secondary, #757575) !important;
+  font-size: 14px !important;
+  font-weight: var(--font-weight-medium) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.nav-btn:hover,
+.op-tab:hover {
+  background: var(--color-primary-light, #f4f4f5) !important;
+  color: var(--text-primary, #18181b) !important;
+}
+
+.nav-btn.active,
+.op-tab.active {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--color-primary, #18181b) !important;
+  font-weight: var(--font-weight-semibold) !important;
+}
+
+/* 现代中性下划线 */
+.nav-btn.active::after,
+.op-tab.active::after {
+  content: '' !important;
+  position: absolute !important;
+  bottom: -1px !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 3px !important;
+  background: var(--color-primary, #18181b) !important;
+  border-radius: 3px 3px 0 0 !important;
+}
+
+/* ==================== 统计卡片优化 ==================== */
+
+.stats-bar,
+.stats-grid {
+  padding: var(--space-5) var(--space-6) !important;
+  background: var(--bg-primary, #ffffff) !important;
+  border-bottom: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+}
+
+.stat {
+  font-size: 13px !important;
+  color: var(--text-secondary, #565959) !important;
+}
+
+.stat-value {
+  font-size: 24px !important;
+  font-weight: var(--font-weight-bold) !important;
+  color: var(--text-primary, #0f1111) !important;
+  letter-spacing: -0.02em !important;
+}
+
+.stat-label {
+  font-size: 12px !important;
+  color: var(--text-secondary, #565959) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* ==================== 模态框优化 ==================== */
+
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+.modal-content {
+  background: var(--bg-primary, #ffffff) !important;
+  border: var(--border-width) solid var(--border-color, #e0e0e0) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+/* ==================== 徽章优化 ==================== */
+
+.badge {
+  padding: var(--space-1) var(--space-3) !important;
+  border-radius: var(--radius-full) !important;
+  font-size: 11px !important;
+  font-weight: var(--font-weight-semibold) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.badge.auto-load {
+  background: var(--color-primary-light, #f4f4f5) !important;
+  color: var(--color-primary-active, #3f3f46) !important;
+  border: var(--border-width) solid var(--color-primary, #18181b) !important;
+}
+
+/* 现代中性图标 */
+.skill-icon,
+.tool-icon,
+.stat svg {
+  color: var(--color-primary, #18181b) !important;
+}
+
+/* ==================== 状态标签优化 ==================== */
+
+.item-status,
+.history-status {
+  padding: var(--space-1) var(--space-3) !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 11px !important;
+  font-weight: var(--font-weight-semibold) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.item-status.success,
+.history-status.success {
+  background: #e6f4ea !important;
+  color: #0f5132 !important;
+}
+
+.item-status.error,
+.history-status.error {
+  background: #fce8e6 !important;
+  color: #c40000 !important;
+}
+
+/* ==================== 深色模式 - 赛博朋克 ==================== */
+
+[data-theme="dark"] {
+  --bg-primary: #0a0e1a !important;
+  --bg-secondary: #0e1422 !important;
+  --bg-tertiary: #131b2c !important;
+
+  --text-primary: #d0e8f0 !important;
+  --text-secondary: #7a9ab0 !important;
+  --text-tertiary: #4a6578 !important;
+
+  --border-color: #152035 !important;
+  --border-secondary: #1e2d45 !important;
+
+  --color-primary: #00f0ff !important;
+  --color-primary-hover: #33f5ff !important;
+  --color-primary-active: #00d4e6 !important;
+  --color-primary-light: #0d1a2a !important;
+  --color-primary-alpha: rgba(0, 240, 255, 0.10) !important;
+}
+
+/* 主按钮 - 赛博朋克：实心深色底 + 霓虹青文字 */
+[data-theme="dark"] .btn-primary,
+[data-theme="dark"] .create-btn,
+[data-theme="dark"] .execute-btn,
+[data-theme="dark"] button[type="submit"],
+[data-theme="dark"] .primary-button,
+[data-theme="dark"] .save-button {
+  background: #131b2c !important;
+  border: 1px solid #00f0ff !important;
+  color: #00f0ff !important;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.12), 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  font-weight: 600 !important;
+}
+
+[data-theme="dark"] .btn-primary:hover,
+[data-theme="dark"] .create-btn:hover,
+[data-theme="dark"] .execute-btn:hover:not(:disabled),
+[data-theme="dark"] button[type="submit"]:hover:not(:disabled),
+[data-theme="dark"] .primary-button:hover:not(:disabled),
+[data-theme="dark"] .save-button:hover:not(:disabled) {
+  background: #152035 !important;
+  border-color: #33f5ff !important;
+  color: #33f5ff !important;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.2), 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* 次要按钮 - 赛博朋克 */
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .refresh-btn,
+[data-theme="dark"] .clear-btn,
+[data-theme="dark"] .cancel-button,
+[data-theme="dark"] button[type="button"] {
+  background: #0e1422 !important;
+  border: 1px solid #1e2d45 !important;
+  color: #7a9ab0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme="dark"] .btn-secondary:hover,
+[data-theme="dark"] .refresh-btn:hover:not(:disabled),
+[data-theme="dark"] .clear-btn:hover,
+[data-theme="dark"] .cancel-button:hover,
+[data-theme="dark"] button[type="button"]:hover:not(:disabled) {
+  background: #131b2c !important;
+  border-color: rgba(0, 240, 255, 0.3) !important;
+  color: #00f0ff !important;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.08) !important;
+}
+
+/* 输入框 - 赛博朋克 */
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-textarea,
+[data-theme="dark"] .command-input {
+  background: #0a0e1a !important;
+  border: 1px solid #152035 !important;
+  color: #d0e8f0 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .form-input:focus,
+[data-theme="dark"] .form-textarea:focus,
+[data-theme="dark"] .command-input:focus {
+  border-color: #00f0ff !important;
+  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.08) !important;
+}
+
+/* 头部面板 */
+[data-theme="dark"] .chat-window .header,
+[data-theme="dark"] .skills-header,
+[data-theme="dark"] .tools-nav,
+[data-theme="dark"] .operations-tabs,
+[data-theme="dark"] .executor-header,
+[data-theme="dark"] .history-header,
+[data-theme="dark"] .panel-header {
+  background: #0a0e1a !important;
+  border-color: #152035 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* 卡片 */
+[data-theme="dark"] .skill-card,
+[data-theme="dark"] .tool-card,
+[data-theme="dark"] .session-card,
+[data-theme="dark"] .task-card,
+[data-theme="dark"] .history-item,
+[data-theme="dark"] .stat-card {
+  background: #0e1422 !important;
+  border-color: #152035 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme="dark"] .skill-card:hover,
+[data-theme="dark"] .tool-card:hover,
+[data-theme="dark"] .session-card:hover,
+[data-theme="dark"] .task-card:hover,
+[data-theme="dark"] .history-item:hover,
+[data-theme="dark"] .stat-card:hover {
+  border-color: rgba(0, 240, 255, 0.25) !important;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.06), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* 标签页激活态 */
+[data-theme="dark"] .nav-btn.active::after,
+[data-theme="dark"] .op-tab.active::after {
+  background: #00f0ff !important;
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.3) !important;
+}
+
+[data-theme="dark"] .nav-btn.active,
+[data-theme="dark"] .op-tab.active {
+  color: #00f0ff !important;
+}
+
+/* 图标颜色 */
+[data-theme="dark"] .skill-icon,
+[data-theme="dark"] .tool-icon,
+[data-theme="dark"] .stat svg {
+  color: #00f0ff !important;
+}
+
+/* 徽章 */
+[data-theme="dark"] .badge.auto-load {
+  background: rgba(0, 240, 255, 0.08) !important;
+  color: #00f0ff !important;
+  border-color: rgba(0, 240, 255, 0.2) !important;
+}
+
+/* 状态标签 */
+[data-theme="dark"] .item-status.success,
+[data-theme="dark"] .history-status.success {
+  background: rgba(0, 255, 136, 0.1) !important;
+  color: #00ff88 !important;
+}
+
+[data-theme="dark"] .item-status.error,
+[data-theme="dark"] .history-status.error {
+  background: rgba(255, 45, 111, 0.1) !important;
+  color: #ff2d6f !important;
+}
+
+/* 聊天输入区域 - 赛博朋克 */
+[data-theme="dark"] .chat-window .input-area {
+  background: #0a0e1a !important;
+}
+
+[data-theme="dark"] .chat-window .input-container {
+  background: #0e1422 !important;
+  border-color: #1e2d45 !important;
+}
+
+[data-theme="dark"] .chat-window .input-container.focused {
+  border-color: #00f0ff !important;
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.3) !important;
+}
+
+[data-theme="dark"] .chat-window .chat-input {
+  color: #d0e8f0 !important;
+}
+
+[data-theme="dark"] .chat-window .chat-input::placeholder {
+  color: #3a5068 !important;
+}
+
+[data-theme="dark"] .chat-window .send-message-btn {
+  background: #1e2d45 !important;
+  color: #4a6578 !important;
+}
+
+[data-theme="dark"] .chat-window .send-message-btn.ready {
+  background: #00f0ff !important;
+  color: #0a0e1a !important;
+}
+
+[data-theme="dark"] .chat-window .send-message-btn.ready:hover {
+  background: #33f5ff !important;
+}
+
+[data-theme="dark"] .chat-window .stop-generation-btn {
+  background: #00f0ff !important;
+}
+
+[data-theme="dark"] .chat-window .stop-square {
+  background: #0a0e1a !important;
+}
+
+[data-theme="dark"] .chat-window .stop-generation-btn:hover {
+  background: #33f5ff !important;
+}
+
+[data-theme="dark"] .chat-window .input-hint {
+  color: #3a5068 !important;
+}
+
+/* 图标按钮 */
+[data-theme="dark"] .chat-window .icon-btn:hover {
+  background: rgba(0, 240, 255, 0.06) !important;
+  color: #00f0ff !important;
+}
+
+/* 链接 */
+[data-theme="dark"] a {
+  color: #00f0ff !important;
+}
+
+[data-theme="dark"] a:hover {
+  color: #33f5ff !important;
+}
+
+/* ==================== 滚动条优化 ==================== */
+
+::-webkit-scrollbar {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color, #e0e0e0) !important;
+  border: 3px solid transparent !important;
+  background-clip: padding-box !important;
+  border-radius: var(--radius-full) !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-secondary, #bdbdbd) !important;
+  border: 3px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #152035 !important;
+  border: 3px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #1e2d45 !important;
+  border: 3px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+/* ==================== 文本优化 ==================== */
+
+.title,
+.panel-title,
+.section-title,
+.op-title,
+.executor-title,
+.history-title {
+  font-weight: var(--font-weight-semibold) !important;
+  color: var(--text-primary, #212121) !important;
+  letter-spacing: -0.01em !important;
+}
+
+.description,
+.op-desc,
+.executor-desc {
+  color: var(--text-secondary, #757575) !important;
+  line-height: 1.6 !important;
+}
+
+/* 次要文本 */
+.text-secondary,
+.skill-description,
+.tool-description {
+  color: var(--text-secondary, #757575) !important;
+}
+
+/* 辅助文本 */
+.text-tertiary,
+.form-hint {
+  color: var(--text-tertiary, #9e9e9e) !important;
+}
+
+/* ==================== 加载动画优化 ==================== */
+
+.spin {
+  animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==================== 响应式优化 ==================== */
+
+@media (max-width: 768px) {
+
+  /* 头部优化 */
+  .chat-window .header {
+    height: 56px !important;
+    padding: 0 var(--space-4) !important;
+  }
+
+  .chat-window .title {
+    font-size: 16px !important;
+  }
+
+  .chat-window .icon-btn {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  /* 输入区域优化 */
+  .chat-window .input-area {
+    padding: var(--space-4) !important;
+  }
+
+  .chat-window .input-wrapper {
+    flex-direction: column !important;
+    gap: var(--space-3) !important;
+  }
+
+  .chat-window .input {
+    width: 100% !important;
+  }
+
+  .chat-window .send-btn {
+    width: 100% !important;
+    height: 44px !important;
+  }
+
+  /* 消息区域优化 */
+  .message-list-container {
+    padding: var(--space-4) !important;
+  }
+
+  /* 面板优化 */
+  .panel {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .panel-header {
+    padding: var(--space-4) !important;
+  }
+
+  .panel-body {
+    padding: var(--space-4) !important;
+  }
+
+  /* 卡片网格优化 */
+  .skills-grid,
+  .tools-grid {
+    grid-template-columns: 1fr !important;
+    gap: var(--space-4) !important;
+    padding: var(--space-4) !important;
+  }
+
+  /* 统计卡片优化 */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: var(--space-3) !important;
+    padding: var(--space-4) !important;
+  }
+
+  /* 按钮优化 */
+  .btn-primary,
+  .create-btn,
+  .execute-btn,
+  button[type="submit"],
+  .primary-button,
+  .save-button {
+    width: 100% !important;
+    min-width: auto !important;
+  }
+
+  .btn-secondary,
+  .cancel-button,
+  button[type="button"] {
+    width: 100% !important;
+    min-width: auto !important;
+  }
+
+  /* 表单优化 */
+  .form-input,
+  .form-textarea {
+    width: 100% !important;
+  }
+
+  /* 模态框优化 */
+  .modal-content {
+    width: calc(100% - var(--space-8)) !important;
+    max-width: 100% !important;
+    margin: var(--space-4) !important;
+  }
+
+  /* 标签页优化 */
+  .nav-btn,
+  .op-tab {
+    flex: 1 !important;
+    min-width: 0 !important;
+    padding: var(--space-2) var(--space-3) !important;
+    font-size: 13px !important;
+  }
+
+  /* 隐藏不必要的元素 */
+  .divider {
+    display: none !important;
+  }
+
+  /* 头部按钮组优化 */
+  .header-right {
+    gap: var(--space-1) !important;
+  }
+}
+
+@media (max-width: 480px) {
+
+  /* 超小屏幕优化 */
+  .chat-window .header {
+    height: 52px !important;
+    padding: 0 var(--space-3) !important;
+  }
+
+  .chat-window .title {
+    font-size: 14px !important;
+  }
+
+  .chat-window .icon-btn {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .chat-window .input-area {
+    padding: var(--space-3) !important;
+  }
+
+  .message-list-container {
+    padding: var(--space-3) !important;
+  }
+
+  /* 统计卡片单列显示 */
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 字体大小调整 */
+  .stat-value {
+    font-size: 20px !important;
+  }
+
+  .stat-label {
+    font-size: 11px !important;
+  }
+}

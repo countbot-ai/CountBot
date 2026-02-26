@@ -1,0 +1,112 @@
+/**
+ * 浅色主题 - 柔和现代配色
+ */
+
+[data-theme='light'] {
+    /* 主色调 - 柔和蓝灰 */
+    --color-primary: #334155;
+    --color-primary-hover: #1e293b;
+    --color-primary-active: #0f172a;
+    --color-primary-light: #f1f5f9;
+
+    /* 成功色 */
+    --color-success: #10b981;
+    --color-success-hover: #059669;
+    --color-success-light: #d1fae5;
+
+    /* 警告色 */
+    --color-warning: #f59e0b;
+    --color-warning-hover: #d97706;
+    --color-warning-light: #fef3c7;
+
+    /* 错误色 */
+    --color-error: #ef4444;
+    --color-error-hover: #dc2626;
+    --color-error-light: #fee2e2;
+
+    /* 信息色 - 天蓝色 */
+    --color-info: #0ea5e9;
+    --color-info-hover: #0284c7;
+    --color-info-light: #e0f2fe;
+
+    /* 文本色 - 柔和深灰 */
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-tertiary: #94a3b8;
+    --color-text-disabled: #cbd5e1;
+    --color-text-inverse: #ffffff;
+
+    /* 背景色 - 温暖白色 */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8fafc;
+    --color-bg-tertiary: #f1f5f9;
+    --color-bg-elevated: #ffffff;
+    --color-bg-overlay: rgba(15, 23, 42, 0.5);
+
+    /* 边框色 */
+    --color-border-primary: #e2e8f0;
+    --color-border-secondary: #cbd5e1;
+    --color-border-focus: var(--color-primary);
+
+    /* 阴影 */
+    --color-shadow: rgba(15, 23, 42, 0.08);
+    --color-shadow-hover: rgba(15, 23, 42, 0.12);
+
+    /* 代码高亮 */
+    --code-bg: #f1f5f9;
+    --code-text: #0f172a;
+    --code-comment: #94a3b8;
+    --code-keyword: #0ea5e9;
+    --code-string: #10b981;
+    --code-number: #f59e0b;
+    --code-function: #f59e0b;
+
+    /* 滚动条 */
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #94a3b8;
+
+    /* 特殊组件 */
+    --sidebar-bg: #ffffff;
+    --sidebar-border: #e2e8f0;
+    --sidebar-item-hover: #f1f5f9;
+    --sidebar-item-active: #f1f5f9;
+
+    --header-bg: #ffffff;
+    --header-border: #e2e8f0;
+
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+
+    --input-bg: #ffffff;
+    --input-border: #cbd5e1;
+    --input-border-focus: var(--color-primary);
+    --input-placeholder: #94a3b8;
+
+    --button-primary-bg: var(--color-primary);
+    --button-primary-text: #ffffff;
+    --button-primary-hover: var(--color-primary-hover);
+
+    --button-secondary-bg: #f1f5f9;
+    --button-secondary-text: #0f172a;
+    --button-secondary-hover: #e2e8f0;
+
+    --modal-bg: #ffffff;
+    --modal-overlay: rgba(15, 23, 42, 0.5);
+
+    --tooltip-bg: #0f172a;
+    --tooltip-text: #ffffff;
+
+    /* 消息气泡 */
+    --message-user-bg: var(--color-primary);
+    --message-user-text: #ffffff;
+    --message-assistant-bg: #f1f5f9;
+    --message-assistant-text: #0f172a;
+
+    /* 通用别名 */
+    --color-border: #e2e8f0;
+    --color-success-bg: #d1fae5;
+    --color-error-bg: #fee2e2;
+    --color-warning-bg: #fef3c7;
+}

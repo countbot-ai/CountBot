@@ -1,0 +1,182 @@
+/**
+ * Syntax highlighting styles for code blocks
+ * Based on GitHub theme with light/dark mode support
+ */
+
+/* Light theme syntax highlighting */
+[data-theme='light'] .hljs {
+    color: #24292e;
+    background: #f6f8fa;
+}
+
+[data-theme='light'] .hljs-comment,
+[data-theme='light'] .hljs-quote {
+    color: #6a737d;
+    font-style: italic;
+}
+
+[data-theme='light'] .hljs-keyword,
+[data-theme='light'] .hljs-selector-tag,
+[data-theme='light'] .hljs-subst {
+    color: #d73a49;
+    font-weight: bold;
+}
+
+[data-theme='light'] .hljs-number,
+[data-theme='light'] .hljs-literal,
+[data-theme='light'] .hljs-variable,
+[data-theme='light'] .hljs-template-variable,
+[data-theme='light'] .hljs-tag .hljs-attr {
+    color: #005cc5;
+}
+
+[data-theme='light'] .hljs-string,
+[data-theme='light'] .hljs-doctag {
+    color: #032f62;
+}
+
+[data-theme='light'] .hljs-title,
+[data-theme='light'] .hljs-section,
+[data-theme='light'] .hljs-selector-id {
+    color: #6f42c1;
+    font-weight: bold;
+}
+
+[data-theme='light'] .hljs-type,
+[data-theme='light'] .hljs-class .hljs-title {
+    color: #005cc5;
+    font-weight: bold;
+}
+
+[data-theme='light'] .hljs-tag,
+[data-theme='light'] .hljs-name,
+[data-theme='light'] .hljs-attribute {
+    color: #22863a;
+    font-weight: normal;
+}
+
+[data-theme='light'] .hljs-regexp,
+[data-theme='light'] .hljs-link {
+    color: #032f62;
+}
+
+[data-theme='light'] .hljs-symbol,
+[data-theme='light'] .hljs-bullet {
+    color: #e36209;
+}
+
+[data-theme='light'] .hljs-built_in,
+[data-theme='light'] .hljs-builtin-name {
+    color: #005cc5;
+}
+
+[data-theme='light'] .hljs-meta {
+    color: #6a737d;
+}
+
+[data-theme='light'] .hljs-deletion {
+    background: #ffeef0;
+    color: #b31d28;
+}
+
+[data-theme='light'] .hljs-addition {
+    background: #f0fff4;
+    color: #22863a;
+}
+
+[data-theme='light'] .hljs-emphasis {
+    font-style: italic;
+}
+
+[data-theme='light'] .hljs-strong {
+    font-weight: bold;
+}
+
+/* Dark theme syntax highlighting - 赛博朋克 */
+[data-theme='dark'] .hljs {
+    color: #d0e8f0;
+    background: #0e1422;
+}
+
+[data-theme='dark'] .hljs-comment,
+[data-theme='dark'] .hljs-quote {
+    color: #556688;
+    font-style: italic;
+}
+
+[data-theme='dark'] .hljs-keyword,
+[data-theme='dark'] .hljs-selector-tag,
+[data-theme='dark'] .hljs-subst {
+    color: #ff2d6f;
+    font-weight: bold;
+}
+
+[data-theme='dark'] .hljs-number,
+[data-theme='dark'] .hljs-literal,
+[data-theme='dark'] .hljs-variable,
+[data-theme='dark'] .hljs-template-variable,
+[data-theme='dark'] .hljs-tag .hljs-attr {
+    color: #ff9500;
+}
+
+[data-theme='dark'] .hljs-string,
+[data-theme='dark'] .hljs-doctag {
+    color: #00ff88;
+}
+
+[data-theme='dark'] .hljs-title,
+[data-theme='dark'] .hljs-section,
+[data-theme='dark'] .hljs-selector-id {
+    color: #a855f7;
+    font-weight: bold;
+}
+
+[data-theme='dark'] .hljs-type,
+[data-theme='dark'] .hljs-class .hljs-title {
+    color: #00f0ff;
+    font-weight: bold;
+}
+
+[data-theme='dark'] .hljs-tag,
+[data-theme='dark'] .hljs-name,
+[data-theme='dark'] .hljs-attribute {
+    color: #00ff88;
+    font-weight: normal;
+}
+
+[data-theme='dark'] .hljs-regexp,
+[data-theme='dark'] .hljs-link {
+    color: #00b4ff;
+}
+
+[data-theme='dark'] .hljs-symbol,
+[data-theme='dark'] .hljs-bullet {
+    color: #ff9500;
+}
+
+[data-theme='dark'] .hljs-built_in,
+[data-theme='dark'] .hljs-builtin-name {
+    color: #00f0ff;
+}
+
+[data-theme='dark'] .hljs-meta {
+    color: #556688;
+}
+
+[data-theme='dark'] .hljs-deletion {
+    background: rgba(255, 45, 111, 0.15);
+    color: #ff5c8f;
+}
+
+[data-theme='dark'] .hljs-addition {
+    background: rgba(0, 255, 136, 0.1);
+    color: #00ff88;
+}
+
+[data-theme='dark'] .hljs-emphasis {
+    font-style: italic;
+}
+
+[data-theme='dark'] .hljs-strong {
+    font-weight: bold;
+}

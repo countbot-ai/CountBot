@@ -1,0 +1,99 @@
+/**
+ * 主样式文件
+ */
+
+@import './tokens.css';
+@import './variables.css';
+@import './base.css';
+@import './themes.css';
+@import './themes/light.css';
+@import './themes/dark.css';
+@import './dark-mode.css';
+@import './components.css';
+@import './design-system.css';
+@import './syntax-highlight.css';
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #ffffff;
+    /* 默认白色背景 */
+}
+
+#app {
+    width: 100%;
+    height: 100%;
+    background: var(--bg-primary, #ffffff);
+}
+
+/* 默认浅色主题 */
+:root {
+    color-scheme: light;
+}
+
+[data-theme='light'] {
+    color-scheme: light;
+}
+
+[data-theme='dark'] {
+    color-scheme: dark;
+}
+
+[data-theme='dark'] body,
+[data-theme='dark'] #app {
+    background: #1f2937;
+    /* 深色主题背景 */
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--color-border-primary);
+    border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-tertiary);
+}
+
+/* 平滑滚动 */
+html {
+    scroll-behavior: smooth;
+}
+
+/* 禁用文本选择（某些 UI 元素） */
+.no-select {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* 工具类 */
+.truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
