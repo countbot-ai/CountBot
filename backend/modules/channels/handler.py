@@ -299,6 +299,7 @@ class ChannelMessageHandler:
                 context=history,
                 channel=channel,
                 chat_id=chat_id,
+                yield_intermediate=False,  # 频道模式：仅输出最终回复
             ):
                 if cancel_token.is_cancelled:
                     break

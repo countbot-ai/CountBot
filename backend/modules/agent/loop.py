@@ -56,8 +56,15 @@ class AgentLoop:
         channel: str | None = None,
         chat_id: str | None = None,
         cancel_token=None,
+        yield_intermediate: bool = True,
     ) -> AsyncIterator[str]:
-        """处理用户消息并生成流式响应"""
+        """处理用户消息并生成流式响应
+        
+        Args:
+            yield_intermediate: 是否输出中间迭代内容
+                               True: Web UI 流式模式，实时输出
+                               False: 频道模式，仅输出最终回复
+        """
         logger.info(f"Processing message for session {session_id}: {message[:50]}...")
         
         # 设置工具注册表的会话ID（用于审计日志）和渠道信息
@@ -118,7 +125,9 @@ class AgentLoop:
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
-                        yield chunk.content
+                        # Web UI 模式实时输出，频道模式仅缓冲
+                        if yield_intermediate:
+                            yield chunk.content
                     
                     if chunk.is_tool_call and chunk.tool_call:
                         tool_calls_buffer.append(chunk.tool_call)
@@ -320,6 +329,9 @@ class AgentLoop:
                 else:
                     # 没有工具调用，结束循环
                     logger.info("No tool calls, ending agent loop")
+                    # 频道模式：最终轮输出完整内容
+                    if not yield_intermediate and content_buffer:
+                        yield content_buffer
                     break
             
             # 检查是否达到限制
