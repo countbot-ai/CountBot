@@ -18,8 +18,15 @@
 
 ## What's New
 
+- Feb 25, 2026 — v0.2.0 released with bug fixes and UX improvements
 - Feb 21, 2026 — CountBot officially open-sourced with standardized codebase
 - Feb 19, 2026 — CountBot project launched
+
+### Upcoming Features
+
+- Multi-modal multi-agent collaboration for complex task distribution
+- Full tmux integration to invoke Codex CLI, Claude Code, and other external tools
+- Smart hardware channel integration for voice control
 
 ---
 
