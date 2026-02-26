@@ -17,58 +17,9 @@ permissions:
   packages: write
 
 jobs:
-  # 检查并构建前端
-  build-frontend:
-    name: 检查并构建前端
-    runs-on: ubuntu-latest
-    outputs:
-      has-frontend-source: ${{ steps.check-frontend.outputs.has-source }}
-      
-    steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-    
-    - name: 检查前端源代码
-      id: check-frontend
-      run: |
-        if [ -f "frontend/package.json" ] && [ -d "frontend/src" ]; then
-          echo "has-source=true" >> $GITHUB_OUTPUT
-          echo "✓ 检测到前端源代码"
-        else
-          echo "has-source=false" >> $GITHUB_OUTPUT
-          echo "✓ 使用已编译的前端代码"
-        fi
-    
-    - name: 设置 Node.js
-      if: steps.check-frontend.outputs.has-source == 'true'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-    
-    - name: 安装前端依赖
-      if: steps.check-frontend.outputs.has-source == 'true'
-      working-directory: frontend
-      run: npm ci
-    
-    - name: 构建前端
-      if: steps.check-frontend.outputs.has-source == 'true'
-      working-directory: frontend
-      run: npm run build
-    
-    - name: 上传前端构建产物
-      if: steps.check-frontend.outputs.has-source == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: frontend-dist
-        path: frontend/dist/
-        retention-days: 1
-
-  # 构建多平台桌面应用
+  # 构建多平台桌面应用（直接使用 dist 静态文件）
   build-desktop:
     name: 构建 ${{ matrix.platform }} 版本
-    needs: build-frontend
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -87,20 +38,13 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
     
-    - name: 下载前端构建产物
-      if: needs.build-frontend.outputs.has-frontend-source == 'true'
-      uses: actions/download-artifact@v4
-      with:
-        name: frontend-dist
-        path: frontend/dist/
-    
-    - name: 验证前端文件
+    - name: 验证前端静态文件
       run: |
-        if [ -d "frontend/dist" ]; then
-          echo "✓ 前端文件存在"
+        if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
+          echo "✓ 前端静态文件存在"
           ls -la frontend/dist/
         else
-          echo "✗ 前端文件不存在"
+          echo "✗ 前端静态文件不存在"
           exit 1
         fi
       shell: bash
