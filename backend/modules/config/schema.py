@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProviderConfig(BaseModel):
@@ -70,6 +70,19 @@ class SecurityConfig(BaseModel):
     command_timeout: int = Field(default=60, ge=1, le=300)
     max_output_length: int = Field(default=10000, ge=100, le=1000000)
     restrict_to_workspace: bool = Field(default=False)
+    
+    @field_validator('command_timeout', 'max_output_length', mode='before')
+    @classmethod
+    def validate_int_fields(cls, v):
+        """处理空字符串和无效值，返回默认值"""
+        if v == '' or v is None:
+            return None  # 让 Pydantic 使用默认值
+        if isinstance(v, str):
+            try:
+                return int(v)
+            except ValueError:
+                return None  # 让 Pydantic 使用默认值
+        return v
 
 
 class TelegramConfig(BaseModel):
