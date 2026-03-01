@@ -5,7 +5,7 @@ import mimetypes
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional, Union
 
 from loguru import logger
 
@@ -27,7 +27,7 @@ class ContextBuilder:
         
         logger.debug(f"ContextBuilder initialized with workspace: {workspace}")
 
-    def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
+    def build_system_prompt(self, skill_names: Optional[List[str]] = None) -> str:
         """构建系统提示词"""
         logger.debug("Building system prompt")
         
@@ -157,6 +157,20 @@ class ContextBuilder:
 3. **复杂任务**: 使用 spawn 工具创建子代理处理耗时或复杂任务
 4. **语言风格**: 技术场景用专业术语，日常场景用自然语言
 
+## 工具能力（你有以下工具可用）
+- **exec**: 执行Shell命令（如 python、pip install、npm、git等）
+- **read_file**: 读取文件内容，支持指定行号范围
+- **write_file**: 写入或创建文件
+- **edit_file**: 编辑文件（查找替换）
+- **list_dir**: 列出目录内容
+- **web_fetch**: 抓取网页内容
+- **spawn**: 创建子代理处理复杂任务
+- **file_search**: 跨目录文件搜索
+- **memory_write/memory_search/memory_read**: 记忆系统
+- **screenshot**: 截取屏幕或网页截图
+
+**重要**: 用户要求执行命令时，直接使用exec工具执行，无需生成代码再让用户手动执行。
+
 ## 文件操作规范（必须遵守）
 1. **大文件分段写入**: 当需要写入的内容较长（如完整 HTML 页面、大段代码等超过 2000 字符），**必须**分多次调用 write_file：
    - 第一次: write_file(path='file.html', content='前半部分内容')
@@ -197,14 +211,14 @@ class ContextBuilder:
 
     def build_messages(
         self,
-        history: list[dict[str, Any]],
+        history: List[dict[str, Any]],
         current_message: str,
-        session_summary: str | None = None,
-        skill_names: list[str] | None = None,
-        media: list[str] | None = None,
-        channel: str | None = None,
-        chat_id: str | None = None,
-    ) -> list[dict[str, Any]]:
+        session_summary: Optional[str] = None,
+        skill_names: Optional[List[str]] = None,
+        media: Optional[List[str]] = None,
+        channel: Optional[str] = None,
+        chat_id: Optional[str] = None,
+    ) -> List[dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
         messages = []
         

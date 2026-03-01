@@ -1,0 +1,27 @@
+{
+  "name": "countbot",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">\r   <img src=\"https://github.com/user-attachments/assets/d42ee929-a9a9-4017-a07b-9eb66670bcc3\" alt=\"CountBot Logo\" width=\"180\">\r   <p>轻量级、可扩展的 AI Agent 框架 | 专为中文用户和国内大模型优化</p>",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/countbot-ai/countbot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/countbot-ai/countbot/issues"
+  },
+  "homepage": "https://github.com/countbot-ai/countbot#readme",
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

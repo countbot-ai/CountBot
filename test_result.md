@@ -1,0 +1,34 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - heading "Count Bot" [level=1] [ref=e7] [cursor=pointer]:
+      - generic [ref=e8]: Count
+      - generic [ref=e9]: Bot
+    - generic [ref=e10]:
+      - button "清空当前对话" [ref=e11] [cursor=pointer]:
+        - img [ref=e12]
+      - button "查看会话历史" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+      - button "查看记忆库" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+      - button "管理技能" [ref=e25] [cursor=pointer]:
+        - img [ref=e26]
+      - button "管理定时任务" [ref=e28] [cursor=pointer]:
+        - img [ref=e29]
+      - button "查看消息时间轴" [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button "打开设置" [ref=e34] [cursor=pointer]:
+        - img [ref=e35]
+      - button "切换语言" [ref=e40] [cursor=pointer]:
+        - img [ref=e41]
+      - button "切换主题" [ref=e47] [cursor=pointer]:
+        - img [ref=e48]
+  - main [ref=e50]:
+    - generic [ref=e65]:
+      - heading "开始新对话" [level=3] [ref=e66]
+      - paragraph [ref=e67]: 输入消息开始与 AI 助手对话，或点击下方快速开始
+  - contentinfo [ref=e55]:
+    - generic [ref=e56]:
+      - textbox "输入消息..." [active] [ref=e57]: 查询FY26预算中HR成本
+      - button [ref=e59] [cursor=pointer]:
+        - img [ref=e60]
+    - paragraph [ref=e63]: Shift+Enter 发送，Enter 换行

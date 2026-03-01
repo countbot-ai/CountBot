@@ -1,15 +1,23 @@
 """FastAPI 应用入口"""
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from backend.utils.logger import setup_logger
+
+# 加载 .env 文件（如果存在）
+env_path = Path(__file__).parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+    logger.info(f"Loaded environment from {env_path}")
 
 setup_logger()
 
@@ -324,7 +332,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CountBot Desktop API",
     description="CountBot backend API",
-    version="0.2.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 

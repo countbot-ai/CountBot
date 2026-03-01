@@ -100,6 +100,32 @@ class ExecTool(Tool):
     def description(self) -> str:
         return "Execute a shell command in the workspace. REQUIRED: 'command' parameter must be provided with the shell command to execute."
 
+    def _get_effective_workspace(self) -> Path:
+        """获取有效的工作目录
+        
+        确保使用正确的项目根目录，避免路径错误。
+        """
+        from backend.utils.paths import APPLICATION_ROOT
+        
+        # 如果配置的 workspace 看起来不正确（例如包含了重复的目录名），
+        # 则使用 APPLICATION_ROOT
+        workspace_str = str(self.workspace)
+        
+        # 检查是否有重复的路径组件（如 countbot/countbot）
+        parts = workspace_str.replace('\\', '/').split('/')
+        if len(parts) >= 2 and parts[-1] == parts[-2]:
+            logger.warning(f"Detected duplicate path component in workspace: {self.workspace}")
+            logger.info(f"Using APPLICATION_ROOT instead: {APPLICATION_ROOT}")
+            return APPLICATION_ROOT
+        
+        # 检查工作目录是否存在
+        if not self.workspace.exists():
+            logger.warning(f"Workspace does not exist: {self.workspace}")
+            logger.info(f"Using APPLICATION_ROOT instead: {APPLICATION_ROOT}")
+            return APPLICATION_ROOT
+        
+        return self.workspace
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -136,15 +162,17 @@ class ExecTool(Tool):
             return "Error: Command parameter is required"
         
         # 解析工作目录
+        effective_workspace = self._get_effective_workspace()
+        
         if working_dir:
             try:
-                cwd = (self.workspace / working_dir).resolve()
-                if not str(cwd).startswith(str(self.workspace)):
+                cwd = (effective_workspace / working_dir).resolve()
+                if not str(cwd).startswith(str(effective_workspace)):
                     return f"Error: Working directory outside workspace: {working_dir}"
             except Exception as e:
                 return f"Error: Invalid working directory: {e}"
         else:
-            cwd = self.workspace
+            cwd = effective_workspace
         
         # 安全检查
         guard_error = self._guard_command(command, str(cwd))
@@ -154,26 +182,58 @@ class ExecTool(Tool):
         try:
             logger.info(f"执行命令: {command} (cwd: {cwd})")
             
-            # 创建子进程
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd),
-            )
+            # 准备环境变量，确保 PATH 被正确传递
+            env = os.environ.copy()
             
-            # 等待完成（带超时）
+            # 修复虚拟环境问题：确保虚拟环境的 PATH 优先级最高
+            import sys
+            venv_path = None
+            # 检测是否在虚拟环境中
+            if hasattr(sys, 'real_prefix') or (
+                hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
+            ):
+                # 在虚拟环境中，获取虚拟环境路径
+                venv_path = sys.prefix
+                # 设置 VIRTUAL_ENV 环境变量
+                env['VIRTUAL_ENV'] = venv_path
+                # 将虚拟环境的 Scripts 目录添加到 PATH 最前面
+                venv_scripts = os.path.join(venv_path, 'Scripts')
+                if os.path.exists(venv_scripts):
+                    current_path = env.get('PATH', '')
+                    # 移除已有的虚拟环境路径（避免重复）
+                    path_parts = [p for p in current_path.split(os.pathsep) 
+                                 if venv_path not in p and venv_scripts not in p]
+                    # 将虚拟环境路径放到最前面
+                    env['PATH'] = os.pathsep.join([venv_scripts] + path_parts)
+                    logger.debug(f"Added venv to PATH: {venv_scripts}")
+            
+            # Windows 上 asyncio.create_subprocess_shell 可能抛出 NotImplementedError
+            # 使用 subprocess.run 包装在 asyncio.to_thread 中
+            def run_subprocess():
+                return subprocess.run(
+                    command,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=str(cwd),
+                    env=env,
+                    timeout=self.timeout,
+                )
+            
+            # 在线程池中执行 subprocess
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(run_subprocess),
                     timeout=self.timeout,
                 )
             except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
                 error_msg = f"Error: Command timed out after {self.timeout} seconds"
                 logger.error(error_msg)
                 return error_msg
+            
+            stdout = result.stdout
+            stderr = result.stderr
+            returncode = result.returncode
             
             # 构建输出
             output_parts = []
@@ -190,8 +250,8 @@ class ExecTool(Tool):
                 if decoded_stderr.strip():
                     output_parts.append(f"STDERR:\n{decoded_stderr}")
             
-            if process.returncode != 0:
-                output_parts.append(f"\nExit code: {process.returncode}")
+            if returncode != 0:
+                output_parts.append(f"\nExit code: {returncode}")
             
             result = "\n".join(output_parts) if output_parts else "(no output)"
             
@@ -204,16 +264,18 @@ class ExecTool(Tool):
                 )
                 logger.warning(f"输出已截断至 {self.max_output_length} 字符")
             
-            if process.returncode == 0:
+            if returncode == 0:
                 logger.info("命令执行成功")
             else:
-                logger.warning(f"命令退出码: {process.returncode}")
+                logger.warning(f"命令退出码: {returncode}")
             
             return result
             
         except Exception as e:
-            logger.error(f"执行命令时发生异常: {e}")
-            return f"Error executing command: {str(e)}"
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"执行命令时发生异常: {e}\n{error_details}")
+            return f"Error executing command: {type(e).__name__}: {str(e) or 'Unknown error'}\nDetails: {error_details}"
 
     def _decode_output(self, output: bytes) -> str:
         """解码命令输出，自动检测字符编码
@@ -321,12 +383,13 @@ class ExecTool(Tool):
                     continue
                 
                 # 验证路径在工作空间内
+                effective_workspace = self._get_effective_workspace()
                 try:
                     p.relative_to(cwd_path)
                 except ValueError:
                     # 检查是否在工作空间内（使用 workspace 而不是 cwd）
                     try:
-                        p.relative_to(self.workspace)
+                        p.relative_to(effective_workspace)
                     except ValueError:
                         return f"Error: Command blocked by safety guard (path outside working dir: {raw})"
         

@@ -22,17 +22,13 @@ tenacity>=9.0.0
 croniter>=5.0.0
 pywebview>=5.3
 
-# 可选依赖：API 密钥加密
-# cryptography>=41.0.0
-
-# 网页内容提取（web 工具）
+# Web scraping
 trafilatura>=1.6.0
 readability-lxml>=0.8.1
-lxml_html_clean>=0.4.0  # readability-lxml 的依赖
+lxml_html_clean>=0.4.0
 
-# 渠道 SDK
+# Channel SDK
 qq-botpy>=1.2.1
 dingtalk-stream>=0.24.3
 lark-oapi>=1.5.3
 python-telegram-bot>=20.7
-

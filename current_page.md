@@ -1,0 +1,245 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - heading "Count Bot" [level=1] [ref=e7] [cursor=pointer]:
+      - generic [ref=e8]: Count
+      - generic [ref=e9]: Bot
+    - generic [ref=e10]:
+      - button "清空当前对话" [ref=e11] [cursor=pointer]:
+        - img [ref=e12]
+      - button "查看会话历史" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+      - button "查看记忆库" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+      - button "管理技能" [ref=e25] [cursor=pointer]:
+        - img [ref=e26]
+      - button "管理定时任务" [ref=e28] [cursor=pointer]:
+        - img [ref=e29]
+      - button "查看消息时间轴" [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button "打开设置" [ref=e34] [cursor=pointer]:
+        - img [ref=e35]
+      - button "切换语言" [ref=e40] [cursor=pointer]:
+        - img [ref=e41]
+      - button "切换主题" [ref=e47] [cursor=pointer]:
+        - img [ref=e48]
+  - main [ref=e50]:
+    - generic [ref=e65]:
+      - generic [ref=e66]:
+        - img [ref=e68]
+        - generic [ref=e71]:
+          - generic [ref=e72]: 查询FY26预算中HR成本
+          - generic [ref=e73]:
+            - generic [ref=e74]: 1分钟前
+            - button "删除消息" [ref=e76] [cursor=pointer]:
+              - img [ref=e77]
+      - generic [ref=e80]:
+        - img [ref=e82]
+        - generic [ref=e85]:
+          - generic [ref=e86]:
+            - generic [ref=e87] [cursor=pointer]:
+              - img [ref=e88]
+              - generic [ref=e90]: 工具调用
+              - generic [ref=e91]: "6"
+              - img [ref=e92]
+            - generic [ref=e94]:
+              - generic [ref=e95]:
+                - generic [ref=e96] [cursor=pointer]:
+                  - img [ref=e98]
+                  - generic [ref=e101]: read_file
+                  - generic [ref=e102]: skills/cost_allocation/SKILL.md
+                  - generic [ref=e103]: 2ms
+                  - img [ref=e104]
+                - text: ":"
+              - generic [ref=e106]:
+                - generic [ref=e107] [cursor=pointer]:
+                  - img [ref=e109]
+                  - generic [ref=e111]: list_dir
+                  - generic [ref=e112]: skills
+                  - generic [ref=e113]: 12ms
+                  - img [ref=e114]
+                - text: ":"
+              - generic [ref=e116]:
+                - generic [ref=e117] [cursor=pointer]:
+                  - img [ref=e119]
+                  - generic [ref=e121]: list_dir
+                  - generic [ref=e122]: .
+                  - generic [ref=e123]: 1ms
+                  - img [ref=e124]
+                - text: ":"
+              - generic [ref=e126]:
+                - generic [ref=e127] [cursor=pointer]:
+                  - img [ref=e129]
+                  - generic [ref=e132]: read_file
+                  - generic [ref=e133]: skills/cost_allocation/SKILL.md
+                  - generic [ref=e134]: 4ms
+                  - img [ref=e135]
+                - text: ":"
+              - generic [ref=e137]:
+                - generic [ref=e138] [cursor=pointer]:
+                  - img [ref=e140]
+                  - generic [ref=e142]: list_dir
+                  - generic [ref=e143]: skills
+                  - generic [ref=e144]: 13ms
+                  - img [ref=e145]
+                - text: ":"
+              - generic [ref=e147]:
+                - generic [ref=e148] [cursor=pointer]:
+                  - img [ref=e150]
+                  - generic [ref=e152]: list_dir
+                  - generic [ref=e153]: .
+                  - generic [ref=e154]: 6ms
+                  - img [ref=e155]
+                - text: ":"
+          - generic [ref=e157]:
+            - paragraph [ref=e158]: 绷不住了家人们，你这给我整哪出啊？😅
+            - paragraph [ref=e159]:
+              - text: 我看了看技能目录，cost_allocation技能文件
+              - strong [ref=e160]: 不！在！了！
+              - text: 属于是程序员经典操作——文档写得好好的，代码跑没影了。
+            - paragraph [ref=e161]: 现在的情况是：
+            - list [ref=e162]:
+              - listitem [ref=e163]:
+                - text: 工作目录：
+                - code [ref=e164]: D:\countbot\countbot\countbot
+              - listitem [ref=e165]: skills目录：空空如也，比我钱包还干净 💀
+            - paragraph [ref=e166]:
+              - strong [ref=e167]: 我能做的：
+            - list [ref=e168]:
+              - listitem [ref=e169]:
+                - strong [ref=e170]: 如果你手上有HR成本数据文件
+                - text: （Excel/CSV/JSON啥的），直接甩给我，我给你分析
+              - listitem [ref=e171]:
+                - strong [ref=e172]: 如果你知道数据源在哪
+                - text: （比如某个API、数据库、内部系统），告诉我连接方式
+              - listitem [ref=e173]:
+                - strong [ref=e174]: 或者你是想要我帮你搭建一个成本分摊查询系统？
+                - text: 这活我也能干
+            - paragraph [ref=e175]:
+              - strong [ref=e176]: 我需要的信息：
+            - list [ref=e177]:
+              - listitem [ref=e178]: HR成本数据在哪？（本地文件/网络接口/数据库）
+              - listitem [ref=e179]: FY26是指2026财年吗？你们的财年起止时间是？
+              - listitem [ref=e180]: 要查什么维度的成本？（人头费/培训/招聘/福利...）
+            - paragraph [ref=e181]: 别搁这搁这呢，给点线索我好干活！🫠
+          - generic [ref=e182]:
+            - generic [ref=e183]: 1分钟前
+            - generic [ref=e184]:
+              - button "重放消息" [ref=e185] [cursor=pointer]:
+                - img [ref=e186]
+              - button "重新生成" [ref=e188] [cursor=pointer]:
+                - img [ref=e189]
+              - button "复制" [ref=e194] [cursor=pointer]:
+                - img [ref=e195]
+              - button "删除消息" [ref=e198] [cursor=pointer]:
+                - img [ref=e199]
+      - generic [ref=e202]:
+        - img [ref=e204]
+        - generic [ref=e207]:
+          - generic [ref=e208]: 查询FY26预算中HR成本
+          - generic [ref=e209]:
+            - generic [ref=e210]: 刚刚
+            - button "删除消息" [ref=e212] [cursor=pointer]:
+              - img [ref=e213]
+      - generic [ref=e216]:
+        - img [ref=e218]
+        - generic [ref=e221]:
+          - generic [ref=e249]:
+            - generic [ref=e250] [cursor=pointer]:
+              - img [ref=e251]
+              - generic [ref=e253]: 工具调用
+              - generic [ref=e254]: "4"
+              - img [ref=e255]
+            - generic [ref=e257]:
+              - generic [ref=e258]:
+                - generic [ref=e259] [cursor=pointer]:
+                  - img [ref=e261]
+                  - generic [ref=e263]: list_dir
+                  - generic [ref=e264]: .
+                  - img [ref=e265]
+                - text: ":"
+              - generic [ref=e267]:
+                - generic [ref=e268] [cursor=pointer]:
+                  - img [ref=e270]
+                  - generic [ref=e273]: file_search
+                  - generic [ref=e274]: .
+                  - img [ref=e275]
+                - text: ": : :"
+              - generic [ref=e277]:
+                - generic [ref=e278] [cursor=pointer]:
+                  - img [ref=e280]
+                  - generic [ref=e283]: file_search
+                  - generic [ref=e284]: .
+                  - img [ref=e285]
+                - text: ": : :"
+              - generic [ref=e287]:
+                - generic [ref=e288] [cursor=pointer]:
+                  - img [ref=e290]
+                  - generic [ref=e293]: memory_search
+                  - generic [ref=e294]: HR 成本 预算 FY26
+                  - img [ref=e295]
+                - text: ": :"
+          - generic [ref=e297]:
+            - paragraph [ref=e298]:
+              - text: 行，我再给你整一遍。先让我看看本地有没有相关数据文件——好家伙，空城计是吧？工作目录毛都没有，
+              - strong [ref=e299]: HR成本数据在哪呢？
+              - text: 🤔
+            - paragraph [ref=e300]:
+              - text: 让我翻翻记忆，看有没有存过相关信息——绝了，
+              - strong [ref=e301]: 三重空城计
+              - text: 😤：
+            - table [ref=e302]:
+              - rowgroup [ref=e303]:
+                - row "检查项 结果" [ref=e304]:
+                  - columnheader "检查项" [ref=e305]
+                  - columnheader "结果" [ref=e306]
+              - rowgroup [ref=e307]:
+                - row "本地数据文件 🈚 空空如也" [ref=e308]:
+                  - cell "本地数据文件" [ref=e309]
+                  - cell "🈚 空空如也" [ref=e310]
+                - row "记忆配置 🈚 一条没有" [ref=e311]:
+                  - cell "记忆配置" [ref=e312]
+                  - cell "🈚 一条没有" [ref=e313]
+                - row "数据源连接 🈚 未配置" [ref=e314]:
+                  - cell "数据源连接" [ref=e315]
+                  - cell "🈚 未配置" [ref=e316]
+            - paragraph [ref=e317]:
+              - strong [ref=e318]: 直接说吧：我没法凭空变出FY26 HR成本数据。
+            - separator [ref=e319]
+            - paragraph [ref=e320]:
+              - strong [ref=e321]: 你要查这个，得给我以下任意一种：
+            - list [ref=e322]:
+              - listitem [ref=e323]:
+                - strong [ref=e324]: 📁 数据文件
+                - text: "- 把预算Excel/CSV直接丢给我"
+              - listitem [ref=e325]:
+                - strong [ref=e326]: 🔗 API接口
+                - text: "- 你们公司系统的API地址+认证方式"
+              - listitem [ref=e327]:
+                - strong [ref=e328]: 🗄️ 数据库
+                - text: "- 连接地址+用户名密码（敏感信息可以给占位符）"
+              - listitem [ref=e329]:
+                - strong [ref=e330]: 📋 静态数据
+                - text: "- 直接把数据粘贴给我"
+            - paragraph [ref=e331]:
+              - strong [ref=e332]: 或者
+              - text: ，你要是只是想
+              - strong [ref=e333]: 模拟演示
+              - text: 一下HR成本查询功能，我可以现场造个示例数据跑一遍流程给你看。
+            - paragraph [ref=e334]: 别搁这闷声发大财了，给点线索，我马上给你整得明明白白！💪
+          - generic [ref=e227]:
+            - generic [ref=e228]: 刚刚
+            - generic [ref=e229]:
+              - button "重放消息" [ref=e230] [cursor=pointer]:
+                - img [ref=e231]
+              - button "重新生成" [ref=e233] [cursor=pointer]:
+                - img [ref=e234]
+              - button "复制" [ref=e239] [cursor=pointer]:
+                - img [ref=e240]
+              - button "删除消息" [ref=e243] [cursor=pointer]:
+                - img [ref=e244]
+  - contentinfo [ref=e55]:
+    - generic [ref=e56]:
+      - textbox "输入消息..." [active] [ref=e57]: "请执行 shell 命令: cd D:/countbot/countbot && venv/Scripts/python skills/cost_allocation/scripts/cost_allocation.py query --type cost --year FY26 --scenario Budget1 --function HR --json"
+      - button [ref=e335] [cursor=pointer]:
+        - img [ref=e336]
+    - paragraph [ref=e63]: Shift+Enter 发送，Enter 换行

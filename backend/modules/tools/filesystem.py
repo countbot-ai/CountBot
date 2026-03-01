@@ -18,14 +18,9 @@ class WorkspaceValidator:
 
     @property
     def workspace(self) -> Path:
-        try:
-            from backend.modules.config.loader import config_loader
-            workspace_path = config_loader.config.workspace.path
-            if workspace_path:
-                return Path(workspace_path).resolve()
-        except Exception:
-            pass
-        return self._workspace
+        # 始终使用初始化的 workspace，避免 config.workspace.path 为空导致的问题
+        from backend.utils.paths import APPLICATION_ROOT
+        return APPLICATION_ROOT
 
     @property
     def restrict_to_workspace(self) -> bool:

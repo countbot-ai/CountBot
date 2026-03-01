@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "D:\countbot\countbot\skills\cost_allocation\scripts\cost_allocation.py", line 525, in <module>
+    asyncio.run(main())
+  File "C:\Users\Administrator\AppData\Roaming\uv\python\cpython-3.11.13-windows-x86_64-none\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Roaming\uv\python\cpython-3.11.13-windows-x86_64-none\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Roaming\uv\python\cpython-3.11.13-windows-x86_64-none\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "D:\countbot\countbot\skills\cost_allocation\scripts\cost_allocation.py", line 468, in main
+    result = await manager.query_cost(
+                   ^^^^^^^^^^^^^^^^^^^
+TypeError: CostAllocationManager.query_cost() got an unexpected keyword argument 'month'

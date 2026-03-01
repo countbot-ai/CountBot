@@ -7,6 +7,14 @@ from loguru import logger
 from .base import LLMProvider, StreamChunk, ToolCall
 
 
+def _clear_proxy_env():
+    """清除代理环境变量，避免连接问题"""
+    proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+    for var in proxy_vars:
+        os.environ.pop(var, None)
+    os.environ['NO_PROXY'] = '*'
+
+
 class LiteLLMProvider(LLMProvider):
     """LiteLLM Provider 实现"""
     
@@ -20,6 +28,9 @@ class LiteLLMProvider(LLMProvider):
         provider_id: str | None = None,
         **kwargs: Any
     ):
+        # 清除代理环境变量，避免连接问题
+        _clear_proxy_env()
+        
         # 在导入 litellm 之前设置环境变量，避免启动时网络请求
         os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
         
@@ -96,6 +107,9 @@ class LiteLLMProvider(LLMProvider):
         """流式聊天补全"""
         try:
             import litellm
+            
+            # 清除代理环境变量，确保连接不被代理干扰
+            _clear_proxy_env()
             
             # 使用用户指定的模型或默认模型
             model = model or self.default_model
@@ -313,6 +327,9 @@ class LiteLLMProvider(LLMProvider):
         try:
             import litellm
             import tempfile
+            
+            # 清除代理环境变量，确保连接不被代理干扰
+            _clear_proxy_env()
             
             # 创建临时文件
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:

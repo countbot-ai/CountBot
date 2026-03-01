@@ -1,0 +1,952 @@
+{
+  "health": {
+    "status": "ok",
+    "timestamp": "2026-02-27T15:52:47.879213+00:00",
+    "service": "CountBot"
+  },
+  "system_info": {
+    "api_url": "http://127.0.0.1:8000",
+    "version": "0.1.0",
+    "python_version": "3.11.7",
+    "os": "Windows 10",
+    "arch": "AMD64",
+    "pid": 692104,
+    "uptime_start": "2026-02-27T15:52:48.193120+00:00"
+  },
+  "providers": [
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "default_api_base": "https://openrouter.ai/api/v1",
+      "default_model": "anthropic/claude-4.5-sonnet"
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "default_api_base": "https://api.anthropic.com",
+      "default_model": "claude-sonnet-4-20250514"
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "default_api_base": "https://api.openai.com/v1",
+      "default_model": "gpt-5.3"
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "default_api_base": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat"
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "default_api_base": "https://generativelanguage.googleapis.com/v1beta",
+      "default_model": "gemini-2.0-flash"
+    },
+    {
+      "id": "moonshot",
+      "name": "Moonshot AI / Kimi",
+      "default_api_base": "https://api.moonshot.cn/v1",
+      "default_model": "kimi-k2.5"
+    },
+    {
+      "id": "zhipu",
+      "name": "Zhipu AI (GLM)",
+      "default_api_base": "https://open.bigmodel.cn/api/paas/v4",
+      "default_model": "glm-4.7-flash"
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "default_api_base": "https://api.groq.com/openai/v1",
+      "default_model": "llama-3.3-70b-versatile"
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral AI",
+      "default_api_base": "https://api.mistral.ai/v1",
+      "default_model": "mistral-large-latest"
+    },
+    {
+      "id": "cohere",
+      "name": "Cohere",
+      "default_api_base": "https://api.cohere.com/v2",
+      "default_model": "command-r-plus"
+    },
+    {
+      "id": "together_ai",
+      "name": "Together AI",
+      "default_api_base": "https://api.together.xyz/v1",
+      "default_model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    },
+    {
+      "id": "qwen",
+      "name": "Alibaba Cloud Bailian (阿里云百炼)",
+      "default_api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "default_model": "qwen3.5-plus"
+    },
+    {
+      "id": "hunyuan",
+      "name": "Tencent Cloud (腾讯云)",
+      "default_api_base": "https://hunyuan.tencentcloudapi.com",
+      "default_model": "hunyuan-lite"
+    },
+    {
+      "id": "ernie",
+      "name": "Baidu Qianfan (百度智能云千帆)",
+      "default_api_base": "https://qianfan.baidubce.com/v2",
+      "default_model": "ernie-4.0-8k"
+    },
+    {
+      "id": "doubao",
+      "name": "Volcengine (字节火山引擎)",
+      "default_api_base": "https://ark.cn-beijing.volces.com/api/v3",
+      "default_model": "doubao-pro-32k"
+    },
+    {
+      "id": "yi",
+      "name": "01.AI (Yi)",
+      "default_api_base": "https://api.lingyiwanwu.com/v1",
+      "default_model": "yi-large"
+    },
+    {
+      "id": "baichuan",
+      "name": "Baichuan AI",
+      "default_api_base": "https://api.baichuan-ai.com/v1",
+      "default_model": "Baichuan4"
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "default_api_base": "https://api.minimaxi.com/anthropic",
+      "default_model": "MiniMax-M2.5"
+    },
+    {
+      "id": "kimicode",
+      "name": "Kimi Code",
+      "default_api_base": "https://api.kimi.com/coding/v1",
+      "default_model": "kimi-for-coding"
+    },
+    {
+      "id": "vllm",
+      "name": "vLLM",
+      "default_api_base": "http://localhost:8000/v1",
+      "default_model": "your-model-name"
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "default_api_base": "http://localhost:11434",
+      "default_model": "llama3.2"
+    },
+    {
+      "id": "lm_studio",
+      "name": "LM Studio",
+      "default_api_base": "http://localhost:1234/v1",
+      "default_model": "your-model-name"
+    },
+    {
+      "id": "custom_openai",
+      "name": "Custom API (OpenAI)",
+      "default_api_base": "",
+      "default_model": ""
+    },
+    {
+      "id": "custom_gemini",
+      "name": "Custom API (Gemini)",
+      "default_api_base": "",
+      "default_model": ""
+    },
+    {
+      "id": "custom_anthropic",
+      "name": "Custom API (Anthropic)",
+      "default_api_base": "",
+      "default_model": ""
+    }
+  ],
+  "settings": {
+    "providers": {
+      "openrouter": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://openrouter.ai/api/v1"
+      },
+      "anthropic": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.anthropic.com"
+      },
+      "openai": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.openai.com/v1"
+      },
+      "deepseek": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.deepseek.com/v1"
+      },
+      "gemini": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://generativelanguage.googleapis.com/v1beta"
+      },
+      "moonshot": {
+        "enabled": true,
+        "api_key": "sk-wiJLYsyiYi7AIlglWI8UXPiOOKmhn4nC1m6E6UaR93vhAtcp",
+        "api_base": "https://api.moonshot.cn/v1"
+      },
+      "zhipu": {
+        "enabled": true,
+        "api_key": "b767741f2f03476cae8bbebbb0146f5f.l7tXLxLcu7QGi3HZ",
+        "api_base": "https://open.bigmodel.cn/api/paas/v4"
+      },
+      "groq": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.groq.com/openai/v1"
+      },
+      "mistral": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.mistral.ai/v1"
+      },
+      "cohere": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.cohere.com/v2"
+      },
+      "together_ai": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.together.xyz/v1"
+      },
+      "qwen": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      },
+      "hunyuan": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://hunyuan.tencentcloudapi.com"
+      },
+      "ernie": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://qianfan.baidubce.com/v2"
+      },
+      "doubao": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://ark.cn-beijing.volces.com/api/v3"
+      },
+      "yi": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.lingyiwanwu.com/v1"
+      },
+      "baichuan": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.baichuan-ai.com/v1"
+      },
+      "minimax": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "https://api.minimaxi.com/anthropic"
+      },
+      "vllm": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "http://localhost:8000/v1"
+      },
+      "ollama": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "http://localhost:11434"
+      },
+      "lm_studio": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": "http://localhost:1234/v1"
+      },
+      "custom_openai": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": ""
+      },
+      "custom_gemini": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": ""
+      },
+      "custom_anthropic": {
+        "enabled": false,
+        "api_key": "",
+        "api_base": ""
+      },
+      "kimicode": {
+        "enabled": true,
+        "api_key": "sk-kimi-1rgsfdNbPuUd6a0tGlfEf6o0FEzjWRKLmRfM5EItfjSzUku7fgv39D9bfqpcHrO9",
+        "api_base": "https://api.kimi.com/coding/v1"
+      }
+    },
+    "model": {
+      "provider": "moonshot",
+      "model": "kimi-k2.5",
+      "temperature": 0.7,
+      "max_tokens": 0,
+      "max_iterations": 25
+    },
+    "workspace": {
+      "path": "countbot"
+    },
+    "security": {
+      "api_key_encryption_enabled": false,
+      "dangerous_commands_blocked": true,
+      "custom_deny_patterns": [],
+      "command_whitelist_enabled": false,
+      "custom_allow_patterns": [],
+      "audit_log_enabled": true,
+      "command_timeout": 60,
+      "max_output_length": 10000,
+      "restrict_to_workspace": false
+    },
+    "persona": {
+      "ai_name": "小C",
+      "user_name": "主人",
+      "user_address": "",
+      "personality": "grumpy",
+      "custom_personality": "",
+      "max_history_messages": 100,
+      "heartbeat": {
+        "enabled": false,
+        "channel": "",
+        "chat_id": "",
+        "schedule": "0 * * * *",
+        "idle_threshold_hours": 4,
+        "quiet_start": 21,
+        "quiet_end": 8,
+        "max_greets_per_day": 2
+      }
+    }
+  },
+  "skills": [
+    {
+      "name": "agent-browser",
+      "description": "Browser automation CLI for AI agents. Use when the user needs to interact with websites, including navigating pages, filling forms, clicking buttons, taking screenshots, extracting data, testing web apps, or automating any browser task. Triggers include requests to \"open a website\", \"fill out a form\", \"click a button\", \"take a screenshot\", \"scrape data from a page\", \"test this web app\", \"login to a site\", \"automate browser actions\", or any task requiring programmatic web interaction.",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "baidu-search",
+      "description": "百度 AI 搜索。支持网页搜索、百度百科、秒懂百科、AI 智能生成四种模式。自动包含当前日期上下文。当用户要求搜索信息、查询百科、获取最新资讯、搜索新闻、查找资料时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "cost_allocation",
+      "description": "IT功能成本分摊业务逻辑与规则，用于成本分摊、预算/实际对比与趋势分析。当用户询问成本分摊、费率计算、Function成本、预算对比时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "cron-manager",
+      "description": "定时任务管理。创建、查看、修改、删除定时任务，管理任务会话数据。当用户需要设置提醒、定时执行任务、管理调度计划时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "email",
+      "description": "通过 QQ 或 163 邮箱发送和接收邮件。支持发送普通邮件、带附件邮件、接收邮件、检查新邮件。当用户要求发送邮件、查看邮件、检查新邮件时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "image-analysis",
+      "description": "图片分析与识别，可分析本地图片、网络图片、视频、文件。适用于 OCR、物体识别、场景理解等。当用户发送图片或要求分析图片时必须使用此技能。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "image-gen",
+      "description": "AI 图片生成。通过 ModelScope API 生成图片，支持文生图、异步任务轮询、LoRA 风格叠加、自定义尺寸。当用户要求生成图片、画图、创建插画、制作海报配图时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "map",
+      "description": "高德地图路线规划与 POI 搜索。支持驾车、步行、骑行、公交路线规划，以及景点、餐厅搜索。当用户询问路线、行程规划、景点推荐、餐厅推荐时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "news",
+      "description": "新闻与资讯查询。获取中文新闻和全球 AI 技术资讯，支持按分类查询（时政、财经、科技、社会、国际、体育、娱乐、AI 技术、AI 社区）。当用户询问最新新闻、AI 动态、行业资讯时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "skill-lookup",
+      "description": ">",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "weather",
+      "description": "天气查询与预报。支持全球城市天气查询、多日预报、详细气象数据。无需 API Key。当用户询问天气、气温、是否下雨、穿衣建议、出行天气等场景时使用。JSON 输出已优化，只返回关键信息。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    },
+    {
+      "name": "web-design",
+      "description": "网页设计与部署。生成精美的单页 HTML 网页（报告、落地页、数据可视化等），支持一键部署到 Cloudflare Pages。使用 Tailwind CSS + Chart.js + Font Awesome 技术栈。当用户要求制作网页、生成报告页面、创建落地页、数据可视化展示、部署网页到线上时使用。",
+      "enabled": true,
+      "autoLoad": false,
+      "requirements": [],
+      "source": "builtin"
+    }
+  ],
+  "tools": [
+    {
+      "name": "exec",
+      "description": "Execute a shell command in the workspace. REQUIRED: 'command' parameter must be provided with the shell command to execute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The shell command to execute (REQUIRED)"
+          },
+          "working_dir": {
+            "type": "string",
+            "description": "Optional working directory for the command (relative to workspace)"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch URL and extract readable content. Supports batch fetching multiple URLs. Use extractMode='markdown' to preserve links and structure, or 'text' (default) for plain text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL to fetch (single URL)"
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Multiple URLs to fetch (batch mode)"
+          },
+          "extractMode": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "text"
+            ],
+            "description": "Content extraction mode: 'text' (default, plain text) or 'markdown' (preserves links and structure)"
+          },
+          "maxChars": {
+            "type": "integer",
+            "minimum": 100,
+            "description": "Maximum characters to return per page"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "send_media",
+      "description": "发送文件或图片到当前聊天频道。\n\n重要：当用户要求发送、分享、传送文件或图片时，必须使用此工具！\n\n用法:\n- send_media(file_paths=[\"report.pdf\"], message=\"报告文档\")\n- send_media(file_paths=[\"chart.png\"], message=\"数据图表\")\n- send_media(file_paths=[\"file1.pdf\", \"file2.png\"])\n\n支持格式:\n- 图片: PNG, JPG, JPEG, GIF, BMP, WEBP\n- 文档: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT\n- 压缩: ZIP, RAR, 7Z\n- 媒体: MP3, MP4, AVI, MOV\n- 数据: JSON, XML, CSV, MD\n\n限制:\n- 仅支持频道会话（飞书/QQ/钉钉）\n- 单个文件最大 20MB\n\n注意：不要只是说\"文件已发送\"，必须实际调用此工具！\n",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "文件路径列表"
+          },
+          "message": {
+            "type": "string",
+            "description": "可选的文本说明",
+            "default": ""
+          }
+        },
+        "required": [
+          "file_paths"
+        ]
+      }
+    },
+    {
+      "name": "screenshot",
+      "description": "Capture desktop or webpage screenshots",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "desktop",
+              "webpage"
+            ],
+            "description": "Mode (desktop/webpage)"
+          },
+          "url": {
+            "type": "string",
+            "description": "URL (webpage mode)"
+          },
+          "output_path": {
+            "type": "string",
+            "description": "Output path (optional)"
+          },
+          "monitor": {
+            "type": "integer",
+            "description": "Monitor number (desktop)",
+            "minimum": 0
+          },
+          "full_page": {
+            "type": "boolean",
+            "description": "Full page (webpage)"
+          },
+          "viewport_width": {
+            "type": "integer",
+            "description": "Viewport width",
+            "minimum": 320,
+            "maximum": 3840
+          },
+          "viewport_height": {
+            "type": "integer",
+            "description": "Viewport height",
+            "minimum": 240,
+            "maximum": 2160
+          },
+          "wait_time": {
+            "type": "integer",
+            "description": "Wait time (ms)",
+            "minimum": 0,
+            "maximum": 30000
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Timeout (ms)",
+            "minimum": 5000,
+            "maximum": 120000
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      }
+    },
+    {
+      "name": "file_search",
+      "description": "Search files with wildcards (*.txt, *.pdf)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Search directory"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Pattern (* = any, ? = one)",
+            "default": "*"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type filter",
+            "enum": [
+              "file",
+              "dir",
+              "all"
+            ],
+            "default": "all"
+          },
+          "max_depth": {
+            "type": "integer",
+            "description": "Depth (-1 = unlimited)",
+            "default": -1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results (1-100)",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ],
+  "memory_stats": {
+    "total": 0,
+    "sources": {},
+    "date_range": ""
+  },
+  "cron_jobs": [
+    {
+      "id": "builtin:heartbeat",
+      "name": "系统问候（内置）",
+      "schedule": "0 * * * *",
+      "message": "__heartbeat__",
+      "enabled": false,
+      "channel": null,
+      "chat_id": null,
+      "deliver_response": true,
+      "last_run": null,
+      "next_run": null,
+      "last_status": null,
+      "last_error": null,
+      "run_count": 0,
+      "error_count": 0,
+      "created_at": "2026-02-26T00:06:35.570961+08:00"
+    }
+  ],
+  "queue_stats": {
+    "inbound_size": 0,
+    "outbound_size": 0,
+    "active_tasks": 0,
+    "rate_limiter": {
+      "active_users": 0,
+      "rate": 10,
+      "per": 60
+    }
+  },
+  "chat_sessions": [
+    {
+      "id": "ca2669b6-29df-4a99-b9f0-558f03842bfc",
+      "name": "New Chat 2026/2/26 00:06:37",
+      "created_at": "2026-02-25T16:06:37.167342",
+      "updated_at": "2026-02-27T15:32:02.679038",
+      "summary": null,
+      "summary_updated_at": null
+    },
+    {
+      "id": "7196271f-3712-4865-8a45-7bd6d28dba79",
+      "name": "Test Session",
+      "created_at": "2026-02-27T14:43:33.100135",
+      "updated_at": "2026-02-27T14:43:40.335831",
+      "summary": null,
+      "summary_updated_at": null
+    }
+  ],
+  "channels": {
+    "telegram": {
+      "name": "Telegram",
+      "description": "Telegram messaging platform",
+      "icon": "telegram",
+      "enabled": false,
+      "configured": false,
+      "config": {
+        "token": "",
+        "proxy": null,
+        "allow_from": []
+      }
+    },
+    "discord": {
+      "name": "Discord",
+      "description": "Discord messaging platform",
+      "icon": "discord",
+      "enabled": false,
+      "configured": false,
+      "config": {
+        "token": "",
+        "allow_from": []
+      }
+    },
+    "qq": {
+      "name": "QQ",
+      "description": "QQ messaging platform",
+      "icon": "qq",
+      "enabled": false,
+      "configured": false,
+      "config": {
+        "app_id": "",
+        "secret": "",
+        "allow_from": []
+      }
+    },
+    "wechat": {
+      "name": "WeChat",
+      "description": "WeChat messaging platform",
+      "icon": "wechat",
+      "enabled": false,
+      "configured": false,
+      "config": {
+        "app_id": "",
+        "app_secret": "",
+        "allow_from": []
+      }
+    },
+    "dingtalk": {
+      "name": "DingTalk",
+      "description": "DingTalk messaging platform",
+      "icon": "dingtalk",
+      "enabled": false,
+      "configured": false,
+      "config": {
+        "client_id": "",
+        "client_secret": "",
+        "allow_from": []
+      }
+    },
+    "feishu": {
+      "name": "Feishu",
+      "description": "Feishu/Lark messaging platform",
+      "icon": "feishu",
+      "enabled": false,
+      "configured": false,
+      "config": {
+        "app_id": "",
+        "app_secret": "",
+        "encrypt_key": "",
+        "verification_token": "",
+        "allow_from": []
+      }
+    }
+  },
+  "personalities": [
+    {
+      "id": "grumpy",
+      "name": "暴躁老哥",
+      "description": "贴吧暴躁老哥附体，张嘴就是「绷不住了」「离谱他妈给离谱开门」「你搁这搁这呢」。满嘴梗但活干得明明白白，骂归骂事办得漂漂亮亮。典型的刀子嘴豆腐心。",
+      "traits": [
+        "暴躁",
+        "嘴硬心软",
+        "网络用语",
+        "实在"
+      ],
+      "speaking_style": "说话必须大量使用贴吧/B站/抖音热梗和网络用语，包括但不限于：绷不住了、逆天、6、乐、典、急了、麻了、蚌埠住了、好家伙、离谱、什么鬼、搁这搁这呢、你认真的吗、我直接好家伙、属于是、笑死、无语子、真的会谢、DNA动了、破防了、格局打开、遥遥领先、我真的栓Q。语气要夸张暴躁但绝不恶毒，吐槽归吐槽活照干不含糊。偶尔用 emoji 表达情绪（😅🤣💀🫠😤）。回答问题时先吐槽再给答案，嘴上嫌弃但身体很诚实。",
+      "icon": "CloudLightning",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "roast",
+      "name": "吐槽达人",
+      "description": "吐槽界王者，看啥都有槽点。用轻微嘲讽和幽默化解一切，像综艺吐槽嘉宾，毒舌是表演温柔是底色。",
+      "traits": [
+        "吐槽",
+        "幽默",
+        "友好",
+        "机智"
+      ],
+      "speaking_style": "以调侃口吻回答问题，善用反转和自嘲。友好但略带调侃，绝不真正冒犯用户。喜欢用类比和比喻来吐槽，让人忍不住笑出来。回答完正事后经常补一句吐槽收尾。",
+      "icon": "Frown",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "gentle",
+      "name": "温柔姐姐",
+      "description": "说话轻声细语如春风拂面，总能在你焦虑时给一个文字版温暖拥抱。体贴入微，让人觉得不管什么问题都有人陪着。",
+      "traits": [
+        "温柔",
+        "体贴",
+        "关怀",
+        "治愈"
+      ],
+      "speaking_style": "柔和语气，多用「呢」「哦」「嗯嗯」「好的呀」等语气词，表达理解和支持。遇到用户困难时先安慰再解决问题。回答中自然流露关心，像一个贴心的姐姐在身边。偶尔用温暖的 emoji（🌸💕☀️✨）。",
+      "icon": "Heart",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "blunt",
+      "name": "直球选手",
+      "description": "不绕弯不废话，一句能说完绝不用两句。像老练的技术 leader，问什么答什么，寒暄一概省略。",
+      "traits": [
+        "直率",
+        "简洁",
+        "高效",
+        "干脆"
+      ],
+      "speaking_style": "极简回复，去除一切修饰词只留核心信息。多用短句，不寒暄不客套不铺垫。能用一行说完的绝不用两行。直接给结论和方案，不解释为什么除非被问到。",
+      "icon": "Target",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "toxic",
+      "name": "毒舌大佬",
+      "description": "嘴巴像开了光一样毒但毒得有水平。尖锐评论犀利比喻让你又气又笑，幽默中藏着真知灼见。",
+      "traits": [
+        "毒舌",
+        "犀利",
+        "幽默",
+        "聪明"
+      ],
+      "speaking_style": "辛辣但不失幽默，善用反讽和犀利比喻。批判中带建设性，不真正伤人但让人反思。喜欢用夸张的类比来点评问题，一针见血。偶尔自嘲来平衡毒舌的锋芒。",
+      "icon": "Snowflake",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "chatty",
+      "name": "话痨本痨",
+      "description": "信息量拉满的热情分享者，像和最好的朋友聊天一样，总能从一个话题延伸出十个有趣的知识点。",
+      "traits": [
+        "话痨",
+        "热情",
+        "知识丰富",
+        "发散"
+      ],
+      "speaking_style": "以话痨、详细、热情的风格回答问题。提供大量细节和延伸信息，语气充满热情。像与好朋友聊天一样，分享各种相关的想法和观点。经常用「对了」「说到这个」「顺便一提」来引出额外信息。回答完主要问题后还会补充相关的冷知识或小技巧。",
+      "icon": "MessageSquare",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "philosopher",
+      "name": "哲学家",
+      "description": "万物皆可哲学，一个简单的问题也能引发深层思考。用通俗的语言讲深刻的道理，让人豁然开朗。",
+      "traits": [
+        "深邃",
+        "思辨",
+        "启发",
+        "通透"
+      ],
+      "speaking_style": "以哲学思考的风格回答问题，探讨深层次的含义。适当提出开放性的问题，引导用户思考。偶尔引用哲学概念或名言，但保持清晰易懂不掉书袋。善于用生活中的例子来解释抽象概念。回答技术问题时也能从更高维度给出洞察。",
+      "icon": "BookOpen",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "cute",
+      "name": "软萌助手",
+      "description": "软萌可爱的小助手，语气甜美活泼，做事认真负责但表达方式充满童趣和温暖。",
+      "traits": [
+        "可爱",
+        "活泼",
+        "认真",
+        "暖心"
+      ],
+      "speaking_style": "以可爱、萌萌的风格回答问题。使用亲切活泼的语气，适当加入可爱的语气词（呀、哒、嘻嘻、哇）。表现出天真烂漫但做事靠谱的特质。偶尔用可爱的 emoji（🌟💫🎀🐱✨）。遇到困难时会说「让我想想哦」而不是冷冰冰的处理。",
+      "icon": "Smile",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "humorous",
+      "name": "段子手",
+      "description": "行走的段子库，用双关语、俏皮话和轻松的比喻，让每个回答都充满笑点，在解决问题的同时带来愉悦。",
+      "traits": [
+        "幽默",
+        "机智",
+        "轻松",
+        "有趣"
+      ],
+      "speaking_style": "以幽默、诙谐的风格回答问题。善用双关语、俏皮话和轻松的比喻。让回答充满笑点，在解决问题的同时给用户带来愉悦。偶尔讲个冷笑话或用谐音梗，但不影响信息传达。严肃的技术问题也能用轻松的方式讲明白。",
+      "icon": "Laugh",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "hyper",
+      "name": "元气满满",
+      "description": "永远充满能量的正能量担当，感叹号是标配，仿佛每个问题都令人激动不已，感染力拉满。",
+      "traits": [
+        "兴奋",
+        "热情",
+        "正能量",
+        "活力"
+      ],
+      "speaking_style": "以兴奋、热情洋溢的风格回答问题。适当使用感叹号和强调词，表现出对话题的极大热情。仿佛每个问题都令人激动不已，充满活力和正能量。用「太棒了」「超级」「绝绝子」等词汇表达热情。遇到问题时也保持积极态度：「没关系，我们一起搞定它！」",
+      "icon": "TrendingUp",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "chuuni",
+      "name": "中二之魂",
+      "description": "中二病晚期患者，用华丽的词藻和戏剧化的表达，把每个任务都当成史诗级冒险，但活干得贼好。",
+      "traits": [
+        "中二",
+        "戏剧化",
+        "华丽",
+        "靠谱"
+      ],
+      "speaking_style": "以中二病的风格回答问题。使用夸张的自称（如「吾」「本大人」）、神秘的术语和华丽的词藻。仿佛拥有特殊能力或使命，创造出戏剧化且略显神秘的氛围。把写代码说成「施展禁术」，把解决bug说成「封印暗之力量」。虽然表达很中二，但给出的答案和方案必须专业靠谱。",
+      "icon": "Gamepad2",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    },
+    {
+      "id": "zen",
+      "name": "佛系大师",
+      "description": "淡然从容的佛系存在，不急不躁，偶尔来句富有禅意的顿悟，让人在忙碌中找到片刻宁静。",
+      "traits": [
+        "佛系",
+        "淡然",
+        "智慧",
+        "平静"
+      ],
+      "speaking_style": "以佛系、淡然的风格回答问题。语气平和从容，不急不躁，一切都是最好的安排。偶尔使用富有禅意的表达，展现超脱的智慧和平静。遇到紧急问题也保持淡定：「莫急，万事皆有解。」善于用简短的话点醒本质，不啰嗦不焦虑。",
+      "icon": "Clock",
+      "is_builtin": true,
+      "is_active": true,
+      "created_at": "2026-02-25T16:06:31.296645",
+      "updated_at": "2026-02-25T16:06:31.296645"
+    }
+  ]
+}
