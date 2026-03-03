@@ -1,0 +1,679 @@
+<template>
+  <div class="qq-config">
+    <!-- 启用开关 - 突出显示 -->
+    <div class="config-section config-section-highlight">
+      <div class="enable-toggle-wrapper">
+        <div class="enable-toggle-content">
+          <div class="enable-toggle-label">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v20M2 12h20"></path>
+            </svg>
+            <span class="enable-toggle-title">{{ t('settings.channels.qq.enabled') }}</span>
+          </div>
+          <p class="enable-toggle-hint">配置完成后，请确保启用此开关以激活频道</p>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" v-model="localConfig.enabled" @change="handleChange" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div v-if="!localConfig.enabled" class="enable-warning">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        <span>频道未启用，配置后不会生效</span>
+      </div>
+    </div>
+
+    <div class="config-section">
+      <label class="config-label">
+        {{ t('settings.channels.qq.appId') }}
+        <span class="required">*</span>
+      </label>
+      <input type="text" v-model="localConfig.app_id" @input="handleChange" 
+        :placeholder="t('settings.channels.qq.appIdPlaceholder')" class="config-input" 
+        autocomplete="username" />
+      <p class="config-hint">{{ t('settings.channels.qq.appIdHint') }}</p>
+    </div>
+
+    <div class="config-section">
+      <label class="config-label">
+        {{ t('settings.channels.qq.secret') }}
+        <span class="required">*</span>
+      </label>
+      <div class="password-input-wrapper">
+        <input :type="showPassword ? 'text' : 'password'" v-model="localConfig.secret" @input="handleChange" 
+          :placeholder="t('settings.channels.qq.secretPlaceholder')" class="config-input" 
+          autocomplete="current-password" />
+        <button type="button" class="toggle-password" @click="showPassword = !showPassword" :title="showPassword ? t('common.hidePassword') : t('common.showPassword')">
+          <svg v-if="showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+      <p class="config-hint">{{ t('settings.channels.qq.secretHint') }}</p>
+    </div>
+
+    <div class="config-section">
+      <label class="config-label">{{ t('settings.channels.qq.allowFrom') }}</label>
+      <div class="allow-list">
+        <div v-for="(user, index) in localConfig.allow_from" :key="index" class="allow-item">
+          <input type="text" v-model="localConfig.allow_from[index]" @input="handleChange" 
+            :placeholder="t('settings.channels.qq.userIdPlaceholder')" class="config-input" />
+          <button @click="removeAllowUser(index)" class="remove-button" type="button">×</button>
+        </div>
+        <button @click="addAllowUser" class="add-button" type="button">
+          + {{ t('settings.channels.qq.addUser') }}
+        </button>
+      </div>
+      <p class="config-hint">{{ t('settings.channels.qq.allowFromHint') }}</p>
+    </div>
+
+    <!-- 腾讯云 OSS 配置（可选） -->
+    <div class="config-divider"></div>
+    <h3 class="config-subtitle">{{ t('settings.channels.qq.ossConfig') }} <span class="optional-badge">{{ t('common.optional') }}</span></h3>
+    <p class="config-description">{{ t('settings.channels.qq.ossConfigDescription') }}</p>
+
+    <div class="config-section">
+      <label class="config-label">
+        {{ t('settings.channels.qq.ossSecretId') }}
+      </label>
+      <input type="text" v-model="localConfig.oss.secret_id" @input="handleChange" 
+        :placeholder="t('settings.channels.qq.ossSecretIdPlaceholder')" class="config-input" />
+    </div>
+
+    <div class="config-section">
+      <label class="config-label">
+        {{ t('settings.channels.qq.ossSecretKey') }}
+      </label>
+      <div class="password-input-wrapper">
+        <input :type="showOssPassword ? 'text' : 'password'" v-model="localConfig.oss.secret_key" @input="handleChange" 
+          :placeholder="t('settings.channels.qq.ossSecretKeyPlaceholder')" class="config-input" />
+        <button type="button" class="toggle-password" @click="showOssPassword = !showOssPassword" :title="showOssPassword ? t('common.hidePassword') : t('common.showPassword')">
+          <svg v-if="showOssPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="config-section">
+      <label class="config-label">
+        {{ t('settings.channels.qq.ossBucket') }}
+      </label>
+      <input type="text" v-model="localConfig.oss.bucket" @input="handleChange" 
+        :placeholder="t('settings.channels.qq.ossBucketPlaceholder')" class="config-input" />
+    </div>
+
+    <div class="config-section">
+      <label class="config-label">
+        {{ t('settings.channels.qq.ossRegion') }}
+      </label>
+      <input type="text" v-model="localConfig.oss.region" @input="handleChange" 
+        :placeholder="t('settings.channels.qq.ossRegionPlaceholder')" class="config-input" />
+      <p class="config-hint">{{ t('settings.channels.qq.ossRegionHint') }}</p>
+    </div>
+
+    <div class="config-notice">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+      <span>{{ t('settings.channels.qq.ossReloadNoticeNew') }}</span>
+    </div>
+
+    <div class="config-actions">
+      <button @click="handleTest" :disabled="!localConfig.app_id || !localConfig.secret || testing" class="test-button">
+        {{ testing ? t('common.testing') : t('common.test') }}
+      </button>
+      <button @click="handleSave" :disabled="!hasChanges || saving" class="save-button">
+        {{ saving ? t('common.saving') : t('common.save') }}
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
+interface Props {
+  channelId: string
+  config: Record<string, any>
+}
+
+const props = defineProps<Props>()
+const emit = defineEmits<{
+  update: [channelId: string, config: Record<string, any>]
+  test: [channelId: string]
+}>()
+
+const localConfig = ref({
+  enabled: props.config.enabled !== undefined ? props.config.enabled : true,
+  app_id: props.config.app_id || '',
+  secret: props.config.secret || '',
+  allow_from: props.config.allow_from || [],
+  markdown_enabled: props.config.markdown_enabled !== undefined ? props.config.markdown_enabled : true,
+  group_markdown_enabled: props.config.group_markdown_enabled !== undefined ? props.config.group_markdown_enabled : true,
+  oss: props.config.oss || {
+    secret_id: '',
+    secret_key: '',
+    bucket: '',
+    region: ''
+  }
+})
+
+const showPassword = ref(false)
+const showOssPassword = ref(false)
+const originalConfig = ref(JSON.stringify(localConfig.value))
+const testing = ref(false)
+const saving = ref(false)
+const preventReset = ref(false) // 防止在测试期间重置配置
+
+const hasChanges = computed(() => JSON.stringify(localConfig.value) !== originalConfig.value)
+
+const handleChange = () => {
+  // 当用户修改配置时，不需要更新originalConfig
+  // originalConfig在组件初始化时设置，保存后更新
+}
+
+const addAllowUser = () => {
+  localConfig.value.allow_from.push('')
+}
+
+const removeAllowUser = (index: number) => {
+  localConfig.value.allow_from.splice(index, 1)
+  handleChange()
+}
+
+const handleTest = async () => {
+  testing.value = true
+  preventReset.value = true // 防止在测试期间重置配置
+  
+  try {
+    // 传递当前用户输入的配置进行测试
+    emit('test', props.channelId, localConfig.value)
+  } finally {
+    setTimeout(() => { 
+      testing.value = false
+      // 注意：这里不重置 preventReset，让用户手动保存后再重置
+      // 这样可以防止测试后配置被自动重置
+    }, 1000)
+  }
+}
+
+const handleSave = async () => {
+  saving.value = true
+  try {
+    const config = {
+      ...localConfig.value,
+      allow_from: localConfig.value.allow_from.filter(u => u.trim())
+    }
+    
+    // 检查是否修改了 OSS 配置
+    const originalOss = JSON.parse(originalConfig.value).oss || {}
+    const currentOss = localConfig.value.oss || {}
+    const ossChanged = JSON.stringify(originalOss) !== JSON.stringify(currentOss)
+    
+    emit('update', props.channelId, config)
+    originalConfig.value = JSON.stringify(localConfig.value)
+    preventReset.value = false // 保存成功后重置
+    
+    if (ossChanged) {
+      // OSS 配置变更，尝试热重载
+      try {
+        const response = await fetch('http://localhost:8000/api/settings/reload-oss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success) {
+            setTimeout(() => {
+              alert(t('settings.channels.qq.ossReloadSuccess'))
+            }, 600)
+          } else {
+            throw new Error(result.message || 'Reload failed')
+          }
+        } else {
+          throw new Error('API request failed')
+        }
+      } catch (error) {
+        // 热重载失败，提示需要重启
+        console.error('OSS hot reload failed:', error)
+        setTimeout(() => {
+          alert(t('settings.channels.qq.ossChangeNotice'))
+        }, 600)
+      }
+    }
+  } finally {
+    setTimeout(() => { saving.value = false }, 500)
+  }
+}
+
+watch(() => props.config, (newConfig) => {
+  // 如果在测试期间，智能合并配置而不是完全重置
+  if (preventReset.value) {
+    // 只更新非敏感字段，保留用户当前输入的值
+    localConfig.value = {
+      ...localConfig.value,
+      enabled: newConfig.enabled !== undefined ? newConfig.enabled : true,
+      allow_from: newConfig.allow_from || [],
+      markdown_enabled: newConfig.markdown_enabled !== undefined ? newConfig.markdown_enabled : true,
+      group_markdown_enabled: newConfig.group_markdown_enabled !== undefined ? newConfig.group_markdown_enabled : true,
+      oss: newConfig.oss || {
+        secret_id: '',
+        secret_key: '',
+        bucket: '',
+        region: ''
+      }
+      // 注意：不更新 app_id, secret
+      // 这些字段保留用户当前输入的值
+    }
+  } else {
+    // 正常情况：完全重置配置
+    localConfig.value = {
+      enabled: newConfig.enabled !== undefined ? newConfig.enabled : true,
+      app_id: newConfig.app_id || '',
+      secret: newConfig.secret || '',
+      allow_from: newConfig.allow_from || [],
+      markdown_enabled: newConfig.markdown_enabled !== undefined ? newConfig.markdown_enabled : true,
+      group_markdown_enabled: newConfig.group_markdown_enabled !== undefined ? newConfig.group_markdown_enabled : true,
+      oss: newConfig.oss || {
+        secret_id: '',
+        secret_key: '',
+        bucket: '',
+        region: ''
+      }
+    }
+    // 注意：这里不更新 originalConfig，只在保存后更新
+    // 这样可以确保 hasChanges 能正确检测到用户修改
+  }
+}, { deep: true, immediate: true })
+</script>
+
+<style scoped>
+.qq-config {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-section-highlight {
+  background: var(--bg-tertiary);
+  border: 2px solid #10b981;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 8px;
+}
+
+.enable-toggle-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.enable-toggle-content {
+  flex: 1;
+}
+
+.enable-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.enable-toggle-label svg {
+  color: #10b981;
+}
+
+.enable-toggle-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.enable-toggle-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: .3s;
+  border-radius: 28px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #10b981;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(24px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+:root[data-theme="dark"] .toggle-slider {
+  background-color: #475569;
+}
+
+:root[data-theme="dark"] .toggle-switch input:checked + .toggle-slider {
+  background-color: #10b981;
+}
+
+.enable-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #92400e;
+}
+
+.enable-warning svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+:root[data-theme="dark"] .enable-warning {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: #b45309;
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .enable-warning svg {
+  color: #fbbf24;
+}
+
+.config-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.required {
+  color: var(--error-color);
+}
+
+.config-checkbox {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.config-input {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.config-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.config-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.allow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.allow-item {
+  display: flex;
+  gap: 8px;
+}
+
+.allow-item .config-input {
+  flex: 1;
+}
+
+.remove-button {
+  width: 36px;
+  height: 36px;
+  background: var(--error-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.remove-button:hover {
+  background: #dc2626;
+}
+
+.add-button {
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.add-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.config-actions {
+  display: flex;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.test-button,
+.save-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.test-button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.test-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.save-button {
+  background: var(--primary-color);
+  color: white;
+}
+
+.save-button:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.test-button:disabled,
+.save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper .config-input {
+  flex: 1;
+  padding-right: 45px;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  opacity: 0.7;
+}
+
+.toggle-password:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  opacity: 1;
+}
+
+.toggle-password:active {
+  transform: scale(0.92);
+}
+
+.toggle-password svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
+}
+
+.config-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 12px 0;
+}
+
+.config-subtitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.config-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+.optional-badge {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: normal;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.config-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #92400e;
+  margin-top: 16px;
+}
+
+.config-notice svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+</style>

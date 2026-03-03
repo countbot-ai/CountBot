@@ -1,0 +1,411 @@
+/**
+ * 全局组件样式 - 确保所有组件有明确的边界和层次
+ */
+
+/* ==================== 基础容器样式 ==================== */
+
+/* 主布局 */
+.main-layout {
+  background-color: var(--bg-primary, #ffffff) !important;
+}
+
+.content-area {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+/* ==================== 聊天窗口 ==================== */
+
+.chat-window {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.chat-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.chat-messages {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.chat-input-container {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-top: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ==================== 技能库 ==================== */
+
+.skills-library {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.skills-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.stats-bar {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+}
+
+.skill-card {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.skill-card:hover {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
+}
+
+/* ==================== 工具面板 ==================== */
+
+.tools-panel {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.tools-nav {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.tool-card {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.tool-card:hover {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
+}
+
+/* ==================== 文件操作 ==================== */
+
+.file-operations {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.operations-tabs {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.op-panel {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.result-box {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ==================== Shell 执行器 ==================== */
+
+.shell-executor {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.executor-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.history-item {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.history-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+/* ==================== 工具历史 ==================== */
+
+.tool-history {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.history-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.stats-grid {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+}
+
+.stat-card {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
+}
+
+/* ==================== 消息列表 ==================== */
+
+.message-list-container {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+/* ==================== 会话面板 ==================== */
+
+.session-panel {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.session-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.session-card {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.session-card:hover {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
+}
+
+/* ==================== 任务监控 ==================== */
+
+.task-monitor {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.monitor-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.task-card {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.task-card:hover {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-2px);
+}
+
+/* ==================== 设置面板 ==================== */
+
+.settings-panel {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.settings-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.settings-section {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ==================== 记忆面板 ==================== */
+
+.memory-panel {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.memory-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.memory-card {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ==================== Cron 管理器 ==================== */
+
+.cron-manager {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+}
+
+.cron-header {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+.cron-card {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ==================== 模态框 ==================== */
+
+.modal-overlay {
+  background-color: var(--overlay, rgba(0, 0, 0, 0.5)) !important;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* ==================== 按钮样式 ==================== */
+
+.btn-primary {
+  background-color: var(--color-primary, #18181b) !important;
+  border: 1px solid var(--color-primary, #18181b) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(24, 24, 27, 0.2) !important;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-hover, #27272a) !important;
+  box-shadow: 0 4px 6px rgba(24, 24, 27, 0.3) !important;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  color: var(--text-primary, #1f2937) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-secondary, #f9fafb) !important;
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ==================== 输入框样式 ==================== */
+
+.form-input,
+.form-textarea {
+  background-color: var(--bg-primary, #ffffff) !important;
+  border: 1px solid var(--border-color, #e5e7eb) !important;
+  color: var(--text-primary, #1f2937) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  border-color: var(--color-primary, #18181b) !important;
+  box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.08) !important;
+}
+
+/* ==================== 深色模式 - 赛博朋克 ==================== */
+
+[data-theme="dark"] .main-layout,
+[data-theme="dark"] .chat-header,
+[data-theme="dark"] .chat-input-container,
+[data-theme="dark"] .skills-header,
+[data-theme="dark"] .stats-bar,
+[data-theme="dark"] .skill-card,
+[data-theme="dark"] .tools-nav,
+[data-theme="dark"] .tool-card,
+[data-theme="dark"] .operations-tabs,
+[data-theme="dark"] .result-box,
+[data-theme="dark"] .executor-header,
+[data-theme="dark"] .history-item,
+[data-theme="dark"] .history-header,
+[data-theme="dark"] .stats-grid,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .session-header,
+[data-theme="dark"] .session-card,
+[data-theme="dark"] .monitor-header,
+[data-theme="dark"] .task-card,
+[data-theme="dark"] .settings-header,
+[data-theme="dark"] .settings-section,
+[data-theme="dark"] .memory-header,
+[data-theme="dark"] .memory-card,
+[data-theme="dark"] .cron-header,
+[data-theme="dark"] .cron-card,
+[data-theme="dark"] .modal-content {
+  background-color: #0a0e1a !important;
+  border-color: #152035 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .btn-secondary {
+  background-color: #0e1422 !important;
+  border-color: #1e2d45 !important;
+  color: #7a9ab0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-textarea {
+  background-color: #0a0e1a !important;
+  border-color: #152035 !important;
+  color: #d0e8f0 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .content-area,
+[data-theme="dark"] .chat-window,
+[data-theme="dark"] .chat-messages,
+[data-theme="dark"] .skills-library,
+[data-theme="dark"] .tools-panel,
+[data-theme="dark"] .file-operations,
+[data-theme="dark"] .op-panel,
+[data-theme="dark"] .shell-executor,
+[data-theme="dark"] .tool-history,
+[data-theme="dark"] .message-list-container,
+[data-theme="dark"] .session-panel,
+[data-theme="dark"] .task-monitor,
+[data-theme="dark"] .settings-panel,
+[data-theme="dark"] .memory-panel,
+[data-theme="dark"] .cron-manager {
+  background-color: #0e1422 !important;
+}
+
+[data-theme="dark"] .stat-card {
+  background-color: #131b2c !important;
+}
+
+[data-theme="dark"] .skill-card:hover,
+[data-theme="dark"] .tool-card:hover,
+[data-theme="dark"] .history-item:hover,
+[data-theme="dark"] .stat-card:hover,
+[data-theme="dark"] .session-card:hover,
+[data-theme="dark"] .task-card:hover {
+  border-color: rgba(0, 240, 255, 0.2) !important;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .modal-overlay {
+  background-color: rgba(5, 8, 18, 0.88) !important;
+}

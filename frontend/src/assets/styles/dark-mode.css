@@ -1,0 +1,143 @@
+/**
+ * 深色模式全局样式
+ */
+
+/* 全局深色模式背景 */
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] #app {
+  background: #0a0e1a;
+  color: #d0e8f0;
+}
+
+/* 面板和容器 */
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .container,
+:root[data-theme="dark"] .wrapper {
+  background: #0a0e1a;
+}
+
+/* 卡片 */
+:root[data-theme="dark"] .card {
+  background: #0e1422;
+  border-color: #152035;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* 输入框 */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select {
+  background: #0a0e1a;
+  border-color: #152035;
+  color: #d0e8f0;
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #4a6578;
+}
+
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  border-color: #00f0ff;
+  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.08);
+}
+
+/* 按钮 */
+:root[data-theme="dark"] button {
+  background: #0e1422;
+  color: #7a9ab0;
+  border-color: #1e2d45;
+}
+
+:root[data-theme="dark"] button:hover {
+  background: #131b2c;
+  border-color: rgba(0, 240, 255, 0.25);
+  color: #00f0ff;
+}
+
+:root[data-theme="dark"] button.primary {
+  background: #131b2c;
+  color: #00f0ff;
+  border-color: #00f0ff;
+}
+
+/* 模态框 */
+:root[data-theme="dark"] .modal {
+  background: #0a0e1a;
+  border: 1px solid #152035;
+}
+
+:root[data-theme="dark"] .modal-overlay {
+  background: rgba(5, 8, 18, 0.88);
+}
+
+/* 下拉菜单 */
+:root[data-theme="dark"] .dropdown,
+:root[data-theme="dark"] .menu {
+  background: #0a0e1a;
+  border-color: #152035;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* 工具提示 */
+:root[data-theme="dark"] .tooltip {
+  background: #131b2c;
+  color: #d0e8f0;
+  border: 1px solid #152035;
+}
+
+/* 代码块 */
+:root[data-theme="dark"] code,
+:root[data-theme="dark"] pre {
+  background: #0e1422;
+  color: #d0e8f0;
+}
+
+/* 表格 */
+:root[data-theme="dark"] table {
+  background: #0a0e1a;
+}
+
+:root[data-theme="dark"] th {
+  background: #131b2c;
+  color: #d0e8f0;
+  border-color: #152035;
+}
+
+:root[data-theme="dark"] td {
+  border-color: #152035;
+  color: #7a9ab0;
+}
+
+:root[data-theme="dark"] tr:hover {
+  background: #111828;
+}
+
+/* 分隔线 */
+:root[data-theme="dark"] hr {
+  border-color: #152035;
+}
+
+/* 链接 */
+:root[data-theme="dark"] a {
+  color: #00f0ff;
+}
+
+:root[data-theme="dark"] a:hover {
+  color: #33f5ff;
+}
+
+/* 滚动条 */
+:root[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0a0e1a;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #152035;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #1e2d45;
+}
