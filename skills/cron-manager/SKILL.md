@@ -32,11 +32,20 @@ python3 skills/cron-manager/scripts/cron_manager.py <command> [args]
 ### 创建任务
 
 ```bash
-# 基本创建（仅在系统内执行，不推送到渠道）
+# 基本创建（默认启用自动重试1次）
 python3 skills/cron-manager/scripts/cron_manager.py create --name "每日天气" --schedule "0 9 * * *" --message "查询今天的天气并生成播报"
+
+# 创建不重试的任务
+python3 skills/cron-manager/scripts/cron_manager.py create --name "简单任务" --schedule "0 9 * * *" --message "执行简单任务" --max-retries 0
 
 # 创建并推送到当前渠道（需要指定 channel 和 chat_id）
 python3 skills/cron-manager/scripts/cron_manager.py create --name "每日天气" --schedule "0 9 * * *" --message "查询今天的天气并生成播报" --channel feishu --chat-id ou_xxxx --deliver
+
+# 创建带自定义重试的任务（失败后最多重试 3 次，每次间隔 60 秒）
+python3 skills/cron-manager/scripts/cron_manager.py create --name "重要任务" --schedule "0 9 * * *" --message "执行重要任务" --max-retries 3 --retry-delay 60
+
+# 创建一次性任务（成功后自动删除）
+python3 skills/cron-manager/scripts/cron_manager.py create --name "一次性提醒" --schedule "0 14 * * *" --message "下午2点提醒" --delete-on-success
 ```
 
 ### 列出任务
@@ -92,6 +101,41 @@ python3 skills/cron-manager/scripts/cron_manager.py run <job_id>
 python3 skills/cron-manager/scripts/cron_manager.py validate "0 9 * * *"
 ```
 
+### 批量创建任务
+
+```bash
+# 从 JSON 文件批量创建任务
+python3 skills/cron-manager/scripts/cron_manager.py batch-create --file tasks.json
+```
+
+JSON 文件格式示例：
+```json
+[
+  {
+    "name": "每日天气",
+    "schedule": "0 9 * * *",
+    "message": "查询今天的天气",
+    "enabled": true,
+    "max_retries": 3,
+    "retry_delay": 60
+  },
+  {
+    "name": "每周报告",
+    "schedule": "0 10 * * 1",
+    "message": "生成本周工作报告",
+    "enabled": true,
+    "delete_on_success": false
+  }
+]
+```
+
+### 批量删除任务
+
+```bash
+# 批量删除多个任务（支持 ID 前缀匹配）
+python3 skills/cron-manager/scripts/cron_manager.py batch-delete abc123 def456 ghi789
+```
+
 ### 查看任务会话消息
 
 ```bash
@@ -135,6 +179,31 @@ python3 skills/cron-manager/scripts/cron_manager.py reset <job_id>
 - 创建任务时如果需要推送结果到渠道，必须同时指定 --channel、--chat-id 和 --deliver
 - clean 操作不可撤销，清理前建议先用 messages 查看内容
 - reset 会删除整个会话，任务下次执行时会自动创建新会话
+
+## 新功能说明
+
+### 自动重试机制
+
+- 默认启用自动重试，失败后重试1次，间隔60秒
+- 使用 `--max-retries` 指定最大重试次数（0 = 不重试，最多5次）
+- 使用 `--retry-delay` 指定重试间隔秒数（默认 60 秒）
+- 任务失败后会自动重试，直到成功或达到最大重试次数
+- 重试期间任务状态显示为 "retrying"
+- 重试耗尽后按原定 cron 表达式继续执行
+
+### 成功后自动删除
+
+- 使用 `--delete-on-success` 标记任务为一次性任务
+- 任务执行成功后会自动从数据库中删除
+- 适用于一次性提醒、临时任务等场景
+- 如果任务失败，不会删除，会按重试策略处理
+
+### 批量操作
+
+- `batch-create` 支持从 JSON 文件批量创建任务
+- `batch-delete` 支持一次删除多个任务
+- 批量操作会显示成功和失败的统计信息
+- 部分失败不影响其他任务的处理
 
 ## 渠道自动识别
 

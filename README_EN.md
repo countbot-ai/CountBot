@@ -18,15 +18,22 @@
 
 ## What's New
 
+- **Mar 4, 2026 — v0.3.0 Released** 🎉 [View Detailed Update Guide](docs/releases/v0.3.0/)
+  -  Multi-Agent Collaboration System (Pipeline/Graph/Council modes)
+  -  Enhanced Cron Jobs (one-time tasks, retry mechanism, batch operations)
+  -  Skills System Upgrade (config management, schema validation, auto-fix)
+  -  Added 10+ Chinese AI vendor coding plans support
+  -  Comprehensive UI/UX optimization and stability improvements
+  -  Enhanced Web Tools (Scrapling anti-scraping, JS rendering support)
+  
 - Feb 25, 2026 — v0.2.0 released with bug fixes and UX improvements
 - Feb 21, 2026 — CountBot officially open-sourced with standardized codebase
-- Feb 19, 2026 — CountBot project launched
 
 ### Upcoming Features
 
-- Multi-modal multi-agent collaboration for complex task distribution
-- Full tmux integration to invoke Codex CLI, Claude Code, and other external tools
-- Smart hardware channel integration for voice control
+- Smart hardware integration (voice control, IoT device support)
+- Deep tmux integration (invoke Codex CLI, Claude Code, and other external tools)
+- Continuous performance optimization (parallel agent execution, improved caching)
 
 ---
 

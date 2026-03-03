@@ -1,5 +1,6 @@
-"""LiteLLM Provider 实现"""
+"""LiteLLM Provider — 统一多模型流式调用"""
 
+import asyncio
 import json
 import os
 from typing import AsyncIterator, Any
@@ -15,13 +16,18 @@ class LiteLLMProvider(LLMProvider):
         api_key: str | None = None,
         api_base: str | None = None,
         default_model: str = "anthropic/claude-4.5",
-        timeout: float = 120.0,
+        timeout: float = 600.0,  # 10分钟（符合行业标准，适应复杂任务）
         max_retries: int = 3,
         provider_id: str | None = None,
         **kwargs: Any
     ):
         # 在导入 litellm 之前设置环境变量，避免启动时网络请求
         os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+        # 禁用 tiktoken 的网络请求（避免从 HuggingFace 下载 tokenizer）
+        os.environ["TIKTOKEN_CACHE_DIR"] = os.path.join(os.path.expanduser("~"), ".cache", "tiktoken")
+        # 设置离线模式，避免 tiktoken 尝试下载
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_HUB_OFFLINE"] = "1"
         
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
@@ -29,7 +35,7 @@ class LiteLLMProvider(LLMProvider):
         self._suppress_litellm_logging()
     
     def _suppress_litellm_logging(self) -> None:
-        """禁用 LiteLLM 日志"""
+        """禁用 LiteLLM 日志和网络请求"""
         try:
             import litellm
             import logging
@@ -40,13 +46,19 @@ class LiteLLMProvider(LLMProvider):
             litellm.drop_params = True
             litellm.telemetry = False
             
-            # 禁用 tiktoken 以避免编码错误
+            # 禁用 tiktoken 以避免编码错误和网络请求
             # 这会让 LiteLLM 跳过 token 计数，直接发送请求
             os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
             
             # 禁用远程模型价格映射获取（避免启动时网络超时）
             litellm.suppress_debug_info = True
             litellm.turn_off_message_logging = True
+            
+            # 完全禁用 tiktoken 的网络请求
+            # 设置离线模式，防止从 HuggingFace 下载 tokenizer
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["HF_DATASETS_OFFLINE"] = "1"
             
             # 设置 tiktoken 缓存目录（避免 Windows 权限问题）
             try:
@@ -152,100 +164,169 @@ class LiteLLMProvider(LLMProvider):
             request_params.update(kwargs)
             
             logger.debug(f"LiteLLM params: {json.dumps({k: v for k, v in request_params.items() if k not in ['api_key', 'messages']}, ensure_ascii=False)}")
-            response = await litellm.acompletion(**request_params)
-            
+
+            # 带指数退避的重试机制（应对网络超时 / 瞬时故障）
+            response = None
+            last_err: Exception | None = None
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    response = await litellm.acompletion(**request_params)
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt < self.max_retries:
+                        wait = min(2 ** attempt, 30)
+                        logger.warning(
+                            f"LiteLLM 调用失败 (第{attempt}/{self.max_retries}次)，"
+                            f"{wait}s 后重试: {e}"
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        logger.error(f"LiteLLM 调用最终失败 ({self.max_retries}次重试耗尽): {e}")
+                        raise
+
             tool_call_buffer: dict[str, dict[str, Any]] = {}
             reasoning_buffer = ""
             chunk_count = 0
-            
-            async for chunk in response:
-                chunk_count += 1
-                if chunk_count <= 3:  # 只记录前3个chunk用于调试
-                    logger.debug(f"LiteLLM chunk #{chunk_count}: {chunk}")
-                if not chunk.choices:
-                    continue
-                
-                choice = chunk.choices[0]
-                delta = choice.delta
-                
-                # 处理内容增量
-                if hasattr(delta, "content") and delta.content:
-                    yield StreamChunk(content=delta.content)
-                
-                # 处理推理内容（思考模型如 DeepSeek-R1、Kimi 等）
-                if hasattr(delta, "reasoning_content") and delta.reasoning_content:
-                    reasoning_buffer += delta.reasoning_content
-                    yield StreamChunk(reasoning_content=delta.reasoning_content)
-                
-                # 处理工具调用增量
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        tc_id = getattr(tc_delta, "id", None)
-                        tc_index = getattr(tc_delta, "index", 0)
-                        
-                        # 统一使用 index 作为 key (Kimi 模型兼容性)
-                        key = f"index_{tc_index}"
-                        
-                        # 初始化缓冲区
-                        if key not in tool_call_buffer:
-                            tool_call_buffer[key] = {
-                                "id": tc_id or f"call_{tc_index}",
-                                "name": "",
-                                "arguments": ""
-                            }
-                        
-                        # 更新 ID (如果有)
-                        if tc_id:
-                            tool_call_buffer[key]["id"] = tc_id
-                        
-                        # 累积工具调用信息
-                        if hasattr(tc_delta, "function"):
-                            function = tc_delta.function
-                            if hasattr(function, "name") and function.name:
-                                tool_call_buffer[key]["name"] = function.name
-                            if hasattr(function, "arguments") and function.arguments:
-                                tool_call_buffer[key]["arguments"] += function.arguments
-                
-                # 检查是否完成
-                if choice.finish_reason:
-                    # 发送所有累积的工具调用
-                    for tc_data in tool_call_buffer.values():
-                        if tc_data["name"]:
-                            args_str = tc_data["arguments"].strip()
-                            
-                            # Claude 模型可能返回空字符串而不是 "{}"
-                            # 根据 OpenAI 兼容标准，空字符串应该被视为空对象
-                            if not args_str:
-                                arguments = {}
-                            else:
-                                try:
-                                    arguments = json.loads(args_str)
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"JSON parse failed: {e}, raw: {repr(args_str)}")
-                                    arguments = {"raw": args_str}
-                            
+            content_yielded = False  # 已向调用方 yield 过内容/工具调用
+            stream_done = False      # 收到正常 finish_reason
+
+            # ── 流式读取（支持中途超时重试）──────────────────────────
+            # 策略：
+            #   - 未 yield 任何内容前发生超时 → 完整重试请求（最多 max_retries 次）
+            #   - 已 yield 内容后发生超时    → 优雅结束（yield finish_reason）
+            stream_retry = 0
+            max_stream_retries = self.max_retries
+
+            while not stream_done and stream_retry <= max_stream_retries:
+                try:
+                    async for chunk in response:
+                        chunk_count += 1
+                        if chunk_count <= 3:  # 只记录前3个chunk用于调试
+                            logger.debug(f"LiteLLM chunk #{chunk_count}: {chunk}")
+                        if not chunk.choices:
+                            continue
+
+                        choice = chunk.choices[0]
+                        delta = choice.delta
+
+                        # 处理内容增量
+                        if hasattr(delta, "content") and delta.content:
+                            content_yielded = True
+                            yield StreamChunk(content=delta.content)
+
+                        # 处理推理内容（思考模型如 DeepSeek-R1、Kimi 等）
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            reasoning_buffer += delta.reasoning_content
+                            content_yielded = True
+                            yield StreamChunk(reasoning_content=delta.reasoning_content)
+
+                        # 处理工具调用增量
+                        if hasattr(delta, "tool_calls") and delta.tool_calls:
+                            content_yielded = True
+                            for tc_delta in delta.tool_calls:
+                                tc_id = getattr(tc_delta, "id", None)
+                                tc_index = getattr(tc_delta, "index", 0)
+
+                                # 统一使用 index 作为 key (Kimi 模型兼容性)
+                                key = f"index_{tc_index}"
+
+                                # 初始化缓冲区
+                                if key not in tool_call_buffer:
+                                    tool_call_buffer[key] = {
+                                        "id": tc_id or f"call_{tc_index}",
+                                        "name": "",
+                                        "arguments": ""
+                                    }
+
+                                # 更新 ID (如果有)
+                                if tc_id:
+                                    tool_call_buffer[key]["id"] = tc_id
+
+                                # 累积工具调用信息
+                                if hasattr(tc_delta, "function"):
+                                    function = tc_delta.function
+                                    if hasattr(function, "name") and function.name:
+                                        tool_call_buffer[key]["name"] = function.name
+                                    if hasattr(function, "arguments") and function.arguments:
+                                        tool_call_buffer[key]["arguments"] += function.arguments
+
+                        # 检查是否完成
+                        if choice.finish_reason:
+                            # 发送所有累积的工具调用
+                            for tc_data in tool_call_buffer.values():
+                                if tc_data["name"]:
+                                    args_str = tc_data["arguments"].strip()
+
+                                    # Claude 模型可能返回空字符串而不是 "{}"
+                                    # 根据 OpenAI 兼容标准，空字符串应该被视为空对象
+                                    if not args_str:
+                                        arguments = {}
+                                    else:
+                                        try:
+                                            arguments = json.loads(args_str)
+                                        except json.JSONDecodeError as e:
+                                            logger.error(f"JSON parse failed: {e}, raw: {repr(args_str)}")
+                                            arguments = {"raw": args_str}
+
+                                    yield StreamChunk(
+                                        tool_call=ToolCall(
+                                            id=tc_data["id"],
+                                            name=tc_data["name"],
+                                            arguments=arguments
+                                        )
+                                    )
+
+                            # 发送完成信号
+                            usage_dict = None
+                            if hasattr(chunk, "usage") and chunk.usage:
+                                usage_dict = {
+                                    "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0),
+                                    "completion_tokens": getattr(chunk.usage, "completion_tokens", 0),
+                                    "total_tokens": getattr(chunk.usage, "total_tokens", 0),
+                                }
+
                             yield StreamChunk(
-                                tool_call=ToolCall(
-                                    id=tc_data["id"],
-                                    name=tc_data["name"],
-                                    arguments=arguments
-                                )
+                                finish_reason=choice.finish_reason,
+                                usage=usage_dict
                             )
-                    
-                    # 发送完成信号
-                    usage_dict = None
-                    if hasattr(chunk, "usage") and chunk.usage:
-                        usage_dict = {
-                            "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0),
-                            "completion_tokens": getattr(chunk.usage, "completion_tokens", 0),
-                            "total_tokens": getattr(chunk.usage, "total_tokens", 0),
-                        }
-                    
-                    yield StreamChunk(
-                        finish_reason=choice.finish_reason,
-                        usage=usage_dict
-                    )
-        
+                            stream_done = True
+                    # async for 正常耗尽（无 finish_reason chunk 的模型）
+                    if not stream_done:
+                        stream_done = True
+                        yield StreamChunk(finish_reason="stop")
+
+                except Exception as stream_err:
+                    err_str = str(stream_err)
+                    is_timeout = any(k in err_str.lower() for k in ("timeout", "timed out", "read error", "socket"))
+
+                    if not content_yielded and is_timeout and stream_retry < max_stream_retries:
+                        # 尚未向用户发送任何内容 → 重试整个请求
+                        stream_retry += 1
+                        wait = min(2 ** stream_retry, 30)
+                        logger.warning(
+                            f"LiteLLM 流读取超时（第{stream_retry}/{max_stream_retries}次），"
+                            f"{wait}s 后重试: {stream_err}"
+                        )
+                        await asyncio.sleep(wait)
+                        # 重新发起请求
+                        response = await litellm.acompletion(**request_params)
+                        tool_call_buffer = {}
+                        reasoning_buffer = ""
+                        chunk_count = 0
+                    elif content_yielded and is_timeout:
+                        # 已有部分内容 → 优雅截断
+                        logger.warning(
+                            f"LiteLLM 流式读取超时（已发送 {chunk_count} 个 chunk），"
+                            f"优雅截断并结束流: {stream_err}"
+                        )
+                        # 直接结束流，不添加警告信息
+                        yield StreamChunk(finish_reason="length")  # 使用 length 表示被截断
+                        stream_done = True
+                    else:
+                        # 非超时错误或重试耗尽 → 向上抛出
+                        raise
+
         except Exception as e:
             error_msg = str(e)
             logger.error(f"LiteLLM call failed: {error_msg}")

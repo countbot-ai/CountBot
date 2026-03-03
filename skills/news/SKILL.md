@@ -16,34 +16,34 @@ homepage: https://github.com/countbot-ai/CountBot
 
 ```bash
 # 获取热点新闻（默认）
-python3 skills/news/scripts/news.py hot
+python skills/news/scripts/news.py hot
 
 # AI新闻资讯查询
-python3 skills/news/scripts/news.py category --cat ai --limit 20
+python skills/news/scripts/news.py category --cat ai --limit 20
 
 # 按分类查询
-python3 skills/news/scripts/news.py category --cat tech
-python3 skills/news/scripts/news.py category --cat finance
-python3 skills/news/scripts/news.py category --cat ai
-python3 skills/news/scripts/news.py category --cat ai-community
+python skills/news/scripts/news.py category --cat tech
+python skills/news/scripts/news.py category --cat finance
+python skills/news/scripts/news.py category --cat ai
+python skills/news/scripts/news.py category --cat ai-community
 
 # 关键词搜索
-python3 skills/news/scripts/news.py hot --keyword AI
-python3 skills/news/scripts/news.py category --cat ai --keyword GPT
+python skills/news/scripts/news.py hot --keyword AI
+python skills/news/scripts/news.py category --cat ai --keyword GPT
 
 # 控制摘要长度（默认 100 字符）
-python3 skills/news/scripts/news.py category --cat ai --detail 500    # 显示 500 字符摘要
-python3 skills/news/scripts/news.py category --cat ai --detail -1     # 显示全文
-python3 skills/news/scripts/news.py category --cat ai --detail 0      # 不显示摘要
+python skills/news/scripts/news.py category --cat ai --detail 500    # 显示 500 字符摘要
+python skills/news/scripts/news.py category --cat ai --detail -1     # 显示全文
+python skills/news/scripts/news.py category --cat ai --detail 0      # 不显示摘要
 
 # 指定返回条数
-python3 skills/news/scripts/news.py hot --limit 20
+python skills/news/scripts/news.py hot --limit 20
 
 # JSON 格式输出（包含完整正文，不截断）
-python3 skills/news/scripts/news.py hot --json
+python skills/news/scripts/news.py hot --json
 
 # 查看所有支持的分类和来源
-python3 skills/news/scripts/news.py sources
+python skills/news/scripts/news.py sources
 ```
 
 ## 支持的新闻分类
@@ -88,35 +88,35 @@ AI 源说明：
 用户说"今天有什么新闻"：
 
 ```bash
-python3 skills/news/scripts/news.py hot --limit 10
+python skills/news/scripts/news.py hot --limit 10
 ```
 
 用户说"最近 AI 有什么新动态"：
 
 ```bash
-python3 skills/news/scripts/news.py category --cat ai --limit 10
+python skills/news/scripts/news.py category --cat ai --limit 10
 ```
 
 用户说"有什么新的 AI 产品"：
 
 ```bash
-python3 skills/news/scripts/news.py category --cat ai-community --limit 10
+python skills/news/scripts/news.py category --cat ai-community --limit 10
 ```
 
 用户说"搜一下关于 GPT 的新闻"：
 
 ```bash
-python3 skills/news/scripts/news.py category --cat ai --keyword GPT --limit 15
+python skills/news/scripts/news.py category --cat ai --keyword GPT --limit 15
 ```
 
 用户想深入阅读某篇文章：
 
 ```bash
 # 使用 --detail -1 获取 RSS 全文内容
-python3 skills/news/scripts/news.py category --cat ai --keyword "关键词" --detail -1 --limit 5
+python skills/news/scripts/news.py category --cat ai --keyword "关键词" --detail -1 --limit 5
 
 # 或使用 --json 获取完整 JSON（含全文）
-python3 skills/news/scripts/news.py category --cat ai --keyword "关键词" --json --limit 5
+python skills/news/scripts/news.py category --cat ai --keyword "关键词" --json --limit 5
 ```
 
 获取新闻后，整理为简洁的列表返回给用户，包含标题、来源和链接。英文内容可适当翻译摘要。

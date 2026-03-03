@@ -68,6 +68,9 @@ async def handle_message_event(
     )
 
     try:
+        # 立即绑定 session — 确保即使 subscribe 事件尚未到达，后续 WS 事件也能路由到此连接
+        await connection_manager.bind_session(connection_id, session_id)
+
         # 获取取消令牌
         from backend.ws.connection import get_cancel_token, cleanup_cancel_token
         cancel_token = get_cancel_token(session_id)
@@ -122,6 +125,11 @@ async def handle_message_event(
             })
 
         logger.info(f"开始AI处理，上下文消息数: {len(context)}")
+
+        # 将当前 session_id 注入到所有支持会话感知的工具（如 workflow_run）
+        if agent_loop.tools:
+            agent_loop.tools.set_session_id(session_id)
+            logger.debug(f"Propagated session_id={session_id} to tool registry")
 
         # 处理消息并流式输出
         assistant_content = ""

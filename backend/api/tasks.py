@@ -1,8 +1,11 @@
 """Tasks API - 子 Agent 任务管理"""
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.database import get_db
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -14,7 +17,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 class TaskResponse(BaseModel):
     """任务响应"""
-    
+
     task_id: str
     label: str
     message: str
@@ -26,6 +29,7 @@ class TaskResponse(BaseModel):
     created_at: str
     started_at: str | None
     completed_at: str | None
+    tool_call_records: list[dict] = []
 
 
 class TaskStatsResponse(BaseModel):
@@ -44,14 +48,18 @@ class TaskStatsResponse(BaseModel):
 # ============================================================================
 
 def get_subagent_manager():
-    """获取 SubagentManager 实例"""
+    """获取 SubagentManager 实例（可能为 None）"""
     from backend.api.chat import get_global_subagent_manager
-    
-    manager = get_global_subagent_manager()
+    return get_global_subagent_manager()
+
+
+def require_subagent_manager():
+    """获取 SubagentManager 实例；若未初始化则返回 404（不触发客户端重试）"""
+    manager = get_subagent_manager()
     if manager is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="SubagentManager not initialized. Please send a chat message first."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No tasks available. SubagentManager has not been initialized yet."
         )
     return manager
 
@@ -77,8 +85,8 @@ async def list_tasks(
         list[TaskResponse]: 任务列表
     """
     try:
-        manager = get_subagent_manager()
-        
+        manager = require_subagent_manager()
+
         # 解析状态过滤
         from backend.modules.agent.subagent import TaskStatus
         status_enum = None
@@ -108,6 +116,7 @@ async def list_tasks(
                 created_at=task.created_at.isoformat(),
                 started_at=task.started_at.isoformat() if task.started_at else None,
                 completed_at=task.completed_at.isoformat() if task.completed_at else None,
+                tool_call_records=task.tool_call_records,
             )
             for task in tasks
         ]
@@ -131,7 +140,7 @@ async def get_task_stats() -> TaskStatsResponse:
         TaskStatsResponse: 统计信息
     """
     try:
-        manager = get_subagent_manager()
+        manager = require_subagent_manager()
         stats = manager.get_stats()
         
         return TaskStatsResponse(**stats)
@@ -147,12 +156,13 @@ async def get_task_stats() -> TaskStatsResponse:
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: str) -> TaskResponse:
+async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResponse:
     """
     获取任务详情
     
     Args:
         task_id: 任务 ID
+        db: 数据库会话
         
     Returns:
         TaskResponse: 任务详情
@@ -161,15 +171,52 @@ async def get_task(task_id: str) -> TaskResponse:
         HTTPException: 任务不存在
     """
     try:
-        manager = get_subagent_manager()
+        manager = require_subagent_manager()
+        
+        # 先从内存查询
         task = manager.get_task(task_id)
         
-        if task is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task '{task_id}' not found"
+        # 如果内存中没有，从数据库查询
+        if not task:
+            from sqlalchemy import select
+            from backend.models.task import Task
+            
+            result = await db.execute(
+                select(Task).where(Task.id == task_id)
+            )
+            db_task = result.scalar_one_or_none()
+            
+            if not db_task:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Task '{task_id}' not found"
+                )
+            
+            # 从数据库任务构建响应
+            import json
+            tool_call_records = []
+            if db_task.tool_call_records:
+                try:
+                    tool_call_records = json.loads(db_task.tool_call_records)
+                except json.JSONDecodeError:
+                    pass
+            
+            return TaskResponse(
+                task_id=db_task.id,
+                label=db_task.label,
+                message=db_task.message,
+                session_id=db_task.session_id,
+                status=db_task.status,
+                progress=db_task.progress,
+                result=db_task.result,
+                error=db_task.error,
+                created_at=db_task.created_at.isoformat(),
+                started_at=db_task.started_at.isoformat() if db_task.started_at else None,
+                completed_at=db_task.completed_at.isoformat() if db_task.completed_at else None,
+                tool_call_records=tool_call_records,
             )
         
+        # 从内存任务返回
         return TaskResponse(
             task_id=task.task_id,
             label=task.label,
@@ -182,6 +229,7 @@ async def get_task(task_id: str) -> TaskResponse:
             created_at=task.created_at.isoformat(),
             started_at=task.started_at.isoformat() if task.started_at else None,
             completed_at=task.completed_at.isoformat() if task.completed_at else None,
+            tool_call_records=task.tool_call_records,
         )
         
     except HTTPException:
@@ -209,7 +257,7 @@ async def cancel_task(task_id: str) -> dict[str, bool]:
         HTTPException: 任务不存在或无法取消
     """
     try:
-        manager = get_subagent_manager()
+        manager = require_subagent_manager()
         success = await manager.cancel_task(task_id)
         
         if not success:
@@ -245,7 +293,7 @@ async def delete_task(task_id: str) -> dict[str, bool]:
         HTTPException: 任务不存在
     """
     try:
-        manager = get_subagent_manager()
+        manager = require_subagent_manager()
         success = manager.delete_task(task_id)
         
         if not success:

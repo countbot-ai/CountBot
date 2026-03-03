@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class ProviderConfig(BaseModel):
@@ -24,7 +24,44 @@ class ModelConfig(BaseModel):
 class WorkspaceConfig(BaseModel):
     """工作空间配置"""
     path: str = ""
-    # restrict_to_workspace 已移至 SecurityConfig
+    
+    def __init__(self, **data):
+        """初始化，设置默认工作空间路径"""
+        super().__init__(**data)
+        if not self.path:
+            self.path = self._get_default_workspace_path()
+    
+    def _get_default_workspace_path(self) -> str:
+        """获取默认工作空间路径"""
+        import os
+        import sys
+        from pathlib import Path
+        
+        try:
+            # 获取程序目录
+            if getattr(sys, 'frozen', False):
+                # 打包后的可执行文件
+                app_dir = Path(sys.executable).parent
+            else:
+                # 开发环境
+                app_dir = Path(__file__).parent.parent.parent.parent
+            
+            # 默认工作空间：程序目录/workspace
+            default_workspace = app_dir / "workspace"
+            default_workspace.mkdir(exist_ok=True)
+            
+            # 创建临时目录
+            temp_dir = default_workspace / "temp"
+            temp_dir.mkdir(exist_ok=True)
+            
+            return str(default_workspace.resolve())
+            
+        except Exception:
+            # 备用方案：当前目录/workspace
+            fallback_workspace = Path.cwd() / "workspace"
+            fallback_workspace.mkdir(exist_ok=True)
+            (fallback_workspace / "temp").mkdir(exist_ok=True)
+            return str(fallback_workspace.resolve())
 
 
 class HeartbeatConfig(BaseModel):
@@ -68,21 +105,9 @@ class SecurityConfig(BaseModel):
     
     # 其他安全选项
     command_timeout: int = Field(default=60, ge=1, le=300)
+    subagent_timeout: int = Field(default=600, ge=60, le=3600, description="子代理超时时间（秒）")
     max_output_length: int = Field(default=10000, ge=100, le=1000000)
     restrict_to_workspace: bool = Field(default=False)
-    
-    @field_validator('command_timeout', 'max_output_length', mode='before')
-    @classmethod
-    def validate_int_fields(cls, v):
-        """处理空字符串和无效值，返回默认值"""
-        if v == '' or v is None:
-            return None  # 让 Pydantic 使用默认值
-        if isinstance(v, str):
-            try:
-                return int(v)
-            except ValueError:
-                return None  # 让 Pydantic 使用默认值
-        return v
 
 
 class TelegramConfig(BaseModel):

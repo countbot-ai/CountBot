@@ -14,8 +14,8 @@ def _now_shanghai() -> datetime:
 
 # 默认最大并发执行数
 DEFAULT_MAX_CONCURRENT = 3
-# 单个任务最大执行时间（秒）
-DEFAULT_JOB_TIMEOUT = 300
+# 单个任务最大执行时间（秒）- 20分钟
+DEFAULT_JOB_TIMEOUT = 1200
 # SQLite 写入重试次数
 MAX_COMMIT_RETRIES = 3
 
@@ -84,21 +84,25 @@ class CronScheduler:
         logger.info("Cron scheduler stopped")
     
     async def _recompute_next_runs(self):
-        """重新计算所有任务的下次运行时间"""
+        """重新计算过期任务的 next_run"""
         try:
             async with self.db_session_factory() as db:
                 service = CronService(db)
                 jobs = await service.list_jobs(enabled_only=True)
                 
+                now = _now_shanghai()
                 for job in jobs:
                     try:
-                        next_run = service.calculate_next_run(job.schedule)
-                        job.next_run = next_run
+                        # 保留未过期任务的 next_run，避免破坏一次性任务
+                        if job.next_run and job.next_run > now:
+                            continue
+                        
+                        # 重新计算过期或缺失的 next_run
+                        job.next_run = service.calculate_next_run(job.schedule)
                     except Exception as e:
                         logger.error(f"Failed to compute next run for {job.id}: {e}")
                 
                 await self._safe_commit(db)
-                logger.debug(f"Recomputed {len(jobs)} jobs")
         except Exception as e:
             logger.error(f"Failed to recompute: {e}")
     
@@ -131,7 +135,7 @@ class CronScheduler:
                 next_wake = await self._get_next_wake_time()
                 
                 if not next_wake or not self._running:
-                    logger.debug("No jobs to schedule")
+                    logger.info("No jobs to schedule, sleeping 60s")
                     await asyncio.sleep(60)
                     if self._running:
                         self._arm_timer()
@@ -144,13 +148,13 @@ class CronScheduler:
                     logger.warning(f"Job overdue by {abs(delay):.1f}s")
                     delay = 0
                 
-                logger.debug(f"Next job in {delay:.1f}s at {next_wake}")
+                logger.info(f"Next job in {delay:.1f}s at {next_wake}")
                 await asyncio.sleep(delay)
                 
                 if self._running:
                     await self._on_timer()
             except asyncio.CancelledError:
-                logger.debug("Timer cancelled")
+                logger.info("Timer cancelled")
             except Exception as e:
                 logger.error(f"Timer error: {e}")
                 await asyncio.sleep(10)
@@ -254,16 +258,28 @@ class CronScheduler:
                     job.deliver_response
                 )
                 
+                # 执行成功
                 job.last_run = started_at
                 job.last_status = "ok"
                 job.last_error = None
                 job.last_response = response[:1000] if response else None
                 job.run_count = (job.run_count or 0) + 1
+                job.retry_count = 0
+                
                 logger.info(f"Job completed: {job.name}")
+                
+                # 执行成功，检查是否自动删除
+                if job.delete_on_success:
+                    logger.info(f"Job completed successfully, auto-deleting: {job.name}")
+                    await service.db.delete(job)
+                    await self._safe_commit(service.db)
+                    return
+                
             else:
                 logger.warning(f"No executor: {job.name}")
                 job.last_status = "skipped"
             
+            # 计算下次运行时间
             if job.enabled:
                 try:
                     job.next_run = service.calculate_next_run(
@@ -281,19 +297,39 @@ class CronScheduler:
             logger.error(f"Job failed: {job.name} - {e}")
             
             job.last_run = started_at
-            job.last_status = "error"
             job.last_error = str(e)[:1000]
             job.error_count = (job.error_count or 0) + 1
+            job.run_count = (job.run_count or 0) + 1
             
-            if job.enabled:
-                try:
-                    job.next_run = service.calculate_next_run(
-                        job.schedule,
-                        base_time=started_at
-                    )
-                except Exception:
-                    job.enabled = False
-                    job.last_error = f"Failed to calculate next run: {e}"
+            # 检查是否需要重试
+            if job.max_retries > 0 and job.retry_count < job.max_retries:
+                job.retry_count += 1
+                job.last_status = "retrying"
+                # 设置重试时间
+                retry_time = started_at + timedelta(seconds=job.retry_delay)
+                job.next_run = retry_time
+                logger.warning(
+                    f"Job failed, will retry in {job.retry_delay}s "
+                    f"(attempt {job.retry_count}/{job.max_retries}): {job.name}"
+                )
+            else:
+                # 重试耗尽或不重试
+                job.retry_count = 0
+                job.last_status = "error"
+                
+                if job.retry_count > 0:
+                    logger.error(f"Job failed after {job.max_retries} retries: {job.name}")
+                
+                # 按原定计划继续
+                if job.enabled:
+                    try:
+                        job.next_run = service.calculate_next_run(
+                            job.schedule,
+                            base_time=started_at
+                        )
+                    except Exception:
+                        job.enabled = False
+                        job.last_error = f"Failed to calculate next run: {e}"
             
             await self._safe_commit(service.db)
     
@@ -327,6 +363,5 @@ class CronScheduler:
     async def trigger_reschedule(self):
         """手动触发重新调度"""
         if self._running:
-            logger.debug("Triggering reschedule")
-            await self._recompute_next_runs()
+            logger.info("Triggering reschedule")
             self._arm_timer()

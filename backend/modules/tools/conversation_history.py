@@ -72,7 +72,7 @@ class ToolConversationHistory:
         user_message: Optional[str] = None,
         result: Optional[str] = None,
         error: Optional[str] = None,
-        duration_ms: Optional[int] = None
+        duration_ms: Optional[int] = None,
     ) -> str:
         """添加一条工具调用对话记录
         
@@ -102,7 +102,7 @@ class ToolConversationHistory:
             user_message=user_message,
             result=result,
             error=error,
-            duration_ms=duration_ms
+            duration_ms=duration_ms,
         )
         
         # 内存存储

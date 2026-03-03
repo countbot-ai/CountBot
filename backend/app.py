@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from backend.utils.logger import setup_logger
+from backend.database import get_db_session_factory
 
 setup_logger()
 
@@ -83,6 +84,7 @@ def _create_shared_components(config):
         model=config.model.model,
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
+        db_session_factory=get_db_session_factory(),
     )
 
     logger.info("Preparing tool parameters...")
@@ -149,6 +151,10 @@ async def lifespan(app: FastAPI):
     shared = _create_shared_components(config)
     app.state.shared = shared
     logger.info("Shared components created")
+    
+    # 设置全局 SubagentManager
+    from backend.api.chat import set_global_subagent_manager
+    set_global_subagent_manager(shared["subagent_manager"])
 
     logger.info("Creating message queue and rate limiter...")
     message_queue = EnterpriseMessageQueue(
@@ -324,7 +330,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CountBot Desktop API",
     description="CountBot backend API",
-    version="0.2.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -360,6 +366,7 @@ from backend.api.channels import router as channels_router
 from backend.api.queue import router as queue_router
 from backend.api.auth import router as auth_router
 from backend.api.personalities import router as personalities_router
+from backend.api.agent_teams import router as agent_teams_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
@@ -374,6 +381,7 @@ app.include_router(system_router)
 app.include_router(channels_router)
 app.include_router(queue_router)
 app.include_router(personalities_router)
+app.include_router(agent_teams_router)
 
 
 # WebSocket 端点

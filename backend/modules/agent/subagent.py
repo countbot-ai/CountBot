@@ -1,6 +1,7 @@
 """Subagent Manager - 子 Agent 管理"""
 
 import asyncio
+import json
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -28,11 +29,18 @@ class SubagentTask:
         label: str,
         message: str,
         session_id: str | None = None,
+        system_prompt: str | None = None,
+        event_callback=None,
+        enable_skills: bool = False,
     ):
         self.task_id = task_id
         self.label = label
         self.message = message
         self.session_id = session_id
+        self.system_prompt = system_prompt  # custom per-agent persona; overrides default wrapper
+        self.event_callback = event_callback  # async callable(event, tool_name, data)
+        self.notification_handler = None  # TaskNotificationHandler (set by SpawnTool)
+        self.enable_skills = enable_skills  # 是否启用技能系统
         self.status = TaskStatus.PENDING
         self.progress = 0
         self.result: str | None = None
@@ -40,6 +48,8 @@ class SubagentTask:
         self.created_at = datetime.now()
         self.started_at: datetime | None = None
         self.completed_at: datetime | None = None
+        self.tool_call_records: list[dict[str, Any]] = []
+        self.done_event = asyncio.Event()  # set when task reaches a terminal state
 
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
@@ -55,6 +65,7 @@ class SubagentTask:
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "tool_call_records": self.tool_call_records,
         }
 
 
@@ -65,22 +76,16 @@ class SubagentManager:
     管理后台任务的创建、执行、取消和状态查询
     """
 
-    def __init__(self, provider, workspace, model: str, temperature: float = 0.7, max_tokens: int = 4096):
-        """
-        初始化 SubagentManager
-        
-        Args:
-            provider: LLM Provider 实例
-            workspace: 工作空间路径
-            model: 模型名称
-            temperature: 温度参数
-            max_tokens: 最大 token 数
-        """
+    def __init__(self, provider, workspace, model: str, temperature: float = 0.7, max_tokens: int = 4096, db_session_factory=None, config_loader=None, skills=None):
+        """初始化 SubagentManager"""
         self.provider = provider
         self.workspace = workspace
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.db_session_factory = db_session_factory
+        self.config_loader = config_loader
+        self.skills = skills  # 技能系统实例
         self.tasks: dict[str, SubagentTask] = {}
         self.running_tasks: dict[str, asyncio.Task] = {}
         
@@ -91,25 +96,33 @@ class SubagentManager:
         label: str,
         message: str,
         session_id: str | None = None,
+        system_prompt: str | None = None,
+        event_callback=None,
+        enable_skills: bool = False,
     ) -> str:
         """
         创建新的后台任务
-        
+
         Args:
             label: 任务标签
-            message: 任务消息
+            message: 任务消息（用户侧提示词）
             session_id: 关联的会话 ID (可选)
-            
+            system_prompt: 自定义系统提示词；若提供则完全替换默认 wrapper
+            enable_skills: 是否启用技能系统
+
         Returns:
             str: 任务 ID
         """
         task_id = str(uuid.uuid4())
-        
+
         task = SubagentTask(
             task_id=task_id,
             label=label,
             message=message,
             session_id=session_id,
+            system_prompt=system_prompt,
+            event_callback=event_callback,
+            enable_skills=enable_skills,
         )
         
         self.tasks[task_id] = task
@@ -118,55 +131,52 @@ class SubagentManager:
         return task_id
 
     async def execute_task(self, task_id: str) -> None:
-        """
-        执行后台任务
-        
-        Args:
-            task_id: 任务 ID
-            
-        Raises:
-            ValueError: 任务不存在
-        """
+        """Schedule task execution in the background. Returns immediately."""
         task = self.tasks.get(task_id)
         if not task:
             raise ValueError(f"Task {task_id} not found")
-        
+
         if task.status != TaskStatus.PENDING:
             logger.warning(f"Task {task_id} is not pending, current status: {task.status}")
             return
-        
+
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now()
         task.progress = 0
-        
+
         logger.info(f"Starting task {task_id}: {task.label}")
-        
-        # 创建异步任务
+
         async_task = asyncio.create_task(self._run_task(task))
         self.running_tasks[task_id] = async_task
 
     async def _run_task(self, task: SubagentTask) -> None:
-        """
-        运行任务的内部方法
-        
-        Args:
-            task: 任务对象
-        """
+        handler = task.notification_handler
+
         try:
-            # 构建子 Agent 专用的系统提示词
-            system_prompt = self._build_subagent_prompt(task.message)
+            # 任务创建时立即保存到数据库
+            await self._save_task_to_db(task)
             
-            # 构建消息列表
+            if handler:
+                try:
+                    await handler.notify_status("running", 0, "子代理已启动")
+                except Exception:
+                    pass
+
+            resolved_system_prompt = (
+                task.system_prompt
+                if task.system_prompt
+                else self._build_subagent_prompt(task.message, task.enable_skills)
+            )
+
             messages = [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": resolved_system_prompt},
                 {"role": "user", "content": task.message},
             ]
-            
-            # 构建工具注册表（子 Agent 可用的工具）
+
             from backend.modules.tools.registry import ToolRegistry
             from backend.modules.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
             from backend.modules.tools.shell import ExecTool
-            
+
             tools = ToolRegistry()
             tools.register(ReadFileTool(self.workspace))
             tools.register(WriteFileTool(self.workspace))
@@ -178,28 +188,32 @@ class SubagentManager:
                 allow_dangerous=False,
                 restrict_to_workspace=True,
             ))
-            
-            # 尝试注册 Web 工具
+
             try:
                 from backend.modules.tools.web import WebSearchTool, WebFetchTool
                 tools.register(WebSearchTool())
                 tools.register(WebFetchTool())
             except ImportError:
                 logger.warning("Web tools not available for subagent")
-            
-            # 收集响应
+
             response_chunks = []
             iteration = 0
-            max_iterations = 15  # 子 Agent 限制迭代次数
             
-            # 执行 Agent Loop
+            # 从配置获取最大迭代次数，默认15
+            max_iterations = 15
+            if self.config_loader:
+                try:
+                    config = self.config_loader.config
+                    max_iterations = config.model.max_iterations
+                    logger.debug(f"Using max_iterations from config: {max_iterations}")
+                except Exception as e:
+                    logger.warning(f"Failed to get max_iterations from config: {e}, using default: 15")
+
             while iteration < max_iterations:
                 iteration += 1
-                
-                # 获取工具定义
+
                 tool_definitions = tools.get_definitions()
-                
-                # 调用 LLM（使用 chat_stream 并收集完整响应）
+
                 content_buffer = ""
                 tool_calls_buffer = []
                 
@@ -210,23 +224,29 @@ class SubagentManager:
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 ):
-                    # 收集内容
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
-                    
-                    # 收集工具调用
                     if chunk.is_tool_call and chunk.tool_call:
                         tool_calls_buffer.append(chunk.tool_call)
-                
-                # 处理响应
+
                 if content_buffer:
                     response_chunks.append(content_buffer)
-                
-                # 处理工具调用
+
                 if tool_calls_buffer:
                     import json
-                    
-                    # 添加助手消息
+
+                    # Deduplicate parallel tool calls with identical (name, arguments)
+                    seen_sigs: set[str] = set()
+                    deduped: list = []
+                    for _tc in tool_calls_buffer:
+                        _sig = f"{_tc.name}:{json.dumps(_tc.arguments, sort_keys=True)}"
+                        if _sig not in seen_sigs:
+                            seen_sigs.add(_sig)
+                            deduped.append(_tc)
+                        else:
+                            logger.warning(f"[Subagent] skipping duplicate tool call: {_tc.name}")
+                    tool_calls_buffer = deduped
+
                     tool_call_dicts = [
                         {
                             "id": tc.id,
@@ -243,13 +263,69 @@ class SubagentManager:
                         "content": content_buffer or "",
                         "tool_calls": tool_call_dicts,
                     })
-                    
-                    # 执行工具
+
                     for tool_call in tool_calls_buffer:
+                        import time as _time
+                        _tc_start = _time.time()
+
+                        record: dict[str, Any] = {
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.name,
+                            "arguments": tool_call.arguments,
+                            "result": None,
+                            "status": "running",
+                            "started_at": _tc_start,
+                        }
+                        task.tool_call_records.append(record)
+
+                        # 通知 handler（用于 spawn）
+                        if handler:
+                            try:
+                                await handler.notify_tool_call(
+                                    tool_call.name,
+                                    tool_call.arguments,
+                                    tool_call_id=tool_call.id,
+                                )
+                            except Exception:
+                                pass
+                        
+                        # 通知 event_callback（用于 workflow）
+                        if task.event_callback:
+                            try:
+                                await task.event_callback("tool_call", tool_call.name, tool_call.arguments)
+                            except Exception as e:
+                                logger.warning(f"Failed to call event_callback for tool_call: {e}")
+
                         result = await tools.execute(
                             tool_name=tool_call.name,
                             arguments=tool_call.arguments
                         )
+
+                        record["result"] = result[:500] if result else ""
+                        record["status"] = "success"
+                        record["duration_ms"] = round((_time.time() - _tc_start) * 1000)
+
+                        task.progress = min(90, task.progress + 5)
+
+                        # 通知 handler（用于 spawn）
+                        if handler:
+                            try:
+                                await handler.notify_tool_result(
+                                    tool_call.name,
+                                    result,
+                                    task.progress,
+                                    tool_call_id=tool_call.id,
+                                )
+                            except Exception:
+                                pass
+                        
+                        # 通知 event_callback（用于 workflow）
+                        if task.event_callback:
+                            try:
+                                await task.event_callback("tool_result", tool_call.name, result)
+                            except Exception as e:
+                                logger.warning(f"Failed to call event_callback for tool_result: {e}")
+
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -257,52 +333,74 @@ class SubagentManager:
                             "content": result,
                         })
                         
-                        task.progress = min(90, task.progress + 5)
+                        # 每次工具调用后保存到数据库
+                        await self._save_task_to_db(task)
                 else:
-                    # 没有工具调用，完成
                     break
-            
-            # 任务完成
+
             task.result = "".join(response_chunks)
             task.status = TaskStatus.COMPLETED
             task.progress = 100
             task.completed_at = datetime.now()
-            
+
             logger.info(f"Task {task.task_id} completed successfully")
+
+            if handler:
+                try:
+                    await handler.notify_complete(None)
+                except Exception:
+                    pass
             
+            # 任务完成时保存到数据库
+            await self._save_task_to_db(task)
+
         except asyncio.CancelledError:
-            # 任务被取消
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
-            
             logger.info(f"Task {task.task_id} was cancelled")
+            if handler:
+                try:
+                    await handler.notify_failed("任务已取消")
+                except Exception:
+                    pass
             
+            # 任务取消时保存到数据库
+            await self._save_task_to_db(task)
+
         except Exception as e:
-            # 任务失败
             task.status = TaskStatus.FAILED
             task.error = str(e)
             task.completed_at = datetime.now()
-            
             logger.error(f"Task {task.task_id} failed: {e}")
+
+            if handler:
+                try:
+                    await handler.notify_failed(str(e))
+                except Exception:
+                    pass
+            
+            # 任务失败时保存到数据库
+            await self._save_task_to_db(task)
             
         finally:
-            # 清理运行中的任务
             if task.task_id in self.running_tasks:
                 del self.running_tasks[task.task_id]
+            task.done_event.set()
 
-    def _build_subagent_prompt(self, task: str) -> str:
+    def _build_subagent_prompt(self, task: str, enable_skills: bool = False) -> str:
         """
         构建子 Agent 专用的系统提示词
         
         Args:
             task: 任务描述
+            enable_skills: 是否启用技能系统
             
         Returns:
             str: 系统提示词
         """
         workspace_path = str(self.workspace.expanduser().resolve())
         
-        return f"""# 子代理 (Subagent)
+        prompt = f"""# 子代理 (Subagent)
 
 你是主代理创建的子代理，专门负责完成特定任务。
 
@@ -329,12 +427,109 @@ class SubagentManager:
 ## 工作空间
 {workspace_path}
 
+**重要提示**：
+- 临时文件请写入 `temp/` 目录
+- 使用相对路径时，基于工作空间根目录
+"""
+
+        # 如果启用技能系统，注入技能摘要
+        if enable_skills and self.skills:
+            try:
+                skills_summary = self.skills.build_skills_summary()
+                if skills_summary:
+                    prompt += f"""
+
+## 可用技能（Skills）
+
+**重要**: 技能不是工具！技能是包含命令行调用示例的文档，需要先读取文档，再使用 exec 工具执行其中的命令。
+
+以下技能已启用，需要时使用 read_file 工具读取完整内容：
+
+{skills_summary}
+
+**正确使用流程**:
+1. 用户提到某个功能（如"生成图片"、"查天气"、"发小红书"）
+2. 使用 read_file 读取对应技能文档: read_file(path='skills/<技能名>/SKILL.md')
+3. 阅读文档中的命令行示例
+4. 使用 exec 工具执行文档中的命令
+
+**错误示例**: 
+❌ image_gen(prompt="...")  # 错误！image-gen 不是工具
+❌ weather(city="...")      # 错误！weather 不是工具
+
+**正确示例**:
+✅ read_file(path='skills/image-gen/SKILL.md')  # 先读取技能文档
+✅ exec(command='python skills/image-gen/scripts/generate.py ...')  # 再执行命令
+"""
+            except Exception as e:
+                logger.warning(f"Failed to inject skills into subagent prompt: {e}")
+
+        prompt += """
+
 ## 完成标准
 任务完成后，提供清晰的总结：
 - 完成了什么
 - 发现了什么（如果是调查任务）
 - 遇到的问题（如果有）
 - 建议的后续步骤（如果需要）"""
+
+        return prompt
+
+    async def _save_task_to_db(self, task: SubagentTask) -> None:
+        """
+        将任务保存到数据库
+        
+        Args:
+            task: 子代理任务对象
+        """
+        if not self.db_session_factory:
+            return
+        
+        try:
+            from backend.models.task import Task
+            
+            async with self.db_session_factory() as db:
+                # 检查任务是否已存在
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(Task).where(Task.id == task.task_id)
+                )
+                db_task = result.scalar_one_or_none()
+                
+                if db_task:
+                    # 更新现有任务
+                    db_task.label = task.label
+                    db_task.message = task.message
+                    db_task.session_id = task.session_id
+                    db_task.status = task.status.value
+                    db_task.progress = task.progress
+                    db_task.result = task.result
+                    db_task.error = task.error
+                    db_task.started_at = task.started_at
+                    db_task.completed_at = task.completed_at
+                    db_task.tool_call_records = json.dumps(task.tool_call_records)
+                else:
+                    # 创建新任务
+                    db_task = Task(
+                        id=task.task_id,
+                        label=task.label,
+                        message=task.message,
+                        session_id=task.session_id,
+                        status=task.status.value,
+                        progress=task.progress,
+                        result=task.result,
+                        error=task.error,
+                        created_at=task.created_at,
+                        started_at=task.started_at,
+                        completed_at=task.completed_at,
+                        tool_call_records=json.dumps(task.tool_call_records),
+                    )
+                    db.add(db_task)
+                
+                await db.commit()
+                logger.debug(f"Task {task.task_id} saved to database")
+        except Exception as e:
+            logger.error(f"Failed to save task to database: {e}")
 
     async def cancel_task(self, task_id: str) -> bool:
         """
@@ -443,14 +638,6 @@ class SubagentManager:
     def get_running_count(self) -> int:
         """Return the number of currently running subagents."""
         return len(self.running_tasks)
-
-    def register_notification_callback(self, callback) -> None:
-        """注册通知回调函数（保留兼容性）"""
-        pass
-
-    async def _notify(self, task_id: str, event_type: str) -> None:
-        """发送通知（保留兼容性）"""
-        pass
 
     def get_stats(self) -> dict[str, int]:
         """

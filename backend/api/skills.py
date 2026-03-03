@@ -2,15 +2,22 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from backend.modules.agent.skills import SkillsLoader
+from backend.modules.agent.skills_config import SkillConfigManager
+from backend.modules.agent.skills_schema import SkillConfigSchema
 from backend.modules.config.loader import config_loader
+from backend.utils.paths import APPLICATION_ROOT
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
+
+# 内置技能目录
+BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "skills"
 
 
 # ============================================================================
@@ -93,6 +100,71 @@ class UpdateSkillRequest(BaseModel):
 
 class DeleteSkillResponse(BaseModel):
     """删除技能响应"""
+    
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(..., description="消息")
+
+
+class ConfigFieldSchema(BaseModel):
+    """配置字段Schema"""
+    
+    key: str = Field(..., description="字段键名")
+    type: str = Field(..., description="字段类型")
+    label: str = Field(..., description="显示标签")
+    description: str | None = Field(None, description="字段说明")
+    required: bool = Field(False, description="是否必填")
+    sensitive: bool = Field(False, description="是否敏感信息")
+    readonly: bool = Field(False, description="是否只读")
+    default: Any = Field(None, description="默认值")
+    placeholder: str | None = Field(None, description="占位符")
+    validation: str | None = Field(None, description="正则验证")
+    min: int | None = Field(None, description="最小值")
+    max: int | None = Field(None, description="最大值")
+    options: list[dict] | None = Field(None, description="选项列表")
+    help_url: str | None = Field(None, description="帮助链接")
+    fields: list['ConfigFieldSchema'] | None = Field(None, description="子字段")
+    collapsible: bool = Field(False, description="是否可折叠")
+
+
+class SkillConfigSchemaResponse(BaseModel):
+    """技能配置Schema响应"""
+    
+    has_schema: bool = Field(..., description="是否有Schema")
+    schema: dict | None = Field(None, description="Schema定义")
+
+
+class SkillConfigResponse(BaseModel):
+    """技能配置响应"""
+    
+    has_config: bool = Field(..., description="是否有配置文件")
+    config: dict | None = Field(None, description="配置内容")
+    status: str = Field(..., description="配置状态")
+    errors: list[str] = Field(default_factory=list, description="错误列表")
+
+
+class UpdateSkillConfigRequest(BaseModel):
+    """更新技能配置请求"""
+    
+    config: dict = Field(..., description="配置内容")
+
+
+class SkillConfigStatusResponse(BaseModel):
+    """技能配置状态响应"""
+    
+    status: str = Field(..., description="配置状态")
+    message: str = Field(..., description="状态消息")
+    errors: list[str] = Field(default_factory=list, description="错误列表")
+
+
+class SkillConfigHelpResponse(BaseModel):
+    """技能配置帮助响应"""
+    
+    has_help: bool = Field(..., description="是否有帮助文档")
+    content: str | None = Field(None, description="帮助内容")
+
+
+class FixSkillConfigResponse(BaseModel):
+    """修复技能配置响应"""
     
     success: bool = Field(..., description="是否成功")
     message: str = Field(..., description="消息")
@@ -491,4 +563,296 @@ async def delete_skill(name: str) -> DeleteSkillResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete skill: {str(e)}"
+        )
+
+
+# ============================================================================
+# Skills Config Endpoints
+# ============================================================================
+
+
+@router.get("/{name}/config/schema", response_model=SkillConfigSchemaResponse)
+async def get_skill_config_schema(name: str) -> SkillConfigSchemaResponse:
+    """
+    获取技能配置Schema
+    
+    Args:
+        name: 技能名称
+        
+    Returns:
+        SkillConfigSchemaResponse: Schema信息
+    """
+    try:
+        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        schema = schema_loader.load_schema(name)
+        
+        if not schema:
+            return SkillConfigSchemaResponse(
+                has_schema=False,
+                schema=None
+            )
+        
+        return SkillConfigSchemaResponse(
+            has_schema=True,
+            schema=schema
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to get config schema: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get config schema: {str(e)}"
+        )
+
+
+@router.get("/{name}/config", response_model=SkillConfigResponse)
+async def get_skill_config(name: str) -> SkillConfigResponse:
+    """
+    获取技能配置
+    
+    Args:
+        name: 技能名称
+        
+    Returns:
+        SkillConfigResponse: 配置信息
+    """
+    try:
+        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        
+        # 检查是否有配置文件
+        if not config_manager.has_config(name):
+            return SkillConfigResponse(
+                has_config=False,
+                config=None,
+                status="not_configured",
+                errors=[]
+            )
+        
+        # 加载配置
+        config = config_manager.load_config(name)
+        if config is None:
+            return SkillConfigResponse(
+                has_config=True,
+                config=None,
+                status="invalid_format",
+                errors=["配置文件格式错误"]
+            )
+        
+        # 检查配置状态
+        status_code, errors = config_manager.get_config_status(name)
+        
+        return SkillConfigResponse(
+            has_config=True,
+            config=config,
+            status=status_code,
+            errors=errors
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to get skill config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get skill config: {str(e)}"
+        )
+
+
+@router.put("/{name}/config", response_model=SkillConfigResponse)
+async def update_skill_config(
+    name: str, 
+    request: UpdateSkillConfigRequest
+) -> SkillConfigResponse:
+    """
+    更新技能配置
+    
+    Args:
+        name: 技能名称
+        request: 更新配置请求
+        
+    Returns:
+        SkillConfigResponse: 更新后的配置信息
+    """
+    try:
+        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        
+        # 检查配置文件是否存在
+        if not config_manager.has_config(name):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Config file not found for skill '{name}'"
+            )
+        
+        # 验证配置
+        is_valid, errors = schema_loader.validate_config(name, request.config)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid config: {', '.join(errors)}"
+            )
+        
+        # 保存配置
+        success = config_manager.save_config(name, request.config)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save config for skill '{name}'"
+            )
+        
+        logger.info(f"Updated config for skill: {name}")
+        
+        # 返回更新后的配置
+        return await get_skill_config(name)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to update skill config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update skill config: {str(e)}"
+        )
+
+
+@router.get("/{name}/config/status", response_model=SkillConfigStatusResponse)
+async def get_skill_config_status(name: str) -> SkillConfigStatusResponse:
+    """
+    获取技能配置状态
+    
+    Args:
+        name: 技能名称
+        
+    Returns:
+        SkillConfigStatusResponse: 配置状态
+    """
+    try:
+        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        
+        # 检查Schema
+        if not schema_loader.has_schema(name):
+            return SkillConfigStatusResponse(
+                status="no_schema",
+                message="该技能不支持可视化配置编辑",
+                errors=[]
+            )
+        
+        # 检查配置文件
+        if not config_manager.has_config(name):
+            return SkillConfigStatusResponse(
+                status="not_configured",
+                message="配置文件不存在",
+                errors=[]
+            )
+        
+        # 获取配置状态
+        status_code, errors = config_manager.get_config_status(name)
+        
+        status_messages = {
+            "valid": "配置正常",
+            "invalid_format": "配置文件格式错误",
+            "missing_fields": "配置不完整",
+        }
+        
+        return SkillConfigStatusResponse(
+            status=status_code,
+            message=status_messages.get(status_code, "未知状态"),
+            errors=errors
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to check config status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check config status: {str(e)}"
+        )
+
+
+@router.post("/{name}/config/fix", response_model=FixSkillConfigResponse)
+async def fix_skill_config(name: str) -> FixSkillConfigResponse:
+    """
+    自动修复技能配置
+    
+    Args:
+        name: 技能名称
+        
+    Returns:
+        FixSkillConfigResponse: 修复结果
+    """
+    try:
+        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        
+        # 检查Schema
+        if not schema_loader.has_schema(name):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Schema not found"
+            )
+        
+        # 检查配置文件
+        if not config_manager.has_config(name):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Config file not found"
+            )
+        
+        # 执行修复
+        success = config_manager.auto_fix_config(name)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fix config"
+            )
+        
+        logger.info(f"Fixed config for skill: {name}")
+        
+        return FixSkillConfigResponse(
+            success=True,
+            message="配置已自动修复"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to fix config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fix config: {str(e)}"
+        )
+
+
+@router.get("/{name}/config/help", response_model=SkillConfigHelpResponse)
+async def get_skill_config_help(name: str) -> SkillConfigHelpResponse:
+    """
+    获取技能配置帮助文档
+    
+    Args:
+        name: 技能名称
+        
+    Returns:
+        SkillConfigHelpResponse: 帮助文档
+    """
+    try:
+        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        
+        content = config_manager.get_help_content(name)
+        
+        if not content:
+            return SkillConfigHelpResponse(
+                has_help=False,
+                content=None
+            )
+        
+        return SkillConfigHelpResponse(
+            has_help=True,
+            content=content
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to get config help: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get config help: {str(e)}"
         )

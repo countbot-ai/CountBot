@@ -36,6 +36,14 @@ class CronJob(Base):
     run_count: Mapped[int] = mapped_column(Integer, default=0)
     error_count: Mapped[int] = mapped_column(Integer, default=0)
     
+    # 重试机制
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)  # 当前重试次数
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)  # 最大重试次数（0=不重试）
+    retry_delay: Mapped[int] = mapped_column(Integer, default=60)  # 重试延迟（秒）
+    
+    # 自动删除
+    delete_on_success: Mapped[bool] = mapped_column(Boolean, default=False)  # 成功后自动删除
+    
     # 时间戳
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

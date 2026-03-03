@@ -47,6 +47,11 @@ class ConfigLoader:
 
             self.config = AppConfig(**config_dict)
             
+            # 设置工作空间路径
+            if self.config.workspace.path:
+                from backend.modules.workspace import workspace_manager
+                workspace_manager.set_workspace_path(self.config.workspace.path)
+            
             # 如果启用了加密，解密 API 密钥
             if self.config.security.api_key_encryption_enabled:
                 self._decrypt_api_keys()
@@ -73,6 +78,12 @@ class ConfigLoader:
     async def save_config(self, config: AppConfig) -> None:
         """保存配置"""
         self.config = config
+        
+        # 如果工作空间路径发生变化，更新工作空间管理器
+        if config.workspace.path:
+            from backend.modules.workspace import workspace_manager
+            workspace_manager.set_workspace_path(config.workspace.path)
+        
         await self.save()
 
     async def _save_nested_dict(

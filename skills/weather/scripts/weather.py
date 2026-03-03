@@ -276,7 +276,7 @@ def main():
     # forecast 子命令
     f_parser = subparsers.add_parser('forecast', help='多日天气预报')
     f_parser.add_argument('city', help='城市名（中文/英文/拼音）')
-    f_parser.add_argument('--days', type=int, default=3, choices=[1, 2, 3], help='预报天数（默认: 3）')
+    f_parser.add_argument('--days', type=int, default=7, choices=[1, 2, 3, 4, 5, 6, 7], help='预报天数（默认: 7）')
     f_parser.add_argument('--json', action='store_true', help='JSON 格式输出')
     f_parser.add_argument('--lang', default='zh', help='语言（默认: zh）')
     f_parser.add_argument('--units', choices=['metric', 'uscs'], help='单位制')

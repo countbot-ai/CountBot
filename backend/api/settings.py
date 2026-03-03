@@ -132,6 +132,7 @@ class SecurityConfigResponse(BaseModel):
     
     # 其他安全选项
     command_timeout: int = Field(..., description="命令超时时间（秒）")
+    subagent_timeout: int = Field(..., description="子代理超时时间（秒）")
     max_output_length: int = Field(..., description="最大输出长度")
     restrict_to_workspace: bool = Field(..., description="是否限制在工作空间内")
 
@@ -265,6 +266,7 @@ async def get_settings() -> SettingsResponse:
                 custom_allow_patterns=config.security.custom_allow_patterns,
                 audit_log_enabled=config.security.audit_log_enabled,
                 command_timeout=config.security.command_timeout,
+                subagent_timeout=config.security.subagent_timeout,
                 max_output_length=config.security.max_output_length,
                 restrict_to_workspace=config.security.restrict_to_workspace,
             ),
@@ -367,10 +369,46 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                 config.security.audit_log_enabled = request.security["audit_log_enabled"]
             
             if "command_timeout" in request.security:
-                config.security.command_timeout = request.security["command_timeout"]
+                timeout = request.security["command_timeout"]
+                # 处理空字符串或无效值
+                if timeout == "" or timeout is None:
+                    timeout = 60  # 默认值
+                elif isinstance(timeout, str):
+                    try:
+                        timeout = int(timeout)
+                    except ValueError:
+                        timeout = 60
+                # 确保在有效范围内
+                timeout = max(1, min(300, int(timeout)))
+                config.security.command_timeout = timeout
+            
+            if "subagent_timeout" in request.security:
+                timeout = request.security["subagent_timeout"]
+                # 处理空字符串或无效值
+                if timeout == "" or timeout is None:
+                    timeout = 600  # 默认值
+                elif isinstance(timeout, str):
+                    try:
+                        timeout = int(timeout)
+                    except ValueError:
+                        timeout = 600
+                # 确保在有效范围内
+                timeout = max(60, min(3600, int(timeout)))
+                config.security.subagent_timeout = timeout
             
             if "max_output_length" in request.security:
-                config.security.max_output_length = request.security["max_output_length"]
+                length = request.security["max_output_length"]
+                # 处理空字符串或无效值
+                if length == "" or length is None:
+                    length = 10000  # 默认值
+                elif isinstance(length, str):
+                    try:
+                        length = int(length)
+                    except ValueError:
+                        length = 10000
+                # 确保在有效范围内
+                length = max(100, min(1000000, int(length)))
+                config.security.max_output_length = length
             
             if "restrict_to_workspace" in request.security:
                 config.security.restrict_to_workspace = request.security["restrict_to_workspace"]
@@ -443,7 +481,7 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                         api_key=api_key,
                         api_base=api_base,
                         default_model=config.model.model,
-                        timeout=120.0,
+                        timeout=600.0,  # 10分钟（适应复杂任务和工具调用）
                         max_retries=3,
                         provider_id=provider_id,
                     )
@@ -646,3 +684,338 @@ async def reload_oss_config():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"重新加载 OSS 配置失败: {str(e)}"
         )
+
+
+# ============================================================================
+# 配置导出导入
+# ============================================================================
+
+
+@router.post("/workspace/select-directory")
+async def select_directory():
+    """
+    选择目录
+    
+    Returns:
+        dict: 选择的目录路径
+    """
+    try:
+        from backend.utils.file_dialog import select_directory as desktop_select_directory, is_desktop_environment
+        
+        # 检查是否在桌面环境中
+        if not is_desktop_environment():
+            return {
+                "success": False,
+                "message": "目录选择功能仅在桌面环境中可用",
+                "path": None
+            }
+        
+        # 打开目录选择对话框
+        selected_path = desktop_select_directory("选择工作空间目录")
+        
+        if selected_path:
+            return {
+                "success": True,
+                "message": "目录选择成功",
+                "path": selected_path
+            }
+        else:
+            return {
+                "success": False,
+                "message": "用户取消选择",
+                "path": None
+            }
+            
+    except Exception as e:
+        logger.error(f"选择目录失败: {e}")
+        return {
+            "success": False,
+            "message": f"选择目录失败: {str(e)}",
+            "path": None
+        }
+
+
+@router.get("/workspace/info")
+async def get_workspace_info(force: bool = False):
+    """
+    获取工作空间信息
+    
+    Args:
+        force: 是否强制刷新缓存
+    
+    Returns:
+        dict: 工作空间详细信息
+    """
+    try:
+        from backend.modules.workspace import workspace_manager
+        
+        info = workspace_manager.get_workspace_info(force_refresh=force)
+        
+        # 新的API返回格式已经包含格式化的大小，直接返回
+        return info
+    
+    except Exception as e:
+        logger.error(f"获取工作空间信息失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取工作空间信息失败: {str(e)}"
+        )
+
+
+@router.post("/workspace/clean-temp")
+async def clean_temp_files(request: Request):
+    """
+    清理临时文件
+    
+    Returns:
+        dict: 清理结果
+    """
+    try:
+        from backend.modules.workspace import workspace_manager
+        
+        # 获取请求参数
+        try:
+            body = await request.json()
+            max_age_hours = body.get('max_age_hours', 24)
+            clean_all = body.get('clean_all', False)
+        except Exception:
+            max_age_hours = 24
+            clean_all = False
+        
+        # 确保参数在合理范围内
+        max_age_hours = max(1, min(168, int(max_age_hours)))  # 1小时到7天
+        
+        result = workspace_manager.clean_temp_files(max_age_hours, clean_all)
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"清理临时文件失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"清理临时文件失败: {str(e)}"
+        )
+
+
+@router.post("/workspace/set-path")
+async def set_workspace_path(request: Request):
+    """
+    设置工作空间路径
+    
+    Returns:
+        dict: 设置结果
+    """
+    try:
+        from backend.modules.workspace import workspace_manager
+        
+        # 获取请求参数
+        try:
+            body = await request.json()
+            path = body.get('path', '').strip()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="无效的请求参数"
+            )
+        
+        if not path:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="路径不能为空"
+            )
+        
+        # 设置工作空间路径
+        workspace_manager.set_workspace_path(path)
+        
+        return {
+            "success": True,
+            "message": f"工作空间路径已设置为: {path}",
+            "path": str(workspace_manager.workspace_path)
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"设置工作空间路径失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"设置工作空间路径失败: {str(e)}"
+        )
+
+
+@router.get("/export")
+async def export_settings(
+    include_api_keys: bool = False,
+    sections: str | None = None
+):
+    """
+    导出配置
+    
+    Args:
+        include_api_keys: 是否包含 API 密钥（默认不包含，保护敏感信息）
+        sections: 要导出的配置节，逗号分隔（如：providers,model,persona）
+    
+    Returns:
+        JSON 格式的配置文件
+    """
+    try:
+        from datetime import datetime
+        
+        # 添加日志以便调试
+        logger.info(f"导出配置请求: include_api_keys={include_api_keys} (type={type(include_api_keys).__name__}), sections={sections}")
+        
+        config = config_loader.config
+        config_dict = config.model_dump()
+        
+        # 过滤配置节
+        if sections:
+            section_list = [s.strip() for s in sections.split(',')]
+            config_dict = {k: v for k, v in config_dict.items() if k in section_list}
+            logger.info(f"过滤配置节: {section_list}")
+        
+        # 移除敏感信息
+        if not include_api_keys:
+            logger.info("移除敏感信息（API 密钥）")
+            # 移除 provider API 密钥
+            if 'providers' in config_dict:
+                for provider in config_dict['providers'].values():
+                    if isinstance(provider, dict) and 'api_key' in provider:
+                        provider['api_key'] = ""
+            
+            # 移除渠道密钥
+            if 'channels' in config_dict:
+                for channel_name, channel_data in config_dict['channels'].items():
+                    if isinstance(channel_data, dict):
+                        # 移除各种密钥字段
+                        for key in ['token', 'secret', 'app_secret', 'secret_key', 
+                                   'client_secret', 'encoding_aes_key', 'encrypt_key']:
+                            if key in channel_data:
+                                channel_data[key] = ""
+                        
+                        # 移除 OSS 密钥
+                        if 'oss' in channel_data and isinstance(channel_data['oss'], dict):
+                            channel_data['oss']['secret_id'] = ""
+                            channel_data['oss']['secret_key'] = ""
+        else:
+            logger.info("保留敏感信息（包含 API 密钥）")
+        
+        # 构建导出数据
+        export_data = {
+            "version": "1.0.0",
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "app_version": "1.0.0",  # 可以从版本文件读取
+            "config": config_dict
+        }
+        
+        logger.info(f"配置导出成功，sections={sections}, include_api_keys={include_api_keys}")
+        
+        return export_data
+    
+    except Exception as e:
+        logger.error(f"导出配置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导出失败: {str(e)}"
+        )
+
+
+class ImportSettingsRequest(BaseModel):
+    """导入配置请求"""
+    
+    version: str = Field(..., description="配置文件版本")
+    config: dict = Field(..., description="配置数据")
+    merge: bool = Field(default=False, description="是否合并现有配置")
+    sections: list[str] | None = Field(None, description="要导入的配置节")
+
+
+@router.post("/import")
+async def import_settings(request: ImportSettingsRequest):
+    """
+    导入配置
+    
+    Args:
+        request: 导入配置请求
+    
+    Returns:
+        导入结果和更新后的配置
+    """
+    try:
+        # 检查版本兼容性
+        version = request.version
+        if not version.startswith("1."):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"不支持的配置版本: {version}，当前仅支持 1.x 版本"
+            )
+        
+        import_config = request.config
+        
+        # 过滤配置节
+        if request.sections:
+            import_config = {k: v for k, v in import_config.items() if k in request.sections}
+        
+        # 获取当前配置
+        current_config = config_loader.config
+        current_dict = current_config.model_dump()
+        
+        # 合并或覆盖
+        if request.merge:
+            # 深度合并
+            merged_dict = _deep_merge(current_dict, import_config)
+            logger.info(f"配置合并模式，sections={request.sections}")
+        else:
+            # 覆盖指定节
+            merged_dict = current_dict.copy()
+            merged_dict.update(import_config)
+            logger.info(f"配置覆盖模式，sections={request.sections}")
+        
+        # 验证配置
+        try:
+            new_config = AppConfig(**merged_dict)
+        except Exception as e:
+            logger.error(f"配置验证失败: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"配置验证失败: {str(e)}"
+            )
+        
+        # 保存配置
+        await config_loader.save_config(new_config)
+        
+        logger.info("配置导入成功")
+        
+        # 返回更新后的配置
+        return {
+            "success": True,
+            "message": "配置导入成功",
+            "settings": await get_settings()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"导入配置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导入失败: {str(e)}"
+        )
+
+
+def _deep_merge(base: dict, update: dict) -> dict:
+    """
+    深度合并字典
+    
+    Args:
+        base: 基础字典
+        update: 更新字典
+    
+    Returns:
+        合并后的字典
+    """
+    result = base.copy()
+    for key, value in update.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result

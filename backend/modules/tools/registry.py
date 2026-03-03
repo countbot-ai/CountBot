@@ -1,5 +1,6 @@
 """Tool Registry - 工具注册表"""
 
+import contextvars
 import uuid
 from typing import Any
 from datetime import datetime
@@ -9,6 +10,29 @@ from loguru import logger
 from backend.modules.tools.base import Tool
 from backend.modules.tools.file_audit_logger import file_audit_logger
 
+# 使用 contextvars 实现异步安全的 session_id 存储
+# 每个异步任务都有独立的上下文，避免并发冲突
+_session_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    'session_id', default=None
+)
+_channel_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    'channel', default=None
+)
+
+# 代理上下文
+_agent_type_context: contextvars.ContextVar[str] = contextvars.ContextVar(
+    'agent_type', default='main'
+)
+_agent_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    'agent_id', default=None
+)
+_workflow_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    'workflow_id', default=None
+)
+_parent_tool_call_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    'parent_tool_call_id', default=None
+)
+
 
 class ToolRegistry:
     """工具注册表 - 管理所有可用工具的注册、查询和执行"""
@@ -17,8 +41,8 @@ class ToolRegistry:
         """初始化工具注册表"""
         self._tools: dict[str, Tool] = {}
         self._audit_enabled: bool = True
-        self._session_id: str | None = None
-        logger.debug("ToolRegistry initialized")
+        # 注意：不再使用实例变量存储 session_id，改用 contextvars
+        logger.debug("ToolRegistry initialized (using contextvars for session isolation)")
     
     def set_audit_enabled(self, enabled: bool) -> None:
         """设置是否启用审计日志"""
@@ -27,26 +51,65 @@ class ToolRegistry:
         logger.debug(f"Audit logging {'enabled' if enabled else 'disabled'}")
     
     def set_session_id(self, session_id: str | None) -> None:
-        """设置当前会话 ID，并更新需要 session_id 的工具"""
-        self._session_id = session_id
+        """设置当前上下文的会话 ID（异步安全）
         
-        # 更新 send_media 工具的 session_id
-        send_media_tool = self._tools.get('send_media')
-        if send_media_tool and hasattr(send_media_tool, 'set_session_id'):
-            send_media_tool.set_session_id(session_id)
+        使用 contextvars 确保每个异步任务都有独立的 session_id，
+        避免并发请求之间的相互覆盖。
+        """
+        _session_id_context.set(session_id)
 
-    def set_channel(self, channel: str | None) -> None:
-        """设置当前消息来源渠道（如 dingtalk, telegram, web-chat）"""
-        self._channel = channel
+        # 遍历所有工具，更新支持 set_session_id 的工具
+        for tool in self._tools.values():
+            if hasattr(tool, 'set_session_id'):
+                tool.set_session_id(session_id)
+    
+    @property
+    def _session_id(self) -> str | None:
+        """获取当前上下文的会话 ID（异步安全）"""
+        return _session_id_context.get()
+
+    def set_cancel_token(self, token) -> None:
+        """设置取消令牌，并传递给所有支持 set_cancel_token 的工具（如 WorkflowTool）。"""
+        for tool in self._tools.values():
+            if hasattr(tool, 'set_cancel_token'):
+                tool.set_cancel_token(token)
+
+    def set_agent_context(
+        self,
+        agent_type: str = "main",
+        agent_id: str | None = None,
+        workflow_id: str | None = None,
+        parent_tool_call_id: str | None = None,
+    ) -> None:
+        """设置代理上下文信息（异步安全）
         
-        # 更新 memory_write 工具的默认来源
-        memory_write_tool = self._tools.get('memory_write')
-        if memory_write_tool and hasattr(memory_write_tool, 'set_channel'):
-            memory_write_tool.set_channel(channel)
+        Args:
+            agent_type: 代理类型（main / subagent / workflow）
+            agent_id: 子代理 ID
+            workflow_id: 工作流 ID
+            parent_tool_call_id: 父工具调用 ID
+        """
+        _agent_type_context.set(agent_type)
+        _agent_id_context.set(agent_id)
+        _workflow_id_context.set(workflow_id)
+        _parent_tool_call_id_context.set(parent_tool_call_id)
+    
+    def set_channel(self, channel: str | None) -> None:
+        """设置当前上下文的消息来源渠道（异步安全）
+        
+        如 dingtalk, telegram, web-chat
+        """
+        _channel_context.set(channel)
+
+        # 更新记忆工具的默认来源（兼容统一 memory 工具和旧版 memory_write 工具）
+        memory_tool = self._tools.get('memory') or self._tools.get('memory_write')
+        if memory_tool and hasattr(memory_tool, 'set_channel'):
+            memory_tool.set_channel(channel)
 
     @property
     def channel(self) -> str | None:
-        return getattr(self, '_channel', None)
+        """获取当前上下文的渠道（异步安全）"""
+        return _channel_context.get()
 
     def register(self, tool: Tool) -> None:
         """
@@ -146,8 +209,8 @@ class ToolRegistry:
         tool = self.get_tool(tool_name)
         
         if tool is None:
-            error_msg = f"Error: Tool '{tool_name}' not found"
-            logger.error(error_msg)
+            error_msg = f"Tool '{tool_name}' not found. Please use only the tools provided in the tool definitions."
+            logger.warning(f"Tool not found: {tool_name} (this may be an LLM hallucination)")
             return error_msg
         
         # 生成调用 ID
@@ -207,7 +270,7 @@ class ToolRegistry:
                         tool_name=tool_name,
                         arguments=arguments,
                         result=result,
-                        duration_ms=duration_ms
+                        duration_ms=duration_ms,
                     )
                 except Exception as conv_err:
                     logger.warning(f"Failed to record tool conversation: {conv_err}")
@@ -236,7 +299,7 @@ class ToolRegistry:
                         tool_name=tool_name,
                         arguments=arguments,
                         error=error_msg,
-                        duration_ms=duration_ms
+                        duration_ms=duration_ms,
                     )
                 except Exception as conv_err:
                     logger.warning(f"Failed to record tool conversation: {conv_err}")

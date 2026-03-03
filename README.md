@@ -18,15 +18,22 @@
 
 ## 最新动态
 
+- **2026年3月4日 - v0.3.0 发布** 🎉 [查看详细更新说明](docs/releases/v0.3.0.md)
+  -  多智能体协作系统（Pipeline/Graph/Council 三种模式）
+  -  定时任务增强（一次性任务、重试机制、批量操作）
+  -  技能系统升级（可视化配置管理、Schema 验证）
+  -  新增多个国内 AI 厂商 Coding Plan支持
+  -  UI/UX 全面优化，深度优化界面稳定性
+  -  修复大量issues已知问题
+  
 - 2026年2月25日 - v0.2.0 发布，修复大量已知问题，优化用户体验
 - 2026年2月21日 - CountBot 正式开源，代码规范化重构
-- 2026年2月19日 - CountBot 项目正式上线
 
 ### 近期更新计划
 
-- 实现多模式多智能体协作，支持复杂任务分工
-- 全面接入 tmux，实现调用 Codex CLI、Claude Code 等外部工具
-- 增加智能硬件接入频道，实现语音控制
+- 智能硬件接入（语音控制、物联网）
+- 实现自建频道加密连接（小程序/APP/WEB） 
+- 性能持续优化
 
 ---
 
@@ -305,10 +312,19 @@ countbot/
 
 ## 文档
 
+### 核心文档
+
 | 文档 | 说明 |
 |------|------|
 | [快速开始指南](docs/quick-start-guide.md) | 功能开通、API 密钥获取 |
 | [部署与运维](docs/deployment.md) | 安装、启动、生产部署 |
+| [配置手册](docs/configuration-manual.md) | 完整配置参考 |
+| [API 参考](docs/api-reference.md) | REST API + WebSocket |
+
+### 系统文档
+
+| 文档 | 说明 |
+|------|------|
 | [Agent Loop](docs/agent-loop.md) | ReAct 循环原理 |
 | [记忆系统](docs/memory.md) | 自动总结、上下文压缩 |
 | [Cron 调度器](docs/cron.md) | 精确唤醒、并发控制 |
@@ -316,8 +332,13 @@ countbot/
 | [工具系统](docs/tools.md) | 13 个内置工具 |
 | [技能系统](docs/skills.md) | 10 种插件开发 |
 | [远程认证](docs/auth.md) | 零配置安全模型 |
-| [配置手册](docs/configuration-manual.md) | 完整配置参考 |
-| [API 参考](docs/api-reference.md) | REST API + WebSocket |
+
+### 版本发布
+
+| 版本 | 发布日期 | 文档 |
+|------|---------|------|
+| v0.3.0 | 2026-03-04 | [发布文档](docs/releases/v0.3.0/) |
+| v0.2.0 | 2026-02-25 | - |
 
 ---
 

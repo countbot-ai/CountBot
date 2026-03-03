@@ -19,7 +19,7 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"
-TIMEOUT = 8
+TIMEOUT = 10  # 增加超时时间，提高稳定性
 
 # ── 新闻源定义 ──────────────────────────────────────────────
 SOURCES = {
@@ -45,8 +45,9 @@ SOURCES = {
         {"name": "澎湃新闻",  "type": "rss", "url": "https://www.thepaper.cn/rss_newslist_all.xml"},
     ],
     "world": [
-        {"name": "环球网",   "type": "web", "url": "https://world.huanqiu.com/"},
-        {"name": "参考消息",  "type": "web", "url": "http://www.cankaoxiaoxi.com/"},
+        {"name": "环球网",   "type": "rss", "url": "https://world.huanqiu.com/rss/world.xml"},
+        {"name": "参考消息",  "type": "rss", "url": "http://www.cankaoxiaoxi.com/rss/roll.xml"},
+        {"name": "中国新闻网国际", "type": "rss", "url": "https://www.chinanews.com/rss/world.xml"},
     ],
     "sports": [
         {"name": "新浪体育", "type": "web", "url": "https://sports.sina.com.cn/"},
@@ -82,22 +83,40 @@ CAT_NAMES = {
 
 
 # ── 网络请求 ─────────────────────────────────────────────────
-def fetch(url, timeout=TIMEOUT):
-    """获取 URL 内容，返回文本"""
+def fetch(url, timeout=TIMEOUT, retry=2):
+    """获取 URL 内容，返回文本，支持重试"""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-            # 尝试多种编码
-            for enc in ('utf-8', 'gbk', 'gb2312', 'latin-1'):
-                try:
-                    return data.decode(enc)
-                except (UnicodeDecodeError, LookupError):
-                    continue
-            return data.decode('utf-8', errors='replace')
-    except Exception as e:
-        print(f"  ⚠️  获取 {url} 失败: {e}", file=sys.stderr)
-        return None
+    
+    for attempt in range(retry):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+                # 尝试多种编码
+                for enc in ('utf-8', 'gbk', 'gb2312', 'latin-1'):
+                    try:
+                        return data.decode(enc)
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+                return data.decode('utf-8', errors='replace')
+        except urllib.error.HTTPError as e:
+            if attempt < retry - 1:
+                time.sleep(1)
+                continue
+            print(f"  ⚠️  HTTP错误 {e.code}: {url}", file=sys.stderr)
+            return None
+        except urllib.error.URLError as e:
+            if attempt < retry - 1:
+                time.sleep(1)
+                continue
+            print(f"  ⚠️  网络错误: {url} - {e.reason}", file=sys.stderr)
+            return None
+        except Exception as e:
+            if attempt < retry - 1:
+                time.sleep(1)
+                continue
+            print(f"  ⚠️  获取失败: {url} - {type(e).__name__}: {e}", file=sys.stderr)
+            return None
+    return None
 
 
 # ── RSS 解析 ─────────────────────────────────────────────────
@@ -248,17 +267,26 @@ def parse_sina_api(text, source_name):
 # ── 核心逻辑 ─────────────────────────────────────────────────
 def _fetch_one_source(src):
     """获取并解析单个新闻源（用于并发）"""
-    print(f"  📡 正在获取 {src['name']}...", file=sys.stderr)
-    text = fetch(src["url"])
-    if not text:
-        return []
-    if src["type"] == "rss":
-        if 'feed.mix.sina.com.cn' in src["url"]:
-            return parse_sina_api(text, src["name"])
+    try:
+        print(f"  📡 正在获取 {src['name']}...", file=sys.stderr)
+        text = fetch(src["url"])
+        if not text:
+            print(f"  ❌ {src['name']} 获取失败", file=sys.stderr)
+            return []
+        
+        if src["type"] == "rss":
+            if 'feed.mix.sina.com.cn' in src["url"]:
+                items = parse_sina_api(text, src["name"])
+            else:
+                items = parse_rss(text, src["name"])
         else:
-            return parse_rss(text, src["name"])
-    else:
-        return parse_web_titles(text, src["name"], src["url"])
+            items = parse_web_titles(text, src["name"], src["url"])
+        
+        print(f"  ✅ {src['name']} 获取成功 ({len(items)} 条)", file=sys.stderr)
+        return items
+    except Exception as e:
+        print(f"  ❌ {src['name']} 解析异常: {type(e).__name__}: {e}", file=sys.stderr)
+        return []
 
 
 def fetch_news(category="hot", keyword=None, limit=10):
@@ -267,15 +295,18 @@ def fetch_news(category="hot", keyword=None, limit=10):
 
     sources = SOURCES.get(category, SOURCES["hot"])
     all_items = []
+    
+    print(f"\n🔍 开始获取 {CAT_NAMES.get(category, category)} 新闻...", file=sys.stderr)
 
-    with ThreadPoolExecutor(max_workers=min(len(sources), 8)) as pool:
+    with ThreadPoolExecutor(max_workers=min(len(sources), 6)) as pool:
         futures = {pool.submit(_fetch_one_source, src): src for src in sources}
         for future in as_completed(futures):
             try:
-                all_items.extend(future.result())
+                result = future.result(timeout=15)  # 单个源最多等待15秒
+                all_items.extend(result)
             except Exception as e:
                 src = futures[future]
-                print(f"  ⚠️  {src['name']} 异常: {e}", file=sys.stderr)
+                print(f"  ❌ {src['name']} 处理异常: {type(e).__name__}: {e}", file=sys.stderr)
 
     # 去重（按标题）
     seen = set()

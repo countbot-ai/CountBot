@@ -42,9 +42,7 @@ class AgentLoop:
         self.max_tokens = max_tokens
         
         logger.debug(
-            f"AgentLoop initialized: workspace={workspace}, "
-            f"max_iterations={max_iterations}, max_retries={max_retries}, "
-            f"temperature={temperature}, max_tokens={max_tokens}"
+            f"AgentLoop initialized: max_iterations={max_iterations}, max_retries={max_retries}"
         )
 
     async def process_message(
@@ -58,20 +56,17 @@ class AgentLoop:
         cancel_token=None,
         yield_intermediate: bool = True,
     ) -> AsyncIterator[str]:
-        """处理用户消息并生成流式响应
-        
-        Args:
-            yield_intermediate: 是否输出中间迭代内容
-                               True: Web UI 流式模式，实时输出
-                               False: 频道模式，仅输出最终回复
-        """
-        logger.info(f"Processing message for session {session_id}: {message[:50]}...")
+        """处理用户消息并生成流式响应"""
+        logger.debug(f"Processing message for session {session_id}")
         
         # 设置工具注册表的会话ID（用于审计日志）和渠道信息
         if self.tools:
             self.tools.set_session_id(session_id)
             self.tools.set_channel(channel)
-            
+            # 将取消令牌传递给支持中断的工具（如 WorkflowTool）
+            if cancel_token and hasattr(self.tools, 'set_cancel_token'):
+                self.tools.set_cancel_token(cancel_token)
+
             spawn_tool = self.tools.get_tool("spawn")
             if spawn_tool and hasattr(spawn_tool, 'set_context'):
                 spawn_tool.set_context(session_id)
@@ -102,12 +97,11 @@ class AgentLoop:
             while iteration < self.max_iterations:
                 iteration += 1
                 
-                # 检查是否被取消
                 if cancel_token and cancel_token.is_cancelled:
-                    logger.info(f"Agent loop cancelled at iteration {iteration}: {session_id}")
+                    logger.debug(f"Agent loop cancelled at iteration {iteration}")
                     return
                 
-                logger.debug(f"Agent iteration {iteration}/{self.max_iterations}, total tool calls: {total_tool_calls}")
+                logger.debug(f"Iteration {iteration}: {total_tool_calls} tool calls")
                 
                 tool_definitions = self.tools.get_definitions() if self.tools else []
                 
@@ -125,7 +119,6 @@ class AgentLoop:
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
-                        # Web UI 模式实时输出，频道模式仅缓冲
                         if yield_intermediate:
                             yield chunk.content
                     
@@ -145,8 +138,6 @@ class AgentLoop:
                 
                 if content_buffer:
                     final_content = content_buffer
-                    # 记录AI完整响应
-                    logger.info(f"AI完整响应 (长度: {len(content_buffer)}字符):\n{content_buffer}")
                 
                 if tool_calls_buffer:
                     tool_call_dicts = [
@@ -186,9 +177,8 @@ class AgentLoop:
                             )
                             break
                         
-                        # 检查是否被取消
                         if cancel_token and cancel_token.is_cancelled:
-                            logger.info(f"Agent loop cancelled before tool execution: {session_id}")
+                            logger.debug(f"Agent loop cancelled before tool execution")
                             return
 
                         total_tool_calls += 1
@@ -196,12 +186,8 @@ class AgentLoop:
                         tool_args = tool_call.arguments
                         tool_id = tool_call.id
 
-                        logger.info(
-                            f"Executing tool {total_tool_calls}/{self.max_iterations}: "
-                            f"{tool_name} with args: {json.dumps(tool_args, ensure_ascii=False)}"
-                        )
+                        logger.debug(f"Executing tool {total_tool_calls}: {tool_name}")
                         
-                        # 发送工具调用开始通知
                         try:
                             from backend.ws.tool_notifications import notify_tool_execution
                             await notify_tool_execution(
@@ -212,50 +198,39 @@ class AgentLoop:
                         except Exception as e:
                             logger.warning(f"Failed to send tool notification: {e}")
                         
-                        # 记录工具调用开始时间
                         start_time = time.time()
-                        
-                        # 尝试执行工具，带重试机制
                         result = None
                         last_error = None
                         
                         for attempt in range(self.max_retries):
                             try:
-                                # 执行工具
                                 result = await self.execute_tool(tool_name, tool_args)
-                                logger.debug(f"Tool {tool_name} executed successfully")
+                                logger.debug(f"Tool {tool_name} succeeded")
                                 break
-                                
                             except Exception as e:
                                 last_error = e
                                 logger.warning(
                                     f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
                                 )
-                                
-                                # 如果不是最后一次尝试，等待后重试
                                 if attempt < self.max_retries - 1:
                                     await asyncio.sleep(self.retry_delay)
                         
-                        # 计算执行耗时
                         duration_ms = int((time.time() - start_time) * 1000)
                         
-                        # 添加工具结果到消息列表
                         if result is not None:
-                            # 记录工具调用对话（成功）
                             try:
                                 conversation_history = get_conversation_history()
                                 conversation_history.add_conversation(
                                     session_id=session_id,
                                     tool_name=tool_name,
                                     arguments=tool_args,
-                                    user_message=message,  # 添加用户消息
+                                    user_message=message,
                                     result=result,
                                     duration_ms=duration_ms
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to record tool conversation: {e}")
                             
-                            # 发送工具执行成功通知
                             try:
                                 from backend.ws.tool_notifications import notify_tool_execution
                                 await notify_tool_execution(
@@ -282,25 +257,22 @@ class AgentLoop:
                                     "content": result,
                                 })
                         else:
-                            # 所有重试都失败了
                             error_msg = f"Tool execution failed after {self.max_retries} attempts: {str(last_error)}"
                             logger.error(f"Tool {tool_name} failed permanently: {error_msg}")
                             
-                            # 记录工具调用对话（失败）
                             try:
                                 conversation_history = get_conversation_history()
                                 conversation_history.add_conversation(
                                     session_id=session_id,
                                     tool_name=tool_name,
                                     arguments=tool_args,
-                                    user_message=message,  # 添加用户消息
+                                    user_message=message,
                                     error=error_msg,
                                     duration_ms=duration_ms
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to record tool conversation: {e}")
                             
-                            # 发送工具执行失败通知
                             try:
                                 from backend.ws.tool_notifications import notify_tool_execution
                                 await notify_tool_execution(
@@ -327,9 +299,6 @@ class AgentLoop:
                                     "content": error_msg,
                                 })
                 else:
-                    # 没有工具调用，结束循环
-                    logger.info("No tool calls, ending agent loop")
-                    # 频道模式：最终轮输出完整内容
                     if not yield_intermediate and content_buffer:
                         yield content_buffer
                     break
@@ -425,9 +394,11 @@ class AgentLoop:
         """
         response_parts = []
         
+        # 传入空的 context 列表
         async for chunk in self.process_message(
             message=content,
             session_id=session_id,
+            context=[],  
             channel=channel,
             chat_id=chat_id,
         ):

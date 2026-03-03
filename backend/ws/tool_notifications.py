@@ -310,12 +310,11 @@ async def notify_tool_execution(
         error: 错误信息（可选）
     """
     if error:
-        # 发送错误通知
+        # 错误通知
         await send_error(session_id, f"Tool '{tool_name}' failed: {error}", "TOOL_ERROR")
     elif result:
-        # 发送调用和结果通知
-        await send_tool_call(session_id, tool_name, arguments)
+        # 仅发送结果（tool_call 已在开始时发送，避免重复）
         await send_tool_result(session_id, tool_name, result)
     else:
-        # 只发送调用通知
+        # 工具开始执行：发送调用通知
         await send_tool_call(session_id, tool_name, arguments)

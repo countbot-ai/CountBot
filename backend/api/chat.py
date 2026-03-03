@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -82,6 +83,7 @@ class ToolCallResponse(BaseModel):
     error: str | None = None
     status: str = "success"
     duration: int | None = None
+    spawn_task: dict[str, Any] | None = None  # 子代理任务详情（仅 spawn 工具调用）
 
 
 class MessageResponse(BaseModel):
@@ -107,6 +109,13 @@ class MessageResponse(BaseModel):
 _global_subagent_manager = None
 
 
+def set_global_subagent_manager(manager):
+    """设置全局 SubagentManager 实例"""
+    global _global_subagent_manager
+    _global_subagent_manager = manager
+    logger.info("Global SubagentManager set")
+
+
 def get_global_subagent_manager():
     """获取全局 SubagentManager 实例"""
     return _global_subagent_manager
@@ -117,10 +126,8 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
     global _global_subagent_manager
     
     try:
-        # 加载配置
         config = config_loader.config
         
-        # 获取工作空间路径
         from pathlib import Path
         workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         workspace.mkdir(parents=True, exist_ok=True)
@@ -154,17 +161,15 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
             provider_id=provider_name,
         )
         
-        # 初始化记忆系统
+        # 初始化记忆系统和技能加载器
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)
         
-        # 初始化技能加载器
         skills_dir = workspace / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         skills = SkillsLoader(skills_dir)
         
-        # 初始化上下文构建器
         context_builder = ContextBuilder(
             workspace=workspace,
             memory=memory,
@@ -172,14 +177,12 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
             persona_config=config.persona,
         )
         
-        # 初始化对话总结器
         from backend.modules.agent.memory import ConversationSummarizer
         summarizer = ConversationSummarizer(provider=provider, char_limit=2000)
         
-        # 初始化 SessionManager
         session_manager = SessionManager(db, summarizer=summarizer)
         
-        # 使用全局 SubagentManager（如果不存在则创建）
+        # 创建或获取全局 SubagentManager
         from backend.modules.agent.subagent import SubagentManager
         
         if _global_subagent_manager is None:
@@ -192,7 +195,6 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
             )
             logger.info("Created global SubagentManager")
         
-        # 统一注册所有工具（包括 spawn）
         from backend.modules.tools.setup import register_all_tools
         
         tools = register_all_tools(
@@ -206,11 +208,10 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
             audit_log_enabled=config.security.audit_log_enabled,
             subagent_manager=_global_subagent_manager,
             skills_loader=skills,
-            session_id=None,  # session_id 在实际使用时由工具动态设置
+            session_id=None,
             memory_store=memory,
         )
         
-        # 创建 AgentLoop
         agent_loop = AgentLoop(
             provider=provider,
             workspace=workspace,
@@ -341,21 +342,9 @@ async def send_message(
     agent_loop: AgentLoop = Depends(get_agent_loop),
 ) -> StreamingResponse:
     """
-    发送消息到 Agent 并获取流式响应
+    发送消息到 Agent 并获取 SSE 流式响应。
     
-    此端点使用 Server-Sent Events (SSE) 进行流式响应传输。
-    客户端应该监听 'message' 事件来接收响应片段。
-    
-    Args:
-        request: 发送消息请求
-        db: 数据库会话
-        agent_loop: Agent 循环实例
-        
-    Returns:
-        StreamingResponse: SSE 流式响应
-        
-    Raises:
-        HTTPException: 会话不存在或处理失败
+    客户端监听 'message' 事件接收响应片段。
     """
     try:
         # 验证会话是否存在并获取会话信息（包括总结）
@@ -721,6 +710,9 @@ async def get_session_messages(
         from sqlalchemy import select
         from backend.models.tool_conversation import ToolConversation
         
+        # 获取全局 subagent_manager
+        subagent_mgr = get_global_subagent_manager()
+        
         session_manager = SessionManager(db)
         
         # 验证会话是否存在
@@ -763,6 +755,7 @@ async def get_session_messages(
             # 转换工具调用为响应格式
             tool_call_responses = []
             for tc in msg_tool_calls:
+                logger.info(f"Tool call: {tc.tool_name}, ID: {tc.id}")
                 try:
                     arguments = json.loads(tc.arguments) if tc.arguments else {}
                 except json.JSONDecodeError:
@@ -773,6 +766,68 @@ async def get_session_messages(
                 if tc.error:
                     status_value = "error"
                 
+                # 为 spawn 工具调用添加任务详情
+                spawn_task = None
+                logger.info(f"Checking spawn: tool_name={tc.tool_name}, subagent_mgr={subagent_mgr is not None}")
+                if tc.tool_name == "spawn" and subagent_mgr:
+                    logger.info(f"Processing spawn tool call: {tc.id}")
+                    try:
+                        # 从 result 字段提取 task_id
+                        task_id = None
+                        if tc.result:
+                            # result 格式: "子 Agent [label] 已启动 (ID: task_id)。..." 或 "子 Agent [label] 已完成 (ID: task_id)。..."
+                            match = re.search(r'\(ID: ([a-f0-9\-]+)\)', tc.result)
+                            if match:
+                                task_id = match.group(1)
+                                logger.info(f"Found spawn task_id: {task_id}")
+                        
+                        if task_id:
+                            # 先从内存查询
+                            task = subagent_mgr.get_task(task_id)
+                            if task:
+                                logger.debug(f"Found spawn task in memory: {task_id}")
+                                spawn_task = task.to_dict()
+                            else:
+                                # 内存中没有，从数据库查询
+                                logger.debug(f"Task not in memory, querying database: {task_id}")
+                                from sqlalchemy import select
+                                from backend.models.task import Task as TaskModel
+                                
+                                result = await db.execute(
+                                    select(TaskModel).where(TaskModel.id == task_id)
+                                )
+                                db_task = result.scalar_one_or_none()
+                                
+                                if db_task:
+                                    logger.debug(f"Found spawn task in database: {task_id}")
+                                    # 从数据库任务构建 spawn_task
+                                    tool_call_records = []
+                                    if db_task.tool_call_records:
+                                        try:
+                                            tool_call_records = json.loads(db_task.tool_call_records)
+                                            logger.debug(f"Loaded {len(tool_call_records)} tool call records")
+                                        except json.JSONDecodeError as e:
+                                            logger.warning(f"Failed to parse tool_call_records: {e}")
+                                    
+                                    spawn_task = {
+                                        "task_id": db_task.id,
+                                        "label": db_task.label,
+                                        "message": db_task.message,
+                                        "session_id": db_task.session_id,
+                                        "status": db_task.status,
+                                        "progress": db_task.progress,
+                                        "result": db_task.result,
+                                        "error": db_task.error,
+                                        "created_at": db_task.created_at.isoformat(),
+                                        "started_at": db_task.started_at.isoformat() if db_task.started_at else None,
+                                        "completed_at": db_task.completed_at.isoformat() if db_task.completed_at else None,
+                                        "tool_call_records": tool_call_records,
+                                    }
+                                else:
+                                    logger.warning(f"Spawn task not found in database: {task_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get spawn task details: {e}", exc_info=True)
+                
                 tool_call_responses.append(
                     ToolCallResponse(
                         id=tc.id,
@@ -782,6 +837,7 @@ async def get_session_messages(
                         error=tc.error,
                         status=status_value,
                         duration=tc.duration_ms,
+                        spawn_task=spawn_task,
                     )
                 )
             

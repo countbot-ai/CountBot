@@ -33,11 +33,17 @@ class CronService:
         enabled: bool = True,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
-        deliver_response: bool = False
+        deliver_response: bool = False,
+        max_retries: int = 0,
+        retry_delay: int = 60,
+        delete_on_success: bool = False
     ) -> CronJob:
         """添加定时任务"""
         if not self.validate_schedule(schedule):
             raise ValueError(f"Invalid cron: {schedule}")
+        
+        # 调试日志
+        logger.info(f"Creating job with delete_on_success={delete_on_success} (type: {type(delete_on_success)})")
         
         next_run = self.calculate_next_run(schedule) if enabled else None
         
@@ -50,6 +56,9 @@ class CronService:
             channel=channel,
             chat_id=chat_id,
             deliver_response=deliver_response,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            delete_on_success=delete_on_success,
             next_run=next_run,
             created_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None),
             updated_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
@@ -59,7 +68,7 @@ class CronService:
         await self.db.commit()
         await self.db.refresh(job)
         
-        logger.info(f"Created job: {name} ({job.id})")
+        logger.info(f"Created job: {name} ({job.id}), delete_on_success={job.delete_on_success}")
         
         if self.scheduler and enabled:
             try:
@@ -95,7 +104,10 @@ class CronService:
         enabled: Optional[bool] = None,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
-        deliver_response: Optional[bool] = None
+        deliver_response: Optional[bool] = None,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[int] = None,
+        delete_on_success: Optional[bool] = None
     ) -> Optional[CronJob]:
         """更新任务"""
         job = await self.get_job(job_id)
@@ -124,6 +136,15 @@ class CronService:
         
         if deliver_response is not None:
             job.deliver_response = deliver_response
+        
+        if max_retries is not None:
+            job.max_retries = max_retries
+        
+        if retry_delay is not None:
+            job.retry_delay = retry_delay
+        
+        if delete_on_success is not None:
+            job.delete_on_success = delete_on_success
         
         if job.enabled:
             job.next_run = self.calculate_next_run(job.schedule)

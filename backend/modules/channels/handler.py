@@ -25,7 +25,11 @@ from backend.modules.providers.litellm_provider import LiteLLMProvider
 from backend.modules.tools.setup import register_all_tools
 
 # 预编译 @mention 清理正则
-_AT_MENTION_RE = re.compile(r"@_user_\d+\s*")
+# 飞书格式: @_user_数字 (如 @_user_1)
+# 企业微信/钉钉格式: <at user_id="xxx">@用户名</at>
+_AT_MENTION_RE = re.compile(r"@_user_\d+\s*|<at[^>]*>.*?</at>\s*", re.IGNORECASE)
+# 工作流执行元数据注释（用于前端面板持久化，频道输出时需剥离）
+_WORKFLOW_META_RE = re.compile(r"<!--WORKFLOW_EXEC:.*?:WORKFLOW_EXEC-->", re.DOTALL)
 
 
 def _friendly_channel_error(raw: str) -> str:
@@ -258,7 +262,9 @@ class ChannelMessageHandler:
 
             if response:
                 await self._save_message(session_id, "assistant", response)
-                await self._send_reply(msg, response)
+                # 剥离工作流元数据注释（仅用于 Web UI 恢复面板，频道无需此内容）
+                channel_response = _WORKFLOW_META_RE.sub("", response).strip()
+                await self._send_reply(msg, channel_response or response)
                 duration = time.time() - start_time
                 logger.info(
                     f"[{msg.channel}] Handled session {session_id} in {duration:.2f}s"
@@ -299,7 +305,8 @@ class ChannelMessageHandler:
                 context=history,
                 channel=channel,
                 chat_id=chat_id,
-                yield_intermediate=False,  # 频道模式：仅输出最终回复
+                cancel_token=cancel_token,  # 确保取消令牌传入 Agent 循环
+                yield_intermediate=False,   # 频道模式：只取最终回复，丢弃中间迭代文本
             ):
                 if cancel_token.is_cancelled:
                     break

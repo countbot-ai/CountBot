@@ -1,7 +1,7 @@
 """Cron API 端点"""
 
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +32,12 @@ def _to_shanghai_iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 
 
+async def get_cron_service(request: Request, db: AsyncSession = Depends(get_db)) -> CronService:
+    """获取带 scheduler 的 CronService"""
+    scheduler = getattr(request.app.state, 'cron_scheduler', None)
+    return CronService(db, scheduler=scheduler)
+
+
 # ============================================================================
 # Request/Response Models
 # ============================================================================
@@ -55,6 +61,9 @@ class CronJobInfo(BaseModel):
     run_count: int = Field(0, description="执行次数")
     error_count: int = Field(0, description="错误次数")
     created_at: str = Field(..., description="创建时间")
+    max_retries: int = Field(0, description="最大重试次数")
+    retry_delay: int = Field(60, description="重试延迟（秒）")
+    delete_on_success: bool = Field(False, description="成功后自动删除")
 
 
 class ListCronJobsResponse(BaseModel):
@@ -73,6 +82,9 @@ class CreateCronJobRequest(BaseModel):
     channel: str | None = Field(None, description="渠道名称")
     chat_id: str | None = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
+    max_retries: int = Field(0, description="最大重试次数（0=不重试）")
+    retry_delay: int = Field(60, description="重试延迟（秒）")
+    delete_on_success: bool = Field(False, description="成功后自动删除")
 
 
 class UpdateCronJobRequest(BaseModel):
@@ -85,6 +97,9 @@ class UpdateCronJobRequest(BaseModel):
     channel: str | None = Field(None, description="渠道名称")
     chat_id: str | None = Field(None, description="聊天 ID")
     deliver_response: bool | None = Field(None, description="是否发送响应到渠道")
+    max_retries: int | None = Field(None, description="最大重试次数")
+    retry_delay: int | None = Field(None, description="重试延迟（秒）")
+    delete_on_success: bool | None = Field(None, description="成功后自动删除")
 
 
 class CronJobResponse(BaseModel):
@@ -118,6 +133,36 @@ class ValidateCronResponse(BaseModel):
     valid: bool = Field(..., description="是否有效")
     description: str | None = Field(None, description="表达式描述")
     next_run: str | None = Field(None, description="下次运行时间")
+
+
+class BatchCreateCronJobsRequest(BaseModel):
+    """批量创建 Cron 任务请求"""
+    
+    jobs: list[CreateCronJobRequest] = Field(..., description="任务列表")
+
+
+class BatchCreateCronJobsResponse(BaseModel):
+    """批量创建 Cron 任务响应"""
+    
+    success_count: int = Field(..., description="成功创建数量")
+    failed_count: int = Field(..., description="失败数量")
+    jobs: list[CronJobInfo] = Field(..., description="成功创建的任务")
+    errors: list[dict] = Field(..., description="失败的任务及错误信息")
+
+
+class BatchDeleteCronJobsRequest(BaseModel):
+    """批量删除 Cron 任务请求"""
+    
+    job_ids: list[str] = Field(..., description="任务 ID 列表")
+
+
+class BatchDeleteCronJobsResponse(BaseModel):
+    """批量删除 Cron 任务响应"""
+    
+    success_count: int = Field(..., description="成功删除数量")
+    failed_count: int = Field(..., description="失败数量")
+    deleted_ids: list[str] = Field(..., description="成功删除的任务 ID")
+    errors: list[dict] = Field(..., description="失败的任务及错误信息")
 
 
 class CronJobDetailResponse(BaseModel):
@@ -166,6 +211,9 @@ async def list_cron_jobs(db: AsyncSession = Depends(get_db)) -> ListCronJobsResp
                 run_count=job.run_count or 0,
                 error_count=job.error_count or 0,
                 created_at=_to_shanghai_iso(job.created_at),
+                max_retries=job.max_retries or 0,
+                retry_delay=job.retry_delay or 60,
+                delete_on_success=job.delete_on_success or False,
             )
             for job in jobs
         ]
@@ -178,6 +226,152 @@ async def list_cron_jobs(db: AsyncSession = Depends(get_db)) -> ListCronJobsResp
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list cron jobs: {str(e)}"
         )
+
+
+@router.post("/jobs/batch", response_model=BatchCreateCronJobsResponse)
+async def batch_create_cron_jobs(
+    request: BatchCreateCronJobsRequest,
+    cron_service: CronService = Depends(get_cron_service),
+) -> BatchCreateCronJobsResponse:
+    """
+    批量创建 Cron 任务
+    
+    Args:
+        request: 批量创建请求
+        cron_service: Cron 服务（带 scheduler）
+        
+    Returns:
+        BatchCreateCronJobsResponse: 批量创建结果
+    """
+    try:
+        success_jobs = []
+        errors = []
+        
+        for idx, job_req in enumerate(request.jobs):
+            try:
+                job = await cron_service.add_job(
+                    name=job_req.name,
+                    schedule=job_req.schedule,
+                    message=job_req.message,
+                    enabled=job_req.enabled,
+                    channel=job_req.channel,
+                    chat_id=job_req.chat_id,
+                    deliver_response=job_req.deliver_response,
+                    max_retries=job_req.max_retries,
+                    retry_delay=job_req.retry_delay,
+                    delete_on_success=job_req.delete_on_success,
+                )
+                success_jobs.append(job)
+            except Exception as e:
+                logger.error(f"Failed to create job {idx} ({job_req.name}): {e}")
+                errors.append({
+                    "index": idx,
+                    "name": job_req.name,
+                    "error": str(e)
+                })
+        
+        # 转换为响应格式
+        jobs_info = [
+            CronJobInfo(
+                id=job.id,
+                name=job.name,
+                schedule=job.schedule,
+                message=job.message,
+                enabled=job.enabled,
+                channel=job.channel,
+                chat_id=job.chat_id,
+                deliver_response=job.deliver_response,
+                last_run=_to_shanghai_iso(job.last_run),
+                next_run=_to_shanghai_iso(job.next_run),
+                last_status=job.last_status,
+                last_error=job.last_error,
+                run_count=job.run_count or 0,
+                error_count=job.error_count or 0,
+                created_at=_to_shanghai_iso(job.created_at),
+                max_retries=job.max_retries or 0,
+                retry_delay=job.retry_delay or 60,
+                delete_on_success=job.delete_on_success or False,
+            )
+            for job in success_jobs
+        ]
+        
+        return BatchCreateCronJobsResponse(
+            success_count=len(success_jobs),
+            failed_count=len(errors),
+            jobs=jobs_info,
+            errors=errors
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to batch create cron jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to batch create cron jobs: {str(e)}"
+        )
+
+
+
+
+@router.post("/jobs/batch-delete", response_model=BatchDeleteCronJobsResponse)
+async def batch_delete_cron_jobs(
+    request: BatchDeleteCronJobsRequest,
+    cron_service: CronService = Depends(get_cron_service),
+) -> BatchDeleteCronJobsResponse:
+    """
+    批量删除 Cron 任务
+    
+    Args:
+        request: 批量删除请求
+        cron_service: Cron 服务（带 scheduler）
+        
+    Returns:
+        BatchDeleteCronJobsResponse: 批量删除结果
+    """
+    try:
+        deleted_ids = []
+        errors = []
+        
+        for job_id in request.job_ids:
+            try:
+                # 禁止删除内置任务
+                if job_id.startswith(BUILTIN_PREFIX):
+                    errors.append({
+                        "job_id": job_id,
+                        "error": "内置系统任务不可删除"
+                    })
+                    continue
+                
+                success = await cron_service.delete_job(job_id)
+                
+                if success:
+                    deleted_ids.append(job_id)
+                else:
+                    errors.append({
+                        "job_id": job_id,
+                        "error": "任务不存在"
+                    })
+            except Exception as e:
+                logger.error(f"Failed to delete job {job_id}: {e}")
+                errors.append({
+                    "job_id": job_id,
+                    "error": str(e)
+                })
+        
+        return BatchDeleteCronJobsResponse(
+            success_count=len(deleted_ids),
+            failed_count=len(errors),
+            deleted_ids=deleted_ids,
+            errors=errors
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to batch delete cron jobs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to batch delete cron jobs: {str(e)}"
+        )
+
+
 
 
 @router.get("/jobs/{job_id}", response_model=CronJobDetailResponse)
@@ -222,6 +416,9 @@ async def get_cron_job_detail(
                 run_count=job.run_count or 0,
                 error_count=job.error_count or 0,
                 created_at=_to_shanghai_iso(job.created_at),
+                max_retries=job.max_retries or 0,
+                retry_delay=job.retry_delay or 60,
+                delete_on_success=job.delete_on_success or False,
             ),
             last_response=job.last_response,  # 完整响应
             last_error=job.last_error,  # 完整错误
@@ -240,20 +437,19 @@ async def get_cron_job_detail(
 @router.post("/jobs", response_model=CronJobResponse)
 async def create_cron_job(
     request: CreateCronJobRequest,
-    db: AsyncSession = Depends(get_db),
+    cron_service: CronService = Depends(get_cron_service),
 ) -> CronJobResponse:
     """
     创建新的 Cron 任务
     
     Args:
         request: 创建任务请求
-        db: 数据库会话
+        cron_service: Cron 服务（带 scheduler）
         
     Returns:
         CronJobResponse: 创建的任务
     """
     try:
-        cron_service = CronService(db)
         job = await cron_service.add_job(
             name=request.name,
             schedule=request.schedule,
@@ -262,6 +458,9 @@ async def create_cron_job(
             channel=request.channel,
             chat_id=request.chat_id,
             deliver_response=request.deliver_response,
+            max_retries=request.max_retries,
+            retry_delay=request.retry_delay,
+            delete_on_success=request.delete_on_success,
         )
         
         return CronJobResponse(
@@ -281,6 +480,9 @@ async def create_cron_job(
                 run_count=job.run_count or 0,
                 error_count=job.error_count or 0,
                 created_at=_to_shanghai_iso(job.created_at),
+                max_retries=job.max_retries or 0,
+                retry_delay=job.retry_delay or 60,
+                delete_on_success=job.delete_on_success or False,
             )
         )
         
@@ -303,7 +505,7 @@ async def create_cron_job(
 async def update_cron_job(
     job_id: str,
     request: UpdateCronJobRequest,
-    db: AsyncSession = Depends(get_db),
+    cron_service: CronService = Depends(get_cron_service),
 ) -> CronJobResponse:
     """
     更新 Cron 任务
@@ -311,7 +513,7 @@ async def update_cron_job(
     Args:
         job_id: 任务 ID
         request: 更新任务请求
-        db: 数据库会话
+        cron_service: Cron 服务（带 scheduler）
         
     Returns:
         CronJobResponse: 更新后的任务
@@ -325,7 +527,6 @@ async def update_cron_job(
                     detail="内置系统任务不可修改名称和消息内容"
                 )
         
-        cron_service = CronService(db)
         job = await cron_service.update_job(
             job_id=job_id,
             name=request.name,
@@ -335,6 +536,9 @@ async def update_cron_job(
             channel=request.channel,
             chat_id=request.chat_id,
             deliver_response=request.deliver_response,
+            max_retries=request.max_retries,
+            retry_delay=request.retry_delay,
+            delete_on_success=request.delete_on_success,
         )
         
         if job is None:
@@ -360,6 +564,9 @@ async def update_cron_job(
                 run_count=job.run_count or 0,
                 error_count=job.error_count or 0,
                 created_at=_to_shanghai_iso(job.created_at),
+                max_retries=job.max_retries or 0,
+                retry_delay=job.retry_delay or 60,
+                delete_on_success=job.delete_on_success or False,
             )
         )
         
@@ -383,14 +590,14 @@ async def update_cron_job(
 @router.delete("/jobs/{job_id}", response_model=DeleteCronJobResponse)
 async def delete_cron_job(
     job_id: str,
-    db: AsyncSession = Depends(get_db),
+    cron_service: CronService = Depends(get_cron_service),
 ) -> DeleteCronJobResponse:
     """
     删除 Cron 任务
     
     Args:
         job_id: 任务 ID
-        db: 数据库会话
+        cron_service: Cron 服务（带 scheduler）
         
     Returns:
         DeleteCronJobResponse: 删除结果
@@ -403,7 +610,6 @@ async def delete_cron_job(
                 detail="内置系统任务不可删除"
             )
         
-        cron_service = CronService(db)
         success = await cron_service.delete_job(job_id)
         
         if not success:
@@ -538,6 +744,43 @@ async def trigger_cron_job(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to trigger cron job: {str(e)}"
         )
+
+
+@router.post("/validate", response_model=ValidateCronResponse)
+async def validate_cron_schedule(
+    request: ValidateCronRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ValidateCronResponse:
+    """
+    验证 Cron 表达式并返回描述和下次运行时间
+    
+    Args:
+        request: 验证请求
+        db: 数据库会话
+        
+    Returns:
+        ValidateCronResponse: 验证结果
+    """
+    try:
+        cron_service = CronService(db)
+        
+        # 验证表达式
+        valid = cron_service.validate_schedule(request.schedule)
+        if not valid:
+            return ValidateCronResponse(valid=False)
+        
+        # 获取描述和下次运行时间
+        description = cron_service.get_schedule_description(request.schedule)
+        next_run = cron_service.calculate_next_run(request.schedule)
+        
+        return ValidateCronResponse(
+            valid=True,
+            description=description,
+            next_run=_to_shanghai_iso(next_run),
+        )
+        
+    except Exception as e:
+        return ValidateCronResponse(valid=False, description=str(e))
 
 
 @router.post("/validate", response_model=ValidateCronResponse)

@@ -54,14 +54,35 @@ class FeishuWebSocketWorker:
             message = event.message
             sender = event.sender
 
+            # 提取消息内容
+            content = message.content
+            msg_type = message.message_type
+            
+            # 对于文本消息，尝试解析并清理 @ 提及
+            if msg_type == "text" and content:
+                try:
+                    import json
+                    content_json = json.loads(content)
+                    text = content_json.get("text", "")
+                    
+                    # 清理 @ 提及标记（飞书格式：@_user_数字）
+                    import re
+                    text = re.sub(r'@_user_\d+\s*', '', text).strip()
+                    
+                    # 重新打包为 JSON
+                    content_json["text"] = text
+                    content = json.dumps(content_json, ensure_ascii=False)
+                except Exception as e:
+                    logger.debug(f"Failed to clean mentions: {e}")
+
             msg_data = {
                 "type": "message",
                 "message_id": message.message_id,
                 "sender_id": sender.sender_id.open_id if sender.sender_id else "unknown",
                 "chat_id": message.chat_id,
                 "chat_type": message.chat_type,
-                "msg_type": message.message_type,
-                "content": message.content,
+                "msg_type": msg_type,
+                "content": content,
             }
 
             try:

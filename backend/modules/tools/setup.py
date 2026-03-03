@@ -21,6 +21,7 @@ def register_all_tools(
     channel_manager=None,
     session_manager=None,
     memory_store=None,
+    config_loader=None,
 ) -> ToolRegistry:
     """
     注册所有可用工具
@@ -103,12 +104,25 @@ def register_all_tools(
     if subagent_manager is not None:
         try:
             from backend.modules.tools.spawn import SpawnTool
-            
-            spawn_tool = SpawnTool(subagent_manager)
+
+            spawn_tool = SpawnTool(subagent_manager, config_loader=config_loader)
             tools.register(spawn_tool)
             logger.debug("Registered spawn tool")
         except Exception as e:
             logger.error(f"Failed to register spawn tool: {e}")
+
+    # 4b. 注册 Workflow 工具（如果提供了 SubagentManager）
+    if subagent_manager is not None:
+        try:
+            from backend.modules.tools.workflow_tool import WorkflowTool
+
+            workflow_tool = WorkflowTool(subagent_manager, skills=skills_loader)
+            if session_id:
+                workflow_tool.set_session_id(session_id)
+            tools.register(workflow_tool)
+            logger.debug("Registered workflow_run tool")
+        except Exception as e:
+            logger.error(f"Failed to register workflow_run tool: {e}")
     
     # 5. 注册发送媒体工具（如果提供了 ChannelManager）
     if channel_manager is not None:
@@ -147,21 +161,15 @@ def register_all_tools(
     except Exception as e:
         logger.error(f"Failed to register file search tool: {e}")
     
-    # 8. 注册记忆工具
+    # 8. 注册记忆工具（合并为单一工具，减少 token 消耗）
     if memory_store is not None:
         try:
-            from backend.modules.tools.memory_tool import (
-                MemoryWriteTool,
-                MemorySearchTool,
-                MemoryReadTool,
-            )
-            
-            tools.register(MemoryWriteTool(memory_store))
-            tools.register(MemorySearchTool(memory_store))
-            tools.register(MemoryReadTool(memory_store))
-            logger.debug("Registered memory tools")
+            from backend.modules.tools.memory_tool import MemoryTool
+
+            tools.register(MemoryTool(memory_store))
+            logger.debug("Registered memory tool (unified)")
         except Exception as e:
-            logger.error(f"Failed to register memory tools: {e}")
+            logger.error(f"Failed to register memory tool: {e}")
     
     logger.debug(f"Registered {len(tools.get_definitions())} tools")
     return tools

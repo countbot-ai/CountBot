@@ -1,43 +1,33 @@
 """Spawn Tool - 生成子 Agent 工具"""
 
+import asyncio
 from typing import Any
 
 from backend.modules.tools.base import Tool
 
 
 class SpawnTool(Tool):
-    """
-    生成子 Agent 工具
-    
-    用于创建后台子 Agent 执行复杂或耗时的任务。
-    子 Agent 会独立运行，完成后向主 Agent 报告结果。
-    """
-    
-    def __init__(self, manager):
-        """
-        初始化 SpawnTool
-        
-        Args:
-            manager: SubagentManager 实例
-        """
+    """生成子 Agent，等待其完成并将真实结果返回给主代理。"""
+
+    def __init__(self, manager, config_loader=None):
         self._manager = manager
         self._session_id = None
-    
+        self._config_loader = config_loader
+
     def set_context(self, session_id: str) -> None:
-        """设置上下文（会话 ID）"""
         self._session_id = session_id
-    
+
     @property
     def name(self) -> str:
         return "spawn"
-    
+
     @property
     def description(self) -> str:
         return (
-            "Spawn background agent for complex or time-consuming tasks. "
-            "Use when task requires multiple steps, tools, or takes significant time."
+            "Spawn a sub-agent to handle a complex or time-consuming task. "
+            "The sub-agent runs to completion and returns its result here."
         )
-    
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -45,36 +35,59 @@ class SpawnTool(Tool):
             "properties": {
                 "task": {
                     "type": "string",
-                    "description": "Task description for the background agent",
+                    "description": "Task description for the sub-agent",
                 },
                 "label": {
                     "type": "string",
-                    "description": "Short label for task display (optional)",
+                    "description": "Short display label (optional)",
                 },
             },
             "required": ["task"],
         }
-    
+
+    def _get_timeout(self) -> int:
+        """获取子代理超时时间（秒）"""
+        if self._config_loader:
+            try:
+                config = self._config_loader.get_config()
+                return config.security.subagent_timeout
+            except Exception:
+                pass
+        # 默认 600 秒（10 分钟）
+        return 600
+
     async def execute(self, task: str, label: str | None = None, **kwargs: Any) -> str:
-        """
-        执行工具：生成子 Agent
-        
-        Args:
-            task: 任务描述
-            label: 任务标签（可选）
-            
-        Returns:
-            str: 状态消息
-        """
-        # 创建任务
+        display_label = label or task[:30] + ("..." if len(task) > 30 else "")
+
         task_id = self._manager.create_task(
-            label=label or task[:30] + ("..." if len(task) > 30 else ""),
+            label=display_label,
             message=task,
             session_id=self._session_id,
         )
-        
-        # 异步执行任务
+
+        try:
+            from backend.ws.task_notifications import task_notification_manager
+
+            handler = task_notification_manager.create_handler(
+                task_id, display_label, session_id=self._session_id
+            )
+            self._manager.tasks[task_id].notification_handler = handler
+            await handler.notify_created()
+        except Exception:
+            pass
+
+        # Start task in background so WebSocket updates can flow while we wait
         await self._manager.execute_task(task_id)
-        
-        display_label = label or task[:30] + ("..." if len(task) > 30 else "")
-        return f"子 Agent [{display_label}] 已启动 (ID: {task_id})。完成后我会通知你。"
+
+        sub_task = self._manager.tasks[task_id]
+        timeout = self._get_timeout()
+        try:
+            await asyncio.wait_for(sub_task.done_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return f"子 Agent [{display_label}] 超时 (ID: {task_id})，任务仍在后台运行。"
+
+        if sub_task.error:
+            return f"子 Agent [{display_label}] 失败 (ID: {task_id}): {sub_task.error}"
+
+        result_text = sub_task.result or ""
+        return f"子 Agent [{display_label}] 已完成 (ID: {task_id})。\n\n{result_text}"

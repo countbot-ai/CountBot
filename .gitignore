@@ -75,14 +75,29 @@ yarn-error.log*
 # frontend/tsconfig.node.json
 # frontend/vite.config.ts
 frontend/.vite/
+frontend/dist/test_*.html
 
 # ── 临时文件 ────────────────────────────────
 data/temp/
 data/workspace/
+workspace/
 temp/
 *.tmp
+*.txt
+*.xlsx
+*.xls
 
 # ── 构建产物 ────────────────────────────────
 dist/
 !frontend/dist/
 *.spec
+
+# ── Git 提交辅助文件 ──────────────────────
+COMMIT_COMMANDS.md
+GIT_COMMIT_GUIDE.md
+commit_v0.3.0.sh
+FILE_REVIEW.md
+DEPENDENCIES_ANALYSIS.md
+FALLBACK_MECHANISM_ANALYSIS.md
+FILE_CLEANUP_REPORT.md
+INSTALLATION_GUIDE.md

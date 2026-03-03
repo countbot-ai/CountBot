@@ -167,6 +167,9 @@ def cmd_create(args):
         "schedule": args.schedule,
         "message": args.message,
         "enabled": True,
+        "max_retries": args.max_retries,
+        "retry_delay": args.retry_delay,
+        "delete_on_success": args.delete_on_success,
     }
 
     if args.channel:
@@ -186,6 +189,10 @@ def cmd_create(args):
     print(f"ID: {job['id']}")
     print(f"名称: {job['name']}")
     print(f"Cron: {job['schedule']}")
+    if args.max_retries > 0:
+        print(f"重试: 最多 {args.max_retries} 次，间隔 {args.retry_delay} 秒")
+    if args.delete_on_success:
+        print(f"自动删除: 成功后自动删除")
     if job.get("next_run"):
         print(f"下次运行: {job['next_run']}")
     if job.get("channel"):
@@ -279,6 +286,84 @@ def cmd_validate(args):
     else:
         print(f"表达式无效: {args.expression}", file=sys.stderr)
         sys.exit(1)
+
+
+def cmd_batch_create(args):
+    """批量创建定时任务"""
+    import json
+    
+    # 从文件读取任务列表
+    try:
+        with open(args.file, 'r', encoding='utf-8') as f:
+            jobs_data = json.load(f)
+    except FileNotFoundError:
+        print(f"错误: 文件不存在: {args.file}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"错误: JSON 格式错误: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not isinstance(jobs_data, list):
+        print("错误: JSON 文件应包含任务数组", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"准备批量创建 {len(jobs_data)} 个任务...")
+    
+    result = _api_request("POST", "/jobs/batch", {"jobs": jobs_data})
+    
+    print(f"\n批量创建完成:")
+    print(f"成功: {result['success_count']} 个")
+    print(f"失败: {result['failed_count']} 个")
+    
+    if result['jobs']:
+        print(f"\n成功创建的任务:")
+        for job in result['jobs']:
+            print(f"  - [{job['id'][:8]}] {job['name']}")
+    
+    if result['errors']:
+        print(f"\n失败的任务:")
+        for err in result['errors']:
+            print(f"  - 第 {err['index']} 个 ({err['name']}): {err['error']}")
+
+
+def cmd_batch_delete(args):
+    """批量删除定时任务"""
+    job_ids = args.job_ids
+    
+    if not job_ids:
+        print("错误: 至少需要指定一个任务 ID", file=sys.stderr)
+        sys.exit(1)
+    
+    # 展开前缀匹配
+    expanded_ids = []
+    for partial_id in job_ids:
+        try:
+            full_id = _find_job_id(partial_id)
+            expanded_ids.append(full_id)
+        except SystemExit:
+            print(f"警告: 跳过无效的 ID: {partial_id}", file=sys.stderr)
+    
+    if not expanded_ids:
+        print("错误: 没有找到有效的任务 ID", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"准备批量删除 {len(expanded_ids)} 个任务...")
+    
+    result = _api_request("POST", "/jobs/batch-delete", {"job_ids": expanded_ids})
+    
+    print(f"\n批量删除完成:")
+    print(f"成功: {result['success_count']} 个")
+    print(f"失败: {result['failed_count']} 个")
+    
+    if result['deleted_ids']:
+        print(f"\n成功删除的任务:")
+        for job_id in result['deleted_ids']:
+            print(f"  - {job_id[:8]}")
+    
+    if result['errors']:
+        print(f"\n失败的任务:")
+        for err in result['errors']:
+            print(f"  - {err['job_id'][:8]}: {err['error']}")
 
 
 # ============================================================================
@@ -457,6 +542,9 @@ def main():
     p_create.add_argument("--channel", help="投递渠道 (feishu/telegram/dingtalk/wechat/qq)")
     p_create.add_argument("--chat-id", help="投递目标 ID")
     p_create.add_argument("--deliver", action="store_true", help="是否投递结果到渠道")
+    p_create.add_argument("--max-retries", type=int, default=1, help="最大重试次数（默认1）")
+    p_create.add_argument("--retry-delay", type=int, default=60, help="重试延迟秒数（默认60）")
+    p_create.add_argument("--delete-on-success", action="store_true", help="成功后自动删除")
 
     # update
     p_update = sub.add_parser("update", help="修改任务")
@@ -490,6 +578,14 @@ def main():
     # validate
     p_validate = sub.add_parser("validate", help="验证 Cron 表达式")
     p_validate.add_argument("expression", help="Cron 表达式")
+    
+    # batch-create
+    p_batch_create = sub.add_parser("batch-create", help="批量创建定时任务")
+    p_batch_create.add_argument("--file", required=True, help="包含任务列表的 JSON 文件")
+    
+    # batch-delete
+    p_batch_delete = sub.add_parser("batch-delete", help="批量删除定时任务")
+    p_batch_delete.add_argument("job_ids", nargs="+", help="任务 ID 列表（支持前缀匹配）")
 
     # messages (会话管理)
     p_msg = sub.add_parser("messages", help="查看任务会话消息")
@@ -521,6 +617,8 @@ def main():
         "disable": cmd_disable,
         "run": cmd_run,
         "validate": cmd_validate,
+        "batch-create": cmd_batch_create,
+        "batch-delete": cmd_batch_delete,
         "messages": cmd_messages,
         "clean": cmd_clean,
         "reset": cmd_reset,

@@ -1,6 +1,6 @@
 """渠道管理 API 端点"""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Any
 from loguru import logger
@@ -314,7 +314,7 @@ async def test_channel(request: ChannelTestRequest):
 
 
 @router.post("/update")
-async def update_channel_config(request: ChannelConfigUpdate):
+async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: Request):
     """更新渠道配置"""
     try:
         config = config_loader.config
@@ -338,6 +338,16 @@ async def update_channel_config(request: ChannelConfigUpdate):
         
         # 保存配置
         await config_loader.save()
+        
+        # 重新加载配置到 message_handler
+        try:
+            if hasattr(fastapi_request.app.state, 'message_handler'):
+                message_handler = fastapi_request.app.state.message_handler
+                # 不需要传参数，reload_config 会从 config_loader 重新读取
+                message_handler.reload_config()
+                logger.info(f"Reloaded message handler config after updating {request.channel}")
+        except Exception as e:
+            logger.warning(f"Failed to reload message handler config: {e}")
         
         logger.info(f"Updated {request.channel} channel configuration")
         

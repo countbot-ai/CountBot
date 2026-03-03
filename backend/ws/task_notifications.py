@@ -78,6 +78,29 @@ class TaskLogMessage(ServerMessage):
     timestamp: float
 
 
+class TaskToolCallMessage(ServerMessage):
+    """子代理工具调用开始通知"""
+
+    type: str = "task_tool_call"
+    task_id: str
+    tool_call_id: str  # LLM 分配的唯一工具调用 ID，用于精确匹配结果
+    tool_name: str
+    arguments: dict
+    timestamp: float
+
+
+class TaskToolResultMessage(ServerMessage):
+    """子代理工具调用结果通知"""
+
+    type: str = "task_tool_result"
+    task_id: str
+    tool_call_id: str  # 与 TaskToolCallMessage 对应
+    tool_name: str
+    result: str
+    progress: int
+    timestamp: float
+
+
 # ============================================================================
 # Task Notification Handler
 # ============================================================================
@@ -93,18 +116,27 @@ class TaskNotificationHandler:
     - 完成/失败通知
     """
 
-    def __init__(self, task_id: str, label: str):
+    def __init__(self, task_id: str, label: str, session_id: str | None = None):
         """初始化任务通知处理器
 
         Args:
             task_id: 任务 ID
             label: 任务标签
+            session_id: 会话 ID（若提供则只推送给该会话，否则广播）
         """
         self.task_id = task_id
         self.label = label
+        self.session_id = session_id
         self.status = "running"
         self.progress = 0
         self.start_time = asyncio.get_event_loop().time()
+
+    async def _send(self, message: ServerMessage) -> None:
+        """推送消息：有 session_id 时定向发送，否则广播"""
+        if self.session_id:
+            await connection_manager.send_to_session(self.session_id, message)
+        else:
+            await connection_manager.broadcast(message)
 
     async def notify_created(self) -> None:
         """通知任务创建"""
@@ -116,7 +148,7 @@ class TaskNotificationHandler:
             timestamp=self.start_time,
         )
 
-        await connection_manager.broadcast(message)
+        await self._send(message)
 
     async def notify_status(
         self, status: str, progress: int | None = None, message: str | None = None
@@ -141,7 +173,7 @@ class TaskNotificationHandler:
             message=message,
         )
 
-        await connection_manager.broadcast(notification)
+        await self._send(notification)
 
     async def notify_progress(
         self,
@@ -170,7 +202,7 @@ class TaskNotificationHandler:
             message=message,
         )
 
-        await connection_manager.broadcast(notification)
+        await self._send(notification)
 
     async def notify_complete(self, result: str | None = None) -> None:
         """通知任务完成
@@ -193,7 +225,7 @@ class TaskNotificationHandler:
             duration_ms=duration_ms,
         )
 
-        await connection_manager.broadcast(message)
+        await self._send(message)
 
     async def notify_failed(self, error: str) -> None:
         """通知任务失败
@@ -215,7 +247,7 @@ class TaskNotificationHandler:
             duration_ms=duration_ms,
         )
 
-        await connection_manager.broadcast(message)
+        await self._send(message)
 
     async def log(self, level: str, message: str) -> None:
         """发送任务日志
@@ -233,7 +265,44 @@ class TaskNotificationHandler:
             timestamp=asyncio.get_event_loop().time(),
         )
 
-        await connection_manager.broadcast(notification)
+        await self._send(notification)
+
+    async def notify_tool_call(self, tool_name: str, arguments: dict, tool_call_id: str = "") -> None:
+        """通知子代理工具调用开始
+
+        Args:
+            tool_name: 工具名称
+            arguments: 工具参数
+            tool_call_id: LLM 分配的唯一工具调用 ID
+        """
+        notification = TaskToolCallMessage(
+            task_id=self.task_id,
+            tool_call_id=tool_call_id or tool_name,
+            tool_name=tool_name,
+            arguments=arguments,
+            timestamp=asyncio.get_event_loop().time(),
+        )
+        await self._send(notification)
+
+    async def notify_tool_result(self, tool_name: str, result: str, progress: int, tool_call_id: str = "") -> None:
+        """通知子代理工具调用结果
+
+        Args:
+            tool_name: 工具名称
+            result: 工具执行结果（截断到前 500 字符）
+            progress: 当前整体进度 0-100
+            tool_call_id: LLM 分配的唯一工具调用 ID
+        """
+        self.progress = max(0, min(100, progress))
+        notification = TaskToolResultMessage(
+            task_id=self.task_id,
+            tool_call_id=tool_call_id or tool_name,
+            tool_name=tool_name,
+            result=result[:500] if result else "",
+            progress=self.progress,
+            timestamp=asyncio.get_event_loop().time(),
+        )
+        await self._send(notification)
 
     def get_duration_ms(self) -> float:
         """获取任务执行时长（毫秒）
@@ -259,17 +328,18 @@ class TaskNotificationManager:
         """初始化任务通知管理器"""
         self.handlers: dict[str, TaskNotificationHandler] = {}
 
-    def create_handler(self, task_id: str, label: str) -> TaskNotificationHandler:
+    def create_handler(self, task_id: str, label: str, session_id: str | None = None) -> TaskNotificationHandler:
         """创建任务通知处理器
 
         Args:
             task_id: 任务 ID
             label: 任务标签
+            session_id: 会话 ID（若提供则定向发送，否则广播）
 
         Returns:
             TaskNotificationHandler: 任务通知处理器
         """
-        handler = TaskNotificationHandler(task_id, label)
+        handler = TaskNotificationHandler(task_id, label, session_id=session_id)
         self.handlers[task_id] = handler
         return handler
 
@@ -320,17 +390,18 @@ task_notification_manager = TaskNotificationManager()
 # ============================================================================
 
 
-async def notify_task_created(task_id: str, label: str) -> TaskNotificationHandler:
+async def notify_task_created(task_id: str, label: str, session_id: str | None = None) -> TaskNotificationHandler:
     """通知任务创建（便捷函数）
 
     Args:
         task_id: 任务 ID
         label: 任务标签
+        session_id: 会话 ID（若提供则定向发送，否则广播）
 
     Returns:
         TaskNotificationHandler: 任务通知处理器
     """
-    handler = task_notification_manager.create_handler(task_id, label)
+    handler = task_notification_manager.create_handler(task_id, label, session_id=session_id)
     await handler.notify_created()
     return handler
 
