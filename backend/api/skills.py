@@ -170,6 +170,14 @@ class FixSkillConfigResponse(BaseModel):
     message: str = Field(..., description="消息")
 
 
+class ReloadSkillsResponse(BaseModel):
+    """重载技能响应"""
+    
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(..., description="消息")
+    total: int = Field(..., description="重载的技能总数")
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -177,15 +185,26 @@ class FixSkillConfigResponse(BaseModel):
 
 from backend.modules.config.loader import config_loader
 from backend.utils.paths import WORKSPACE_DIR
+from fastapi import Request
 
 
-def get_skills_loader() -> SkillsLoader:
-    """获取技能加载器实例"""
+def get_skills_loader(request: Request = None) -> SkillsLoader:
+    """
+    获取全局技能加载器实例
+    
+    优先从 app.state 获取全局单例，提升性能
+    """
+    # 尝试从 app state 获取全局实例
+    if request and hasattr(request.app.state, 'skills'):
+        return request.app.state.skills
+    
+    # 回退：创建临时实例（向后兼容）
     config = config_loader.config
     workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-    workspace = workspace.resolve()  # 确保是绝对路径
+    workspace = workspace.resolve()
     skills_dir = workspace / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
+    logger.warning("Creating temporary SkillsLoader instance - performance may be impacted")
     return SkillsLoader(skills_dir)
 
 
@@ -195,7 +214,7 @@ def get_skills_loader() -> SkillsLoader:
 
 
 @router.get("", response_model=ListSkillsResponse)
-async def list_skills() -> ListSkillsResponse:
+async def list_skills(request: Request) -> ListSkillsResponse:
     """
     获取所有技能列表
     
@@ -203,7 +222,7 @@ async def list_skills() -> ListSkillsResponse:
         ListSkillsResponse: 技能列表
     """
     try:
-        skills_loader = get_skills_loader()
+        skills_loader = get_skills_loader(request)
         skills_list = skills_loader.list_skills()
         
         # 转换为响应格式
@@ -234,7 +253,7 @@ async def list_skills() -> ListSkillsResponse:
 
 
 @router.get("/{name}", response_model=SkillDetail)
-async def get_skill(name: str) -> SkillDetail:
+async def get_skill(name: str, request: Request) -> SkillDetail:
     """
     获取技能详情
     
@@ -245,7 +264,7 @@ async def get_skill(name: str) -> SkillDetail:
         SkillDetail: 技能详情
     """
     try:
-        skills_loader = get_skills_loader()
+        skills_loader = get_skills_loader(request)
         
         # 检查技能是否存在
         skills_list = skills_loader.list_skills()
@@ -296,7 +315,7 @@ async def get_skill(name: str) -> SkillDetail:
 
 
 @router.post("/{name}/toggle", response_model=ToggleSkillResponse)
-async def toggle_skill(name: str, request: ToggleSkillRequest) -> ToggleSkillResponse:
+async def toggle_skill(name: str, request: ToggleSkillRequest, req: Request) -> ToggleSkillResponse:
     """
     切换技能启用状态（持久化到配置）
     
@@ -308,7 +327,7 @@ async def toggle_skill(name: str, request: ToggleSkillRequest) -> ToggleSkillRes
         ToggleSkillResponse: 切换结果
     """
     try:
-        skills_loader = get_skills_loader()
+        skills_loader = get_skills_loader(req)
         
         # 检查技能是否存在
         skills_list = skills_loader.list_skills()
@@ -381,7 +400,7 @@ async def toggle_skill(name: str, request: ToggleSkillRequest) -> ToggleSkillRes
 
 
 @router.post("", response_model=SkillDetail, status_code=status.HTTP_201_CREATED)
-async def create_skill(request: CreateSkillRequest) -> SkillDetail:
+async def create_skill(request: CreateSkillRequest, req: Request) -> SkillDetail:
     """
     创建新技能
     
@@ -392,7 +411,7 @@ async def create_skill(request: CreateSkillRequest) -> SkillDetail:
         SkillDetail: 创建的技能详情
     """
     try:
-        skills_loader = get_skills_loader()
+        skills_loader = get_skills_loader(req)
         
         # 检查技能是否已存在
         if skills_loader.get_skill(request.name):
@@ -430,7 +449,7 @@ metadata: {json.dumps(metadata)}
             )
         
         # 返回创建的技能
-        return await get_skill(request.name)
+        return await get_skill(request.name, req)
         
     except HTTPException:
         raise
@@ -443,7 +462,7 @@ metadata: {json.dumps(metadata)}
 
 
 @router.put("/{name}", response_model=SkillDetail)
-async def update_skill(name: str, request: UpdateSkillRequest) -> SkillDetail:
+async def update_skill(name: str, request: UpdateSkillRequest, req: Request) -> SkillDetail:
     """
     更新技能
     
@@ -455,7 +474,7 @@ async def update_skill(name: str, request: UpdateSkillRequest) -> SkillDetail:
         SkillDetail: 更新后的技能详情
     """
     try:
-        skills_loader = get_skills_loader()
+        skills_loader = get_skills_loader(req)
         
         # 检查技能是否存在
         skill = skills_loader.get_skill(name)
@@ -501,7 +520,7 @@ metadata: {json.dumps(metadata)}
             )
         
         # 返回更新后的技能
-        return await get_skill(name)
+        return await get_skill(name, req)
         
     except HTTPException:
         raise
@@ -514,7 +533,7 @@ metadata: {json.dumps(metadata)}
 
 
 @router.delete("/{name}", response_model=DeleteSkillResponse)
-async def delete_skill(name: str) -> DeleteSkillResponse:
+async def delete_skill(name: str, req: Request) -> DeleteSkillResponse:
     """
     删除技能
     
@@ -525,7 +544,7 @@ async def delete_skill(name: str) -> DeleteSkillResponse:
         DeleteSkillResponse: 删除结果
     """
     try:
-        skills_loader = get_skills_loader()
+        skills_loader = get_skills_loader(req)
         
         # 检查技能是否存在
         skill = skills_loader.get_skill(name)
@@ -855,4 +874,48 @@ async def get_skill_config_help(name: str) -> SkillConfigHelpResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get config help: {str(e)}"
+        )
+
+
+# ============================================================================
+# Skills Reload Endpoint
+# ============================================================================
+
+
+@router.post("/reload", response_model=ReloadSkillsResponse)
+async def reload_skills(req: Request) -> ReloadSkillsResponse:
+    """
+    重新加载所有技能（热重载，无需重启应用）
+    
+    适用场景：
+    - 手动添加新技能到 skills 目录后
+    - 修改现有技能文件后
+    - 需要刷新技能列表时
+    
+    Returns:
+        ReloadSkillsResponse: 重载结果
+    """
+    try:
+        # 获取全局 skills 实例
+        skills_loader = get_skills_loader(req)
+        
+        # 执行重载
+        skills_loader.reload()
+        
+        # 获取统计信息
+        stats = skills_loader.get_stats()
+        
+        logger.info(f"Skills reloaded successfully: {stats['total']} total, {stats['enabled']} enabled")
+        
+        return ReloadSkillsResponse(
+            success=True,
+            message=f"Successfully reloaded {stats['total']} skills",
+            total=stats['total']
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to reload skills: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reload skills: {str(e)}"
         )

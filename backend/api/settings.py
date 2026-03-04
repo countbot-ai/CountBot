@@ -800,13 +800,15 @@ async def clean_temp_files(request: Request):
 @router.post("/workspace/set-path")
 async def set_workspace_path(request: Request):
     """
-    设置工作空间路径
+    设置工作空间路径（支持热重载，无需重启）
     
     Returns:
         dict: 设置结果
     """
     try:
         from backend.modules.workspace import workspace_manager
+        from backend.modules.config.loader import config_loader
+        from pathlib import Path
         
         # 获取请求参数
         try:
@@ -827,10 +829,39 @@ async def set_workspace_path(request: Request):
         # 设置工作空间路径
         workspace_manager.set_workspace_path(path)
         
+        # 更新配置
+        config_loader.config.workspace.path = path
+        await config_loader.save()
+        
+        # 热重载消息处理器的工作空间路径
+        message_handler = getattr(request.app.state, 'message_handler', None)
+        if message_handler:
+            try:
+                workspace_path = Path(path).resolve()
+                message_handler.reload_config(workspace=workspace_path)
+                logger.info(f"Message handler workspace reloaded: {workspace_path}")
+            except Exception as e:
+                logger.warning(f"Failed to reload message handler workspace: {e}")
+        
+        # 更新共享组件的工作空间路径
+        shared = getattr(request.app.state, 'shared', None)
+        if shared:
+            try:
+                workspace_path = Path(path).resolve()
+                shared['workspace'] = workspace_path
+                if shared.get('context_builder'):
+                    shared['context_builder'].workspace = workspace_path
+                if shared.get('subagent_manager'):
+                    shared['subagent_manager'].workspace = workspace_path
+                logger.info(f"Shared components workspace reloaded: {workspace_path}")
+            except Exception as e:
+                logger.warning(f"Failed to reload shared components workspace: {e}")
+        
         return {
             "success": True,
-            "message": f"工作空间路径已设置为: {path}",
-            "path": str(workspace_manager.workspace_path)
+            "message": f"工作空间路径已设置为: {path}（已热重载，无需重启）",
+            "path": str(workspace_manager.workspace_path),
+            "reloaded": True
         }
     
     except HTTPException:

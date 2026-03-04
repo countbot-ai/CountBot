@@ -117,6 +117,7 @@ class ChannelMessageHandler:
         max_iterations: int | None = None,
         max_history_messages: int | None = None,
         persona_config=None,
+        workspace=None,
     ) -> None:
         """热重载 AI 配置（前端修改设置后调用）。"""
         if provider is not None:
@@ -139,6 +140,13 @@ class ChannelMessageHandler:
                 f"user_name={persona_config.user_name}, "
                 f"user_address={getattr(persona_config, 'user_address', '')}"
             )
+
+        if workspace is not None:
+            self.agent_loop.workspace = workspace
+            self.context_builder.workspace = workspace
+            if self.agent_loop.subagent_manager:
+                self.agent_loop.subagent_manager.workspace = workspace
+            logger.info(f"Workspace path reloaded: {workspace}")
 
         logger.info(
             f"Handler config reloaded: model={model}, temp={temperature}, "

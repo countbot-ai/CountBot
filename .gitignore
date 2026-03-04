@@ -80,7 +80,6 @@ frontend/dist/test_*.html
 # ── 临时文件 ────────────────────────────────
 data/temp/
 data/workspace/
-workspace/
 temp/
 *.tmp
 *.txt

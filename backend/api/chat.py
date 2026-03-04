@@ -166,9 +166,16 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)
         
-        skills_dir = workspace / "skills"
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        skills = SkillsLoader(skills_dir)
+        # 优先使用全局 skills 实例（性能优化）
+        if hasattr(request.app.state, 'skills'):
+            skills = request.app.state.skills
+            logger.debug("Using global skills instance from app.state")
+        else:
+            # 回退：创建临时实例
+            skills_dir = workspace / "skills"
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            skills = SkillsLoader(skills_dir)
+            logger.warning("Creating temporary SkillsLoader instance in chat endpoint")
         
         context_builder = ContextBuilder(
             workspace=workspace,
