@@ -82,7 +82,7 @@ jobs:
           --windowed \
           --icon="${{ steps.icon.outputs.path }}" \
           --add-data="frontend/dist:frontend/dist" \
-          --add-data="skills:skills" \
+          --add-data="workspace/skills:workspace/skills" \
           --add-data="memory:memory" \
           --add-data="resources:resources" \
           --collect-data litellm \
@@ -161,7 +161,7 @@ jobs:
           --windowed `
           --icon="${{ steps.icon.outputs.path }}" `
           --add-data="frontend/dist;frontend/dist" `
-          --add-data="skills;skills" `
+          --add-data="workspace/skills;workspace/skills" `
           --add-data="memory;memory" `
           --add-data="resources;resources" `
           --collect-data litellm `
