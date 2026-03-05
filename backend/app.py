@@ -42,7 +42,7 @@ def _create_shared_components(config):
     logger.info("Setting up workspace...")
     # 使用统一的工作区路径，如果配置中指定了路径则使用配置的
     if config.workspace.path:
-        workspace = Path(config.workspace.path)
+        workspace = Path(config.workspace.path).resolve()
     else:
         workspace = WORKSPACE_DIR  # 使用统一路径管理的默认工作区
     workspace.mkdir(parents=True, exist_ok=True)
@@ -60,8 +60,14 @@ def _create_shared_components(config):
     logger.info("Creating memory and skills directories...")
     memory_dir = workspace / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
+
+    # Skills 目录始终从 workspace/skills 加载
+    # 确保用户修改 workspace 路径后，skills 也在新路径下
     skills_dir = workspace / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Workspace: {workspace}")
+    logger.info(f"Skills directory: {skills_dir}")
 
     logger.info("Initializing memory store...")
     memory = MemoryStore(memory_dir)

@@ -26,6 +26,27 @@ class ContextBuilder:
         self.persona_config = persona_config
         
         logger.debug(f"ContextBuilder initialized with workspace: {workspace}")
+    
+    def update_workspace(self, new_workspace: Path) -> None:
+        """
+        更新工作区路径（由配置更新事件触发）
+        
+        Args:
+            new_workspace: 新的工作区路径
+        """
+        if new_workspace != self.workspace:
+            logger.info(f"Workspace path updated: {self.workspace} -> {new_workspace}")
+            self.workspace = new_workspace
+    
+    def update_persona_config(self, new_config) -> None:
+        """
+        更新性格配置（由配置更新事件触发）
+        
+        Args:
+            new_config: 新的性格配置
+        """
+        self.persona_config = new_config
+        logger.debug("Persona config updated")
 
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """构建系统提示词"""
@@ -237,6 +258,7 @@ class ContextBuilder:
 - 当前时间: {now}
 - 运行环境: {runtime}
 - 工作目录: {workspace_path}
+- 技能目录: {workspace_path}/skills
 - 临时文件写入目录: {workspace_path}/temp
 {user_info}
 

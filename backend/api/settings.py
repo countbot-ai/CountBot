@@ -169,6 +169,7 @@ class SettingsResponse(BaseModel):
     workspace: WorkspaceConfigResponse = Field(..., description="工作空间配置")
     security: SecurityConfigResponse = Field(..., description="安全配置")
     persona: PersonaConfigResponse = Field(..., description="用户信息和AI人设配置")
+    workspace_migration: dict | None = Field(None, description="工作区迁移提示信息")
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -288,6 +289,7 @@ async def get_settings() -> SettingsResponse:
                     max_greets_per_day=config.persona.heartbeat.max_greets_per_day,
                 ),
             ),
+            workspace_migration=None,  # GET 请求不返回迁移信息
         )
         
     except Exception as e:
@@ -455,6 +457,72 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         # 保存配置（await 确保写入完成）
         await config_loader.save_config(config)
         
+        # 热重载 workspace 路径（如果有变更）
+        workspace_migration_info = None
+        if request.workspace and "path" in request.workspace:
+            try:
+                from pathlib import Path
+                from backend.modules.workspace.manager import workspace_manager
+                
+                old_workspace = workspace_manager.get_workspace_path()
+                new_workspace = Path(config.workspace.path).resolve() if config.workspace.path else None
+                
+                if new_workspace:
+                    # 检查是否需要迁移技能
+                    migration_check = workspace_manager.check_skills_migration_needed(old_workspace, new_workspace)
+                    if migration_check["needed"]:
+                        workspace_migration_info = {
+                            "migration_needed": True,
+                            "old_path": str(old_workspace),
+                            "new_path": str(new_workspace),
+                            "old_skills_count": migration_check["old_skills_count"],
+                            "new_skills_count": migration_check["new_skills_count"],
+                            "message": f"检测到旧工作区有 {migration_check['old_skills_count']} 个技能，新工作区只有 {migration_check['new_skills_count']} 个。建议手动迁移技能文件。"
+                        }
+                        logger.warning(f"Skills migration may be needed: {workspace_migration_info['message']}")
+                    
+                    # 更新工作区路径（触发监听器）
+                    workspace_manager.set_workspace_path(new_workspace)
+                
+                # 更新全局 context_builder 的 workspace
+                shared = getattr(req.app.state, 'shared', None)
+                if shared and 'context_builder' in shared:
+                    context_builder = shared['context_builder']
+                    if hasattr(context_builder, 'update_workspace') and new_workspace:
+                        context_builder.update_workspace(new_workspace)
+                        logger.info(f"Hot reloaded workspace path: {new_workspace}")
+                
+                # 更新 message_handler 的 workspace
+                message_handler = getattr(req.app.state, 'message_handler', None)
+                if message_handler and new_workspace:
+                    message_handler.workspace = new_workspace
+                    logger.info(f"Updated message_handler workspace: {new_workspace}")
+                
+                # 热重载技能（工作区变更后需要重新加载技能）
+                shared = getattr(req.app.state, 'shared', None)
+                if shared and 'skills_loader' in shared:
+                    skills_loader = shared['skills_loader']
+                    try:
+                        skills_loader.reload_skills()
+                        logger.info("Hot reloaded skills after workspace change")
+                    except Exception as e:
+                        logger.warning(f"Failed to reload skills: {e}")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to hot reload workspace: {e}")
+        
+        # 热重载 persona 配置（如果有变更）
+        if request.persona:
+            try:
+                shared = getattr(req.app.state, 'shared', None)
+                if shared and 'context_builder' in shared:
+                    context_builder = shared['context_builder']
+                    if hasattr(context_builder, 'update_persona_config'):
+                        context_builder.update_persona_config(config.persona)
+                        logger.info("Hot reloaded persona config")
+            except Exception as e:
+                logger.warning(f"Failed to hot reload persona config: {e}")
+        
         # 热重载渠道消息处理器的 AI 配置
         message_handler = getattr(req.app.state, 'message_handler', None)
         if message_handler:
@@ -528,7 +596,13 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         logger.info("Settings updated successfully")
         
         # 返回更新后的设置
-        return await get_settings()
+        response = await get_settings()
+        
+        # 添加工作区迁移提示（如果有）
+        if workspace_migration_info:
+            response.workspace_migration = workspace_migration_info
+        
+        return response
         
     except Exception as e:
         logger.exception(f"Failed to update settings: {e}")

@@ -3,6 +3,7 @@
 from typing import Optional
 
 from backend.modules.agent.loop import AgentLoop
+from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 from backend.modules.session.manager import SessionManager
 from backend.modules.channels.manager import ChannelManager
@@ -51,9 +52,12 @@ class CronExecutor:
                 session_id = await self._get_or_create_session(channel, chat_id)
             else:
                 session_id = f"cron:{job_id}"
-            
+
+            # 使用专用的 cron 任务提示词包装消息
+            cron_message = CRON_TASK_EXECUTION_PROMPT.format(task_message=message)
+
             response = await self.agent.process_direct(
-                content=message,
+                content=cron_message,
                 session_id=session_id,
                 channel=channel or "cron",
                 chat_id=chat_id or job_id

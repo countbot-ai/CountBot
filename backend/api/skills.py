@@ -216,13 +216,21 @@ def get_skills_loader(request: Request = None) -> SkillsLoader:
 @router.get("", response_model=ListSkillsResponse)
 async def list_skills(request: Request) -> ListSkillsResponse:
     """
-    获取所有技能列表
+    获取所有技能列表（自动重载技能）
     
     Returns:
         ListSkillsResponse: 技能列表
     """
     try:
         skills_loader = get_skills_loader(request)
+        
+        # 自动重载技能（确保显示最新的技能列表）
+        try:
+            skills_loader.reload_skills()
+            logger.debug("Auto-reloaded skills when accessing skills page")
+        except Exception as e:
+            logger.warning(f"Failed to auto-reload skills: {e}")
+        
         skills_list = skills_loader.list_skills()
         
         # 转换为响应格式

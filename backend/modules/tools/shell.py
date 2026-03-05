@@ -144,6 +144,8 @@ class ExecTool(Tool):
             except Exception as e:
                 return f"Error: Invalid working directory: {e}"
         else:
+            # 默认使用 workspace 作为工作目录
+            # 这确保了即使用户配置了自定义 workspace 路径，命令也在正确的目录执行
             cwd = self.workspace
         
         # 安全检查
@@ -191,6 +193,7 @@ class ExecTool(Tool):
                     output_parts.append(f"STDERR:\n{decoded_stderr}")
             
             if process.returncode != 0:
+                output_parts.insert(0, f"COMMAND FAILED (exit code {process.returncode})\n")
                 output_parts.append(f"\nExit code: {process.returncode}")
             
             result = "\n".join(output_parts) if output_parts else "(no output)"
