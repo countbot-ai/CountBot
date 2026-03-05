@@ -35,6 +35,53 @@ class WorkspaceManager:
             self._temp_dir.mkdir(parents=True, exist_ok=True)
         return self._temp_dir
     
+    def get_workspace_path(self) -> Path:
+        """获取工作空间路径（方法形式）"""
+        return self.workspace_path
+    
+    def check_skills_migration_needed(self, old_workspace: Path, new_workspace: Path) -> dict:
+        """检查是否需要迁移技能文件
+        
+        Args:
+            old_workspace: 旧工作空间路径
+            new_workspace: 新工作空间路径
+            
+        Returns:
+            包含迁移信息的字典
+        """
+        old_skills_dir = old_workspace / "skills"
+        new_skills_dir = new_workspace / "skills"
+        
+        old_skills_count = 0
+        new_skills_count = 0
+        
+        # 统计旧工作空间的技能文件
+        if old_skills_dir.exists() and old_skills_dir.is_dir():
+            try:
+                old_skills_count = len([f for f in old_skills_dir.iterdir() 
+                                       if f.is_file() and f.suffix in {'.py', '.json'}])
+            except Exception as e:
+                logger.warning(f"无法读取旧工作空间技能目录: {e}")
+        
+        # 统计新工作空间的技能文件
+        if new_skills_dir.exists() and new_skills_dir.is_dir():
+            try:
+                new_skills_count = len([f for f in new_skills_dir.iterdir() 
+                                       if f.is_file() and f.suffix in {'.py', '.json'}])
+            except Exception as e:
+                logger.warning(f"无法读取新工作空间技能目录: {e}")
+        
+        # 如果旧工作空间有技能，但新工作空间技能较少，则需要迁移
+        migration_needed = old_skills_count > 0 and new_skills_count < old_skills_count
+        
+        return {
+            "needed": migration_needed,
+            "old_skills_count": old_skills_count,
+            "new_skills_count": new_skills_count,
+            "old_skills_path": str(old_skills_dir),
+            "new_skills_path": str(new_skills_dir)
+        }
+    
     def set_workspace_path(self, path: str) -> None:
         """设置工作空间路径"""
         workspace_path = Path(path).resolve()
@@ -51,6 +98,10 @@ class WorkspaceManager:
         self._cache_timestamp = 0
         
         logger.info(f"工作空间路径: {workspace_path}")
+    def get_workspace_path(self) -> Path:
+        """获取工作空间路径（方法形式）"""
+        return self.workspace_path
+
     
     def _get_default_workspace_path(self) -> Path:
         """获取默认工作空间路径"""
