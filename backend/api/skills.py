@@ -195,8 +195,8 @@ def get_skills_loader(request: Request = None) -> SkillsLoader:
     优先从 app.state 获取全局单例，提升性能
     """
     # 尝试从 app state 获取全局实例
-    if request and hasattr(request.app.state, 'skills'):
-        return request.app.state.skills
+    if request and hasattr(request.app.state, 'shared'):
+        return request.app.state.shared["skills"]
     
     # 回退：创建临时实例（向后兼容）
     config = config_loader.config
@@ -226,7 +226,7 @@ async def list_skills(request: Request) -> ListSkillsResponse:
         
         # 自动重载技能（确保显示最新的技能列表）
         try:
-            skills_loader.reload_skills()
+            skills_loader.reload()
             logger.debug("Auto-reloaded skills when accessing skills page")
         except Exception as e:
             logger.warning(f"Failed to auto-reload skills: {e}")
