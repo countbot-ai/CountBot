@@ -10,6 +10,7 @@ class ProviderConfig(BaseModel):
     api_key: str = ""
     api_base: Optional[str] = None
     enabled: bool = False
+    model: Optional[str] = None
 
 
 class ModelConfig(BaseModel):

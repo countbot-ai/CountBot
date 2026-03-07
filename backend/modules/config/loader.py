@@ -42,17 +42,18 @@ class ConfigLoader:
             
             if "providers" in config_dict:
                 for provider_name, provider_data in config_dict["providers"].items():
-                    if isinstance(provider_data, dict) and provider_data.get("api_key") is None:
-                        provider_data["api_key"] = ""
+                    if isinstance(provider_data, dict):
+                        if provider_data.get("api_key") is None:
+                            provider_data["api_key"] = ""
+                        if "model" not in provider_data:
+                            provider_data["model"] = None
 
             self.config = AppConfig(**config_dict)
             
-            # 设置工作空间路径
             if self.config.workspace.path:
                 from backend.modules.workspace import workspace_manager
                 workspace_manager.set_workspace_path(self.config.workspace.path)
             
-            # 如果启用了加密，解密 API 密钥
             if self.config.security.api_key_encryption_enabled:
                 self._decrypt_api_keys()
                 logger.info("API 密钥加密已启用")
