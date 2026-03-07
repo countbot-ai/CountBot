@@ -18,7 +18,12 @@
 
 ## 最新动态
 
-- **2026年3月4日 - v0.3.0 发布** 🎉 [查看详细更新说明](docs/releases/v0.3.0.md)
+- **2026年3月7日 - v0.3.3 发布** 🎺
+  - 功能(渠道): 上线微博交互渠道，微博关注私信 @微博龙虾助手，发送 "连接龙虾"，简单配置即可实现 CountBot 交互
+  - 修复(技能): 修复技能 API schema 字段命名冲突
+  - 构建(前端): 更新前端构建文件
+  
+- **2026年3月4日 - v0.3.0 发布** [查看详细更新说明](docs/releases/v0.3.0.md)
   -  多智能体协作系统（Pipeline/Graph/Council 三种模式）
   -  定时任务增强（一次性任务、重试机制、批量操作）
   -  技能系统升级（可视化配置管理、Schema 验证）
@@ -392,6 +397,7 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 | 飞书 | WebSocket 长连接 | App ID + App Secret |
 | 钉钉 | Stream 模式 | Client ID + Client Secret |
 | QQ | 官方 SDK | App ID + Secret |
+| 微博 | WebSocket 长连接 | App ID + App Secret |
 | 微信(即将上线) | 公众号 API | App ID + App Secret + Token |
 | Telegram | Long Polling | Bot Token（支持自定义代理） |
 | Discord(即将上线) | Gateway | Bot Token |
