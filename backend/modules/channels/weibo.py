@@ -112,6 +112,59 @@ class WeiboChannel(BaseChannel):
         
         logger.info(f"[{self._account_id}] Weibo bot stopped")
 
+    async def test_connection(self) -> dict[str, Any]:
+        """测试微博连接（验证凭据并获取 Token）"""
+        if not self.config.app_id or not self.config.app_secret:
+            return {
+                "success": False,
+                "message": "App ID and App Secret not configured"
+            }
+
+        try:
+            # 尝试获取 Token 来验证凭据
+            token_endpoint = getattr(
+                self.config,
+                "token_endpoint",
+                "http://open-im.api.weibo.com/open/auth/ws_token",
+            )
+
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+                response = await client.post(
+                    token_endpoint,
+                    json={
+                        "app_id": self.config.app_id,
+                        "app_secret": self.config.app_secret,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get("code") != 0:
+                    return {
+                        "success": False,
+                        "message": f"Authentication failed: {data.get('msg', 'Unknown error')}"
+                    }
+
+                return {
+                    "success": True,
+                    "message": "Successfully connected to Weibo",
+                    "token_info": {
+                        "expires_in": data["data"].get("expire_in"),
+                    }
+                }
+
+        except httpx.HTTPError as e:
+            return {
+                "success": False,
+                "message": f"HTTP error: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Connection test failed: {str(e)}"
+            }
+
+
     # ------------------------------------------------------------------
     # Token 管理
     # ------------------------------------------------------------------
@@ -128,7 +181,7 @@ class WeiboChannel(BaseChannel):
             "http://open-im.api.weibo.com/open/auth/ws_token",
         )
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
             try:
                 response = await client.post(
                     token_endpoint,
@@ -412,5 +465,3 @@ class WeiboChannel(BaseChannel):
 
         await ws.send(json.dumps(payload))
         logger.debug(f"[{self._account_id}] Sent text message to {msg.chat_id}")
-
-    async def _send_with_media(self, ms
