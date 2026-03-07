@@ -172,6 +172,17 @@ class FeishuConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)
 
 
+class WeiboConfig(BaseModel):
+    """微博渠道配置"""
+    enabled: bool = False
+    app_id: str = ""
+    app_secret: str = ""
+    account_id: str = Field(default="default", description="账号 ID，用于多账号支持")
+    token_endpoint: str = Field(default="http://open-im.api.weibo.com/open/auth/ws_token")
+    ws_endpoint: str = Field(default="ws://open-im.api.weibo.com/ws/stream")
+    allow_from: list[str] = Field(default_factory=list)
+
+
 class ChannelsConfig(BaseModel):
     """渠道配置"""
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
@@ -180,6 +191,7 @@ class ChannelsConfig(BaseModel):
     wechat: WeChatConfig = Field(default_factory=WeChatConfig)
     dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    weibo: WeiboConfig = Field(default_factory=WeiboConfig)
 
 
 class AppConfig(BaseModel):

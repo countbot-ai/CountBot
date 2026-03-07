@@ -120,6 +120,18 @@ async def list_channels():
                     "verification_token": "***" if (hasattr(channels_config, 'feishu') and channels_config.feishu.verification_token) else "",
                     "allow_from": channels_config.feishu.allow_from if hasattr(channels_config, 'feishu') else []
                 }
+            },
+            "weibo": {
+                "name": "Weibo",
+                "description": "Weibo messaging platform",
+                "icon": "weibo",
+                "enabled": channels_config.weibo.enabled if hasattr(channels_config, 'weibo') else False,
+                "configured": bool(channels_config.weibo.app_id and channels_config.weibo.app_secret) if hasattr(channels_config, 'weibo') else False,
+                "config": {
+                    "app_id": (channels_config.weibo.app_id[:8] + "...") if (hasattr(channels_config, 'weibo') and channels_config.weibo.app_id) else "",
+                    "app_secret": "***" if (hasattr(channels_config, 'weibo') and channels_config.weibo.app_secret) else "",
+                    "allow_from": channels_config.weibo.allow_from if hasattr(channels_config, 'weibo') else []
+                }
             }
         }
         
@@ -168,7 +180,7 @@ async def test_channel(request: ChannelTestRequest):
             # 创建临时配置对象
             from backend.modules.config.schema import (
                 QQConfig, FeishuConfig, DingTalkConfig,
-                TelegramConfig, DiscordConfig, WeChatConfig
+                TelegramConfig, DiscordConfig, WeChatConfig, WeiboConfig
             )
             
             config_classes = {
@@ -177,7 +189,8 @@ async def test_channel(request: ChannelTestRequest):
                 "dingtalk": DingTalkConfig,
                 "telegram": TelegramConfig,
                 "discord": DiscordConfig,
-                "wechat": WeChatConfig
+                "wechat": WeChatConfig,
+                "weibo": WeiboConfig
             }
             
             if request.channel not in config_classes:
@@ -194,12 +207,14 @@ async def test_channel(request: ChannelTestRequest):
             from backend.modules.channels.feishu import FeishuChannel
             from backend.modules.channels.dingtalk import DingTalkChannel
             from backend.modules.channels.telegram import TelegramChannel
+            from backend.modules.channels.weibo import WeiboChannel
             
             channel_classes = {
                 "qq": QQChannel,
                 "feishu": FeishuChannel,
                 "dingtalk": DingTalkChannel,
                 "telegram": TelegramChannel,
+                "weibo": WeiboChannel,
             }
             
             if request.channel in channel_classes:
@@ -320,7 +335,7 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu"]
+        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo"]
         
         if request.channel not in supported_channels:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {request.channel}")
@@ -370,7 +385,7 @@ async def get_channel_config(channel: str):
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu"]
+        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo"]
         
         if channel not in supported_channels:
             raise HTTPException(status_code=404, detail=f"Channel not found: {channel}")
@@ -383,7 +398,7 @@ async def get_channel_config(channel: str):
             logger.warning(f"Channel configuration not found for {channel}, creating default")
             from backend.modules.config.schema import (
                 TelegramConfig, DiscordConfig, QQConfig, 
-                WeChatConfig, DingTalkConfig, FeishuConfig
+                WeChatConfig, DingTalkConfig, FeishuConfig, WeiboConfig
             )
             
             config_classes = {
@@ -392,7 +407,8 @@ async def get_channel_config(channel: str):
                 "qq": QQConfig,
                 "wechat": WeChatConfig,
                 "dingtalk": DingTalkConfig,
-                "feishu": FeishuConfig
+                "feishu": FeishuConfig,
+                "weibo": WeiboConfig
             }
             
             channel_config = config_classes[channel]()
@@ -436,6 +452,11 @@ async def get_channel_config(channel: str):
                 "app_secret": channel_config.app_secret,
                 "encrypt_key": getattr(channel_config, "encrypt_key", ""),
                 "verification_token": getattr(channel_config, "verification_token", "")
+            })
+        elif channel == "weibo":
+            config_dict.update({
+                "app_id": channel_config.app_id,
+                "app_secret": channel_config.app_secret
             })
         
         return {

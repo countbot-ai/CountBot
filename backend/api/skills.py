@@ -130,7 +130,7 @@ class SkillConfigSchemaResponse(BaseModel):
     """技能配置Schema响应"""
     
     has_schema: bool = Field(..., description="是否有Schema")
-    schema: dict | None = Field(None, description="Schema定义")
+    schema_definition: dict | None = Field(None, description="Schema定义", alias="schema")
 
 
 class SkillConfigResponse(BaseModel):
@@ -616,12 +616,12 @@ async def get_skill_config_schema(name: str) -> SkillConfigSchemaResponse:
         if not schema:
             return SkillConfigSchemaResponse(
                 has_schema=False,
-                schema=None
+                schema_definition=None
             )
         
         return SkillConfigSchemaResponse(
             has_schema=True,
-            schema=schema
+            schema_definition=schema
         )
         
     except Exception as e:
