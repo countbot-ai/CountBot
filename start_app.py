@@ -33,8 +33,14 @@ from backend.utils.ssl_compat import ensure_ssl_certificates
 ensure_ssl_certificates()
 
 
-def open_browser_delayed(url: str, delay: float = 2.0) -> None:
-    """延迟打开浏览器"""
+def open_browser_delayed(url: str, delay: float = 15.0) -> None:
+    """
+    延迟打开浏览器
+    
+    Args:
+        url: 要打开的 URL 地址
+        delay: 延迟时间（秒），默认 15 秒，确保服务器完全启动
+    """
     def _open():
         import time
         time.sleep(delay)

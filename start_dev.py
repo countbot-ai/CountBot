@@ -29,11 +29,19 @@ sys.path.insert(0, str(project_root))
 
 
 def main():
-    """启动应用（开发模式）"""
+    """
+    启动应用（开发模式）
+    
+    功能：
+    - 启动 FastAPI 应用服务器（开发模式）
+    - 启用热重载，文件更改自动重启
+    - 显示本地和网络访问地址
+    - 监控 backend 目录的文件变化
+    """
     import uvicorn
     from loguru import logger
     
-    # 配置
+    # 读取配置
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
     
@@ -83,7 +91,7 @@ def main():
             port=port,
             reload=True,  # 开发模式启用热重载
             reload_dirs=["backend"],  # 监控 backend 目录
-            log_level="debug"
+            log_level="debug"  # 开发模式使用 debug 日志级别
         )
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")
