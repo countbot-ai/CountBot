@@ -176,9 +176,9 @@ class ContextBuilder:
             lines.append("")
 
         lines.append("使用方式：")
-        lines.append("- 调用 workflow_run 工具，指定团队名称或自定义配置")
-        lines.append("- 适用于需要多角色协作或多视角分析的复杂任务")
-        lines.append("- 简单任务直接回答，不强制使用团队，除非用户直接@准确的团队名称")
+        lines.append("- 使用 team_name 参数调用预定义团队：workflow_run(mode='graph', goal='...', agents=[], team_name='问题诊断系统')")
+        lines.append("- 预定义团队会自动根据分析结果决定执行哪些步骤")
+        lines.append("- 简单任务直接回答，不强制使用团队，除非用户明确 @对应团队名称")
 
         return "\n".join(lines)
 

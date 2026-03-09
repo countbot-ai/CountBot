@@ -86,9 +86,6 @@ async def init_db() -> None:
     
     # 初始化性格数据
     await init_personalities()
-    
-    # 初始化默认团队
-    await init_default_teams()
 
 
 async def init_personalities() -> None:
@@ -146,42 +143,4 @@ async def init_personalities() -> None:
             pass
 
 
-async def init_default_teams() -> None:
-    """初始化默认的智能体团队模板（如果表为空）"""
-    import uuid
-    from backend.models.agent_team import AgentTeam
-    from sqlalchemy import select
-    
-    async with AsyncSessionLocal() as session:
-        try:
-            # 检查是否已有数据
-            result = await session.execute(select(AgentTeam))
-            existing = result.scalars().first()
-            
-            if existing:
-                return  # 已有数据，跳过初始化
-            
-            # 默认团队模板 - 从 init_agent_teams.py 导入
-            from backend.scripts.init_agent_teams import DEFAULT_TEAMS
-            default_teams = DEFAULT_TEAMS
-            
-            # 创建默认团队
-            for team_data in default_teams:
-                team = AgentTeam(
-                    id=str(uuid.uuid4()),
-                    name=team_data["name"],
-                    description=team_data["description"],
-                    mode=team_data["mode"],
-                    cross_review=team_data.get("cross_review", True),
-                    enable_skills=team_data.get("enable_skills", False),
-                    agents=team_data["agents"],
-                    is_active=True,
-                )
-                session.add(team)
-            
-            await session.commit()
-            
-        except Exception:
-            await session.rollback()
-            # 静默失败，不影响数据库初始化
-            pass
+

@@ -35,6 +35,13 @@ class AgentDefinition(BaseModel):
     task: str = Field(default="", description="What this agent should do (pipeline/graph only)")
     perspective: Optional[str] = Field(None, description="Viewpoint label (council mode only)")
     depends_on: List[str] = Field(default_factory=list, description="IDs this agent waits for (graph mode)")
+    condition: Optional[dict] = Field(
+        None,
+        description=(
+            "Optional execution condition (graph mode only). "
+            "Example: {'type': 'output_contains', 'node': 'test', 'text': '通过'}"
+        ),
+    )
 
 
 class AgentTeamCreate(BaseModel):

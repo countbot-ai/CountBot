@@ -5,8 +5,9 @@ import json
 import re
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -119,7 +120,10 @@ def get_global_subagent_manager():
     return _global_subagent_manager
 
 
-async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
+async def get_agent_loop(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+) -> AgentLoop:
     """获取 AgentLoop 实例（依赖注入）"""
     global _global_subagent_manager
     
@@ -197,6 +201,9 @@ async def get_agent_loop(db: AsyncSession = Depends(get_db)) -> AgentLoop:
                 model=config.model.model,
                 temperature=config.model.temperature,
                 max_tokens=config.model.max_tokens,
+                db_session_factory=get_db_session_factory(),
+                config_loader=config_loader,
+                skills=skills,
             )
             logger.info("Created global SubagentManager")
         

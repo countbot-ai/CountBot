@@ -84,9 +84,10 @@ class WorkflowTool(Tool):
                 "agents": {
                     "type": "array",
                     "description": (
-                        "Agent definitions. "
+                        "Agent definitions. Required when team_name is not provided. "
                         "Pipeline/Graph: [{\"id\": str, \"role\": str, \"task\": str, \"depends\": [str]}]. "
-                        "Council: [{\"id\": str, \"perspective\": str}]."
+                        "Council: [{\"id\": str, \"perspective\": str}]. "
+                        "When using team_name, pass an empty array []."
                     ),
                     "items": {
                         "type": "object",
@@ -128,7 +129,9 @@ class WorkflowTool(Tool):
                     "type": "string",
                     "description": (
                         "Optional: name of a predefined team to use. "
-                        "If provided, the system will load team configuration (including enable_skills setting) from the database."
+                        "When provided, the system loads the complete team configuration from database, "
+                        "including agents, mode, conditions, and enable_skills settings. "
+                        "This is the recommended way to use predefined teams."
                     ),
                 },
             },
@@ -148,15 +151,20 @@ class WorkflowTool(Tool):
         team_name: str | None = None,
         **kwargs: Any,
     ) -> str:
+        # 验证参数：team_name 和 agents 至少提供一个
+        if not team_name and not agents:
+            return "Error: either 'team_name' or 'agents' must be provided."
+        
         # 确定是否启用技能系统
         enable_skills = False
         
-        # 如果提供了团队名称，从数据库读取配置
+        # 如果提供了团队名称，从数据库读取完整配置
         if team_name:
             try:
                 from backend.database import SessionLocal
                 from backend.models.agent_team import AgentTeam
                 from sqlalchemy import select
+                from loguru import logger
                 
                 with SessionLocal() as session:
                     result = session.execute(
@@ -165,12 +173,19 @@ class WorkflowTool(Tool):
                     team = result.scalar_one_or_none()
                     
                     if team:
+                        # 使用数据库中的团队配置
+                        mode = team.mode
+                        agents = team.agents or []
                         enable_skills = team.enable_skills
-                        from loguru import logger
-                        logger.debug(f"Team '{team_name}' enable_skills={enable_skills}")
+                        if team.mode == "council":
+                            cross_review = team.cross_review
+                        logger.info(f"Loaded team '{team_name}': mode={mode}, agents={len(agents)}, enable_skills={enable_skills}")
+                    else:
+                        return f"Error: team '{team_name}' not found in database."
             except Exception as e:
                 from loguru import logger
-                logger.warning(f"Failed to load team config for '{team_name}': {e}")
+                logger.error(f"Failed to load team config for '{team_name}': {e}")
+                return f"Error: failed to load team '{team_name}': {str(e)}"
         
         engine = WorkflowEngine(
             self._manager,

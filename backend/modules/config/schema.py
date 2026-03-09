@@ -91,24 +91,28 @@ class PersonaConfig(BaseModel):
 class SecurityConfig(BaseModel):
     """安全配置"""
     # API 密钥加密
-    api_key_encryption_enabled: bool = Field(default=False)
+    api_key_encryption_enabled: bool = Field(default=False, description="是否启用 API 密钥加密")
     
     # 危险命令检测
-    dangerous_commands_blocked: bool = Field(default=True)
-    custom_deny_patterns: list[str] = Field(default_factory=list)
+    dangerous_commands_blocked: bool = Field(default=True, description="是否阻止危险命令")
+    custom_deny_patterns: list[str] = Field(default_factory=list, description="自定义拒绝模式列表")
     
     # 命令白名单
-    command_whitelist_enabled: bool = Field(default=False)
-    custom_allow_patterns: list[str] = Field(default_factory=list)
+    command_whitelist_enabled: bool = Field(default=False, description="是否启用命令白名单")
+    custom_allow_patterns: list[str] = Field(default_factory=list, description="自定义允许模式列表")
     
     # 审计日志
-    audit_log_enabled: bool = Field(default=True)
+    audit_log_enabled: bool = Field(default=True, description="是否启用审计日志")
     
-    # 其他安全选项
-    command_timeout: int = Field(default=60, ge=1, le=300)
+    # 超时配置
+    command_timeout: int = Field(default=300, ge=10, le=1800, description="工具调用超时时间（秒）")
     subagent_timeout: int = Field(default=600, ge=60, le=3600, description="子代理超时时间（秒）")
-    max_output_length: int = Field(default=10000, ge=100, le=1000000)
-    restrict_to_workspace: bool = Field(default=False)
+    
+    # 输出限制
+    max_output_length: int = Field(default=10000, ge=100, le=1000000, description="最大输出长度（字符）")
+    
+    # 工作空间限制
+    restrict_to_workspace: bool = Field(default=False, description="是否限制命令在工作空间内执行")
 
 
 class TelegramConfig(BaseModel):

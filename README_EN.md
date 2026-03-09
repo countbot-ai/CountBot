@@ -18,12 +18,8 @@
 
 ## What's New
 
-- **Mar 7, 2026 — v0.3.3 Released** 🎺
-  - Feature(Channels): Added Weibo channel support - Follow @微博龙虾助手 on Weibo, send "连接龙虾" to connect CountBot
-  - Fix(Skills): Fixed skill API schema field naming conflict
-  - Build(Frontend): Updated frontend build files
-  
-- **Mar 4, 2026 — v0.3.0 Released** 🎉 [View Detailed Update Guide](docs/releases/v0.3.0/)
+- **Mar 7, 2026** Added Weibo channel support - Follow @微博龙虾助手 on Weibo, send "连接龙虾" to connect CountBot
+- **Mar 4, 2026 — v0.3.0 Released**  [View Detailed Update Guide](docs/releases/v0.3.0/)
   -  Multi-Agent Collaboration System (Pipeline/Graph/Council modes)
   -  Enhanced Cron Jobs (one-time tasks, retry mechanism, batch operations)
   -  Skills System Upgrade (config management, schema validation, auto-fix)

@@ -36,9 +36,11 @@ class AgentSlot:
     label: str
     prompt_template: str
     depends_on: list[str] = field(default_factory=list)
+    condition: dict | None = None  # 可选：执行条件
     phase: SlotPhase = SlotPhase.WAITING
     output: str | None = None
     error: str | None = None
+    skipped: bool = False  # 是否因条件不满足而跳过
 
 
 class WorkflowEngine:
@@ -48,16 +50,15 @@ class WorkflowEngine:
         self._mgr = subagent_manager
         self._session_id = session_id
         self._cancel_token = cancel_token
-        self._skills = skills  # 技能系统实例
-        # 每个 agent 的执行数据（工具调用 + 结论），最终序列化到结果中用于持久化
+        self._skills = skills
         self._execution_data: dict[str, dict] = {}
 
     # ------------------------------------------------------------------
-    # 内部辅助方法
+    # 内部方法
     # ------------------------------------------------------------------
 
     async def _emit_ws(self, event_type: str, **data: Any) -> None:
-        """通过 WebSocket 推送工作流生命周期事件（fire-and-forget）。"""
+        """推送工作流事件到前端"""
         if not self._session_id:
             return
         try:
@@ -71,7 +72,7 @@ class WorkflowEngine:
             logger.warning(f"[Workflow] WS emit '{event_type}' 失败: {exc}")
 
     def _is_cancelled(self) -> bool:
-        """检查取消令牌是否已触发。"""
+        """检查是否已取消"""
         return bool(self._cancel_token and self._cancel_token.is_cancelled)
 
     async def _invoke_agent(
@@ -82,7 +83,7 @@ class WorkflowEngine:
         agent_id: str = "",
         enable_skills: bool = False,
     ) -> str:
-        """同步执行单个子 Agent 并返回其最终输出。"""
+        """执行单个子Agent并返回输出"""
         if self._is_cancelled():
             raise asyncio.CancelledError("Workflow cancelled before agent start")
 
@@ -95,14 +96,12 @@ class WorkflowEngine:
             "result": "",
         }
 
-        # 通知前端：agent 启动
         await self._emit_ws(
             "workflow_agent_start",
             agent_id=aid,
             agent_label=label or aid,
         )
 
-        # 工具调用回调 — 实时推送到前端 + 收集数据用于持久化
         async def _tool_event(event: str, tool_name: str, data: Any) -> None:
             if event == "tool_call":
                 self._execution_data[aid]["toolCalls"].append({
@@ -118,7 +117,6 @@ class WorkflowEngine:
                 )
             elif event == "tool_result":
                 result_preview = str(data)[:2000] if data else ""
-                # 更新最近一个 running 状态的同名工具调用
                 calls = self._execution_data[aid]["toolCalls"]
                 for i in range(len(calls) - 1, -1, -1):
                     if calls[i]["tool"] == tool_name and calls[i]["status"] == "running":
@@ -132,7 +130,6 @@ class WorkflowEngine:
                     result=result_preview,
                 )
             elif event == "chunk":
-                # data 为文本 chunk，实时推送给前端用于流式展示
                 await self._emit_ws(
                     "workflow_agent_chunk",
                     agent_id=aid,
@@ -144,12 +141,12 @@ class WorkflowEngine:
             message=prompt,
             system_prompt=system_prompt,
             event_callback=_tool_event,
-            enable_skills=enable_skills,  # 传递技能开关
+            enable_skills=enable_skills,
         )
-        await self._mgr.execute_task(task_id)          # schedules asyncio.Task
+        await self._mgr.execute_task(task_id)
         bg = self._mgr.running_tasks.get(task_id)
         if bg:
-            await bg                                    # wait for completion
+            await bg
         record = self._mgr.get_task(task_id)
         if record is None:
             raise RuntimeError(f"Sub-agent task {task_id} disappeared unexpectedly")
@@ -159,7 +156,6 @@ class WorkflowEngine:
 
         self._execution_data[aid]["result"] = result
 
-        # 通知前端：agent 完成（发送完整结论，前端 Markdown 渲染）
         await self._emit_ws(
             "workflow_agent_complete",
             agent_id=aid,
@@ -169,7 +165,7 @@ class WorkflowEngine:
         return result
 
     def _detect_cycle(self, dep_map: dict[str, list[str]]) -> bool:
-        """检测依赖图是否包含环。"""
+        """检测依赖图环路"""
         visited: set[str] = set()
         in_stack: set[str] = set()
 
@@ -187,8 +183,29 @@ class WorkflowEngine:
 
         return any(_dfs(n) for n in dep_map if n not in visited)
 
+    def _evaluate_condition(self, condition: dict, slot_map: dict[str, AgentSlot]) -> bool:
+        """评估节点执行条件，通过检查依赖节点的LLM输出文本决定是否执行"""
+        if not condition:
+            return True
+        
+        cond_type = condition.get("type")
+        node_id = condition.get("node")
+        text = condition.get("text", "")
+        
+        if not node_id or node_id not in slot_map:
+            return False
+        
+        output = slot_map[node_id].output or ""
+        
+        if cond_type == "output_contains":
+            return text in output
+        elif cond_type == "output_not_contains":
+            return text not in output
+        
+        return True
+
     def _build_exec_metadata(self) -> str:
-        """将执行数据序列化为 HTML 注释块，嵌入 result 以便刷新后恢复面板状态。"""
+        """序列化执行数据为HTML注释"""
         if not self._execution_data:
             return ""
         try:
@@ -198,11 +215,11 @@ class WorkflowEngine:
             return ""
 
     # ------------------------------------------------------------------
-    # Pipeline 流水线模式
+    # Pipeline 模式
     # ------------------------------------------------------------------
 
     async def run_pipeline(self, goal: str, stages: list[dict[str, Any]], enable_skills: bool = False) -> str:
-        """顺序流水线 — 每个阶段继承前序所有输出。"""
+        """顺序流水线，每个阶段继承前序输出"""
         if not stages:
             return "No pipeline stages defined."
 
@@ -210,7 +227,6 @@ class WorkflowEngine:
         stage_outputs: list[dict] = []
 
         for idx, stage in enumerate(stages):
-            # 每个阶段启动前检查取消令牌
             if self._is_cancelled():
                 logger.info("[Workflow/Pipeline] 用户取消，终止流水线")
                 break
@@ -240,7 +256,7 @@ class WorkflowEngine:
             output = await self._invoke_agent(
                 prompt, label=role, system_prompt=system_prompt,
                 agent_id=stage.get("id", role),
-                enable_skills=enable_skills,  # 传递技能开关
+                enable_skills=enable_skills,
             )
 
             stage_outputs.append({"role": role, "output": output})
@@ -252,15 +268,14 @@ class WorkflowEngine:
         return "\n\n---\n\n".join(lines) + self._build_exec_metadata()
 
     # ------------------------------------------------------------------
-    # Graph 依赖图模式
+    # Graph 模式
     # ------------------------------------------------------------------
 
     async def run_graph(self, goal: str, slots: list[dict[str, Any]], enable_skills: bool = False) -> str:
-        """依赖 DAG — 自动并行调度无依赖的节点。"""
+        """依赖DAG，自动并行调度"""
         if not slots:
             return "No graph slots defined."
 
-        # 按 slot ID 索引系统提示词
         slot_system_prompts: dict[str, str | None] = {}
         slot_map: dict[str, AgentSlot] = {}
         dep_map: dict[str, list[str]] = {}
@@ -269,10 +284,12 @@ class WorkflowEngine:
             sid = s.get("id", "")
             if not sid:
                 return "Error: every slot must have a non-empty 'id' field."
-            deps = s.get("depends", [])
+            deps = s.get("depends_on", s.get("depends", []))
             role = s.get("role", sid)
             task_desc = s.get("task", "")
             custom_sp = s.get("system_prompt") or None
+            condition = s.get("condition")
+            
             slot_system_prompts[sid] = custom_sp or (
                 f"You are {role}. "
                 "You are a specialist agent inside a dependency-graph workflow. "
@@ -284,10 +301,10 @@ class WorkflowEngine:
                 label=role,
                 prompt_template=task_desc,
                 depends_on=list(deps),
+                condition=condition,
             )
             dep_map[sid] = list(deps)
 
-        # 验证依赖引用
         for sid, slot in slot_map.items():
             for dep in slot.depends_on:
                 if dep not in slot_map:
@@ -296,7 +313,6 @@ class WorkflowEngine:
         if self._detect_cycle(dep_map):
             return "Error: the dependency graph contains a cycle."
 
-        # 调度循环 — 每轮并发执行所有无阻塞节点
         while any(s.phase == SlotPhase.WAITING for s in slot_map.values()):
             if self._is_cancelled():
                 logger.info("[Workflow/Graph] 用户取消，终止依赖图调度")
@@ -304,10 +320,9 @@ class WorkflowEngine:
             ready = [
                 s for s in slot_map.values()
                 if s.phase == SlotPhase.WAITING
-                and all(slot_map[d].phase == SlotPhase.DONE for d in s.depends_on)
+                and all(slot_map[d].phase == SlotPhase.DONE or slot_map[d].skipped for d in s.depends_on)
             ]
             if not ready:
-                # 上游失败 → 标记下游为失败
                 for s in slot_map.values():
                     if s.phase == SlotPhase.WAITING and any(
                         slot_map[d].phase == SlotPhase.FAILED for d in s.depends_on
@@ -316,11 +331,24 @@ class WorkflowEngine:
                         s.error = "Blocked by upstream failure"
                 break
 
+            to_execute = []
             for s in ready:
+                if self._evaluate_condition(s.condition, slot_map):
+                    to_execute.append(s)
+                else:
+                    s.phase = SlotPhase.DONE
+                    s.skipped = True
+                    s.output = f"[Skipped: condition not met]"
+                    logger.info(f"[Workflow/Graph] Slot '{s.slot_id}' skipped (condition not met)")
+            
+            if not to_execute:
+                continue
+            
+            for s in to_execute:
                 s.phase = SlotPhase.ACTIVE
             logger.info(
-                f"[Workflow/Graph] Dispatching {len(ready)} slot(s) in parallel: "
-                f"{[s.slot_id for s in ready]}"
+                f"[Workflow/Graph] Dispatching {len(to_execute)} slot(s) in parallel: "
+                f"{[s.slot_id for s in to_execute]}"
             )
 
             async def _run_slot(slot: AgentSlot) -> None:  # noqa: E306
@@ -329,7 +357,7 @@ class WorkflowEngine:
                     dep_parts = [
                         f"### {slot_map[d].label}:\n{slot_map[d].output}"
                         for d in slot.depends_on
-                        if slot_map[d].output
+                        if slot_map[d].output and not slot_map[d].skipped
                     ]
                     if dep_parts:
                         dep_ctx = "\n\n## Outputs from upstream agents:\n" + "\n\n".join(dep_parts)
@@ -345,7 +373,7 @@ class WorkflowEngine:
                         label=slot.label,
                         system_prompt=slot_system_prompts.get(slot.slot_id),
                         agent_id=slot.slot_id,
-                        enable_skills=enable_skills,  # 传递技能开关
+                        enable_skills=enable_skills,
                     )
                     slot.phase = SlotPhase.DONE
                 except Exception as exc:
@@ -353,12 +381,21 @@ class WorkflowEngine:
                     slot.error = str(exc)
                     logger.error(f"[Workflow/Graph] Slot '{slot.slot_id}' failed: {exc}")
 
-            await asyncio.gather(*[_run_slot(s) for s in ready])
+            await asyncio.gather(*[_run_slot(s) for s in to_execute])
 
         lines = [f"# Graph Workflow Results\n\n**Goal:** {goal}\n"]
         for slot in slot_map.values():
-            icon = "✅" if slot.phase == SlotPhase.DONE else "❌"
-            lines.append(f"## {icon} {slot.label}")
+            if slot.skipped:
+                icon = "⏭️"
+                status_text = "Skipped"
+            elif slot.phase == SlotPhase.DONE:
+                icon = "✅"
+                status_text = "Done"
+            else:
+                icon = "❌"
+                status_text = "Failed"
+            
+            lines.append(f"## {icon} {slot.label} ({status_text})")
             if slot.output:
                 lines.append(slot.output)
             elif slot.error:
@@ -366,25 +403,17 @@ class WorkflowEngine:
         return "\n\n---\n\n".join(lines) + self._build_exec_metadata()
 
     # ------------------------------------------------------------------
-    # Council 多视角评审模式
+    # Council 模式
     # ------------------------------------------------------------------
 
     async def run_council(self, question: str, members: list[dict[str, Any]], cross_review: bool = True, enable_skills: bool = False) -> str:
-        """多视角评审：立场陈述 → [可选]交叉评审 → 综合输出。
-        
-        Args:
-            question: 评审问题
-            members: 成员列表
-            cross_review: 是否启用交叉评审（True=交叉模式，False=独立模式）
-            enable_skills: 是否启用技能系统
-        """
+        """多视角评审：立场陈述 → [可选]交叉评审 → 综合输出"""
         if not members:
             return "No council members defined."
 
         member_map: dict[str, str] = {
             m["id"]: m.get("perspective", "neutral analyst") for m in members
         }
-        # 预构建每位成员的系统提示词
         member_system_prompts: dict[str, str] = {}
         for m in members:
             mid = m["id"]
@@ -396,7 +425,6 @@ class WorkflowEngine:
                 "with evidence, and engage constructively with other members' arguments."
             )
 
-        # 第1轮 — 各成员陈述立场（并发）
         async def _initial(member: dict) -> tuple[str, str]:
             mid = member["id"]
             perspective = member_map[mid]
@@ -412,7 +440,7 @@ class WorkflowEngine:
                 label=f"{perspective} — 第1轮",
                 system_prompt=member_system_prompts[mid],
                 agent_id=f"{mid}:R1",
-                enable_skills=enable_skills,  # 传递技能开关
+                enable_skills=enable_skills,
             )
             return mid, result
 
@@ -420,12 +448,10 @@ class WorkflowEngine:
             await asyncio.gather(*[_initial(m) for m in members])
         )
 
-        # 检查是否在第1轮完成后被取消
         if self._is_cancelled():
             logger.info("[Workflow/Council] 用户取消，终止于第1轮完成后")
             return "Workflow cancelled after round 1."
 
-        # 如果不启用交叉评审，直接返回第1轮结果
         if not cross_review:
             logger.info("[Workflow/Council] 独立模式，跳过交叉评审")
             blocks = []
@@ -444,7 +470,6 @@ class WorkflowEngine:
                 f"*分析完成 — 共 {len(members)} 位成员独立分析，无交叉评审。*"
             ) + self._build_exec_metadata()
 
-        # 第2轮 — 交叉评审（并发）
         async def _cross_review(member: dict) -> tuple[str, str]:
             mid = member["id"]
             perspective = member_map[mid]
@@ -469,7 +494,7 @@ class WorkflowEngine:
                 label=f"{perspective} — 交叉评审",
                 system_prompt=member_system_prompts[mid],
                 agent_id=f"{mid}:R2",
-                enable_skills=enable_skills,  # 传递技能开关
+                enable_skills=enable_skills,
             )
             return mid, result
 
@@ -477,7 +502,6 @@ class WorkflowEngine:
             await asyncio.gather(*[_cross_review(m) for m in members])
         )
 
-        # Synthesis — 结构化中文输出，完整保留每位成员的分析内容
         blocks = []
         for m in members:
             mid = m["id"]

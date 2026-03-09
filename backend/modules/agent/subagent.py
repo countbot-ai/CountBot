@@ -77,12 +77,13 @@ class SubagentManager:
     """
 
     def __init__(self, provider, workspace, model: str, temperature: float = 0.7, max_tokens: int = 4096, db_session_factory=None, config_loader=None, skills=None):
-        """初始化 SubagentManager"""
+      
+        """初始化 SubagentManager """
         self.provider = provider
         self.workspace = workspace
-        self.model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.model = model  # 默认值，实际使用时会从 config_loader 读取
+        self.temperature = temperature  # 默认值
+        self.max_tokens = max_tokens  # 默认值
         self.db_session_factory = db_session_factory
         self.config_loader = config_loader
         self.skills = skills  # 技能系统实例
@@ -151,6 +152,41 @@ class SubagentManager:
 
     async def _run_task(self, task: SubagentTask) -> None:
         handler = task.notification_handler
+        
+        # 从配置获取超时时间
+        timeout_seconds = 600
+        if self.config_loader:
+            try:
+                timeout_seconds = self.config_loader.config.security.subagent_timeout
+                logger.debug(f"Using subagent_timeout from config: {timeout_seconds}s")
+            except Exception as e:
+                logger.warning(f"Failed to get subagent_timeout from config: {e}, using default: 600s")
+        
+        try:
+            await asyncio.wait_for(
+                self._run_task_impl(task, handler),
+                timeout=timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            task.status = TaskStatus.FAILED
+            task.error = f"任务超时（超过{timeout_seconds}秒）"
+            task.completed_at = datetime.now()
+            logger.error(f"Task {task.task_id} timed out after {timeout_seconds}s")
+            
+            if handler:
+                try:
+                    await handler.notify_failed(task.error)
+                except Exception:
+                    pass
+            
+            await self._save_task_to_db(task)
+        finally:
+            if task.task_id in self.running_tasks:
+                del self.running_tasks[task.task_id]
+            task.done_event.set()
+
+    async def _run_task_impl(self, task: SubagentTask, handler) -> None:
+        """实际的任务执行逻辑"""
 
         try:
             # 任务创建时立即保存到数据库
@@ -177,6 +213,15 @@ class SubagentManager:
             from backend.modules.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
             from backend.modules.tools.shell import ExecTool
 
+            # 从配置获取工具超时时间
+            tool_timeout = 300
+            if self.config_loader:
+                try:
+                    tool_timeout = self.config_loader.config.security.command_timeout
+                    logger.debug(f"Using command_timeout from config: {tool_timeout}s")
+                except Exception as e:
+                    logger.warning(f"Failed to get command_timeout from config: {e}, using default: 300s")
+
             tools = ToolRegistry()
             tools.register(ReadFileTool(self.workspace))
             tools.register(WriteFileTool(self.workspace))
@@ -184,7 +229,7 @@ class SubagentManager:
             tools.register(ListDirTool(self.workspace))
             tools.register(ExecTool(
                 workspace=self.workspace,
-                timeout=300,
+                timeout=tool_timeout,
                 allow_dangerous=False,
                 restrict_to_workspace=True,
             ))
@@ -199,7 +244,7 @@ class SubagentManager:
             response_chunks = []
             iteration = 0
             
-            # 从配置获取最大迭代次数，默认15
+            # 从配置获取最大迭代次数
             max_iterations = 15
             if self.config_loader:
                 try:
@@ -217,12 +262,26 @@ class SubagentManager:
                 content_buffer = ""
                 tool_calls_buffer = []
                 
+                # 动态从配置读取模型参数（支持运行时配置更新）
+                model = self.model
+                temperature = self.temperature
+                max_tokens = self.max_tokens
+                if self.config_loader:
+                    try:
+                        config = self.config_loader.config
+                        model = config.model.model
+                        temperature = config.model.temperature
+                        max_tokens = config.model.max_tokens
+                        logger.debug(f"Using model from config: {model}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get model from config: {e}, using default: {self.model}")
+                
                 async for chunk in self.provider.chat_stream(
                     messages=messages,
                     tools=tool_definitions,
-                    model=self.model,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
@@ -296,13 +355,21 @@ class SubagentManager:
                             except Exception as e:
                                 logger.warning(f"Failed to call event_callback for tool_call: {e}")
 
-                        result = await tools.execute(
-                            tool_name=tool_call.name,
-                            arguments=tool_call.arguments
-                        )
+                        try:
+                            result = await asyncio.wait_for(
+                                tools.execute(
+                                    tool_name=tool_call.name,
+                                    arguments=tool_call.arguments
+                                ),
+                                timeout=tool_timeout
+                            )
+                            record["status"] = "success"
+                        except asyncio.TimeoutError:
+                            result = f"Error: Tool '{tool_call.name}' execution timed out after {tool_timeout} seconds. The tool may be stuck or the operation is taking too long."
+                            logger.error(f"Tool {tool_call.name} timed out after {tool_timeout}s")
+                            record["status"] = "timeout"
 
                         record["result"] = result[:500] if result else ""
-                        record["status"] = "success"
                         record["duration_ms"] = round((_time.time() - _tc_start) * 1000)
 
                         task.progress = min(90, task.progress + 5)
@@ -381,11 +448,6 @@ class SubagentManager:
             
             # 任务失败时保存到数据库
             await self._save_task_to_db(task)
-            
-        finally:
-            if task.task_id in self.running_tasks:
-                del self.running_tasks[task.task_id]
-            task.done_event.set()
 
     def _build_subagent_prompt(self, task: str, enable_skills: bool = False) -> str:
         """

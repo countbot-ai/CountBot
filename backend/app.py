@@ -15,7 +15,7 @@ from backend.database import get_db_session_factory
 setup_logger()
 
 
-def _create_shared_components(config):
+def _create_shared_components(config, config_loader=None):
     """创建共享组件（WebSocket 和渠道处理器共用）"""
     from loguru import logger
     from backend.modules.providers.litellm_provider import LiteLLMProvider
@@ -91,6 +91,8 @@ def _create_shared_components(config):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         db_session_factory=get_db_session_factory(),
+        config_loader=config_loader,
+        skills=skills,
     )
 
     logger.info("Preparing tool parameters...")
@@ -154,7 +156,7 @@ async def lifespan(app: FastAPI):
 
     # 创建共享组件
     logger.info("Creating shared components...")
-    shared = _create_shared_components(config)
+    shared = _create_shared_components(config, config_loader)
     app.state.shared = shared
     logger.info("Shared components created")
     
