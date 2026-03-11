@@ -7,8 +7,10 @@ all sub-agents have finished.
 
 from typing import Any
 
-from backend.modules.tools.base import Tool
+from loguru import logger
+
 from backend.modules.agent.workflow import WorkflowEngine
+from backend.modules.tools.base import Tool
 
 
 class WorkflowTool(Tool):
@@ -84,10 +86,9 @@ class WorkflowTool(Tool):
                 "agents": {
                     "type": "array",
                     "description": (
-                        "Agent definitions. Required when team_name is not provided. "
-                        "Pipeline/Graph: [{\"id\": str, \"role\": str, \"task\": str, \"depends\": [str]}]. "
-                        "Council: [{\"id\": str, \"perspective\": str}]. "
-                        "When using team_name, pass an empty array []."
+                        "Agent definitions. "
+                        "Pipeline/Graph: [{\"id\": str, \"role\": str, \"task\": str, \"depends_on\": [str]}]. "
+                        "Council: [{\"id\": str, \"perspective\": str}]."
                     ),
                     "items": {
                         "type": "object",
@@ -104,10 +105,10 @@ class WorkflowTool(Tool):
                                 "type": "string",
                                 "description": "Specific task assigned to this agent (pipeline / graph).",
                             },
-                            "depends": {
+                            "depends_on": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "IDs of slots that must complete before this one (graph only).",
+                                "description": "IDs of slots that must complete before this one (graph only). Also accepts 'depends' for backward compatibility.",
                             },
                             "perspective": {
                                 "type": "string",
@@ -129,13 +130,12 @@ class WorkflowTool(Tool):
                     "type": "string",
                     "description": (
                         "Optional: name of a predefined team to use. "
-                        "When provided, the system loads the complete team configuration from database, "
-                        "including agents, mode, conditions, and enable_skills settings. "
-                        "This is the recommended way to use predefined teams."
+                        "If provided, the system will load the complete team configuration "
+                        "(mode, agents, cross_review, enable_skills) from the database."
                     ),
                 },
             },
-            "required": ["mode", "goal", "agents"],
+            "required": ["goal"],
         }
 
     # ------------------------------------------------------------------
@@ -144,49 +144,59 @@ class WorkflowTool(Tool):
 
     async def execute(
         self,
-        mode: str,
-        goal: str,
-        agents: list[dict],
+        mode: str | None = None,
+        goal: str = "",
+        agents: list[dict] | None = None,
         cross_review: bool = True,
         team_name: str | None = None,
         **kwargs: Any,
     ) -> str:
-        # 验证参数：team_name 和 agents 至少提供一个
+        agents = agents or []
+
+        if not goal:
+            return "Error: 'goal' must be provided."
+
         if not team_name and not agents:
             return "Error: either 'team_name' or 'agents' must be provided."
-        
+
         # 确定是否启用技能系统
         enable_skills = False
-        
-        # 如果提供了团队名称，从数据库读取完整配置
+
+        # 如果提供了团队名称，从数据库读取配置
         if team_name:
             try:
                 from backend.database import SessionLocal
                 from backend.models.agent_team import AgentTeam
                 from sqlalchemy import select
-                from loguru import logger
-                
+
                 with SessionLocal() as session:
                     result = session.execute(
                         select(AgentTeam).where(AgentTeam.name == team_name)
                     )
                     team = result.scalar_one_or_none()
-                    
-                    if team:
-                        # 使用数据库中的团队配置
-                        mode = team.mode
-                        agents = team.agents or []
-                        enable_skills = team.enable_skills
-                        if team.mode == "council":
-                            cross_review = team.cross_review
-                        logger.info(f"Loaded team '{team_name}': mode={mode}, agents={len(agents)}, enable_skills={enable_skills}")
-                    else:
-                        return f"Error: team '{team_name}' not found in database."
+
+                    if team is None:
+                        return f"Error: predefined team '{team_name}' was not found."
+
+                    mode = team.mode
+                    agents = team.agents or []
+                    cross_review = team.cross_review
+                    enable_skills = team.enable_skills
+                    logger.debug(
+                        "Loaded predefined team '{}' with mode={}, agents={}, cross_review={}, enable_skills={}",
+                        team_name,
+                        mode,
+                        len(agents),
+                        cross_review,
+                        enable_skills,
+                    )
             except Exception as e:
-                from loguru import logger
-                logger.error(f"Failed to load team config for '{team_name}': {e}")
-                return f"Error: failed to load team '{team_name}': {str(e)}"
-        
+                logger.warning(f"Failed to load team config for '{team_name}': {e}")
+                return f"Error: failed to load predefined team '{team_name}'."
+
+        if mode is None:
+            return "Error: 'mode' must be provided when using custom agents."
+
         engine = WorkflowEngine(
             self._manager,
             session_id=self._session_id,

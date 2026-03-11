@@ -65,13 +65,26 @@ class SessionManager:
         return session
 
     async def delete_session(self, session_id: str) -> bool:
-        """删除会话"""
+        """删除会话及其关联的工具调用记录"""
+        from sqlalchemy import delete
+        from backend.models.tool_conversation import ToolConversation
+        from loguru import logger
+        
         session = await self.get_session(session_id)
         if session is None:
             return False
-            
+        
+        # 1. 删除工具调用记录
+        tool_conv_result = await self.db.execute(
+            delete(ToolConversation).where(ToolConversation.session_id == session_id)
+        )
+        deleted_tool_convs = tool_conv_result.rowcount
+        
+        # 2. 删除会话（消息会自动级联删除）
         await self.db.delete(session)
         await self.db.commit()
+        
+        logger.info(f"Deleted session {session_id} with {deleted_tool_convs} tool conversations")
         return True
 
     async def add_message(
@@ -152,19 +165,76 @@ class SessionManager:
         return result.scalar_one_or_none()
 
     async def clear_messages(self, session_id: str) -> bool:
-        """清空会话的所有消息"""
+        """清空会话的所有消息及其关联的工具调用记录"""
         from sqlalchemy import delete
+        from backend.models.tool_conversation import ToolConversation
+        from loguru import logger
         
         session = await self.get_session(session_id)
         if session is None:
             return False
-            
+        
+        # 1. 获取该会话的所有消息 ID
+        messages = await self.get_messages(session_id=session_id)
+        message_ids = [msg.id for msg in messages]
+        
+        # 2. 删除这些消息关联的工具调用记录
+        if message_ids:
+            tool_conv_result = await self.db.execute(
+                delete(ToolConversation).where(ToolConversation.message_id.in_(message_ids))
+            )
+            deleted_tool_convs = tool_conv_result.rowcount
+            logger.info(f"Deleted {deleted_tool_convs} tool conversations for session {session_id}")
+        
+        # 3. 删除消息
         await self.db.execute(
             delete(Message).where(Message.session_id == session_id)
         )
         session.updated_at = datetime.now(timezone.utc)
         
         await self.db.commit()
+        return True
+
+    async def delete_message(self, message_id: int) -> bool:
+        """删除单条消息及其关联的工具调用记录
+        
+        Args:
+            message_id: 消息 ID
+            
+        Returns:
+            bool: 是否成功删除
+        """
+        from sqlalchemy import delete
+        from backend.models.tool_conversation import ToolConversation
+        from loguru import logger
+        
+        result = await self.db.execute(
+            select(Message).where(Message.id == message_id)
+        )
+        message = result.scalar_one_or_none()
+        
+        if message is None:
+            return False
+        
+        session_id = message.session_id
+        
+        # 1. 删除工具调用记录
+        tool_conv_result = await self.db.execute(
+            delete(ToolConversation).where(ToolConversation.message_id == message_id)
+        )
+        deleted_tool_convs = tool_conv_result.rowcount
+        
+        # 2. 删除消息
+        await self.db.delete(message)
+        
+        # 3. 更新会话时间戳
+        session = await self.get_session(session_id)
+        if session:
+            session.updated_at = datetime.now(timezone.utc)
+        
+        await self.db.commit()
+        
+        logger.info(f"Deleted message {message_id} with {deleted_tool_convs} tool conversations")
         return True
 
     async def get_message_count(self, session_id: str) -> int:

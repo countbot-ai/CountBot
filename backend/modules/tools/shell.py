@@ -221,9 +221,6 @@ class ExecTool(Tool):
     def _decode_output(self, output: bytes) -> str:
         """解码命令输出，自动检测字符编码
         
-        尝试多种编码以确保跨平台字符正确显示（特别是中文等非 ASCII 字符）。
-        编码优先级：系统默认 > GBK > GB2312 > CP936 > UTF-8 > UTF-8(replace)
-        
         Args:
             output: 待解码的字节数据
             
@@ -263,8 +260,6 @@ class ExecTool(Tool):
 
     def _guard_command(self, command: str, cwd: str) -> str | None:
         """命令安全检查
-        
-        执行安全策略验证：白名单检查、危险模式检测、路径遍历检测、工作空间边界检查
         
         Args:
             command: 待检查的命令

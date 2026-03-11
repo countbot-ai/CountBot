@@ -53,15 +53,27 @@ def open_browser_delayed(url: str, delay: float = 15.0) -> None:
 
 
 def main() -> None:
-    """启动应用"""
+    """
+    启动应用（生产模式）
+    
+    功能：
+    - 启动 FastAPI 应用服务器
+    - 自动打开浏览器（延迟 15 秒）
+    - 显示本地和网络访问地址
+    - 支持优雅关闭
+    """
     import uvicorn
     from backend.utils.logger import setup_logger
     from backend.utils.process_manager import setup_graceful_shutdown
     from loguru import logger
     
+    # 初始化日志系统
     setup_logger()
+    
+    # 设置优雅关闭处理
     process_manager = setup_graceful_shutdown(logger=logger)
     
+    # 读取配置
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
     os.environ["HOST"] = host
@@ -96,18 +108,19 @@ def main() -> None:
             logger.info("提示: 如需从其他设备访问，请设置 HOST=0.0.0.0")
         
         logger.info("-" * 60)
+        logger.info("浏览器将在 15 秒后自动打开")
         logger.info("按下 Ctrl+C 停止服务器")
         logger.info("=" * 60)
         
-        # 延迟打开浏览器
+        # 延迟 15 秒打开浏览器，确保服务器完全启动
         open_browser_delayed(f"http://localhost:{port}")
         
-        # 启动服务器
+        # 启动服务器（生产模式）
         uvicorn.run(
             "backend.app:app",
             host=host,
             port=port,
-            reload=False,
+            reload=False,  # 生产模式禁用热重载
             log_level="info"
         )
     except KeyboardInterrupt:
@@ -118,7 +131,5 @@ def main() -> None:
     finally:
         process_manager.remove_pid_file()
         logger.info("Application shutdown complete")
-
-
 if __name__ == "__main__":
     main()

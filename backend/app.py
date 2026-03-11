@@ -25,7 +25,7 @@ def _create_shared_components(config, config_loader=None):
     from backend.modules.agent.skills import SkillsLoader
     from backend.modules.agent.subagent import SubagentManager
     from backend.modules.tools.setup import register_all_tools
-    from backend.utils.paths import WORKSPACE_DIR
+    from backend.modules.workspace import workspace_manager
 
     logger.info("Getting provider metadata...")
     provider_id = config.model.provider
@@ -40,12 +40,13 @@ def _create_shared_components(config, config_loader=None):
     )
 
     logger.info("Setting up workspace...")
-    # 使用统一的工作区路径，如果配置中指定了路径则使用配置的
-    if config.workspace.path:
-        workspace = Path(config.workspace.path).resolve()
-    else:
-        workspace = WORKSPACE_DIR  # 使用统一路径管理的默认工作区
-    workspace.mkdir(parents=True, exist_ok=True)
+    workspace, used_fallback = workspace_manager.resolve_workspace_path_or_default(
+        config.workspace.path
+    )
+    workspace_manager.activate_workspace_path(workspace)
+    if used_fallback:
+        config.workspace.path = str(workspace)
+        logger.warning(f"共享组件启动时已回退到默认工作空间: {workspace}")
 
     logger.info("Creating LiteLLM provider...")
     provider = LiteLLMProvider(

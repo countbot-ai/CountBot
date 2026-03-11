@@ -77,13 +77,12 @@ class SubagentManager:
     """
 
     def __init__(self, provider, workspace, model: str, temperature: float = 0.7, max_tokens: int = 4096, db_session_factory=None, config_loader=None, skills=None):
-      
-        """初始化 SubagentManager """
+        """初始化 SubagentManager"""
         self.provider = provider
         self.workspace = workspace
-        self.model = model  # 默认值，实际使用时会从 config_loader 读取
-        self.temperature = temperature  # 默认值
-        self.max_tokens = max_tokens  # 默认值
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
         self.db_session_factory = db_session_factory
         self.config_loader = config_loader
         self.skills = skills  # 技能系统实例
@@ -91,6 +90,27 @@ class SubagentManager:
         self.running_tasks: dict[str, asyncio.Task] = {}
         
         logger.debug("SubagentManager initialized")
+
+    def _resolve_runtime_model_settings(self) -> tuple[str, float, int]:
+        """获取当前执行应使用的模型参数，优先读取最新配置。"""
+        model = self.model
+        temperature = self.temperature
+        max_tokens = self.max_tokens
+
+        if not self.config_loader:
+            return model, temperature, max_tokens
+
+        try:
+            runtime_model_config = self.config_loader.config.model
+            model = getattr(runtime_model_config, "model", model) or model
+            temperature = getattr(runtime_model_config, "temperature", temperature)
+            max_tokens = getattr(runtime_model_config, "max_tokens", max_tokens)
+        except Exception as e:
+            logger.warning(
+                f"Failed to get runtime model settings from config: {e}, using manager defaults"
+            )
+
+        return model, temperature, max_tokens
 
     def create_task(
         self,
@@ -261,27 +281,16 @@ class SubagentManager:
 
                 content_buffer = ""
                 tool_calls_buffer = []
-                
-                # 动态从配置读取模型参数（支持运行时配置更新）
-                model = self.model
-                temperature = self.temperature
-                max_tokens = self.max_tokens
-                if self.config_loader:
-                    try:
-                        config = self.config_loader.config
-                        model = config.model.model
-                        temperature = config.model.temperature
-                        max_tokens = config.model.max_tokens
-                        logger.debug(f"Using model from config: {model}")
-                    except Exception as e:
-                        logger.warning(f"Failed to get model from config: {e}, using default: {self.model}")
+                runtime_model, runtime_temperature, runtime_max_tokens = (
+                    self._resolve_runtime_model_settings()
+                )
                 
                 async for chunk in self.provider.chat_stream(
                     messages=messages,
                     tools=tool_definitions,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+                    model=runtime_model,
+                    temperature=runtime_temperature,
+                    max_tokens=runtime_max_tokens,
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content

@@ -81,23 +81,48 @@ class WorkspaceManager:
             "old_skills_path": str(old_skills_dir),
             "new_skills_path": str(new_skills_dir)
         }
-    
-    def set_workspace_path(self, path: str) -> None:
-        """设置工作空间路径"""
-        workspace_path = Path(path).resolve()
+
+    def prepare_workspace_path(self, path: str | Path) -> Path:
+        """校验并准备工作空间路径，但不修改当前运行态。"""
+        workspace_path = Path(path).expanduser().resolve()
         workspace_path.mkdir(parents=True, exist_ok=True)
-        
+
         temp_dir = workspace_path / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        self._workspace_path = workspace_path
+        return workspace_path
+
+    def activate_workspace_path(self, workspace_path: str | Path) -> Path:
+        """激活一个已经校验通过的工作空间路径。"""
+        resolved_path = Path(workspace_path).expanduser().resolve()
+        temp_dir = resolved_path / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        self._workspace_path = resolved_path
         self._temp_dir = temp_dir
-        
+
         # 路径变化时清除缓存
         self._info_cache = None
         self._cache_timestamp = 0
-        
-        logger.info(f"工作空间路径: {workspace_path}")
+
+        logger.info(f"工作空间路径: {resolved_path}")
+        return resolved_path
+
+    def resolve_workspace_path_or_default(self, path: str | Path | None) -> tuple[Path, bool]:
+        """解析工作空间路径；失败时回退到默认工作空间。"""
+        if path:
+            try:
+                return self.prepare_workspace_path(path), False
+            except Exception as e:
+                logger.warning(f"工作空间路径不可用，回退到默认目录: {path}, error: {e}")
+
+        default_workspace = self._get_default_workspace_path()
+        return default_workspace, bool(path)
+    
+    def set_workspace_path(self, path: str) -> None:
+        """设置工作空间路径"""
+        workspace_path = self.prepare_workspace_path(path)
+        self.activate_workspace_path(workspace_path)
+
     def get_workspace_path(self) -> Path:
         """获取工作空间路径（方法形式）"""
         return self.workspace_path

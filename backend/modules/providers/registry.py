@@ -252,7 +252,7 @@ PROVIDER_REGISTRY = {
     ),
     "custom_openai": ProviderMetadata(
         id="custom_openai",
-        name="Custom API (OpenAI)",
+        name="自定义接口 (OpenAI 兼容)",
         default_api_base="",
         default_model="",
         litellm_prefix="openai",
@@ -263,7 +263,7 @@ PROVIDER_REGISTRY = {
     ),
     "custom_gemini": ProviderMetadata(
         id="custom_gemini",
-        name="Custom API (Gemini)",
+        name="自定义接口 (Gemini 兼容)",
         default_api_base="",
         default_model="",
         litellm_prefix="gemini",
@@ -274,7 +274,7 @@ PROVIDER_REGISTRY = {
     ),
     "custom_anthropic": ProviderMetadata(
         id="custom_anthropic",
-        name="Custom API (Anthropic)",
+        name="自定义接口 (Anthropic 兼容)",
         default_api_base="",
         default_model="",
         litellm_prefix="anthropic",

@@ -49,10 +49,17 @@ class ConfigLoader:
                             provider_data["model"] = None
 
             self.config = AppConfig(**config_dict)
-            
-            if self.config.workspace.path:
-                from backend.modules.workspace import workspace_manager
-                workspace_manager.set_workspace_path(self.config.workspace.path)
+
+            from backend.modules.workspace import workspace_manager
+            workspace_path, used_fallback = workspace_manager.resolve_workspace_path_or_default(
+                self.config.workspace.path
+            )
+            workspace_manager.activate_workspace_path(workspace_path)
+            if used_fallback:
+                self.config.workspace.path = str(workspace_path)
+                logger.warning(
+                    f"检测到无效工作空间配置，已在启动时回退到默认目录: {workspace_path}"
+                )
             
             if self.config.security.api_key_encryption_enabled:
                 self._decrypt_api_keys()
@@ -78,14 +85,29 @@ class ConfigLoader:
     
     async def save_config(self, config: AppConfig) -> None:
         """保存配置"""
-        self.config = config
-        
-        # 如果工作空间路径发生变化，更新工作空间管理器
-        if config.workspace.path:
+        normalized_config = config.model_copy(deep=True)
+        workspace_path = None
+
+        if normalized_config.workspace.path:
             from backend.modules.workspace import workspace_manager
-            workspace_manager.set_workspace_path(config.workspace.path)
-        
-        await self.save()
+
+            workspace_path = workspace_manager.prepare_workspace_path(
+                normalized_config.workspace.path
+            )
+            normalized_config.workspace.path = str(workspace_path)
+
+        previous_config = self.config
+        self.config = normalized_config
+        try:
+            await self.save()
+        except Exception:
+            self.config = previous_config
+            raise
+
+        if workspace_path is not None:
+            from backend.modules.workspace import workspace_manager
+
+            workspace_manager.activate_workspace_path(workspace_path)
 
     async def _save_nested_dict(
         self, session: Any, data: dict[str, Any], prefix: str

@@ -14,6 +14,16 @@ from backend.utils.paths import APPLICATION_ROOT
 BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "skills"
 
 
+def _is_same_or_nested_path(path: Path, base: Path) -> bool:
+    """判断 path 是否等于 base 或位于 base 之内。"""
+    try:
+        normalized_path = os.path.normcase(str(path))
+        normalized_base = os.path.normcase(str(base))
+        return os.path.commonpath([normalized_path, normalized_base]) == normalized_base
+    except ValueError:
+        return False
+
+
 class Skill:
     """技能数据类"""
 
@@ -29,7 +39,7 @@ class Skill:
         self.path = path
         self.content = content
         self.enabled = enabled
-        self.source = source  # "workspace" or "builtin"
+        self.source = source  # "workspace" or "builtin" or "openclaw"
         self.metadata = self._parse_metadata()
         # 添加 auto_load 属性，从 metadata 中获取
         self.auto_load = self.metadata.get("always", False)
@@ -127,18 +137,25 @@ class SkillsLoader:
     管理技能文件的加载、启用/禁用
     """
 
-    def __init__(self, skills_dir: Path, builtin_skills_dir: Path | None = None):
+    def __init__(
+        self,
+        skills_dir: Path,
+        builtin_skills_dir: Path | None = None,
+        external_skills_dirs: list[Path] | None = None,
+    ):
         """
         初始化 SkillsLoader
         
         Args:
             skills_dir: 工作空间技能文件存储目录
             builtin_skills_dir: 内置技能目录 (可选)
+            external_skills_dirs: 外部 OpenClaw 技能目录 (可选，主要用于测试)
         """
         self.workspace_skills = skills_dir
         self.workspace_skills.mkdir(parents=True, exist_ok=True)
         
         self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
+        self.external_skills_dirs = external_skills_dirs
         
         self.skills: dict[str, Skill] = {}
         
@@ -165,58 +182,138 @@ class SkillsLoader:
             logger.warning(f"Failed to load skills config from {self.config_file}: {e}")
             return set()
 
+    def _discover_openclaw_skill_dirs(self) -> list[Path]:
+        """发现外部 OpenClaw / 兼容技能目录"""
+        if self.external_skills_dirs is not None:
+            candidates = [Path(path) for path in self.external_skills_dirs]
+        else:
+            home = Path.home()
+            candidates = [
+                home / ".openclaw" / "skills",
+                home / "skills",
+            ]
+
+            userprofile = os.environ.get("USERPROFILE")
+            if userprofile:
+                candidates.insert(0, Path(userprofile) / ".openclaw" / "skills")
+
+        discovered: list[Path] = []
+        seen: set[str] = set()
+
+        for candidate in candidates:
+            resolved = candidate.expanduser().resolve(strict=False)
+            key = str(resolved).lower() if os.name == "nt" else str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            discovered.append(resolved)
+
+        return discovered
+
+    def _iter_skill_files(self, skills_root: Path):
+        """遍历技能目录中的 SKILL.md 文件"""
+        if not skills_root.exists() or not skills_root.is_dir():
+            return
+
+        try:
+            skill_dirs = sorted(skills_root.iterdir(), key=lambda item: item.name.lower())
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Failed to scan skills directory {skills_root}: {e}")
+            return
+
+        for skill_dir in skill_dirs:
+            try:
+                if not skill_dir.is_dir():
+                    continue
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Failed to inspect skill directory {skill_dir}: {e}")
+                continue
+
+            skill_file = skill_dir / "SKILL.md"
+            try:
+                if skill_file.is_file():
+                    yield skill_dir.name, skill_file
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Failed to inspect skill file {skill_file}: {e}")
+
+    def _register_skill(self, name: str, skill_file: Path, source: str) -> None:
+        """注册技能，已存在同名技能时跳过"""
+        if name in self.skills:
+            return
+
+        try:
+            enabled = False if source == "openclaw" else name not in self.disabled_skills
+            content = skill_file.read_text(encoding="utf-8")
+            skill = Skill(
+                name=name,
+                path=skill_file,
+                content=content,
+                source=source,
+                enabled=enabled,
+            )
+            self.skills[name] = skill
+            logger.debug(f"Loaded {source} skill: {name}")
+        except Exception as e:
+            logger.warning(f"Failed to load {source} skill {skill_file.parent}: {e}")
+
+    def _import_openclaw_skill_to_workspace(self, name: str) -> Path:
+        """将外部 OpenClaw 技能导入到工作空间"""
+        skill = self.get_skill(name)
+        if not skill:
+            raise ValueError(f"Skill '{name}' not found")
+        if skill.source != "openclaw":
+            raise ValueError(f"Skill '{name}' is not an OpenClaw skill")
+
+        source_skill_file = skill.path.resolve(strict=True)
+        if source_skill_file.name != "SKILL.md":
+            raise ValueError(f"OpenClaw skill '{name}' is missing SKILL.md")
+
+        source_dir = source_skill_file.parent
+        if not source_dir.is_dir():
+            raise NotADirectoryError(f"OpenClaw skill directory is invalid: {source_dir}")
+
+        workspace_root = self.workspace_skills.resolve(strict=False)
+        target_dir = (self.workspace_skills / name).resolve(strict=False)
+
+        if target_dir.exists():
+            raise FileExistsError(f"Workspace skill directory already exists: {target_dir}")
+
+        if _is_same_or_nested_path(source_dir, workspace_root):
+            raise ValueError(
+                f"Refusing to import OpenClaw skill '{name}' from inside workspace skills directory"
+            )
+
+        if _is_same_or_nested_path(target_dir, source_dir) or _is_same_or_nested_path(source_dir, target_dir):
+            raise ValueError(
+                f"Refusing to import OpenClaw skill '{name}' because source and target directories overlap"
+            )
+
+        try:
+            shutil.copytree(source_dir, target_dir)
+        except (shutil.Error, PermissionError, OSError) as e:
+            raise RuntimeError(
+                f"Failed to copy OpenClaw skill '{name}' into workspace: {e}"
+            ) from e
+
+        logger.info(f"Imported OpenClaw skill '{name}' to workspace: {target_dir}")
+        return target_dir / "SKILL.md"
+
     def _load_all_skills(self) -> None:
-        """加载所有技能文件（工作空间 + 内置）"""
+        """加载所有技能文件（工作空间 + 内置 + OpenClaw 外部目录）"""
         try:
             # 1. 加载工作空间技能（优先级最高）
-            if self.workspace_skills.exists():
-                for skill_dir in self.workspace_skills.iterdir():
-                    if skill_dir.is_dir():
-                        skill_file = skill_dir / "SKILL.md"
-                        if skill_file.exists():
-                            try:
-                                name = skill_dir.name
-                                content = skill_file.read_text(encoding="utf-8")
-                                
-                                skill = Skill(
-                                    name=name,
-                                    path=skill_file,
-                                    content=content,
-                                    source="workspace",
-                                    enabled=name not in self.disabled_skills,
-                                )
-                                
-                                self.skills[name] = skill
-                                logger.debug(f"Loaded workspace skill: {name}")
-                                
-                            except Exception as e:
-                                logger.warning(f"Failed to load workspace skill {skill_dir}: {e}")
-            
-            # 2. 加载内置技能（如果工作空间中不存在）
-            if self.builtin_skills and self.builtin_skills.exists():
-                for skill_dir in self.builtin_skills.iterdir():
-                    if skill_dir.is_dir():
-                        skill_file = skill_dir / "SKILL.md"
-                        name = skill_dir.name
-                        
-                        # 如果工作空间中已有同名技能，跳过
-                        if skill_file.exists() and name not in self.skills:
-                            try:
-                                content = skill_file.read_text(encoding="utf-8")
-                                
-                                skill = Skill(
-                                    name=name,
-                                    path=skill_file,
-                                    content=content,
-                                    source="builtin",
-                                    enabled=name not in self.disabled_skills,
-                                )
-                                
-                                self.skills[name] = skill
-                                logger.debug(f"Loaded builtin skill: {name}")
-                                
-                            except Exception as e:
-                                logger.warning(f"Failed to load builtin skill {skill_dir}: {e}")
+            for name, skill_file in self._iter_skill_files(self.workspace_skills) or []:
+                self._register_skill(name, skill_file, "workspace")
+
+            # 2. 加载内置技能（优先级次之）
+            if self.builtin_skills:
+                for name, skill_file in self._iter_skill_files(self.builtin_skills) or []:
+                    self._register_skill(name, skill_file, "builtin")
+
+            # 3. 加载外部 OpenClaw 技能（最低优先级）
+            for external_dir in self._discover_openclaw_skill_dirs():
+                for name, skill_file in self._iter_skill_files(external_dir) or []:
+                    self._register_skill(name, skill_file, "openclaw")
             
             logger.debug(f"Loaded {len(self.skills)} skills total")
             
@@ -420,7 +517,20 @@ class SkillsLoader:
         if not skill:
             logger.warning(f"Cannot enable skill '{name}': not found")
             return False
+
+        if skill.source == "openclaw":
+            try:
+                self._import_openclaw_skill_to_workspace(name)
+                self.reload()
+                skill = self.get_skill(name)
+                if not skill or skill.source != "workspace":
+                    logger.error(f"Imported OpenClaw skill '{name}' was not reloaded as workspace skill")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to import OpenClaw skill '{name}' to workspace: {e}")
+                return False
         
+        self.disabled_skills.discard(name)
         skill.enabled = True
         logger.info(f"Enabled skill: {name}")
         return True
@@ -440,6 +550,7 @@ class SkillsLoader:
             logger.warning(f"Cannot disable skill '{name}': not found")
             return False
         
+        self.disabled_skills.add(name)
         skill.enabled = False
         logger.info(f"Disabled skill: {name}")
         return True
@@ -534,6 +645,7 @@ class SkillsLoader:
     def reload(self) -> None:
         """重新加载所有技能"""
         logger.info("Reloading all skills")
+        self.disabled_skills = self._load_disabled_skills()
         self.skills.clear()
         self._load_all_skills()
 
@@ -569,6 +681,8 @@ class SkillsLoader:
                 enabled=True,
                 source="workspace",
             )
+
+            self.disabled_skills.discard(name)
             
             # 添加到技能字典
             self.skills[name] = skill
@@ -607,6 +721,7 @@ class SkillsLoader:
             # 更新技能对象
             skill.content = content
             skill.metadata = skill._parse_metadata()
+            skill.auto_load = skill.metadata.get("always", False)
             
             logger.info(f"Updated skill: {name}")
             return True
@@ -629,9 +744,19 @@ class SkillsLoader:
         if not skill:
             logger.warning(f"Cannot delete skill '{name}': not found")
             return False
+
+        if skill.source != "workspace":
+            logger.warning(f"Cannot delete skill '{name}': not a workspace skill")
+            return False
         
         try:
-            skill.path.unlink()
+            skill_dir = skill.path.parent
+            if skill_dir.exists() and skill_dir.parent == self.workspace_skills:
+                shutil.rmtree(skill_dir)
+            elif skill.path.exists():
+                skill.path.unlink()
+
+            self.disabled_skills.discard(name)
             del self.skills[name]
             logger.info(f"Deleted skill: {name}")
             return True

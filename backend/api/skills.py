@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -12,12 +12,9 @@ from backend.modules.agent.skills import SkillsLoader
 from backend.modules.agent.skills_config import SkillConfigManager
 from backend.modules.agent.skills_schema import SkillConfigSchema
 from backend.modules.config.loader import config_loader
-from backend.utils.paths import APPLICATION_ROOT
+from backend.utils.paths import WORKSPACE_DIR
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
-
-# 内置技能目录
-BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "skills"
 
 
 # ============================================================================
@@ -33,7 +30,7 @@ class SkillInfo(BaseModel):
     enabled: bool = Field(..., description="是否启用")
     auto_load: bool = Field(..., description="是否自动加载", alias="autoLoad")
     requirements: list[str] = Field(default_factory=list, description="依赖要求")
-    source: str = Field(..., description="技能来源: workspace 或 builtin")
+    source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
     
     class Config:
         populate_by_name = True
@@ -48,7 +45,7 @@ class SkillDetail(BaseModel):
     enabled: bool = Field(..., description="是否启用")
     auto_load: bool = Field(..., description="是否自动加载", alias="autoLoad")
     requirements: list[str] = Field(default_factory=list, description="依赖要求")
-    source: str = Field(..., description="技能来源: workspace 或 builtin")
+    source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
     
     class Config:
         populate_by_name = True
@@ -132,6 +129,9 @@ class SkillConfigSchemaResponse(BaseModel):
     has_schema: bool = Field(..., description="是否有Schema")
     schema_definition: dict | None = Field(None, description="Schema定义", alias="schema")
 
+    class Config:
+        populate_by_name = True
+
 
 class SkillConfigResponse(BaseModel):
     """技能配置响应"""
@@ -183,9 +183,24 @@ class ReloadSkillsResponse(BaseModel):
 # ============================================================================
 
 
-from backend.modules.config.loader import config_loader
-from backend.utils.paths import WORKSPACE_DIR
-from fastapi import Request
+def get_workspace_skills_dir() -> Path:
+    """解析当前工作空间下的 skills 目录。"""
+    config = config_loader.config
+    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+    workspace = workspace.resolve()
+    skills_dir = workspace / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    return skills_dir
+
+
+def get_skill_config_manager() -> SkillConfigManager:
+    """获取绑定当前工作空间的技能配置管理器。"""
+    return SkillConfigManager(get_workspace_skills_dir())
+
+
+def get_skill_schema_loader() -> SkillConfigSchema:
+    """获取绑定当前工作空间的技能 Schema 加载器。"""
+    return SkillConfigSchema(get_workspace_skills_dir())
 
 
 def get_skills_loader(request: Request = None) -> SkillsLoader:
@@ -199,13 +214,18 @@ def get_skills_loader(request: Request = None) -> SkillsLoader:
         return request.app.state.shared["skills"]
     
     # 回退：创建临时实例（向后兼容）
-    config = config_loader.config
-    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-    workspace = workspace.resolve()
-    skills_dir = workspace / "skills"
-    skills_dir.mkdir(parents=True, exist_ok=True)
+    skills_dir = get_workspace_skills_dir()
     logger.warning("Creating temporary SkillsLoader instance - performance may be impacted")
     return SkillsLoader(skills_dir)
+
+
+def ensure_workspace_skill(skill, action: str) -> None:
+    """仅允许对工作空间技能执行写操作"""
+    if skill.source != "workspace":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot {action} non-workspace skills"
+        )
 
 
 # ============================================================================
@@ -492,12 +512,7 @@ async def update_skill(name: str, request: UpdateSkillRequest, req: Request) -> 
                 detail=f"Skill '{name}' not found"
             )
         
-        # 不允许更新内置技能
-        if skill.source == "builtin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot update builtin skills"
-            )
+        ensure_workspace_skill(skill, "update")
         
         # 构建技能内容（包含 frontmatter）
         metadata = {
@@ -562,12 +577,7 @@ async def delete_skill(name: str, req: Request) -> DeleteSkillResponse:
                 detail=f"Skill '{name}' not found"
             )
         
-        # 不允许删除内置技能
-        if skill.source == "builtin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot delete builtin skills"
-            )
+        ensure_workspace_skill(skill, "delete")
         
         # 删除技能
         success = skills_loader.delete_skill(name)
@@ -610,18 +620,18 @@ async def get_skill_config_schema(name: str) -> SkillConfigSchemaResponse:
         SkillConfigSchemaResponse: Schema信息
     """
     try:
-        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        schema_loader = get_skill_schema_loader()
         schema = schema_loader.load_schema(name)
         
         if not schema:
             return SkillConfigSchemaResponse(
                 has_schema=False,
-                schema_definition=None
+                schema=None
             )
         
         return SkillConfigSchemaResponse(
             has_schema=True,
-            schema_definition=schema
+            schema=schema
         )
         
     except Exception as e:
@@ -644,7 +654,7 @@ async def get_skill_config(name: str) -> SkillConfigResponse:
         SkillConfigResponse: 配置信息
     """
     try:
-        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        config_manager = get_skill_config_manager()
         
         # 检查是否有配置文件
         if not config_manager.has_config(name):
@@ -699,8 +709,8 @@ async def update_skill_config(
         SkillConfigResponse: 更新后的配置信息
     """
     try:
-        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
-        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        config_manager = get_skill_config_manager()
+        schema_loader = get_skill_schema_loader()
         
         # 检查配置文件是否存在
         if not config_manager.has_config(name):
@@ -753,8 +763,8 @@ async def get_skill_config_status(name: str) -> SkillConfigStatusResponse:
         SkillConfigStatusResponse: 配置状态
     """
     try:
-        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
-        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        config_manager = get_skill_config_manager()
+        schema_loader = get_skill_schema_loader()
         
         # 检查Schema
         if not schema_loader.has_schema(name):
@@ -807,8 +817,8 @@ async def fix_skill_config(name: str) -> FixSkillConfigResponse:
         FixSkillConfigResponse: 修复结果
     """
     try:
-        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
-        schema_loader = SkillConfigSchema(BUILTIN_SKILLS_DIR)
+        config_manager = get_skill_config_manager()
+        schema_loader = get_skill_schema_loader()
         
         # 检查Schema
         if not schema_loader.has_schema(name):
@@ -862,7 +872,7 @@ async def get_skill_config_help(name: str) -> SkillConfigHelpResponse:
         SkillConfigHelpResponse: 帮助文档
     """
     try:
-        config_manager = SkillConfigManager(BUILTIN_SKILLS_DIR)
+        config_manager = get_skill_config_manager()
         
         content = config_manager.get_help_content(name)
         

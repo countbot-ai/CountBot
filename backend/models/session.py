@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import Boolean, DateTime, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -37,6 +37,11 @@ class Session(Base):
     
     # 上下文滚动压缩：已总结到的消息ID（该ID及之前的消息已写入记忆）
     last_summarized_msg_id: Mapped[int | None] = mapped_column(nullable=True)
+    
+    # 会话级配置（可选）
+    session_model_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_persona_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    use_custom_config: Mapped[bool] = mapped_column(Boolean, default=False)
 
     messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="session", cascade="all, delete-orphan"

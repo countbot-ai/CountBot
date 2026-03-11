@@ -1,5 +1,7 @@
 """Settings API 端点"""
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -10,6 +12,186 @@ from backend.modules.config.loader import config_loader
 from backend.modules.config.schema import AppConfig, ModelConfig, ProviderConfig, WorkspaceConfig
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+def _validate_workspace_path_or_raise(path: str) -> Path:
+    """验证工作空间路径；失败时返回 400，而不是污染运行态或配置。"""
+    from backend.modules.workspace import workspace_manager
+
+    normalized = (path or "").strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="路径不能为空"
+        )
+
+    try:
+        return workspace_manager.prepare_workspace_path(normalized)
+    except Exception as e:
+        logger.warning(f"拒绝保存不可用工作空间路径: {normalized}, error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"工作空间路径不可用: {str(e)}"
+        ) from e
+
+
+def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> None:
+    """将新的工作空间路径热更新到当前运行态。"""
+    message_handler = getattr(request.app.state, 'message_handler', None)
+    if message_handler:
+        try:
+            message_handler.reload_config(workspace=workspace_path)
+            logger.info(f"Message handler workspace reloaded: {workspace_path}")
+        except Exception as e:
+            logger.warning(f"Failed to reload message handler workspace: {e}")
+
+    shared = getattr(request.app.state, 'shared', None)
+    if shared:
+        try:
+            shared['workspace'] = workspace_path
+
+            context_builder = shared.get('context_builder')
+            if context_builder:
+                if hasattr(context_builder, 'update_workspace'):
+                    context_builder.update_workspace(workspace_path)
+                else:
+                    context_builder.workspace = workspace_path
+
+            subagent_manager = shared.get('subagent_manager')
+            if subagent_manager:
+                subagent_manager.workspace = workspace_path
+
+            skills_loader = shared.get('skills_loader')
+            if skills_loader:
+                try:
+                    skills_dir = workspace_path / 'skills'
+                    skills_dir.mkdir(parents=True, exist_ok=True)
+                    if hasattr(skills_loader, 'workspace_skills'):
+                        skills_loader.workspace_skills = skills_dir
+                    if hasattr(skills_loader, 'config_file'):
+                        skills_loader.config_file = workspace_path / '.skills_config.json'
+                    if hasattr(skills_loader, 'reload_skills'):
+                        skills_loader.reload_skills()
+                    logger.info(f"Skills loader workspace reloaded: {skills_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to reload skills after workspace change: {e}")
+
+            logger.info(f"Shared components workspace reloaded: {workspace_path}")
+        except Exception as e:
+            logger.warning(f"Failed to reload shared components workspace: {e}")
+
+
+def _prepare_message_handler_reload_params(
+    config: AppConfig,
+    *,
+    reload_provider_model: bool = False,
+    reload_persona: bool = False,
+) -> dict[str, object]:
+    """根据最新配置构建渠道消息处理器的热重载参数。"""
+    reload_params: dict[str, object] = {}
+
+    if reload_provider_model:
+        try:
+            from backend.modules.providers.litellm_provider import LiteLLMProvider
+            from backend.modules.providers.registry import get_provider_metadata
+
+            provider_id = config.model.provider
+            provider_config = config.providers.get(provider_id)
+            provider_meta = get_provider_metadata(provider_id)
+
+            api_key = provider_config.api_key if provider_config else None
+            api_base = (
+                provider_config.api_base
+                if provider_config and provider_config.api_base
+                else (provider_meta.default_api_base if provider_meta else None)
+            )
+
+            reload_params['provider'] = LiteLLMProvider(
+                api_key=api_key,
+                api_base=api_base,
+                default_model=config.model.model,
+                timeout=600.0,
+                max_retries=3,
+                provider_id=provider_id,
+            )
+            reload_params['model'] = config.model.model
+            reload_params['temperature'] = config.model.temperature
+            reload_params['max_tokens'] = config.model.max_tokens
+            reload_params['max_iterations'] = config.model.max_iterations
+            reload_params['max_history_messages'] = config.persona.max_history_messages
+
+            logger.info("Prepared AI config for hot reload")
+        except Exception as e:
+            logger.warning(f"Failed to prepare AI config for reload: {e}")
+
+    if reload_persona:
+        reload_params['persona_config'] = config.persona
+        logger.info(
+            "Prepared persona config for hot reload: "
+            f"{config.persona.ai_name}, {config.persona.user_name}, "
+            f"{getattr(config.persona, 'user_address', '')}"
+        )
+
+    return reload_params
+
+
+async def _apply_saved_config_runtime(
+    req: Request,
+    config: AppConfig,
+    *,
+    workspace_path: Path | None = None,
+    reload_persona: bool = False,
+    reload_provider_model: bool = False,
+    sync_heartbeat: bool = False,
+) -> None:
+    """将已保存的配置同步到当前运行态。"""
+    if workspace_path is not None:
+        try:
+            _hot_reload_workspace_runtime(req, workspace_path.resolve())
+        except Exception as e:
+            logger.warning(f"Failed to hot reload workspace: {e}")
+
+    if reload_persona:
+        try:
+            shared = getattr(req.app.state, 'shared', None)
+            if shared and 'context_builder' in shared:
+                context_builder = shared['context_builder']
+                if hasattr(context_builder, 'update_persona_config'):
+                    context_builder.update_persona_config(config.persona)
+                    logger.info("Hot reloaded persona config")
+        except Exception as e:
+            logger.warning(f"Failed to hot reload persona config: {e}")
+
+    message_handler = getattr(req.app.state, 'message_handler', None)
+    if message_handler:
+        reload_params = _prepare_message_handler_reload_params(
+            config,
+            reload_provider_model=reload_provider_model,
+            reload_persona=reload_persona,
+        )
+        if reload_params:
+            try:
+                message_handler.reload_config(**reload_params)
+                logger.info("Channel message handler reloaded successfully")
+            except Exception as e:
+                logger.warning(f"Failed to reload channel handler config: {e}")
+
+    if sync_heartbeat:
+        try:
+            from backend.database import get_db_session_factory
+            from backend.modules.agent.heartbeat import ensure_heartbeat_job
+
+            db_session_factory = get_db_session_factory()
+            await ensure_heartbeat_job(
+                db_session_factory,
+                heartbeat_config=config.persona.heartbeat,
+            )
+
+            scheduler = getattr(req.app.state, 'cron_scheduler', None)
+            if scheduler:
+                await scheduler.trigger_reschedule()
+        except Exception as e:
+            logger.warning(f"Failed to sync heartbeat cron job: {e}")
 
 
 @router.get("/security/dangerous-patterns")
@@ -155,6 +337,7 @@ class PersonaConfigResponse(BaseModel):
     ai_name: str = Field(..., description="AI的名字")
     user_name: str = Field(..., description="用户的称呼")
     user_address: str = Field(default="", description="用户的常用地址")
+    output_language: str = Field(default="中文", description="AI默认输出语言")
     personality: str = Field(..., description="AI的性格类型")
     custom_personality: str = Field(..., description="自定义性格描述")
     max_history_messages: int = Field(..., description="最大对话历史条数")
@@ -275,6 +458,7 @@ async def get_settings() -> SettingsResponse:
                 ai_name=config.persona.ai_name,
                 user_name=config.persona.user_name,
                 user_address=getattr(config.persona, 'user_address', ''),
+                output_language=getattr(config.persona, 'output_language', '中文'),
                 personality=config.persona.personality,
                 custom_personality=config.persona.custom_personality,
                 max_history_messages=config.persona.max_history_messages,
@@ -312,7 +496,10 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         SettingsResponse: 更新后的设置
     """
     try:
-        config = config_loader.config
+        config = config_loader.config.model_copy(deep=True)
+        workspace_migration_info = None
+        old_workspace = None
+        validated_workspace_path = None
         
         if request.providers:
             for name, provider_data in request.providers.items():
@@ -349,7 +536,15 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         
         if request.workspace:
             if "path" in request.workspace:
-                config.workspace.path = request.workspace["path"]
+                requested_workspace = request.workspace["path"]
+                if isinstance(requested_workspace, str) and requested_workspace.strip():
+                    from backend.modules.workspace.manager import workspace_manager
+
+                    old_workspace = workspace_manager.get_workspace_path()
+                    validated_workspace_path = _validate_workspace_path_or_raise(requested_workspace)
+                    config.workspace.path = str(validated_workspace_path)
+                else:
+                    config.workspace.path = requested_workspace
         
         if request.security:
             if "api_key_encryption_enabled" in request.security:
@@ -424,6 +619,9 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             
             if "user_address" in request.persona:
                 config.persona.user_address = request.persona["user_address"]
+
+            if "output_language" in request.persona:
+                config.persona.output_language = request.persona["output_language"] or "中文"
             
             if "personality" in request.persona:
                 config.persona.personality = request.persona["personality"]
@@ -456,142 +654,40 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         
         # 保存配置（await 确保写入完成）
         await config_loader.save_config(config)
+        config = config_loader.config
+
+        runtime_workspace = validated_workspace_path.resolve() if validated_workspace_path is not None else None
         
-        # 热重载 workspace 路径（如果有变更）
-        workspace_migration_info = None
-        if request.workspace and "path" in request.workspace:
+        # 工作区迁移提示（如果有变更）
+        if runtime_workspace is not None:
             try:
-                from pathlib import Path
                 from backend.modules.workspace.manager import workspace_manager
-                
-                old_workspace = workspace_manager.get_workspace_path()
-                new_workspace = Path(config.workspace.path).resolve() if config.workspace.path else None
-                
-                if new_workspace:
-                    # 检查是否需要迁移技能
-                    migration_check = workspace_manager.check_skills_migration_needed(old_workspace, new_workspace)
+
+                if old_workspace is not None:
+                    migration_check = workspace_manager.check_skills_migration_needed(
+                        old_workspace, runtime_workspace
+                    )
                     if migration_check["needed"]:
                         workspace_migration_info = {
                             "migration_needed": True,
                             "old_path": str(old_workspace),
-                            "new_path": str(new_workspace),
+                            "new_path": str(runtime_workspace),
                             "old_skills_count": migration_check["old_skills_count"],
                             "new_skills_count": migration_check["new_skills_count"],
                             "message": f"检测到旧工作区有 {migration_check['old_skills_count']} 个技能，新工作区只有 {migration_check['new_skills_count']} 个。建议手动迁移技能文件。"
                         }
                         logger.warning(f"Skills migration may be needed: {workspace_migration_info['message']}")
-                    
-                    # 更新工作区路径（触发监听器）
-                    workspace_manager.set_workspace_path(new_workspace)
-                
-                # 更新全局 context_builder 的 workspace
-                shared = getattr(req.app.state, 'shared', None)
-                if shared and 'context_builder' in shared:
-                    context_builder = shared['context_builder']
-                    if hasattr(context_builder, 'update_workspace') and new_workspace:
-                        context_builder.update_workspace(new_workspace)
-                        logger.info(f"Hot reloaded workspace path: {new_workspace}")
-                
-                # 更新 message_handler 的 workspace
-                message_handler = getattr(req.app.state, 'message_handler', None)
-                if message_handler and new_workspace:
-                    message_handler.workspace = new_workspace
-                    logger.info(f"Updated message_handler workspace: {new_workspace}")
-                
-                # 热重载技能（工作区变更后需要重新加载技能）
-                shared = getattr(req.app.state, 'shared', None)
-                if shared and 'skills_loader' in shared:
-                    skills_loader = shared['skills_loader']
-                    try:
-                        skills_loader.reload_skills()
-                        logger.info("Hot reloaded skills after workspace change")
-                    except Exception as e:
-                        logger.warning(f"Failed to reload skills: {e}")
-                    
             except Exception as e:
-                logger.warning(f"Failed to hot reload workspace: {e}")
-        
-        # 热重载 persona 配置（如果有变更）
-        if request.persona:
-            try:
-                shared = getattr(req.app.state, 'shared', None)
-                if shared and 'context_builder' in shared:
-                    context_builder = shared['context_builder']
-                    if hasattr(context_builder, 'update_persona_config'):
-                        context_builder.update_persona_config(config.persona)
-                        logger.info("Hot reloaded persona config")
-            except Exception as e:
-                logger.warning(f"Failed to hot reload persona config: {e}")
-        
-        # 热重载渠道消息处理器的 AI 配置
-        message_handler = getattr(req.app.state, 'message_handler', None)
-        if message_handler:
-            reload_params = {}
-            
-            # Provider 和模型配置变更
-            if request.providers or request.model:
-                try:
-                    from backend.modules.providers.litellm_provider import LiteLLMProvider
-                    from backend.modules.providers.registry import get_provider_metadata
-                    
-                    provider_id = config.model.provider
-                    provider_config = config.providers.get(provider_id)
-                    provider_meta = get_provider_metadata(provider_id)
-                    
-                    api_key = provider_config.api_key if provider_config else None
-                    api_base = (
-                        provider_config.api_base
-                        if provider_config and provider_config.api_base
-                        else (provider_meta.default_api_base if provider_meta else None)
-                    )
-                    
-                    new_provider = LiteLLMProvider(
-                        api_key=api_key,
-                        api_base=api_base,
-                        default_model=config.model.model,
-                        timeout=600.0,  # 10分钟（适应复杂任务和工具调用）
-                        max_retries=3,
-                        provider_id=provider_id,
-                    )
-                    
-                    reload_params['provider'] = new_provider
-                    reload_params['model'] = config.model.model
-                    reload_params['temperature'] = config.model.temperature
-                    reload_params['max_tokens'] = config.model.max_tokens
-                    reload_params['max_iterations'] = config.model.max_iterations
-                    reload_params['max_history_messages'] = config.persona.max_history_messages
-                    
-                    logger.info("Prepared AI config for hot reload")
-                except Exception as e:
-                    logger.warning(f"Failed to prepare AI config for reload: {e}")
-            
-            # Persona 配置变更
-            if request.persona:
-                reload_params['persona_config'] = config.persona
-                logger.info(f"Prepared persona config for hot reload: {config.persona.ai_name}, {config.persona.user_name}, {getattr(config.persona, 'user_address', '')}")
-            
-            # 执行热重载
-            if reload_params:
-                try:
-                    message_handler.reload_config(**reload_params)
-                    logger.info("Channel message handler reloaded successfully")
-                except Exception as e:
-                    logger.warning(f"Failed to reload channel handler config: {e}")
-        
-        # 同步 heartbeat cron job 配置
-        if request.persona and "heartbeat" in request.persona:
-            try:
-                from backend.database import get_db_session_factory
-                from backend.modules.agent.heartbeat import ensure_heartbeat_job
-                db_session_factory = get_db_session_factory()
-                await ensure_heartbeat_job(db_session_factory, heartbeat_config=config.persona.heartbeat)
-                
-                # 触发调度器重新计算
-                scheduler = getattr(req.app.state, 'cron_scheduler', None)
-                if scheduler:
-                    await scheduler.trigger_reschedule()
-            except Exception as e:
-                logger.warning(f"Failed to sync heartbeat cron job: {e}")
+                logger.warning(f"Failed to check workspace migration: {e}")
+
+        await _apply_saved_config_runtime(
+            req,
+            config,
+            workspace_path=runtime_workspace,
+            reload_persona=bool(request.persona),
+            reload_provider_model=bool(request.providers or request.model),
+            sync_heartbeat=bool(request.persona and "heartbeat" in request.persona),
+        )
         
         logger.info("Settings updated successfully")
         
@@ -604,6 +700,8 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         
         return response
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Failed to update settings: {e}")
         raise HTTPException(
@@ -882,7 +980,6 @@ async def set_workspace_path(request: Request):
     try:
         from backend.modules.workspace import workspace_manager
         from backend.modules.config.loader import config_loader
-        from pathlib import Path
         
         # 获取请求参数
         try:
@@ -900,40 +997,17 @@ async def set_workspace_path(request: Request):
                 detail="路径不能为空"
             )
         
-        # 设置工作空间路径
-        workspace_manager.set_workspace_path(path)
-        
-        # 更新配置
-        config_loader.config.workspace.path = path
-        await config_loader.save()
-        
-        # 热重载消息处理器的工作空间路径
-        message_handler = getattr(request.app.state, 'message_handler', None)
-        if message_handler:
-            try:
-                workspace_path = Path(path).resolve()
-                message_handler.reload_config(workspace=workspace_path)
-                logger.info(f"Message handler workspace reloaded: {workspace_path}")
-            except Exception as e:
-                logger.warning(f"Failed to reload message handler workspace: {e}")
-        
-        # 更新共享组件的工作空间路径
-        shared = getattr(request.app.state, 'shared', None)
-        if shared:
-            try:
-                workspace_path = Path(path).resolve()
-                shared['workspace'] = workspace_path
-                if shared.get('context_builder'):
-                    shared['context_builder'].workspace = workspace_path
-                if shared.get('subagent_manager'):
-                    shared['subagent_manager'].workspace = workspace_path
-                logger.info(f"Shared components workspace reloaded: {workspace_path}")
-            except Exception as e:
-                logger.warning(f"Failed to reload shared components workspace: {e}")
+        workspace_path = _validate_workspace_path_or_raise(path)
+
+        updated_config = config_loader.config.model_copy(deep=True)
+        updated_config.workspace.path = str(workspace_path)
+        await config_loader.save_config(updated_config)
+
+        _hot_reload_workspace_runtime(request, workspace_path)
         
         return {
             "success": True,
-            "message": f"工作空间路径已设置为: {path}（已热重载，无需重启）",
+            "message": f"工作空间路径已设置为: {workspace_path}（已热重载，无需重启）",
             "path": str(workspace_manager.workspace_path),
             "reloaded": True
         }
@@ -1034,7 +1108,7 @@ class ImportSettingsRequest(BaseModel):
 
 
 @router.post("/import")
-async def import_settings(request: ImportSettingsRequest):
+async def import_settings(request: ImportSettingsRequest, req: Request):
     """
     导入配置
     
@@ -1085,7 +1159,31 @@ async def import_settings(request: ImportSettingsRequest):
             )
         
         # 保存配置
-        await config_loader.save_config(new_config)
+        try:
+            await config_loader.save_config(new_config)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"配置中的工作空间路径不可用: {str(e)}"
+            ) from e
+
+        config = config_loader.config
+        imported_sections = set(import_config.keys())
+        runtime_workspace = None
+        if "workspace" in imported_sections:
+            try:
+                runtime_workspace = Path(config.workspace.path).resolve()
+            except Exception as e:
+                logger.warning(f"Failed to resolve imported workspace for hot reload: {e}")
+
+        await _apply_saved_config_runtime(
+            req,
+            config,
+            workspace_path=runtime_workspace,
+            reload_persona="persona" in imported_sections,
+            reload_provider_model=bool({"providers", "model"} & imported_sections),
+            sync_heartbeat="persona" in imported_sections,
+        )
         
         logger.info("配置导入成功")
         

@@ -13,13 +13,14 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
+from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.agent.skills import SkillsLoader
 from backend.modules.config.loader import config_loader
 from backend.modules.providers.litellm_provider import LiteLLMProvider
+from backend.modules.session import resolve_session_runtime_config
 from backend.modules.session.manager import SessionManager
 from backend.modules.tools.registry import ToolRegistry
 from backend.utils.paths import WORKSPACE_DIR
@@ -122,20 +123,41 @@ def get_global_subagent_manager():
 
 async def get_agent_loop(
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    session_id: str | None = None
 ) -> AgentLoop:
-    """获取 AgentLoop 实例（依赖注入）"""
+    """获取 AgentLoop 实例（依赖注入）
+    
+    Args:
+        request: FastAPI 请求对象
+        db: 数据库会话
+        session_id: 可选的会话 ID，如果提供则使用会话级配置
+    """
     global _global_subagent_manager
     
     try:
         config = config_loader.config
+        session = None
+
+        if session_id:
+            from sqlalchemy import select
+            from backend.models.session import Session
+            
+            result = await db.execute(
+                select(Session).where(Session.id == session_id)
+            )
+            session = result.scalar_one_or_none()
+
+        runtime_config = resolve_session_runtime_config(config, session)
+        if session_id and runtime_config.use_custom_config:
+            logger.info(f"会话使用自定义运行时配置：{session_id}")
         
         from pathlib import Path
         workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         workspace.mkdir(parents=True, exist_ok=True)
         
-        # 初始化 LLM Provider
-        provider_name = config.model.provider
+        # 初始化 LLM Provider（使用有效配置）
+        provider_name = runtime_config.provider_name
         provider_config = config.providers.get(provider_name)
         
         if not provider_config or not provider_config.enabled:
@@ -144,20 +166,10 @@ async def get_agent_loop(
                 detail=f"Provider '{provider_name}' is not configured or disabled"
             )
         
-        from backend.modules.providers.registry import get_provider_metadata
-        provider_meta = get_provider_metadata(provider_name)
-        
-        api_key = provider_config.api_key or ""
-        api_base = (
-            provider_config.api_base
-            if provider_config.api_base
-            else (provider_meta.default_api_base if provider_meta else None)
-        )
-        
         provider = LiteLLMProvider(
-            api_key=api_key,
-            api_base=api_base,
-            default_model=config.model.model,
+            api_key=runtime_config.api_key,
+            api_base=runtime_config.api_base,
+            default_model=runtime_config.model_name,
             timeout=120.0,
             max_retries=3,
             provider_id=provider_name,
@@ -183,7 +195,7 @@ async def get_agent_loop(
             workspace=workspace,
             memory=memory,
             skills=skills,
-            persona_config=config.persona,
+            persona_config=runtime_config.persona_config,
         )
         
         from backend.modules.agent.memory import ConversationSummarizer
@@ -231,12 +243,12 @@ async def get_agent_loop(
             context_builder=context_builder,
             session_manager=session_manager,
             subagent_manager=_global_subagent_manager,
-            model=config.model.model,
-            max_iterations=config.model.max_iterations,
+            model=runtime_config.model_name,
+            max_iterations=runtime_config.max_iterations,
             max_retries=3,
             retry_delay=1.0,
-            temperature=config.model.temperature,
-            max_tokens=config.model.max_tokens,
+            temperature=runtime_config.temperature,
+            max_tokens=runtime_config.max_tokens,
         )
         
         return agent_loop
@@ -350,8 +362,8 @@ async def _maybe_auto_summarize(
 @router.post("/send", response_model=SendMessageResponse)
 async def send_message(
     request: SendMessageRequest,
+    req: Request,
     db: AsyncSession = Depends(get_db),
-    agent_loop: AgentLoop = Depends(get_agent_loop),
 ) -> StreamingResponse:
     """
     发送消息到 Agent 并获取 SSE 流式响应。
@@ -395,6 +407,9 @@ async def send_message(
             f"Processing message for session {request.session_id}: "
             f"{request.message[:50]}..."
         )
+        
+        # 创建会话专属的 AgentLoop（支持会话级配置）
+        agent_loop = await get_agent_loop(req, db, session_id=request.session_id)
         
         # 从配置中获取最大历史消息条数
         from backend.modules.config.loader import config_loader
@@ -742,10 +757,20 @@ async def get_session_messages(
             offset=offset,
         )
         
-        # 获取该会话的所有工具调用记录
-        tool_calls_query = select(ToolConversation).where(
-            ToolConversation.session_id == session_id
-        ).order_by(ToolConversation.timestamp.asc())
+        # 创建有效消息 ID 集合（用于过滤孤立的工具调用记录）
+        valid_message_ids = {msg.id for msg in messages}
+        
+        # 获取该会话的所有工具调用记录（只获取有效的）
+        # 过滤条件：message_id 为 NULL（会话级）或 message_id 在有效消息列表中
+        tool_calls_query = (
+            select(ToolConversation)
+            .where(ToolConversation.session_id == session_id)
+            .where(
+                (ToolConversation.message_id.is_(None)) |
+                (ToolConversation.message_id.in_(valid_message_ids))
+            )
+            .order_by(ToolConversation.timestamp.asc())
+        )
         
         tool_calls_result = await db.execute(tool_calls_query)
         all_tool_calls = tool_calls_result.scalars().all()
@@ -883,7 +908,7 @@ async def delete_single_message(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    删除单条消息
+    删除单条消息及其关联的工具调用记录
     
     Args:
         session_id: 会话 ID
@@ -891,17 +916,15 @@ async def delete_single_message(
         db: 数据库会话
         
     Returns:
-        dict: 操作结果
+        dict: 操作结果（包含删除的工具调用记录数量）
         
     Raises:
         HTTPException: 会话或消息不存在
     """
     try:
-        from sqlalchemy import select, delete
-        from backend.models.message import Message
+        session_manager = SessionManager(db)
         
         # 验证会话是否存在
-        session_manager = SessionManager(db)
         session = await session_manager.get_session(session_id)
         if session is None:
             raise HTTPException(
@@ -909,7 +932,10 @@ async def delete_single_message(
                 detail=f"Session '{session_id}' not found"
             )
         
-        # 查找消息
+        # 验证消息是否存在且属于该会话
+        from sqlalchemy import select
+        from backend.models.message import Message
+        
         result = await db.execute(
             select(Message).where(
                 Message.id == message_id,
@@ -924,17 +950,20 @@ async def delete_single_message(
                 detail=f"Message '{message_id}' not found in session '{session_id}'"
             )
         
-        # 删除消息
-        await db.execute(
-            delete(Message).where(Message.id == message_id)
-        )
-        await db.commit()
+        # 使用 SessionManager 的 delete_message 方法（会自动清理工具调用记录）
+        success = await session_manager.delete_message(message_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete message {message_id}"
+            )
         
         logger.info(f"Deleted message {message_id} from session {session_id}")
         
         return {
             "success": True,
-            "message": f"Message {message_id} deleted"
+            "message": f"Message {message_id} and its tool conversations deleted"
         }
         
     except HTTPException:
@@ -1362,4 +1391,213 @@ async def summarize_session_to_memory(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to summarize session: {str(e)}"
+        )
+
+
+# ============================================================================
+# Session Configuration Endpoints
+# ============================================================================
+
+
+class SessionConfigRequest(BaseModel):
+    """会话配置请求"""
+    model: dict[str, Any] | None = Field(None, alias='model_config')
+    persona: dict[str, Any] | None = Field(None, alias='persona_config')
+    
+    class Config:
+        populate_by_name = True
+
+
+class SessionConfigResponse(BaseModel):
+    """会话配置响应"""
+    session_id: str
+    use_custom_config: bool
+    model: dict[str, Any] = Field(..., alias='model_config')
+    persona: dict[str, Any] = Field(..., alias='persona_config')
+    global_defaults: dict[str, Any]
+    
+    class Config:
+        populate_by_name = True
+
+
+@router.get("/sessions/{session_id}/config", response_model=SessionConfigResponse)
+async def get_session_config(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SessionConfigResponse:
+    """获取会话配置
+    
+    返回会话的有效配置（如果有自定义配置则合并，否则返回全局默认）
+    
+    Args:
+        session_id: 会话 ID
+        db: 数据库会话
+        
+    Returns:
+        SessionConfigResponse: 会话配置
+        
+    Raises:
+        HTTPException: 会话不存在
+    """
+    try:
+        from sqlalchemy import select
+        from backend.models.session import Session
+        
+        # 获取会话
+        result = await db.execute(
+            select(Session).where(Session.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session '{session_id}' not found"
+            )
+        
+        config = config_loader.config
+        runtime_config = resolve_session_runtime_config(config, session)
+        global_defaults = resolve_session_runtime_config(config, None)
+        
+        return SessionConfigResponse(
+            session_id=session_id,
+            use_custom_config=session.use_custom_config,
+            model_config=runtime_config.model_response,
+            persona_config=runtime_config.persona_response,
+            global_defaults={
+                "model": global_defaults.model_response,
+                "persona": global_defaults.persona_response,
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get session config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get session config: {str(e)}"
+        )
+
+
+@router.put("/sessions/{session_id}/config")
+async def update_session_config(
+    session_id: str,
+    request: SessionConfigRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """更新会话配置
+    
+    Args:
+        session_id: 会话 ID
+        request: 配置更新请求
+        db: 数据库会话
+        
+    Returns:
+        dict: 更新结果
+        
+    Raises:
+        HTTPException: 会话不存在或配置无效
+    """
+    try:
+        from sqlalchemy import select
+        from backend.models.session import Session
+        
+        # 获取会话
+        result = await db.execute(
+            select(Session).where(Session.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session '{session_id}' not found"
+            )
+        
+        # 更新配置
+        if request.model is not None:
+            session.session_model_config = json.dumps(request.model)
+        
+        if request.persona is not None:
+            session.session_persona_config = json.dumps(request.persona)
+        
+        session.use_custom_config = True
+        session.updated_at = datetime.now(timezone.utc)
+        
+        await db.commit()
+        await db.refresh(session)
+        
+        logger.info(f"Updated config for session {session_id}")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message": "Session configuration updated"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to update session config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update session config: {str(e)}"
+        )
+
+
+@router.delete("/sessions/{session_id}/config")
+async def reset_session_config(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """重置会话配置为全局默认
+    
+    Args:
+        session_id: 会话 ID
+        db: 数据库会话
+        
+    Returns:
+        dict: 重置结果
+        
+    Raises:
+        HTTPException: 会话不存在
+    """
+    try:
+        from sqlalchemy import select
+        from backend.models.session import Session
+        
+        result = await db.execute(
+            select(Session).where(Session.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session '{session_id}' not found"
+            )
+        
+        session.session_model_config = None
+        session.session_persona_config = None
+        session.use_custom_config = False
+        session.updated_at = datetime.now(timezone.utc)
+        
+        await db.commit()
+        
+        logger.info(f"Reset config for session {session_id}")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message": "Session configuration reset to global defaults"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to reset session config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset session config: {str(e)}"
         )

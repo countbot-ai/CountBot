@@ -1,8 +1,10 @@
 """数据库连接配置"""
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from loguru import logger
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -19,6 +21,43 @@ class Base(DeclarativeBase):
     """数据库模型基类"""
 
     pass
+
+
+@dataclass(frozen=True)
+class CompatibilityColumnMigration:
+    """单列兼容迁移定义。"""
+
+    name: str
+    ddl: str
+
+
+@dataclass(frozen=True)
+class CompatibilityTableMigration:
+    """单表兼容迁移定义。"""
+
+    table_name: str
+    columns: tuple[CompatibilityColumnMigration, ...]
+
+
+_SCHEMA_COMPATIBILITY_MIGRATIONS = (
+    CompatibilityTableMigration(
+        table_name="sessions",
+        columns=(
+            CompatibilityColumnMigration(
+                name="session_model_config",
+                ddl="session_model_config TEXT",
+            ),
+            CompatibilityColumnMigration(
+                name="session_persona_config",
+                ddl="session_persona_config TEXT",
+            ),
+            CompatibilityColumnMigration(
+                name="use_custom_config",
+                ddl="use_custom_config BOOLEAN DEFAULT 0",
+            ),
+        ),
+    ),
+)
 
 
 # 异步引擎
@@ -76,6 +115,37 @@ def get_db_session_factory():
     return AsyncSessionLocal
 
 
+def _apply_schema_compatibility_migrations(
+    sync_conn,
+    migrations: tuple[CompatibilityTableMigration, ...] = _SCHEMA_COMPATIBILITY_MIGRATIONS,
+) -> None:
+    """对旧版本数据库执行最小 schema 兼容迁移。"""
+    inspector = inspect(sync_conn)
+    table_names = set(inspector.get_table_names())
+
+    for table_migration in migrations:
+        if table_migration.table_name not in table_names:
+            continue
+
+        existing_columns = {
+            column["name"]
+            for column in inspector.get_columns(table_migration.table_name)
+        }
+
+        for column_migration in table_migration.columns:
+            if column_migration.name in existing_columns:
+                continue
+
+            sync_conn.exec_driver_sql(
+                f"ALTER TABLE {table_migration.table_name} ADD COLUMN {column_migration.ddl}"
+            )
+            logger.warning(
+                "Applied compatibility migration for "
+                f"{table_migration.table_name}.{column_migration.name}"
+            )
+            existing_columns.add(column_migration.name)
+
+
 async def init_db() -> None:
     """初始化数据库"""
     # 导入所有模型以确保表被创建
@@ -83,6 +153,7 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_apply_schema_compatibility_migrations)
     
     # 初始化性格数据
     await init_personalities()

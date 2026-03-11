@@ -82,6 +82,7 @@ class PersonaConfig(BaseModel):
     ai_name: str = Field(default="小C", description="AI的名字")
     user_name: str = Field(default="主人", description="用户的称呼")
     user_address: str = Field(default="", description="用户的常用地址（可选）")
+    output_language: str = Field(default="中文", description="AI默认输出语言")
     personality: str = Field(default="grumpy", description="AI的性格类型")
     custom_personality: str = Field(default="", description="自定义性格描述")
     max_history_messages: int = Field(default=100, ge=-1, le=500, description="最大对话历史条数，-1表示不限")

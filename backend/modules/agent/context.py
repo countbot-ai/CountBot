@@ -24,8 +24,6 @@ class ContextBuilder:
         self.memory = memory
         self.skills = skills
         self.persona_config = persona_config
-        
-        logger.debug(f"ContextBuilder initialized with workspace: {workspace}")
     
     def update_workspace(self, new_workspace: Path) -> None:
         """
@@ -46,11 +44,9 @@ class ContextBuilder:
             new_config: 新的性格配置
         """
         self.persona_config = new_config
-        logger.debug("Persona config updated")
 
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """构建系统提示词"""
-        logger.debug("Building system prompt")
 
         parts = []
 
@@ -103,7 +99,6 @@ class ContextBuilder:
             logger.warning(f"Failed to load active agent teams: {e}")
 
         system_prompt = "\n\n---\n\n".join(parts)
-        logger.debug(f"System prompt built: {len(system_prompt)} characters")
 
         return system_prompt
 
@@ -176,9 +171,9 @@ class ContextBuilder:
             lines.append("")
 
         lines.append("使用方式：")
-        lines.append("- 使用 team_name 参数调用预定义团队：workflow_run(mode='graph', goal='...', agents=[], team_name='问题诊断系统')")
-        lines.append("- 预定义团队会自动根据分析结果决定执行哪些步骤")
-        lines.append("- 简单任务直接回答，不强制使用团队，除非用户明确 @对应团队名称")
+        lines.append("- 调用 workflow_run 工具，指定团队名称或自定义配置")
+        lines.append("- 适用于需要多角色协作或多视角分析的复杂任务")
+        lines.append("- 简单任务直接回答，不强制使用团队，除非用户直接@准确的团队名称")
 
         return "\n".join(lines)
 
@@ -227,27 +222,29 @@ class ContextBuilder:
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
         
-        # 从配置中获取用户信息
-        ai_name = "小C"  # 默认值
-        user_name = "主任"    # 默认值
-        user_address = ""     # 默认值
-        personality = "professional"  # 默认值
+        ai_name = "小C"
+        user_name = "老板"
+        user_address = ""
+        output_language = "中文"
+        personality = "professional"
         custom_personality = ""
         
         if self.persona_config:
             ai_name = self.persona_config.ai_name or "小C"
             user_name = self.persona_config.user_name or "用户"
             user_address = getattr(self.persona_config, 'user_address', '') or ""
-            personality = self.persona_config.personality or "professional"
-            custom_personality = self.persona_config.custom_personality or ""
+            output_language = getattr(self.persona_config, 'output_language', None) or "中文"
+            personality = getattr(self.persona_config, 'personality', None) or "professional"
+            custom_personality = getattr(self.persona_config, 'custom_personality', None) or ""
         
-        # 性格配置系统
         personality_desc = self._get_personality_from_db(personality, custom_personality)
         
         # 构建用户信息部分
         user_info = f"- 用户称呼: {user_name}"
         if user_address:
             user_info += f"\n- 用户常用地址: {user_address}"
+        if output_language:
+            user_info += f"\n- 默认输出语言: {output_language}"
         
         # 构建核心身份 - 优化版
         identity = f"""# 核心身份
@@ -267,10 +264,29 @@ class ContextBuilder:
 
 **关键要求**: 所有回复必须严格遵循此性格设定，保持一致性。
 
-## CountBot快速参考手册
-**重要**: 当用户询问功能位置、使用方法或遇到问题时，必须查阅快速参考手册：
-- 文档位置: `workspace/AI_QUICK_REFERENCE.md`
-- 使用方法: `read_file(path='workspace/AI_QUICK_REFERENCE.md')`
+## 回复语言要求
+- 默认输出语言: {output_language}
+- 除非用户在当前对话中明确要求切换语言，否则所有回复优先使用{output_language}。
+
+## CountBot快速参考手册（必读规则）
+**强制要求**: 涉及CountBot程序本身的任何问题，必须先读取快速参考手册再回答：
+
+**必须查阅的场景**:
+- 用户询问功能位置、使用方法、配置步骤
+- 用户报告功能不工作、出错、异常
+- 用户询问"在哪里"、"怎么做"、"如何配置"
+- 涉及LLM配置、渠道设置、技能管理、定时任务、多智能体等CountBot功能
+- 需要查看日志、调试问题、排查故障
+
+**文档位置**: `AI_QUICK_REFERENCE.md`
+**使用方法**: `read_file(path='AI_QUICK_REFERENCE.md')`
+
+**执行流程**:
+1. 识别到CountBot相关问题 → 立即调用read_file读取手册
+2. 根据手册内容回答用户问题
+3. 提供具体的操作路径和步骤
+
+**禁止行为**: 不要凭记忆或猜测回答CountBot功能问题，必须查阅文档确保准确性
 
 ## 工具使用原则
 1. **默认静默执行**: 常规工具调用无需解释，直接执行
@@ -323,10 +339,7 @@ class ContextBuilder:
   - 技能（Skills）: 包含命令行示例的文档，需先用 read_file 读取，再用 exec 执行命令
   - 技能不能直接调用！必须先读取文档了解用法
 - **子代理**: 对于耗时或复杂任务，使用 spawn 工具创建子代理处理
-
-## CountBot快速参考手册
-
-当用户询问"功能在哪里"、"怎么操作"、"如何配置"、功能不工作等问题时，使用 read_file 工具读取 `docs/AI_QUICK_REFERENCE.md`。
+- **CountBot问题处理**: 任何涉及CountBot程序本身的问题（功能、配置、故障等），必须先读取 `workspace/AI_QUICK_REFERENCE.md` 再回答
 """
    
         return identity
@@ -358,7 +371,6 @@ class ContextBuilder:
         user_content = self._build_user_content(current_message, media)
         messages.append({"role": "user", "content": user_content})
         
-        logger.debug(f"Built {len(messages)} messages")
         return messages
 
     def _build_user_content(
@@ -406,7 +418,6 @@ class ContextBuilder:
             "content": result
         })
         
-        logger.debug(f"Added tool result for {tool_name}")
         return messages
 
     def add_assistant_message(

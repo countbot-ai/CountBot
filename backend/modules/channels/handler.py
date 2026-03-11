@@ -19,9 +19,11 @@ from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.task_manager import CancellationToken
 from backend.modules.channels.base import InboundMessage, OutboundMessage
+from backend.modules.config.loader import config_loader
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 from backend.modules.messaging.rate_limiter import RateLimiter
 from backend.modules.providers.litellm_provider import LiteLLMProvider
+from backend.modules.session import resolve_session_runtime_config
 from backend.modules.tools.setup import register_all_tools
 
 # 预编译 @mention 清理正则
@@ -77,6 +79,7 @@ class ChannelMessageHandler:
         self.bus = bus
         self.rate_limiter = rate_limiter
         self._active_tasks: dict[str, CancellationToken] = {}
+        self._last_session_list_scope: dict[str, str] = {}
         self.db_session_factory = get_db_session_factory()
         self.channel_manager = None
         self.max_history_messages = max_history_messages
@@ -101,8 +104,6 @@ class ChannelMessageHandler:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-
-        logger.debug("ChannelMessageHandler initialized")
 
     # ------------------------------------------------------------------
     # 配置热重载
@@ -162,7 +163,6 @@ class ChannelMessageHandler:
             memory_store=self._memory_store,
         )
         self.agent_loop.tools = self.tool_registry
-        logger.debug("Tools re-registered with channel_manager")
 
     # ------------------------------------------------------------------
     # 消息处理循环
@@ -178,9 +178,6 @@ class ChannelMessageHandler:
             try:
                 msg = await self.bus.consume_inbound()
                 consecutive_errors = 0
-                logger.debug(
-                    f"Consumed inbound from {msg.channel}, queue size: {self.bus.inbound_size}"
-                )
                 asyncio.create_task(self.handle_message(msg))
             except Exception as e:
                 consecutive_errors += 1
@@ -226,6 +223,9 @@ class ChannelMessageHandler:
             if cmd in ("/list", "/sessions", "/list_sessions", "/l", "/ls"):
                 await self._handle_list_sessions_command(msg)
                 return
+            if cmd in ("/all", "/all_sessions", "/al"):
+                await self._handle_list_sessions_command(msg, include_all=True)
+                return
             if cmd.startswith(("/switch ", "/切换 ", "/s ")):
                 await self._handle_switch_session_command(msg, content)
                 return
@@ -248,7 +248,6 @@ class ChannelMessageHandler:
             # Agent 处理
             session_id = await self._get_or_create_session(msg)
             self._active_tasks[session_id] = cancel_token
-            logger.debug(f"[{msg.channel}] Using session {session_id}")
 
             if cancel_token.is_cancelled:
                 return
@@ -259,10 +258,6 @@ class ChannelMessageHandler:
             history = await self._get_session_history(session_id)
             if history:
                 history = history[:-1]
-
-            logger.debug(
-                f"[{msg.channel}] Agent processing with {len(history)} history messages"
-            )
 
             response = await self._process_with_agent(
                 session_id, msg.content, history, cancel_token,
@@ -275,7 +270,33 @@ class ChannelMessageHandler:
                 return
 
             if response:
-                await self._save_message(session_id, "assistant", response)
+                # 使用 SessionManager 保存消息（与 Web UI 一致）
+                async with self.db_session_factory() as db:
+                    from backend.modules.session.manager import SessionManager
+                    session_manager = SessionManager(db)
+                    
+                    assistant_message = await session_manager.add_message(
+                        session_id=session_id,
+                        role="assistant",
+                        content=response,
+                    )
+                    
+                    # 回填 message_id 到工具调用记录（与 Web UI 一致）
+                    try:
+                        from backend.modules.tools.conversation_history import get_conversation_history
+                        conversation_history = get_conversation_history()
+                        updated_count = await conversation_history.backfill_message_id(
+                            session_id=session_id,
+                            message_id=assistant_message.id,
+                        )
+                        if updated_count > 0:
+                            logger.info(
+                                f"[{msg.channel}] Backfilled message_id={assistant_message.id} "
+                                f"to {updated_count} tool conversations"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[{msg.channel}] Failed to backfill message_id: {e}")
+                
                 # 剥离工作流元数据注释（仅用于 Web UI 恢复面板，频道无需此内容）
                 channel_response = _WORKFLOW_META_RE.sub("", response).strip()
                 await self._send_reply(msg, channel_response or response)
@@ -311,7 +332,60 @@ class ChannelMessageHandler:
         chat_id: str | None = None,
     ) -> str:
         """运行 Agent 循环并收集响应。"""
+        original_provider = None
+        original_model = None
+        original_temperature = None
+        original_max_tokens = None
+        original_max_iterations = None
+        original_persona = None
+        
         try:
+            async with self.db_session_factory() as db:
+                from sqlalchemy import select
+                result = await db.execute(select(Session).where(Session.id == session_id))
+                session = result.scalar_one_or_none()
+                
+                if session and session.use_custom_config:
+                    runtime_config = resolve_session_runtime_config(config_loader.config, session)
+
+                    if runtime_config.has_custom_model_config:
+                        provider_config = config_loader.config.providers.get(runtime_config.provider_name)
+                        if provider_config and provider_config.enabled:
+                            original_provider = self.agent_loop.provider
+                            original_model = self.agent_loop.model
+                            original_temperature = self.agent_loop.temperature
+                            original_max_tokens = self.agent_loop.max_tokens
+                            original_max_iterations = self.agent_loop.max_iterations
+
+                            self.agent_loop.provider = LiteLLMProvider(
+                                api_key=runtime_config.api_key,
+                                api_base=runtime_config.api_base,
+                                default_model=runtime_config.model_name,
+                                timeout=120.0,
+                                max_retries=3,
+                                provider_id=runtime_config.provider_name,
+                            )
+                            self.agent_loop.model = runtime_config.model_name
+                            self.agent_loop.temperature = runtime_config.temperature
+                            self.agent_loop.max_tokens = runtime_config.max_tokens
+                            self.agent_loop.max_iterations = runtime_config.max_iterations
+
+                            logger.info(
+                                f"[{channel}] ✓ 使用会话级模型配置: "
+                                f"{runtime_config.provider_name}/{runtime_config.model_name}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[{channel}] 会话请求了不可用 provider：{session_id} / "
+                                f"{runtime_config.provider_name}"
+                            )
+
+                    if runtime_config.has_custom_persona_config and self.agent_loop.context_builder:
+                        original_persona = self.agent_loop.context_builder.persona_config
+                        self.agent_loop.context_builder.persona_config = runtime_config.persona_config
+                        personality = runtime_config.persona_config.personality
+                        logger.info(f"[{channel}] ✓ 使用自定义性格: {personality}")
+            
             parts = []
             async for chunk in self.agent_loop.process_message(
                 message=user_message,
@@ -319,8 +393,8 @@ class ChannelMessageHandler:
                 context=history,
                 channel=channel,
                 chat_id=chat_id,
-                cancel_token=cancel_token,  # 确保取消令牌传入 Agent 循环
-                yield_intermediate=False,   # 频道模式：只取最终回复，丢弃中间迭代文本
+                cancel_token=cancel_token,
+                yield_intermediate=False,
             ):
                 if cancel_token.is_cancelled:
                     break
@@ -330,6 +404,16 @@ class ChannelMessageHandler:
         except Exception as e:
             logger.error(f"Agent processing error: {e}")
             return _friendly_channel_error(str(e))
+        finally:
+            if original_provider is not None:
+                self.agent_loop.provider = original_provider
+                self.agent_loop.model = original_model
+                self.agent_loop.temperature = original_temperature
+                self.agent_loop.max_tokens = original_max_tokens
+                self.agent_loop.max_iterations = original_max_iterations
+            
+            if original_persona is not None and self.agent_loop.context_builder:
+                self.agent_loop.context_builder.persona_config = original_persona
 
     # ------------------------------------------------------------------
     # 回复
@@ -344,16 +428,64 @@ class ChannelMessageHandler:
                 content=content,
             )
             await self.bus.publish_outbound(reply)
-            logger.debug(
-                f"[{original_msg.channel}] Reply queued for {original_msg.chat_id}: "
-                f"{content[:50]}..."
-            )
         except Exception as e:
             logger.error(f"[{original_msg.channel}] Failed to queue reply: {e}")
 
     # ------------------------------------------------------------------
     # 会话管理命令
     # ------------------------------------------------------------------
+
+    def _get_chat_key(self, msg: InboundMessage) -> str:
+        """返回频道内唯一聊天键。"""
+        return f"{msg.channel}:{msg.chat_id}"
+
+    def _remember_session_list_scope(self, msg: InboundMessage, include_all: bool) -> None:
+        """记录当前聊天最近一次使用的列表范围。"""
+        self._last_session_list_scope[self._get_chat_key(msg)] = "all" if include_all else "chat"
+
+    def _get_last_session_list_scope(self, msg: InboundMessage) -> str:
+        """获取当前聊天最近一次使用的列表范围，默认当前聊天。"""
+        return getattr(self, "_last_session_list_scope", {}).get(self._get_chat_key(msg), "chat")
+
+    async def _load_recent_sessions(
+        self, msg: InboundMessage, include_all: bool = False, limit: int = 10
+    ) -> list[Session]:
+        """加载最近会话列表。"""
+        from sqlalchemy import select
+
+        query = select(Session)
+        if not include_all:
+            prefix = f"{msg.channel}:{msg.chat_id}"
+            query = query.where(Session.name.like(f"{prefix}%"))
+
+        query = query.order_by(Session.updated_at.desc()).limit(limit)
+
+        async with self.db_session_factory() as db:
+            result = await db.execute(query)
+            return list(result.scalars().all())
+
+    async def _load_session_message_counts(self, session_ids: list[str]) -> dict[str, int]:
+        """批量加载会话消息数量。"""
+        from sqlalchemy import func, select
+
+        if not session_ids:
+            return {}
+
+        async with self.db_session_factory() as db:
+            result = await db.execute(
+                select(Message.session_id, func.count(Message.id))
+                .where(Message.session_id.in_(session_ids))
+                .group_by(Message.session_id)
+            )
+            return {session_id: count for session_id, count in result.all()}
+
+    async def _get_session_by_id(self, session_id: str) -> Session | None:
+        """根据 ID 查找会话。"""
+        from sqlalchemy import select
+
+        async with self.db_session_factory() as db:
+            result = await db.execute(select(Session).where(Session.id == session_id))
+            return result.scalar_one_or_none()
 
     async def _get_or_create_session(self, msg: InboundMessage) -> str:
         """获取已有会话或创建新会话。"""
@@ -364,7 +496,7 @@ class ChannelMessageHandler:
             return msg.metadata["session_id"]
 
         if hasattr(self, "_active_sessions"):
-            chat_key = f"{msg.channel}:{msg.chat_id}"
+            chat_key = self._get_chat_key(msg)
             if chat_key in self._active_sessions:
                 return self._active_sessions[chat_key]
 
@@ -407,7 +539,7 @@ class ChannelMessageHandler:
 
         if not hasattr(self, "_active_sessions"):
             self._active_sessions = {}
-        self._active_sessions[f"{msg.channel}:{msg.chat_id}"] = session_id
+        self._active_sessions[self._get_chat_key(msg)] = session_id
 
         await self._send_reply(
             msg, 
@@ -417,78 +549,71 @@ class ChannelMessageHandler:
             f"现在可以开始新对话了"
         )
 
-    async def _handle_list_sessions_command(self, msg: InboundMessage) -> None:
-        """处理 /list 命令。"""
-        from sqlalchemy import select, func
-
-        prefix = f"{msg.channel}:{msg.chat_id}"
-        async with self.db_session_factory() as db:
-            result = await db.execute(
-                select(Session)
-                .where(Session.name.like(f"{prefix}%"))
-                .order_by(Session.created_at.desc())
-                .limit(10)
-            )
-            sessions = result.scalars().all()
+    async def _handle_list_sessions_command(
+        self, msg: InboundMessage, include_all: bool = False
+    ) -> None:
+        """处理 /list 和 /al 命令。"""
+        sessions = await self._load_recent_sessions(msg, include_all=include_all, limit=10)
+        self._remember_session_list_scope(msg, include_all)
 
         if not sessions:
-            await self._send_reply(msg, "暂无会话记录\n\n使用 /n 创建第一个会话")
+            empty_text = (
+                "暂无会话记录\n\n"
+                "使用 /n 创建第一个会话"
+                if include_all
+                else "当前聊天暂无会话记录\n\n使用 /n 创建第一个会话\n使用 /al 查看所有会话"
+            )
+            await self._send_reply(msg, empty_text)
             return
 
-        lines = ["会话列表 (最近10个)\n━━━━━━━━━━━━━━━━━━━━━━\n"]
+        counts = await self._load_session_message_counts([s.id for s in sessions])
+        title = "所有会话列表 (最近10个)" if include_all else "当前聊天会话列表 (最近10个)"
+        lines = [f"{title}\n━━━━━━━━━━━━━━━━━━━━━━\n"]
         for i, s in enumerate(sessions, 1):
-            async with self.db_session_factory() as db:
-                count = (
-                    await db.execute(
-                        select(func.count(Message.id)).where(Message.session_id == s.id)
-                    )
-                ).scalar()
-            created = s.created_at.strftime("%Y-%m-%d %H:%M")
+            updated_at = getattr(s, "updated_at", None) or s.created_at
+            updated = updated_at.strftime("%Y-%m-%d %H:%M")
             lines.append(
                 f"[{i}] {s.name}\n"
                 f"    ID: {s.id}\n"
-                f"    创建: {created} | 消息: {count}\n"
+                f"    更新: {updated} | 消息: {counts.get(s.id, 0)}\n"
             )
         lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("使用 /s <编号> 快速切换，如: /s 1")
+        lines.append("使用 /s <编号|ID> 切换，如: /s 1")
+        lines.append("使用 /l 查看当前聊天会话" if include_all else "使用 /al 查看所有会话")
         await self._send_reply(msg, "\n".join(lines))
 
     async def _handle_switch_session_command(
         self, msg: InboundMessage, content: str
     ) -> None:
         """处理 /switch 命令，支持数字编号或完整ID。"""
-        from sqlalchemy import select
-
         parts = content.split(maxsplit=1)
         if len(parts) < 2:
             await self._send_reply(
                 msg, 
                 "参数错误\n\n"
                 "用法: /s <编号|ID>\n\n"
-                "使用 /l 查看会话列表"
+                "先用 /l 查看当前聊天会话，或 /al 查看所有会话"
             )
             return
 
         identifier = parts[1].strip()
-        
-        # 获取当前频道的会话列表
-        prefix = f"{msg.channel}:{msg.chat_id}"
-        async with self.db_session_factory() as db:
-            result = await db.execute(
-                select(Session)
-                .where(Session.name.like(f"{prefix}%"))
-                .order_by(Session.created_at.desc())
-                .limit(10)
-            )
-            sessions = result.scalars().all()
-        
-        if not sessions:
-            await self._send_reply(msg, "暂无会话记录")
-            return
-        
+        last_scope = self._get_last_session_list_scope(msg)
+        scope_label = "所有会话" if last_scope == "all" else "当前聊天会话"
+
         # 尝试作为数字编号解析
         session = None
         if identifier.isdigit():
+            sessions = await self._load_recent_sessions(
+                msg, include_all=(last_scope == "all"), limit=10
+            )
+            if not sessions:
+                await self._send_reply(
+                    msg,
+                    "暂无会话记录\n\n"
+                    "使用 /l 查看当前聊天会话，或 /al 查看所有会话"
+                )
+                return
+
             index = int(identifier) - 1
             if 0 <= index < len(sessions):
                 session = sessions[index]
@@ -496,34 +621,33 @@ class ChannelMessageHandler:
                 await self._send_reply(
                     msg,
                     f"编号 {identifier} 不存在\n\n"
-                    f"当前有 {len(sessions)} 个会话\n"
-                    f"使用 /l 查看列表"
+                    f"当前 {scope_label} 中有 {len(sessions)} 个会话\n"
+                    f"使用 /l 或 /al 重新查看列表"
                 )
                 return
         else:
             # 作为完整ID查找
-            async with self.db_session_factory() as db:
-                result = await db.execute(
-                    select(Session).where(Session.id == identifier)
-                )
-                session = result.scalar_one_or_none()
+            session = await self._get_session_by_id(identifier)
         
         if not session:
             await self._send_reply(
                 msg, 
                 f"会话不存在: {identifier}\n\n"
-                f"使用 /l 查看可用会话"
+                f"使用 /l 或 /al 查看可用会话"
             )
             return
 
         if not hasattr(self, "_active_sessions"):
             self._active_sessions = {}
-        self._active_sessions[f"{msg.channel}:{msg.chat_id}"] = session.id
+        self._active_sessions[self._get_chat_key(msg)] = session.id
+        source_line = f"来源: {scope_label}\n" if identifier.isdigit() else ""
         await self._send_reply(
             msg, 
             f"已切换会话\n\n"
             f"{session.name}\n"
-            f"ID: {session.id}"
+            f"ID: {session.id}\n"
+            f"{source_line}\n"
+            f"后续消息将继续写入这个会话"
         )
 
     async def _handle_clear_history_command(self, msg: InboundMessage) -> None:
@@ -553,61 +677,190 @@ class ChannelMessageHandler:
             await self._send_reply(msg, "没有正在执行的任务")
 
     async def _handle_personality_command(self, msg: InboundMessage, content: str) -> None:
-        """处理 /personality 或 /p 命令。"""
+        """处理 /personality 或 /p 命令 - 为当前会话设置性格。"""
         from backend.modules.agent.personalities import PERSONALITY_PRESETS
-        from backend.modules.config.loader import config_loader
+        from sqlalchemy import select
+        import json
         
+        session_id = await self._get_or_create_session(msg)
         parts = content.split(maxsplit=1)
         
-        # 如果没有参数，显示可用性格列表
-        if len(parts) < 2:
-            lines = ["可用性格列表\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-            current = config_loader.config.persona.personality
-            for pid, preset in PERSONALITY_PRESETS.items():
-                marker = "[当前]" if pid == current else ""
-                lines.append(f"{pid} - {preset['name']} {marker}")
-            lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
-            lines.append(f"当前性格: {current}")
-            lines.append("\n使用 /p <性格ID> 切换")
-            await self._send_reply(msg, "\n".join(lines))
-            return
-        
-        # 切换性格
-        personality_id = parts[1].strip().lower()
-        
-        if personality_id not in PERSONALITY_PRESETS:
+        async with self.db_session_factory() as db:
+            result = await db.execute(select(Session).where(Session.id == session_id))
+            session = result.scalar_one_or_none()
+            
+            if not session:
+                await self._send_reply(msg, "会话不存在")
+                return
+            
+            current_personality = "professional"
+            if session.use_custom_config and session.session_persona_config:
+                try:
+                    persona_config = json.loads(session.session_persona_config)
+                    current_personality = persona_config.get("personality", "professional")
+                except:
+                    pass
+            
+            if len(parts) < 2:
+                lines = ["可用性格列表\n━━━━━━━━━━━━━━━━━━━━━━\n"]
+                
+                personality_list = list(PERSONALITY_PRESETS.items())
+                for i, (pid, preset) in enumerate(personality_list, 1):
+                    marker = " [当前]" if pid == current_personality else ""
+                    lines.append(f"[{i}] {pid} - {preset['name']}{marker}")
+                
+                lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
+                lines.append(f"当前会话性格: {current_personality}")
+                lines.append("\n使用 /p <编号|性格ID> 切换")
+                lines.append("如: /p 1 或 /p friendly")
+                await self._send_reply(msg, "\n".join(lines))
+                return
+            
+            identifier = parts[1].strip().lower()
+            personality_id = None
+            
+            personality_list = list(PERSONALITY_PRESETS.items())
+            if identifier.isdigit():
+                index = int(identifier) - 1
+                if 0 <= index < len(personality_list):
+                    personality_id = personality_list[index][0]
+                else:
+                    await self._send_reply(
+                        msg,
+                        f"编号 {identifier} 不存在\n\n"
+                        f"当前有 {len(personality_list)} 个性格\n"
+                        f"使用 /p 查看列表"
+                    )
+                    return
+            else:
+                if identifier in PERSONALITY_PRESETS:
+                    personality_id = identifier
+            
+            if not personality_id:
+                await self._send_reply(
+                    msg,
+                    f"性格 '{identifier}' 不存在\n\n"
+                    f"使用 /p 查看可用性格"
+                )
+                return
+            
+            from backend.modules.config.loader import config_loader
+            persona_config = {
+                "ai_name": config_loader.config.persona.ai_name or "小C",
+                "user_name": config_loader.config.persona.user_name or "用户",
+                "user_address": getattr(config_loader.config.persona, 'user_address', '') or "",
+                "personality": personality_id,
+                "custom_personality": "",
+            }
+            
+            session.session_persona_config = json.dumps(persona_config, ensure_ascii=False)
+            session.use_custom_config = True
+            await db.commit()
+            
+            preset = PERSONALITY_PRESETS[personality_id]
             await self._send_reply(
                 msg,
-                f"性格 '{personality_id}' 不存在\n\n"
-                f"使用 /p 查看可用性格"
+                f"当前会话性格已设置为: {preset['name']}\n\n"
+                f"{preset['description']}\n\n"
+                f"此设置仅对当前会话生效"
             )
-            return
-        
-        config_loader.config.persona.personality = personality_id
-        await config_loader.save_config(config_loader.config)
-        await config_loader.load()
-        
-        self.reload_config(persona_config=config_loader.config.persona)
-        
-        preset = PERSONALITY_PRESETS[personality_id]
-        await self._send_reply(
-            msg,
-            f"性格已切换为: {preset['name']}\n\n"
-            f"{preset['description']}"
-        )
 
     async def _handle_provider_command(self, msg: InboundMessage, content: str) -> None:
-        """处理 /provider 或 /m 命令 - 切换模型提供商。"""
+        """处理 /provider 或 /m 命令 - 为当前会话设置模型提供商。
+        
+        用法:
+        - /m                    查看可用提供商列表
+        - /m 1                  使用编号切换（使用提供商默认模型）
+        - /m 1 gpt-4           使用编号切换并指定模型名称
+        - /m openai            使用ID切换（使用提供商默认模型）
+        - /m openai gpt-4      使用ID切换并指定模型名称
+        """
         from backend.modules.providers.registry import get_provider_metadata
-        from backend.modules.providers.litellm_provider import LiteLLMProvider
         from backend.modules.config.loader import config_loader
+        from sqlalchemy import select
+        import json
         
-        parts = content.split(maxsplit=1)
+        session_id = await self._get_or_create_session(msg)
+        parts = content.split(maxsplit=2)
         
-        # 如果没有参数，显示已配置的提供商列表
-        if len(parts) < 2:
-            lines = ["已配置的模型提供商\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-            current_provider = config_loader.config.model.provider
+        async with self.db_session_factory() as db:
+            result = await db.execute(select(Session).where(Session.id == session_id))
+            session = result.scalar_one_or_none()
+            
+            if not session:
+                await self._send_reply(msg, "会话不存在")
+                return
+            
+            # 获取当前会话配置（自定义或全局）
+            current_provider = None
+            current_model = None
+            is_custom_config = False
+            
+            if session.use_custom_config and session.session_model_config:
+                try:
+                    model_config = json.loads(session.session_model_config)
+                    current_provider = model_config.get("provider")
+                    current_model = model_config.get("model")
+                    is_custom_config = True
+                except:
+                    pass
+            
+            # 如果没有自定义配置，使用全局配置
+            if not current_provider:
+                current_provider = config_loader.config.ai.provider
+                current_model = config_loader.config.ai.model
+            
+            if len(parts) < 2:
+                lines = ["已配置的模型提供商\n━━━━━━━━━━━━━━━━━━━━━━\n"]
+                
+                available_providers = []
+                for provider_id, provider_config in config_loader.config.providers.items():
+                    if provider_config.enabled and provider_config.api_key:
+                        metadata = get_provider_metadata(provider_id)
+                        if metadata:
+                            available_providers.append((provider_id, metadata, provider_config))
+                
+                if not available_providers:
+                    await self._send_reply(
+                        msg,
+                        "暂无已配置的提供商\n\n"
+                        "请在 Web 界面配置 API Key"
+                    )
+                    return
+                
+                for i, (provider_id, metadata, provider_config) in enumerate(available_providers, 1):
+                    is_current = provider_id == current_provider
+                    marker = " ✓" if is_current else ""
+                    lines.append(f"[{i}] {provider_id} - {metadata.name}{marker}")
+                    
+                    default_model = provider_config.model or metadata.default_model
+                    if default_model:
+                        lines.append(f"    默认: {default_model}")
+                    
+                    if is_current and current_model and current_model != default_model:
+                        lines.append(f"    当前: {current_model} (自定义)")
+                
+                lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
+                lines.append("当前会话配置:")
+                if current_provider and current_model:
+                    config_type = "自定义配置" if is_custom_config else "全局配置"
+                    lines.append(f"  提供商: {current_provider}")
+                    lines.append(f"  模型: {current_model}")
+                    lines.append(f"  类型: {config_type}")
+                else:
+                    lines.append("  未配置")
+                lines.append("\n使用方式:")
+                lines.append("  /m <编号|ID>              使用默认模型")
+                lines.append("  /m <编号|ID> <模型名>     指定模型名称")
+                lines.append("\n示例:")
+                lines.append("  /m 1                      使用第1个提供商的默认模型")
+                lines.append("  /m 1 gpt-4               使用第1个提供商的 gpt-4")
+                lines.append("  /m openai gpt-3.5-turbo  使用 openai 的 gpt-3.5-turbo")
+                await self._send_reply(msg, "\n".join(lines))
+                return
+            
+            identifier = parts[1].strip().lower()
+            custom_model = parts[2].strip() if len(parts) > 2 else None
             
             available_providers = []
             for provider_id, provider_config in config_loader.config.providers.items():
@@ -616,121 +869,79 @@ class ChannelMessageHandler:
                     if metadata:
                         available_providers.append((provider_id, metadata, provider_config))
             
-            if not available_providers:
-                await self._send_reply(
-                    msg,
-                    "暂无已配置的提供商\n\n"
-                    "请在 Web 界面配置 API Key"
-                )
-                return
+            provider_id = None
+            metadata = None
+            provider_config = None
             
-            for i, (provider_id, metadata, provider_config) in enumerate(available_providers, 1):
-                marker = " [当前]" if provider_id == current_provider else ""
-                lines.append(f"[{i}] {provider_id} - {metadata.name}{marker}")
-                
-                actual_model = provider_config.model or metadata.default_model
-                if actual_model:
-                    lines.append(f"    模型: {actual_model}")
-            
-            lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
-            lines.append(f"当前提供商: {current_provider}")
-            lines.append(f"当前模型: {config_loader.config.model.model}")
-            lines.append("\n使用 /m <编号|提供商ID> 切换")
-            lines.append("如: /m 1 或 /m openai")
-            await self._send_reply(msg, "\n".join(lines))
-            return
-        
-        # 切换提供商
-        identifier = parts[1].strip().lower()
-        
-        # 获取可用提供商列表
-        available_providers = []
-        for provider_id, provider_config in config_loader.config.providers.items():
-            if provider_config.enabled and provider_config.api_key:
-                metadata = get_provider_metadata(provider_id)
-                if metadata:
-                    available_providers.append((provider_id, metadata, provider_config))
-        
-        # 尝试作为数字编号解析
-        provider_id = None
-        metadata = None
-        provider_config = None
-        
-        if identifier.isdigit():
-            index = int(identifier) - 1
-            if 0 <= index < len(available_providers):
-                provider_id, metadata, provider_config = available_providers[index]
+            if identifier.isdigit():
+                index = int(identifier) - 1
+                if 0 <= index < len(available_providers):
+                    provider_id, metadata, provider_config = available_providers[index]
+                else:
+                    await self._send_reply(
+                        msg,
+                        f"编号 {identifier} 不存在\n\n"
+                        f"当前有 {len(available_providers)} 个提供商\n"
+                        f"使用 /m 查看列表"
+                    )
+                    return
             else:
+                metadata = get_provider_metadata(identifier)
+                if metadata:
+                    provider_config = config_loader.config.providers.get(identifier)
+                    if provider_config and provider_config.enabled and provider_config.api_key:
+                        provider_id = identifier
+            
+            if not provider_id or not metadata or not provider_config:
                 await self._send_reply(
                     msg,
-                    f"编号 {identifier} 不存在\n\n"
-                    f"当前有 {len(available_providers)} 个提供商\n"
-                    f"使用 /m 查看列表"
+                    f"提供商 '{identifier}' 不存在或未配置\n\n"
+                    f"使用 /m 查看可用提供商"
                 )
                 return
-        else:
-            # 作为提供商ID查找
-            metadata = get_provider_metadata(identifier)
-            if metadata:
-                provider_config = config_loader.config.providers.get(identifier)
-                if provider_config and provider_config.enabled and provider_config.api_key:
-                    provider_id = identifier
-        
-        if not provider_id or not metadata or not provider_config:
+            
+            model_name = custom_model if custom_model else (provider_config.model or metadata.default_model)
+            
+            if not model_name:
+                await self._send_reply(
+                    msg,
+                    f"无法确定模型名称\n\n"
+                    f"请指定模型名称:\n"
+                    f"/m {identifier} <模型名>\n\n"
+                    f"例如: /m {identifier} gpt-4"
+                )
+                return
+            
+            api_key = provider_config.api_key
+            if not api_key:
+                await self._send_reply(
+                    msg,
+                    f"提供商 '{provider_id}' 缺少 API 密钥\n\n"
+                    f"请在 Web 界面配置 API Key"
+                )
+                return
+            
+            api_base = provider_config.api_base or metadata.default_api_base
+            
+            model_config = {
+                "provider": provider_id,
+                "model": model_name,
+                "api_key": api_key,
+                "api_base": api_base,
+            }
+            
+            session.session_model_config = json.dumps(model_config, ensure_ascii=False)
+            session.use_custom_config = True
+            await db.commit()
+            
+            custom_note = " (自定义)" if custom_model else ""
             await self._send_reply(
                 msg,
-                f"提供商 '{identifier}' 不存在或未配置\n\n"
-                f"使用 /m 查看可用提供商"
+                f"当前会话模型已设置为:\n\n"
+                f"提供商: {metadata.name}\n"
+                f"模型: {model_name}{custom_note}\n\n"
+                f"此设置仅对当前会话生效"
             )
-            return
-        
-        # 更新配置
-        old_provider = config_loader.config.model.provider
-        old_model = config_loader.config.model.model
-        
-        if old_provider in config_loader.config.providers:
-            old_provider_config = config_loader.config.providers[old_provider]
-            if old_provider_config.model != old_model:
-                old_provider_config.model = old_model
-        
-        config_loader.config.model.provider = provider_id
-        
-        new_model = provider_config.model
-        if not new_model:
-            new_model = metadata.default_model
-            if new_model and not provider_config.model:
-                provider_config.model = new_model
-        
-        if new_model:
-            config_loader.config.model.model = new_model
-        
-        await config_loader.save_config(config_loader.config)
-        await config_loader.load()
-        
-        api_key = provider_config.api_key
-        api_base = provider_config.api_base or metadata.default_api_base
-        
-        new_provider = LiteLLMProvider(
-            api_key=api_key,
-            api_base=api_base,
-            default_model=config_loader.config.model.model,
-            timeout=120.0,
-            max_retries=3,
-            provider_id=provider_id,
-        )
-        
-        self.reload_config(
-            provider=new_provider,
-            model=config_loader.config.model.model
-        )
-        
-        await self._send_reply(
-            msg,
-            f"提供商已切换\n\n"
-            f"从: {old_provider} ({old_model})\n"
-            f"到: {provider_id} ({config_loader.config.model.model})\n\n"
-            f"现在使用新提供商回复"
-        )
 
     async def _handle_help_command(self, msg: InboundMessage) -> None:
         """处理 /help 命令。"""
@@ -739,18 +950,22 @@ class ChannelMessageHandler:
             "━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "会话管理:\n"
             "  /new (/n) - 创建新会话\n"
-            "  /list (/l) - 查看最近10个会话\n"
-            "  /switch (/s) <编号|ID> - 切换会话\n"
+            "  /list (/l) - 查看当前聊天最近10个会话\n"
+            "  /all (/al) - 查看所有会话\n"
+            "  /switch (/s) <编号|ID> - 切换最近一次列表中的会话\n"
             "  /clear (/c) - 清除当前会话历史\n\n"
             "个性化设置:\n"
-            "  /personality (/p) - 查看/切换性格\n"
-            "  /provider (/m) - 查看/切换模型提供商\n\n"
+            "  /personality (/p) [编号|ID] - 查看/切换性格\n"
+            "  /provider (/m) [编号|ID] [模型] - 查看/切换模型\n\n"
             "控制:\n"
             "  /stop - 停止当前任务\n"
             "  /help (/h) - 显示此帮助\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "提示: 直接发消息即可对话\n"
-            "括号内为命令简写，如 /p 等同于 /personality\n"
+            "提示:\n"
+            "- 直接发消息即可对话\n"
+            "- 括号内为命令简写\n"
+            "- /l 查看当前聊天，/al 查看所有会话\n"
+            "- 使用 /m 或 /p 查看详细用法\n"
         )
         await self._send_reply(msg, help_text)
 

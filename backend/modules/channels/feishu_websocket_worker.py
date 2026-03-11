@@ -8,6 +8,7 @@ import json
 import os
 import signal
 import sys
+from typing import Any
 
 from loguru import logger
 
@@ -24,9 +25,37 @@ logger.add(sys.stderr, level="INFO")
 try:
     import lark_oapi as lark
     from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
+    FEISHU_SDK_AVAILABLE = True
 except ImportError:
-    logger.error("lark-oapi not installed")
-    sys.exit(1)
+    lark = None
+    P2ImMessageReceiveV1 = Any
+    FEISHU_SDK_AVAILABLE = False
+
+
+_IGNORED_EVENT_REGISTRATIONS = (
+    "register_p2_im_chat_access_event_bot_p2p_chat_entered_v1",
+    "register_p2_im_message_reaction_created_v1",
+    "register_p2_im_message_reaction_deleted_v1",
+)
+
+
+def _build_event_handler(on_message, on_ignored_event, builder=None):
+    """构建飞书事件分发器，并为无害事件注册空处理器。"""
+    if builder is None:
+        if not FEISHU_SDK_AVAILABLE:
+            raise RuntimeError("lark-oapi not installed")
+        builder = lark.EventDispatcherHandler.builder("", "")
+
+    builder = builder.register_p2_im_message_receive_v1(on_message)
+
+    for register_name in _IGNORED_EVENT_REGISTRATIONS:
+        register = getattr(builder, register_name, None)
+        if register is None:
+            logger.debug(f"Feishu SDK missing optional register method: {register_name}")
+            continue
+        builder = register(on_ignored_event)
+
+    return builder.build()
 
 
 class FeishuWebSocketWorker:
@@ -98,12 +127,21 @@ class FeishuWebSocketWorker:
             except Exception:
                 pass
 
+    def on_ignored_event(self, data: Any) -> None:
+        """忽略不影响业务的飞书事件，避免 SDK 输出 processor not found。"""
+        header = getattr(data, "header", None)
+        event_type = getattr(header, "event_type", type(data).__name__)
+        logger.debug(f"Ignored Feishu event: {event_type}")
+
     # ------------------------------------------------------------------
     # 生命周期
     # ------------------------------------------------------------------
 
     def start(self) -> None:
         """启动 WebSocket 连接。"""
+        if not FEISHU_SDK_AVAILABLE:
+            raise RuntimeError("lark-oapi not installed")
+
         logger.info(f"Starting Feishu WebSocket worker (app: {self.app_id[:12]}...)")
 
         try:
@@ -111,11 +149,7 @@ class FeishuWebSocketWorker:
         except Exception:
             pass
 
-        event_handler = (
-            lark.EventDispatcherHandler.builder("", "")
-            .register_p2_im_message_receive_v1(self.on_message)
-            .build()
-        )
+        event_handler = _build_event_handler(self.on_message, self.on_ignored_event)
 
         self.ws_client = lark.ws.Client(
             self.app_id,
