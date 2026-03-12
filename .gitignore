@@ -54,6 +54,10 @@ data/audit_logs/
 data/*.db
 data/*.db_*
 
+# ── 测试和脚本 ──────────────────────────────
+backend/tests/
+backend/scripts/
+
 # ── 运行时 ──────────────────────────────────
 *.pid
 data/.secret_key
