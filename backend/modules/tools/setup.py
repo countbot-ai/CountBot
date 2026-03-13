@@ -170,6 +170,19 @@ def register_all_tools(
             logger.debug("Registered memory tool (unified)")
         except Exception as e:
             logger.error(f"Failed to register memory tool: {e}")
-    
+
+    # 9. 注册小智AI send_message 工具（仅在小智频道启用且对话模式开启时注册）
+    try:
+        from backend.modules.config.loader import config_loader as _cl
+        xiaozhi_cfg = getattr(getattr(_cl.config, "channels", None), "xiaozhi", None)
+        if xiaozhi_cfg and xiaozhi_cfg.enabled and getattr(xiaozhi_cfg, "enable_conversation", False):
+            from backend.modules.tools.xiaozhi_message import XiaozhiMessageTool
+            tools.register(XiaozhiMessageTool())
+            logger.debug("✓ Registered xiaozhi send_message tool (conversation mode enabled)")
+        else:
+            logger.debug(f"Xiaozhi send_message tool not registered - enabled={xiaozhi_cfg.enabled if xiaozhi_cfg else False}, conversation={getattr(xiaozhi_cfg, 'enable_conversation', False) if xiaozhi_cfg else False}")
+    except Exception as e:
+        logger.warning(f"Failed to register xiaozhi send_message tool: {e}")
+
     logger.debug(f"Registered {len(tools.get_definitions())} tools")
     return tools

@@ -38,7 +38,7 @@ async def system_info():
 
     return {
         "api_url": api_url,
-        "version": "0.1.0",
+        "version": "0.4.0",
         "python_version": platform.python_version(),
         "os": f"{platform.system()} {platform.release()}",
         "arch": platform.machine(),

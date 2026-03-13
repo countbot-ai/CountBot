@@ -142,7 +142,7 @@ class SendMediaTool(Tool):
                     channel = parts[0]
                     chat_id = parts[1]
                     
-                    valid_channels = {'feishu', 'qq', 'dingtalk', 'telegram', 'discord', 'wechat'}
+                    valid_channels = {'feishu', 'qq', 'dingtalk', 'telegram', 'discord', 'wecom'}
                     if channel not in valid_channels:
                         logger.warning(f"Invalid channel: {channel}")
                         return None

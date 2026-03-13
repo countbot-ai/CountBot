@@ -359,7 +359,7 @@ async def handle_subscribe_event(
         session_id: 会话 ID
     """
     await connection_manager.bind_session(connection_id, session_id)
-    logger.info(f"连接 {connection_id} 订阅会话 {session_id}")
+    logger.debug(f"连接 {connection_id} 订阅会话 {session_id}")
 
 
 async def handle_unsubscribe_event(

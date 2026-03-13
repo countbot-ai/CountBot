@@ -190,7 +190,7 @@ class WebFetchTool(Tool):
             features.append("BeautifulSoup4 (better extraction)")
         features.append("httpx (fallback)")
         
-        logger.info(f"WebFetchTool initialized with: {', '.join(features)}")
+        logger.debug(f"WebFetchTool initialized with: {', '.join(features)}")
 
     @property
     def name(self) -> str:

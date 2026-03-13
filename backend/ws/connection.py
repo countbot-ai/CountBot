@@ -325,7 +325,7 @@ class ConnectionManager:
         async with self._lock:
             await websocket.accept()
             self._connections[connection_id] = websocket
-            logger.info(f"WebSocket 连接已建立: {connection_id}")
+            logger.debug(f"WebSocket 连接已建立: {connection_id}")
 
         return connection_id
 

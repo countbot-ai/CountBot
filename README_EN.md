@@ -18,7 +18,7 @@
 
 ## What's New
 
-- **Mar 13, 2026 — v0.4.0 Released** [View Detailed Update Guide](docs/releases/v0.4.0.md)
+- **Mar 14, 2026 — v0.4.0 Released** [View Detailed Update Guide](docs/releases/v0.4.0.md)
   - Session-level configuration system (independent API, model, prompts, personality per session)
   - Added Weibo, WeCom, Xiaozhi AI channels
   - Comprehensive multi-agent collaboration optimization
