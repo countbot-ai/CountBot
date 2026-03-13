@@ -339,13 +339,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CountBot Desktop API",
     description="CountBot backend API",
-    version="0.1.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
 # 保存绑定地址用于认证判断
 import os as _os
 app.state.bind_host = _os.getenv("HOST", "127.0.0.1")
+
+
+def get_tool_registry():
+    """返回全局共享工具注册表，供 XiaozhiChannel 等频道内部调用。"""
+    try:
+        return app.state.shared.get("tool_registry")
+    except AttributeError:
+        return None
 
 app.add_middleware(
     CORSMiddleware,
@@ -432,9 +440,9 @@ async def websocket_endpoint(websocket: WebSocket):
     is_local = client_ip in LOCAL_IPS and not has_proxy
     
     if has_proxy:
-        logger.info(f"WebSocket proxy headers detected, treating as remote (socket IP: {client_ip})")
+        logger.debug(f"WebSocket proxy headers detected, treating as remote (socket IP: {client_ip})")
     
-    logger.info(f"WebSocket connection from {client_ip} ({'local' if is_local else 'remote'})")
+    logger.debug(f"WebSocket connection from {client_ip} ({'local' if is_local else 'remote'})")
 
     if not is_local:
         pw_hash = ""
@@ -498,7 +506,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.4.0"}
 
 
 # 挂载前端静态文件
