@@ -61,12 +61,6 @@ class ConfigLoader:
                     f"检测到无效工作空间配置，已在启动时回退到默认目录: {workspace_path}"
                 )
             
-            if self.config.security.api_key_encryption_enabled:
-                self._decrypt_api_keys()
-                logger.info("API 密钥加密已启用")
-            else:
-                logger.warning("API 密钥加密未启用，建议在生产环境中启用")
-            
             logger.info("配置加载完成")
             return self.config
 
@@ -74,11 +68,6 @@ class ConfigLoader:
         """保存配置到数据库"""
         async with AsyncSessionLocal() as session:
             config_dict = self.config.model_dump()
-            
-            # 如果启用了加密，加密 API 密钥
-            if self.config.security.api_key_encryption_enabled:
-                config_dict = self._encrypt_api_keys_in_dict(config_dict)
-            
             await self._save_nested_dict(session, config_dict, "config")
             await session.commit()
             logger.info("配置保存完成")
@@ -149,38 +138,6 @@ class ConfigLoader:
             obj = getattr(obj, k)
         setattr(obj, keys[-1], value)
         await self.save()
-    
-    def _decrypt_api_keys(self) -> None:
-        """解密所有 provider 的 API 密钥"""
-        from backend.modules.config.security import get_security_manager
-        security_manager = get_security_manager()
-        
-        for provider_name, provider_config in self.config.providers.items():
-            if provider_config.api_key:
-                try:
-                    decrypted = security_manager.decrypt(provider_config.api_key)
-                    if decrypted:
-                        provider_config.api_key = decrypted
-                        logger.debug(f"解密 {provider_name} API 密钥")
-                except Exception as e:
-                    logger.warning(f"解密 {provider_name} API 密钥失败: {e}")
-    
-    def _encrypt_api_keys_in_dict(self, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """加密配置字典中的 API 密钥"""
-        from backend.modules.config.security import get_security_manager
-        security_manager = get_security_manager()
-        
-        if "providers" in config_dict:
-            for provider_name, provider_data in config_dict["providers"].items():
-                if isinstance(provider_data, dict) and provider_data.get("api_key"):
-                    try:
-                        encrypted = security_manager.encrypt(provider_data["api_key"])
-                        if encrypted:
-                            provider_data["api_key"] = encrypted
-                            logger.debug(f"加密 {provider_name} API 密钥")
-                    except Exception as e:
-                        logger.warning(f"加密 {provider_name} API 密钥失败: {e}")
-        return config_dict
 
 
 config_loader = ConfigLoader()

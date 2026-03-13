@@ -68,7 +68,7 @@ class WorkspaceConfig(BaseModel):
 class HeartbeatConfig(BaseModel):
     """主动问候配置"""
     enabled: bool = Field(default=False, description="是否启用主动问候")
-    channel: str = Field(default="", description="推送渠道（feishu/telegram/dingtalk/wechat/qq）")
+    channel: str = Field(default="", description="推送渠道（feishu/telegram/dingtalk/wecom/qq）")
     chat_id: str = Field(default="", description="推送目标 ID（群组或用户）")
     schedule: str = Field(default="0 * * * *", description="检查频率 cron 表达式")
     idle_threshold_hours: int = Field(default=4, ge=1, le=24, description="用户空闲多少小时后触发")
@@ -91,9 +91,6 @@ class PersonaConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     """安全配置"""
-    # API 密钥加密
-    api_key_encryption_enabled: bool = Field(default=False, description="是否启用 API 密钥加密")
-    
     # 危险命令检测
     dangerous_commands_blocked: bool = Field(default=True, description="是否阻止危险命令")
     custom_deny_patterns: list[str] = Field(default_factory=list, description="自定义拒绝模式列表")
@@ -150,14 +147,7 @@ class QQConfig(BaseModel):
     oss: Optional[TencentOSSConfig] = Field(default_factory=TencentOSSConfig)
 
 
-class WeChatConfig(BaseModel):
-    """微信渠道配置"""
-    enabled: bool = False
-    app_id: str = ""
-    app_secret: str = ""
-    token: str = ""
-    encoding_aes_key: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+
 
 
 class DingTalkConfig(BaseModel):
@@ -189,15 +179,33 @@ class WeiboConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)
 
 
+class WeComConfig(BaseModel):
+    """企业微信渠道配置"""
+    enabled: bool = False
+    bot_id: str = ""
+    secret: str = ""
+    websocket_url: str = Field(default="wss://openws.work.weixin.qq.com", description="WebSocket 连接地址")
+    allow_from: list[str] = Field(default_factory=list)
+
+
+class XiaozhiConfig(BaseModel):
+    """小智AI渠道配置（MCP Client 模式）"""
+    enabled: bool = False
+    endpoint: str = Field(default="", description="小智AI MCP WebSocket 接入点，如 ws://192.168.1.x:8765")
+    enable_conversation: bool = Field(default=False, description="启用对话模式（通过 send_message 工具接收用户消息）")
+    allow_from: list[str] = Field(default_factory=list)
+
+
 class ChannelsConfig(BaseModel):
     """渠道配置"""
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     qq: QQConfig = Field(default_factory=QQConfig)
-    wechat: WeChatConfig = Field(default_factory=WeChatConfig)
     dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
     weibo: WeiboConfig = Field(default_factory=WeiboConfig)
+    wecom: WeComConfig = Field(default_factory=WeComConfig)
+    xiaozhi: XiaozhiConfig = Field(default_factory=XiaozhiConfig)
 
 
 class AppConfig(BaseModel):
