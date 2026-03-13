@@ -18,7 +18,15 @@
 
 ## 最新动态
 
-- **2026年3月7日** 上线微博交互渠道，微博关注私信 @微博龙虾助手，发送 "连接龙虾"，简单配置即可实现 CountBot 交互
+- **2026年3月13日 - v0.4.0 发布** [查看详细更新说明](docs/releases/v0.4.0.md)
+  - 会话级配置系统（每个会话独立 API、模型、提示词、人格）
+  - 新增微博、企业微信、小智 AI 三个 IM 渠道
+  - 全面优化多智能体协作系统
+  - 新增 /help 命令（通过 IM 渠道输入即可体验）
+  - 集成 Mermaid 图表渲染引擎
+  - 全面兼容 OpenClaw Skills 技能生态
+  - Heartbeat 主动问候系统重构
+
 - **2026年3月4日 - v0.3.0 发布** [查看详细更新说明](docs/releases/v0.3.0.md)
   -  多智能体协作系统（Pipeline/Graph/Council 三种模式）
   -  定时任务增强（一次性任务、重试机制、批量操作）
@@ -298,7 +306,6 @@ countbot/
 - **LiteLLM** - 统一 LLM 接口，支持主流大模型
 - **Pydantic v2** - 数据验证和配置管理
 - **Loguru** - 结构化日志，易于调试
-- **cryptography** - Fernet 加密，保护 API 密钥
 
 ### 前端
 
@@ -394,8 +401,10 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 | 钉钉 | Stream 模式 | Client ID + Client Secret |
 | QQ | 官方 SDK | App ID + Secret |
 | 微博 | WebSocket 长连接 | App ID + App Secret |
-| 微信(即将上线) | 公众号 API | App ID + App Secret + Token |
+| 企业微信 | WebSocket 长连接 | Corp ID + Agent ID + Secret |
+| 小智 AI | WebSocket 长连接 | App ID + App Secret |
 | Telegram | Long Polling | Bot Token（支持自定义代理） |
+| 微信(即将上线) | 公众号 API | App ID + App Secret + Token |
 | Discord(即将上线) | Gateway | Bot Token |
 
 渠道支持 `allow_from` 白名单进行访问控制。
@@ -466,12 +475,6 @@ CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemi
 - 空字节注入阻断
 - 命令白名单/黑名单
 - 审计日志记录
-
-### API 密钥加密
-
-- Fernet 对称加密
-- 加密存储在 SQLite
-- 运行时自动解密
 
 ### 流量控制
 

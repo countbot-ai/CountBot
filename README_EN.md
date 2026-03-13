@@ -18,7 +18,15 @@
 
 ## What's New
 
-- **Mar 7, 2026** Added Weibo channel support - Follow @微博龙虾助手 on Weibo, send "连接龙虾" to connect CountBot
+- **Mar 13, 2026 — v0.4.0 Released** [View Detailed Update Guide](docs/releases/v0.4.0.md)
+  - Session-level configuration system (independent API, model, prompts, personality per session)
+  - Added Weibo, WeCom, Xiaozhi AI channels
+  - Comprehensive multi-agent collaboration optimization
+  - Added /help command (accessible via IM channels)
+  - Integrated Mermaid chart rendering engine
+  - Full compatibility with OpenClaw Skills ecosystem
+  - Heartbeat proactive greeting system refactored
+
 - **Mar 4, 2026 — v0.3.0 Released**  [View Detailed Update Guide](docs/releases/v0.3.0/)
   -  Multi-Agent Collaboration System (Pipeline/Graph/Council modes)
   -  Enhanced Cron Jobs (one-time tasks, retry mechanism, batch operations)
@@ -291,7 +299,6 @@ countbot/
 - **LiteLLM** — Unified LLM interface, supports all major models
 - **Pydantic v2** — Data validation and config management
 - **Loguru** — Structured logging, easy debugging
-- **cryptography** — Fernet encryption for API key protection
 
 ### Frontend
 
@@ -383,8 +390,10 @@ CountBot uses LiteLLM as a unified interface layer, compatible with OpenAI / Ant
 | DingTalk | Stream Mode | Client ID + Client Secret |
 | QQ | Official SDK | App ID + Secret |
 | Weibo | WebSocket | App ID + App Secret |
-| WeChat (Coming Soon) | Official Account API | App ID + App Secret + Token |
+| WeCom | WebSocket | Corp ID + Agent ID + Secret |
+| Xiaozhi AI | WebSocket | App ID + App Secret |
 | Telegram | Long Polling | Bot Token (proxy supported) |
+| WeChat (Coming Soon) | Official Account API | App ID + App Secret + Token |
 | Discord (Coming Soon) | Gateway | Bot Token |
 
 All channels support `allow_from` whitelist for access control.
@@ -455,12 +464,6 @@ Remote Access (192.168.x.x)
 - Null byte injection blocking
 - Command whitelist/blacklist
 - Audit logging
-
-### API Key Encryption
-
-- Fernet symmetric encryption
-- Encrypted storage in SQLite
-- Runtime auto-decryption
 
 ### Rate Limiting
 
