@@ -83,18 +83,6 @@ async def list_channels():
                     "allow_from": channels_config.qq.allow_from if hasattr(channels_config, 'qq') else []
                 }
             },
-            "wechat": {
-                "name": "WeChat",
-                "description": "WeChat messaging platform",
-                "icon": "wechat",
-                "enabled": channels_config.wechat.enabled if hasattr(channels_config, 'wechat') else False,
-                "configured": bool(channels_config.wechat.app_id and channels_config.wechat.app_secret) if hasattr(channels_config, 'wechat') else False,
-                "config": {
-                    "app_id": (channels_config.wechat.app_id[:8] + "...") if (hasattr(channels_config, 'wechat') and channels_config.wechat.app_id) else "",
-                    "app_secret": "***" if (hasattr(channels_config, 'wechat') and channels_config.wechat.app_secret) else "",
-                    "allow_from": channels_config.wechat.allow_from if hasattr(channels_config, 'wechat') else []
-                }
-            },
             "dingtalk": {
                 "name": "DingTalk",
                 "description": "DingTalk messaging platform",
@@ -131,6 +119,31 @@ async def list_channels():
                     "app_id": (channels_config.weibo.app_id[:8] + "...") if (hasattr(channels_config, 'weibo') and channels_config.weibo.app_id) else "",
                     "app_secret": "***" if (hasattr(channels_config, 'weibo') and channels_config.weibo.app_secret) else "",
                     "allow_from": channels_config.weibo.allow_from if hasattr(channels_config, 'weibo') else []
+                }
+            },
+            "wecom": {
+                "name": "WeCom",
+                "description": "Enterprise WeChat messaging platform",
+                "icon": "wecom",
+                "enabled": channels_config.wecom.enabled if hasattr(channels_config, 'wecom') else False,
+                "configured": bool(channels_config.wecom.bot_id and channels_config.wecom.secret) if hasattr(channels_config, 'wecom') else False,
+                "config": {
+                    "bot_id": (channels_config.wecom.bot_id[:8] + "...") if (hasattr(channels_config, 'wecom') and channels_config.wecom.bot_id) else "",
+                    "secret": "***" if (hasattr(channels_config, 'wecom') and channels_config.wecom.secret) else "",
+                    "websocket_url": channels_config.wecom.websocket_url if hasattr(channels_config, 'wecom') else "wss://openws.work.weixin.qq.com",
+                    "allow_from": channels_config.wecom.allow_from if hasattr(channels_config, 'wecom') else []
+                }
+            },
+            "xiaozhi": {
+                "name": "小智AI",
+                "description": "小智机器人 MCP 接入（工具调用/对话模式）",
+                "icon": "xiaozhi",
+                "enabled": channels_config.xiaozhi.enabled if hasattr(channels_config, 'xiaozhi') else False,
+                "configured": bool(channels_config.xiaozhi.endpoint) if hasattr(channels_config, 'xiaozhi') else False,
+                "config": {
+                    "endpoint": channels_config.xiaozhi.endpoint if hasattr(channels_config, 'xiaozhi') else "",
+                    "enable_conversation": channels_config.xiaozhi.enable_conversation if hasattr(channels_config, 'xiaozhi') else False,
+                    "allow_from": channels_config.xiaozhi.allow_from if hasattr(channels_config, 'xiaozhi') else []
                 }
             }
         }
@@ -180,41 +193,49 @@ async def test_channel(request: ChannelTestRequest):
             # 创建临时配置对象
             from backend.modules.config.schema import (
                 QQConfig, FeishuConfig, DingTalkConfig,
-                TelegramConfig, DiscordConfig, WeChatConfig, WeiboConfig
+                TelegramConfig, DiscordConfig, WeiboConfig, WeComConfig
             )
             
+            from backend.modules.config.schema import (
+                QQConfig, FeishuConfig, DingTalkConfig,
+                TelegramConfig, DiscordConfig, WeiboConfig, WeComConfig,
+                XiaozhiConfig,
+            )
             config_classes = {
                 "qq": QQConfig,
                 "feishu": FeishuConfig,
                 "dingtalk": DingTalkConfig,
                 "telegram": TelegramConfig,
                 "discord": DiscordConfig,
-                "wechat": WeChatConfig,
-                "weibo": WeiboConfig
+                "weibo": WeiboConfig,
+                "wecom": WeComConfig,
+                "xiaozhi": XiaozhiConfig,
             }
-            
+
             if request.channel not in config_classes:
                 return {
                     "success": False,
                     "message": f"不支持的渠道: {request.channel}"
                 }
-            
-            # 创建临时配置对象
+
             temp_config = config_classes[request.channel](**request.config)
-            
-            # 创建临时渠道实例进行测试
+
             from backend.modules.channels.qq import QQChannel
             from backend.modules.channels.feishu import FeishuChannel
             from backend.modules.channels.dingtalk import DingTalkChannel
             from backend.modules.channels.telegram import TelegramChannel
             from backend.modules.channels.weibo import WeiboChannel
-            
+            from backend.modules.channels.wecom import WeComChannel
+            from backend.modules.channels.xiaozhi import XiaozhiChannel
+
             channel_classes = {
                 "qq": QQChannel,
                 "feishu": FeishuChannel,
                 "dingtalk": DingTalkChannel,
                 "telegram": TelegramChannel,
                 "weibo": WeiboChannel,
+                "wecom": WeComChannel,
+                "xiaozhi": XiaozhiChannel,
             }
             
             if request.channel in channel_classes:
@@ -266,6 +287,22 @@ async def test_channel(request: ChannelTestRequest):
             # Telegram 渠道消息
             "Token not configured": "Token 未配置",
             "python-telegram-bot not installed": "python-telegram-bot 未安装",
+            
+            # 企业微信渠道消息
+            "Bot ID or Secret not configured": "Bot ID 或 Secret 未配置",
+            "Invalid Bot ID format - Bot ID should be at least 8 characters": "Bot ID 格式无效 - 至少需要 8 个字符",
+            "Invalid Secret format - Secret should be at least 16 characters": "Secret 格式无效 - 至少需要 16 个字符",
+            "Invalid Bot ID format - should contain only letters, numbers, hyphens and underscores": "Bot ID 格式无效 - 只能包含字母、数字、连字符和下划线",
+            "Invalid Secret format - should contain only letters, numbers, hyphens and underscores": "Secret 格式无效 - 只能包含字母、数字、连字符和下划线",
+            "Invalid WebSocket URL format - should start with ws:// or wss://": "WebSocket URL 格式无效 - 必须以 ws:// 或 wss:// 开头",
+            "WeCom credentials verified successfully - connection test passed": "企业微信凭据验证成功 - 连接测试通过",
+            "Invalid Bot ID or Secret - authentication failed (error code: 40001)": "Bot ID 或 Secret 无效 - 认证失败（错误码：40001）",
+            "Invalid Bot ID or Secret - bot not found or disabled (error code: 40014)": "Bot ID 或 Secret 无效 - 机器人未找到或已禁用（错误码：40014）",
+            "Invalid Bot ID - bot not found or incorrect format (error code: 93019)": "Bot ID 无效 - 机器人未找到或格式不正确（错误码：93019）",
+            "Connection timeout - check your network connection or WeCom API status": "连接超时 - 请检查网络连接或企业微信 API 状态",
+            "Invalid WebSocket URL - check the websocket_url configuration": "WebSocket URL 无效 - 请检查 websocket_url 配置",
+            "Invalid response format from WeCom server": "企业微信服务器响应格式无效",
+            "websockets library not installed. Run: pip install websockets": "websockets 库未安装。运行: pip install websockets",
         }
         
         # 翻译消息
@@ -290,6 +327,20 @@ async def test_channel(request: ChannelTestRequest):
                         translated_message = f"测试过于频繁，Telegram 暂时限制了请求，请 {seconds} 秒后再试（不影响正常聊天）"
                 else:
                     translated_message = f"连接失败: {error_detail}"
+            elif message.startswith("Invalid Bot ID or Secret - credentials rejected by WeCom:"):
+                error_detail = message[len("Invalid Bot ID or Secret - credentials rejected by WeCom:"):].strip()
+                translated_message = f"Bot ID 或 Secret 无效 - 企业微信拒绝了凭据: {error_detail}"
+            elif message.startswith("Connection closed by server - check your Bot ID and Secret (code:"):
+                import re
+                code_match = re.search(r'\(code: (\w+)\)', message)
+                if code_match:
+                    code = code_match.group(1)
+                    translated_message = f"服务器关闭连接 - 请检查 Bot ID 和 Secret（错误码：{code}）"
+                else:
+                    translated_message = "服务器关闭连接 - 请检查 Bot ID 和 Secret"
+            elif message.startswith("Network error - unable to reach WeCom API:"):
+                error_detail = message[len("Network error - unable to reach WeCom API:"):].strip()
+                translated_message = f"网络错误 - 无法连接到企业微信 API: {error_detail}"
         
         # 翻译 note 字段
         if result.get("bot_info") and result["bot_info"].get("note"):
@@ -298,7 +349,8 @@ async def test_channel(request: ChannelTestRequest):
                 "Full connection test will be performed when channel is enabled": "启用渠道后将进行完整连接测试",
                 "Format check passed. Real connection test will be performed when channel is enabled.": "格式检查通过。启用渠道后将进行真实连接测试。",
                 "Successfully obtained access token from Feishu API": "成功从飞书 API 获取访问令牌",
-                "Successfully authenticated with QQ API": "成功通过 QQ API 认证"
+                "Successfully authenticated with QQ API": "成功通过 QQ API 认证",
+                "Successfully authenticated with WeCom API": "成功通过企业微信 API 认证"
             }
             result["bot_info"]["note"] = note_translations.get(note, note)
         
@@ -335,7 +387,7 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo"]
+        supported_channels = ["telegram", "discord", "qq", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
         
         if request.channel not in supported_channels:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {request.channel}")
@@ -358,8 +410,11 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         try:
             if hasattr(fastapi_request.app.state, 'message_handler'):
                 message_handler = fastapi_request.app.state.message_handler
-                # 不需要传参数，reload_config 会从 config_loader 重新读取
                 message_handler.reload_config()
+                # 重新注册工具（含 xiaozhi send_message 的条件注册）
+                channel_manager = getattr(fastapi_request.app.state, 'channel_manager', None)
+                if channel_manager is not None:
+                    message_handler.set_channel_manager(channel_manager)
                 logger.info(f"Reloaded message handler config after updating {request.channel}")
         except Exception as e:
             logger.warning(f"Failed to reload message handler config: {e}")
@@ -385,78 +440,59 @@ async def get_channel_config(channel: str):
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo"]
-        
+        supported_channels = ["telegram", "discord", "qq", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
+
         if channel not in supported_channels:
             raise HTTPException(status_code=404, detail=f"Channel not found: {channel}")
-        
-        # 获取渠道配置
+
         channel_config = getattr(config.channels, channel, None)
-        
+
         if not channel_config:
-            # 如果配置不存在，创建默认配置
             logger.warning(f"Channel configuration not found for {channel}, creating default")
             from backend.modules.config.schema import (
-                TelegramConfig, DiscordConfig, QQConfig, 
-                WeChatConfig, DingTalkConfig, FeishuConfig, WeiboConfig
+                TelegramConfig, DiscordConfig, QQConfig,
+                DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig
             )
-            
             config_classes = {
-                "telegram": TelegramConfig,
-                "discord": DiscordConfig,
-                "qq": QQConfig,
-                "wechat": WeChatConfig,
-                "dingtalk": DingTalkConfig,
-                "feishu": FeishuConfig,
-                "weibo": WeiboConfig
+                "telegram": TelegramConfig, "discord": DiscordConfig,
+                "qq": QQConfig, "dingtalk": DingTalkConfig,
+                "feishu": FeishuConfig, "weibo": WeiboConfig,
+                "wecom": WeComConfig, "xiaozhi": XiaozhiConfig,
             }
-            
             channel_config = config_classes[channel]()
             setattr(config.channels, channel, channel_config)
             await config_loader.save()
-        
-        # 构建配置响应（根据不同渠道返回不同字段）
+
         config_dict = {
             "enabled": channel_config.enabled,
             "allow_from": getattr(channel_config, "allow_from", [])
         }
-        
-        # 添加渠道特定的配置字段
+
         if channel == "telegram":
-            config_dict.update({
-                "token": channel_config.token,
-                "proxy": getattr(channel_config, "proxy", None)
-            })
+            config_dict.update({"token": channel_config.token, "proxy": getattr(channel_config, "proxy", None)})
         elif channel == "discord":
-            config_dict.update({
-                "token": channel_config.token
-            })
+            config_dict.update({"token": channel_config.token})
         elif channel == "qq":
-            config_dict.update({
-                "app_id": channel_config.app_id,
-                "secret": channel_config.secret
-            })
-        elif channel == "wechat":
-            config_dict.update({
-                "app_id": channel_config.app_id,
-                "app_secret": channel_config.app_secret
-            })
+            config_dict.update({"app_id": channel_config.app_id, "secret": channel_config.secret})
         elif channel == "dingtalk":
-            config_dict.update({
-                "client_id": channel_config.client_id,
-                "client_secret": channel_config.client_secret
-            })
+            config_dict.update({"client_id": channel_config.client_id, "client_secret": channel_config.client_secret})
         elif channel == "feishu":
             config_dict.update({
-                "app_id": channel_config.app_id,
-                "app_secret": channel_config.app_secret,
+                "app_id": channel_config.app_id, "app_secret": channel_config.app_secret,
                 "encrypt_key": getattr(channel_config, "encrypt_key", ""),
                 "verification_token": getattr(channel_config, "verification_token", "")
             })
         elif channel == "weibo":
+            config_dict.update({"app_id": channel_config.app_id, "app_secret": channel_config.app_secret})
+        elif channel == "wecom":
             config_dict.update({
-                "app_id": channel_config.app_id,
-                "app_secret": channel_config.app_secret
+                "bot_id": channel_config.bot_id, "secret": channel_config.secret,
+                "websocket_url": getattr(channel_config, "websocket_url", "wss://openws.work.weixin.qq.com")
+            })
+        elif channel == "xiaozhi":
+            config_dict.update({
+                "endpoint": channel_config.endpoint,
+                "enable_conversation": channel_config.enable_conversation,
             })
         
         return {

@@ -17,10 +17,11 @@ _CHANNEL_REGISTRY: dict[str, tuple[str, str]] = {
     "telegram": ("backend.modules.channels.telegram", "TelegramChannel"),
     "discord": ("backend.modules.channels.discord", "DiscordChannel"),
     "qq": ("backend.modules.channels.qq", "QQChannel"),
-    "wechat": ("backend.modules.channels.wechat", "WeChatChannel"),
     "dingtalk": ("backend.modules.channels.dingtalk", "DingTalkChannel"),
     "feishu": ("backend.modules.channels.feishu", "FeishuChannel"),
     "weibo": ("backend.modules.channels.weibo", "WeiboChannel"),
+    "wecom": ("backend.modules.channels.wecom", "WeComChannel"),
+    "xiaozhi": ("backend.modules.channels.xiaozhi", "XiaozhiChannel"),
 }
 
 

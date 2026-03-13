@@ -426,6 +426,7 @@ class ChannelMessageHandler:
                 channel=original_msg.channel,
                 chat_id=original_msg.chat_id,
                 content=content,
+                metadata=original_msg.metadata,  # 传递原始消息的 metadata
             )
             await self.bus.publish_outbound(reply)
         except Exception as e:
