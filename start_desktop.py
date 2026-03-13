@@ -38,9 +38,6 @@ else:
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.utils.ssl_compat import ensure_ssl_certificates
-ensure_ssl_certificates()
-
 _server = None
 RESOURCES_DIR = PROJECT_ROOT / "resources"
 

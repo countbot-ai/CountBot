@@ -28,10 +28,6 @@ if sys.platform == "win32":
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# SSL 证书配置
-from backend.utils.ssl_compat import ensure_ssl_certificates
-ensure_ssl_certificates()
-
 
 def open_browser_delayed(url: str, delay: float = 15.0) -> None:
     """
