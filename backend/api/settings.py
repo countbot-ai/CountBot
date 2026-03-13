@@ -298,9 +298,6 @@ class WorkspaceConfigResponse(BaseModel):
 class SecurityConfigResponse(BaseModel):
     """安全配置响应"""
     
-    # API 密钥加密
-    api_key_encryption_enabled: bool = Field(..., description="是否启用 API 密钥加密")
-    
     # 危险命令检测
     dangerous_commands_blocked: bool = Field(..., description="是否阻止危险命令")
     custom_deny_patterns: list[str] = Field(..., description="自定义拒绝模式列表")
@@ -443,7 +440,6 @@ async def get_settings() -> SettingsResponse:
                 path=config.workspace.path,
             ),
             security=SecurityConfigResponse(
-                api_key_encryption_enabled=config.security.api_key_encryption_enabled,
                 dangerous_commands_blocked=config.security.dangerous_commands_blocked,
                 custom_deny_patterns=config.security.custom_deny_patterns,
                 command_whitelist_enabled=config.security.command_whitelist_enabled,
@@ -547,9 +543,6 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                     config.workspace.path = requested_workspace
         
         if request.security:
-            if "api_key_encryption_enabled" in request.security:
-                config.security.api_key_encryption_enabled = request.security["api_key_encryption_enabled"]
-            
             if "dangerous_commands_blocked" in request.security:
                 config.security.dangerous_commands_blocked = request.security["dangerous_commands_blocked"]
             
