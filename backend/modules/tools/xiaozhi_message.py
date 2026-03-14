@@ -4,7 +4,7 @@
 小智AI通过此工具将用户语音转发给 Agent 处理。
 """
 
-from typing import Any
+from typing import Any, Dict
 
 from backend.modules.tools.base import Tool
 
@@ -25,7 +25,7 @@ class XiaozhiMessageTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {

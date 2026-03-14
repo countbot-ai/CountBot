@@ -1,161 +1,68 @@
-"""LiteLLM Provider — 统一多模型流式调用"""
+"""OpenAI Provider — 使用官方 SDK"""
 
 import asyncio
 import json
-import os
-from typing import AsyncIterator, Any
+from typing import Any, AsyncIterator, Dict, List, Optional
 from loguru import logger
 from .base import LLMProvider, StreamChunk, ToolCall
 
 
-class LiteLLMProvider(LLMProvider):
-    """LiteLLM Provider 实现"""
+class OpenAIProvider(LLMProvider):
+    """OpenAI Provider 实现（兼容 OpenAI API 格式的所有服务）"""
     
     def __init__(
         self,
-        api_key: str | None = None,
-        api_base: str | None = None,
-        default_model: str = "anthropic/claude-4.5",
-        timeout: float = 600.0,  # 10分钟（符合行业标准，适应复杂任务）
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        default_model: str = "gpt-4o",
+        timeout: float = 600.0,
         max_retries: int = 3,
-        provider_id: str | None = None,
+        provider_id: Optional[str] = None,
         **kwargs: Any
     ):
-        # 在导入 litellm 之前设置环境变量，避免启动时网络请求
-        os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-        # 禁用 tiktoken 的网络请求（避免从 HuggingFace 下载 tokenizer）
-        os.environ["TIKTOKEN_CACHE_DIR"] = os.path.join(os.path.expanduser("~"), ".cache", "tiktoken")
-        # 设置离线模式，避免 tiktoken 尝试下载
-        os.environ["TRANSFORMERS_OFFLINE"] = "1"
-        os.environ["HF_HUB_OFFLINE"] = "1"
-        
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
-        self._configure_litellm(api_key, api_base)
-        self._suppress_litellm_logging()
-    
-    def _suppress_litellm_logging(self) -> None:
-        """禁用 LiteLLM 日志和网络请求"""
-        try:
-            import litellm
-            import logging
-            
-            os.environ["LITELLM_LOG"] = "ERROR"
-            litellm.suppress_debug_info = True
-            litellm.set_verbose = False
-            litellm.drop_params = True
-            litellm.telemetry = False
-            
-            # 禁用 tiktoken 以避免编码错误和网络请求
-            # 这会让 LiteLLM 跳过 token 计数，直接发送请求
-            os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-            
-            # 禁用远程模型价格映射获取（避免启动时网络超时）
-            litellm.suppress_debug_info = True
-            litellm.turn_off_message_logging = True
-            
-            # 完全禁用 tiktoken 的网络请求
-            # 设置离线模式，防止从 HuggingFace 下载 tokenizer
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["HF_DATASETS_OFFLINE"] = "1"
-            
-            # 设置 tiktoken 缓存目录（避免 Windows 权限问题）
-            try:
-                import tempfile
-                tiktoken_cache = os.path.join(tempfile.gettempdir(), "tiktoken_cache")
-                os.makedirs(tiktoken_cache, exist_ok=True)
-                os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache
-            except Exception:
-                pass
-            
-            for logger_name in ["LiteLLM", "httpx", "httpcore", "openai"]:
-                logging.getLogger(logger_name).setLevel(logging.CRITICAL)
-                logging.getLogger(logger_name).disabled = True
-        except Exception:
-            pass
-    
-    def _configure_litellm(self, api_key: str | None, api_base: str | None) -> None:
-        """配置 LiteLLM 环境变量"""
-        from .registry import find_provider_by_api_base, get_provider_metadata
-        # 优先用 provider_id 精确查找（自定义 API 的 api_base 为空，无法通过 URL 匹配）
-        provider_metadata = (
-            get_provider_metadata(self.provider_id) if self.provider_id
-            else (find_provider_by_api_base(api_base) if api_base else None)
-        )
-        
-        if provider_metadata:
-            if provider_metadata.env_key and api_key:
-                os.environ[provider_metadata.env_key] = api_key
-            
-            effective_base = api_base or provider_metadata.default_api_base or ""
-            for env_name, env_val in provider_metadata.env_extras:
-                resolved = env_val.replace("{api_key}", api_key or "")
-                resolved = resolved.replace("{api_base}", effective_base)
-                os.environ[env_name] = resolved
-        elif api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
     
     async def chat_stream(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        model: str | None = None,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """流式聊天补全"""
         try:
-            import litellm
+            from openai import AsyncOpenAI
             
-            # 使用用户指定的模型或默认模型
             model = model or self.default_model
             if not model:
                 raise ValueError("必须指定模型或设置默认模型")
             
-            logger.info(f"Calling LiteLLM: {model}, api_base: {self.api_base}")
+            logger.info(f"Calling OpenAI: {model}, api_base: {self.api_base}")
             
-            request_params: dict[str, Any] = {
+            # 初始化客户端
+            client_kwargs: Dict[str, Any] = {
+                "api_key": self.api_key or "not-needed",
+                "timeout": self.timeout,
+                "max_retries": 0,  # 我们自己处理重试
+            }
+            if self.api_base:
+                client_kwargs["base_url"] = self.api_base
+            
+            client = AsyncOpenAI(**client_kwargs)
+            
+            # 准备请求参数
+            request_params: Dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
                 "stream": True,
-                "timeout": self.timeout,
             }
             
-            # max_tokens: 0 表示不传此参数，由模型自行决定
             if max_tokens and max_tokens > 0:
                 request_params["max_tokens"] = max_tokens
-            
-            from .registry import find_provider_by_api_base, get_provider_metadata
-            
-            if self.api_base:
-                # 优先用 provider_id 精确查找，自定义 API 的 api_base 无法通过 URL 匹配
-                provider_metadata = (
-                    get_provider_metadata(self.provider_id) if self.provider_id
-                    else find_provider_by_api_base(self.api_base)
-                )
-                
-                if provider_metadata:
-                    if provider_metadata.litellm_prefix:
-                        should_skip = any(model.startswith(prefix) for prefix in provider_metadata.skip_prefixes)
-                        if not should_skip:
-                            request_params["model"] = f"{provider_metadata.litellm_prefix}/{model}"
-                    
-                    if model in provider_metadata.model_overrides:
-                        overrides = provider_metadata.model_overrides[model]
-                        request_params.update(overrides)
-                        logger.info(f"Applied overrides for {model}: {overrides}")
-                    
-                    request_params["api_base"] = self.api_base
-                    #  LiteLLM 强制要求 api_key，传占位值即可
-                    request_params["api_key"] = self.api_key or "not-needed"
-                else:
-                    request_params["api_base"] = self.api_base
-                    request_params["api_key"] = self.api_key or "not-needed"
-            elif self.api_key:
-                request_params["api_key"] = self.api_key
             
             if tools:
                 request_params["tools"] = tools
@@ -163,47 +70,44 @@ class LiteLLMProvider(LLMProvider):
             
             request_params.update(kwargs)
             
-            logger.debug(f"LiteLLM params: {json.dumps({k: v for k, v in request_params.items() if k not in ['api_key', 'messages']}, ensure_ascii=False)}")
+            logger.debug(f"OpenAI params: {json.dumps({k: v for k, v in request_params.items() if k not in ['api_key', 'messages']}, ensure_ascii=False)}")
 
-            # 带指数退避的重试机制（应对网络超时 / 瞬时故障）
-            response = None
-            last_err: Exception | None = None
+            # 带指数退避的重试机制
+            stream = None
+            last_err: Optional[Exception] = None
             for attempt in range(1, self.max_retries + 1):
                 try:
-                    response = await litellm.acompletion(**request_params)
+                    stream = await client.chat.completions.create(**request_params)
                     break
                 except Exception as e:
                     last_err = e
                     if attempt < self.max_retries:
                         wait = min(2 ** attempt, 30)
                         logger.warning(
-                            f"LiteLLM 调用失败 (第{attempt}/{self.max_retries}次)，"
+                            f"OpenAI 调用失败 (第{attempt}/{self.max_retries}次)，"
                             f"{wait}s 后重试: {e}"
                         )
                         await asyncio.sleep(wait)
                     else:
-                        logger.error(f"LiteLLM 调用最终失败 ({self.max_retries}次重试耗尽): {e}")
+                        logger.error(f"OpenAI 调用最终失败 ({self.max_retries}次重试耗尽): {e}")
                         raise
 
-            tool_call_buffer: dict[str, dict[str, Any]] = {}
+            tool_call_buffer: Dict[str, Dict[str, Any]] = {}
             reasoning_buffer = ""
             chunk_count = 0
-            content_yielded = False  # 已向调用方 yield 过内容/工具调用
-            stream_done = False      # 收到正常 finish_reason
+            content_yielded = False
+            stream_done = False
 
-            # ── 流式读取（支持中途超时重试）──────────────────────────
-            # 策略：
-            #   - 未 yield 任何内容前发生超时 → 完整重试请求（最多 max_retries 次）
-            #   - 已 yield 内容后发生超时    → 优雅结束（yield finish_reason）
             stream_retry = 0
             max_stream_retries = self.max_retries
 
             while not stream_done and stream_retry <= max_stream_retries:
                 try:
-                    async for chunk in response:
+                    async for chunk in stream:
                         chunk_count += 1
-                        if chunk_count <= 3:  # 只记录前3个chunk用于调试
-                            logger.debug(f"LiteLLM chunk #{chunk_count}: {chunk}")
+                        if chunk_count <= 3:
+                            logger.debug(f"OpenAI chunk #{chunk_count}: {chunk}")
+                        
                         if not chunk.choices:
                             continue
 
@@ -215,7 +119,7 @@ class LiteLLMProvider(LLMProvider):
                             content_yielded = True
                             yield StreamChunk(content=delta.content)
 
-                        # 处理推理内容（思考模型如 DeepSeek-R1、Kimi 等）
+                        # 处理推理内容（思考模型如 DeepSeek-R1、o1 等）
                         if hasattr(delta, "reasoning_content") and delta.reasoning_content:
                             reasoning_buffer += delta.reasoning_content
                             content_yielded = True
@@ -228,7 +132,7 @@ class LiteLLMProvider(LLMProvider):
                                 tc_id = getattr(tc_delta, "id", None)
                                 tc_index = getattr(tc_delta, "index", 0)
 
-                                # 统一使用 index 作为 key (Kimi 模型兼容性)
+                                # 统一使用 index 作为 key
                                 key = f"index_{tc_index}"
 
                                 # 初始化缓冲区
@@ -239,7 +143,7 @@ class LiteLLMProvider(LLMProvider):
                                         "arguments": ""
                                     }
 
-                                # 更新 ID (如果有)
+                                # 更新 ID
                                 if tc_id:
                                     tool_call_buffer[key]["id"] = tc_id
 
@@ -258,8 +162,6 @@ class LiteLLMProvider(LLMProvider):
                                 if tc_data["name"]:
                                     args_str = tc_data["arguments"].strip()
 
-                                    # Claude 模型可能返回空字符串而不是 "{}"
-                                    # 根据 OpenAI 兼容标准，空字符串应该被视为空对象
                                     if not args_str:
                                         arguments = {}
                                     else:
@@ -291,7 +193,8 @@ class LiteLLMProvider(LLMProvider):
                                 usage=usage_dict
                             )
                             stream_done = True
-                    # async for 正常耗尽（无 finish_reason chunk 的模型）
+                    
+                    # 流正常耗尽
                     if not stream_done:
                         stream_done = True
                         yield StreamChunk(finish_reason="stop")
@@ -301,99 +204,86 @@ class LiteLLMProvider(LLMProvider):
                     is_timeout = any(k in err_str.lower() for k in ("timeout", "timed out", "read error", "socket"))
 
                     if not content_yielded and is_timeout and stream_retry < max_stream_retries:
-                        # 尚未向用户发送任何内容 → 重试整个请求
                         stream_retry += 1
                         wait = min(2 ** stream_retry, 30)
                         logger.warning(
-                            f"LiteLLM 流读取超时（第{stream_retry}/{max_stream_retries}次），"
+                            f"OpenAI 流读取超时（第{stream_retry}/{max_stream_retries}次），"
                             f"{wait}s 后重试: {stream_err}"
                         )
                         await asyncio.sleep(wait)
-                        # 重新发起请求
-                        response = await litellm.acompletion(**request_params)
+                        stream = await client.chat.completions.create(**request_params)
                         tool_call_buffer = {}
                         reasoning_buffer = ""
                         chunk_count = 0
                     elif content_yielded and is_timeout:
-                        # 已有部分内容 → 优雅截断
                         logger.warning(
-                            f"LiteLLM 流式读取超时（已发送 {chunk_count} 个 chunk），"
+                            f"OpenAI 流式读取超时（已发送 {chunk_count} 个 chunk），"
                             f"优雅截断并结束流: {stream_err}"
                         )
-                        # 直接结束流，不添加警告信息
-                        yield StreamChunk(finish_reason="length")  # 使用 length 表示被截断
+                        yield StreamChunk(finish_reason="length")
                         stream_done = True
                     else:
-                        # 非超时错误或重试耗尽 → 向上抛出
                         raise
 
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"LiteLLM call failed: {error_msg}")
+            logger.error(f"OpenAI call failed: {error_msg}")
             friendly_msg = self._format_error_message(error_msg)
             yield StreamChunk(error=friendly_msg)
     
     @staticmethod
     def _format_error_message(raw: str) -> str:
-        """将 LLM 原始错误转换为用户友好提示"""
+        """将 OpenAI 原始错误转换为用户友好提示"""
         lower = raw.lower()
 
-        # 余额不足 / 配额耗尽（通用模式）
         if any(k in lower for k in ("429", "余额不足", "quota", "rate limit", "insufficient_quota", "insufficient balance", "资源包", "balance")):
             if "余额" in raw or "资源包" in raw or "充值" in raw or "balance" in lower:
                 return "API 账户余额不足，请前往服务商控制台充值后重试。"
             return "请求过于频繁或 API 配额已用尽，请稍后重试或检查账户额度。"
 
-        # 认证失败（通用模式）
         if any(k in lower for k in ("401", "unauthorized", "invalid.*api.*key", "authentication", "token is unusable", "invalid token", "api key")):
             return "API 密钥无效或已过期，请在设置中检查并更新密钥。"
 
-        # 模型不存在
         if any(k in lower for k in ("404", "model not found", "model_not_found", "does not exist")):
             return "所选模型不可用，请在设置中确认模型名称是否正确。"
 
-        # 上下文过长
         if any(k in lower for k in ("context length", "max.*token", "too long", "context_length_exceeded")):
             return "对话上下文过长，请尝试新建会话或清除历史消息。"
 
-        # 服务端错误
         if any(k in lower for k in ("500", "502", "503", "504", "internal server error", "service unavailable")):
             return "AI 服务暂时不可用，请稍后重试。"
 
-        # 网络 / 超时
         if any(k in lower for k in ("timeout", "connection", "network", "ssl", "timed out")):
             return "网络连接异常，请检查网络设置后重试。"
 
-        # 兜底
         return f"AI 调用出错: {raw[:200]}"
 
     def get_default_model(self) -> str:
         """获取默认模型"""
-        return self.default_model or "anthropic/claude-4.5"
+        return self.default_model or "gpt-4o"
     
     async def transcribe(
         self,
         audio_file: bytes,
         model: str = "whisper-1",
-        language: str | None = None,
+        language: Optional[str] = None,
         **kwargs: Any
     ) -> str:
-        """转录音频为文本
-        
-        使用 litellm 的转录功能
-        
-        Args:
-            audio_file: 音频文件字节
-            model: 转录模型
-            language: 语言代码
-            **kwargs: 其他参数
-            
-        Returns:
-            转录文本
-        """
+        """转录音频为文本"""
         try:
-            import litellm
+            from openai import AsyncOpenAI
             import tempfile
+            import os
+            
+            # 初始化客户端
+            client_kwargs: Dict[str, Any] = {
+                "api_key": self.api_key or "not-needed",
+                "timeout": self.timeout,
+            }
+            if self.api_base:
+                client_kwargs["base_url"] = self.api_base
+            
+            client = AsyncOpenAI(**client_kwargs)
             
             # 创建临时文件
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
@@ -402,7 +292,7 @@ class LiteLLMProvider(LLMProvider):
             
             try:
                 # 准备请求参数
-                request_params: dict[str, Any] = {
+                request_params: Dict[str, Any] = {
                     "model": model,
                     "file": open(temp_path, "rb"),
                 }
@@ -412,8 +302,8 @@ class LiteLLMProvider(LLMProvider):
                 
                 request_params.update(kwargs)
                 
-                # 调用 litellm 转录
-                response = await litellm.atranscription(**request_params)
+                # 调用转录
+                response = await client.audio.transcriptions.create(**request_params)
                 
                 return response.text
             

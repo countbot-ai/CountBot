@@ -5,7 +5,7 @@ import json
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from loguru import logger
 
@@ -28,8 +28,8 @@ class SubagentTask:
         task_id: str,
         label: str,
         message: str,
-        session_id: str | None = None,
-        system_prompt: str | None = None,
+        session_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         event_callback=None,
         enable_skills: bool = False,
     ):
@@ -43,15 +43,15 @@ class SubagentTask:
         self.enable_skills = enable_skills  # 是否启用技能系统
         self.status = TaskStatus.PENDING
         self.progress = 0
-        self.result: str | None = None
-        self.error: str | None = None
+        self.result: Optional[str] = None
+        self.error: Optional[str] = None
         self.created_at = datetime.now()
-        self.started_at: datetime | None = None
-        self.completed_at: datetime | None = None
-        self.tool_call_records: list[dict[str, Any]] = []
+        self.started_at: Optional[datetime] = None
+        self.completed_at: Optional[datetime] = None
+        self.tool_call_records: List[Dict[str, Any]] = []
         self.done_event = asyncio.Event()  # set when task reaches a terminal state
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
             "task_id": self.task_id,
@@ -86,12 +86,12 @@ class SubagentManager:
         self.db_session_factory = db_session_factory
         self.config_loader = config_loader
         self.skills = skills  # 技能系统实例
-        self.tasks: dict[str, SubagentTask] = {}
-        self.running_tasks: dict[str, asyncio.Task] = {}
+        self.tasks: Dict[str, SubagentTask] = {}
+        self.running_tasks: Dict[str, asyncio.Task] = {}
         
         logger.debug("SubagentManager initialized")
 
-    def _resolve_runtime_model_settings(self) -> tuple[str, float, int]:
+    def _resolve_runtime_model_settings(self) -> Tuple[str, float, int]:
         """获取当前执行应使用的模型参数，优先读取最新配置。"""
         model = self.model
         temperature = self.temperature
@@ -116,8 +116,8 @@ class SubagentManager:
         self,
         label: str,
         message: str,
-        session_id: str | None = None,
-        system_prompt: str | None = None,
+        session_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         event_callback=None,
         enable_skills: bool = False,
     ) -> str:
@@ -304,7 +304,7 @@ class SubagentManager:
                     import json
 
                     # Deduplicate parallel tool calls with identical (name, arguments)
-                    seen_sigs: set[str] = set()
+                    seen_sigs: Set[str] = set()
                     deduped: list = []
                     for _tc in tool_calls_buffer:
                         _sig = f"{_tc.name}:{json.dumps(_tc.arguments, sort_keys=True)}"
@@ -336,7 +336,7 @@ class SubagentManager:
                         import time as _time
                         _tc_start = _time.time()
 
-                        record: dict[str, Any] = {
+                        record: Dict[str, Any] = {
                             "tool_call_id": tool_call.id,
                             "name": tool_call.name,
                             "arguments": tool_call.arguments,
@@ -630,7 +630,7 @@ class SubagentManager:
         
         return False
 
-    def get_task(self, task_id: str) -> SubagentTask | None:
+    def get_task(self, task_id: str) -> Optional[SubagentTask]:
         """
         获取任务信息
         
@@ -644,9 +644,9 @@ class SubagentManager:
 
     def list_tasks(
         self,
-        status: TaskStatus | None = None,
-        session_id: str | None = None,
-    ) -> list[SubagentTask]:
+        status: Optional[TaskStatus] = None,
+        session_id: Optional[str] = None,
+    ) -> List[SubagentTask]:
         """
         列出任务
         
@@ -672,7 +672,7 @@ class SubagentManager:
         
         return tasks
 
-    def get_running_tasks(self) -> list[SubagentTask]:
+    def get_running_tasks(self) -> List[SubagentTask]:
         """
         获取所有运行中的任务
         
@@ -710,7 +710,7 @@ class SubagentManager:
         """Return the number of currently running subagents."""
         return len(self.running_tasks)
 
-    def get_stats(self) -> dict[str, int]:
+    def get_stats(self) -> Dict[str, int]:
         """
         获取任务统计信息
         

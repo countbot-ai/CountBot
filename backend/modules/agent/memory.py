@@ -14,6 +14,7 @@
 - 对话自动总结写入
 """
 
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +30,7 @@ class MemoryStore:
         self.memory_file = self.memory_dir / "MEMORY.md"
         logger.debug(f"MemoryStore initialized: {self.memory_file}")
 
-    def _read_lines(self) -> list[str]:
+    def _read_lines(self) -> List[str]:
         """读取所有记忆行"""
         if not self.memory_file.exists():
             return []
@@ -38,7 +39,7 @@ class MemoryStore:
             return []
         return content.strip().split("\n")
 
-    def _write_lines(self, lines: list[str]) -> None:
+    def _write_lines(self, lines: List[str]) -> None:
         """写入所有记忆行"""
         self.memory_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -83,7 +84,7 @@ class MemoryStore:
         logger.info(f"Memory appended at line {line_num}: {entry[:80]}...")
         return line_num
 
-    def read_lines(self, start: int, end: int | None = None) -> str:
+    def read_lines(self, start: int, end: Optional[int] = None) -> str:
         """按行号读取记忆
 
         Args:
@@ -112,7 +113,7 @@ class MemoryStore:
 
         return "\n".join(result)
 
-    def search(self, keywords: list[str], max_results: int = 15, match_mode: str = "or") -> str:
+    def search(self, keywords: List[str], max_results: int = 15, match_mode: str = "or") -> str:
         """关键词搜索记忆
 
         支持单词和多词搜索，可选择AND或OR逻辑。
@@ -164,7 +165,7 @@ class MemoryStore:
 
         return "\n".join(results)
 
-    def delete_lines(self, line_numbers: list[int]) -> int:
+    def delete_lines(self, line_numbers: List[int]) -> int:
         """删除指定行号的记忆
 
         Args:
@@ -219,8 +220,8 @@ class MemoryStore:
             return {"total": 0, "sources": {}, "date_range": ""}
 
         # 统计来源分布
-        sources: dict[str, int] = {}
-        dates: list[str] = []
+        sources: Dict[str, int] = {}
+        dates: List[str] = []
         for line in lines:
             parts = line.split("|", 2)
             if len(parts) >= 2:
@@ -248,7 +249,7 @@ class ConversationSummarizer:
 
     async def summarize_conversation(
         self,
-        messages: list[dict],
+        messages: List[dict],
         previous_summary: str = "",
     ) -> str:
         """总结对话历史
@@ -296,7 +297,7 @@ class ConversationSummarizer:
 
     def should_summarize(
         self,
-        messages: list[dict],
+        messages: List[dict],
         message_threshold: int = 20,
         char_threshold: int = 10000,
     ) -> bool:
@@ -306,9 +307,9 @@ class ConversationSummarizer:
 
     def get_messages_to_keep(
         self,
-        messages: list[dict],
+        messages: List[dict],
         keep_recent: int = 10,
-    ) -> tuple[list[dict], list[dict]]:
+    ) -> Tuple[List[dict], List[dict]]:
         """分割消息（委托给 MessageAnalyzer）"""
         from backend.modules.agent.analyzer import MessageAnalyzer
         return MessageAnalyzer().split_messages(messages, keep_recent)

@@ -11,8 +11,9 @@ import locale
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -63,8 +64,8 @@ class ExecTool(Tool):
         timeout: int = 30,
         max_output_length: int = 10000,
         allow_dangerous: bool = False,
-        deny_patterns: list[str] | None = None,
-        allow_patterns: list[str] | None = None,
+        deny_patterns: Optional[List[str]] = None,
+        allow_patterns: Optional[List[str]] = None,
         restrict_to_workspace: bool = True,
     ):
         """初始化 Shell 执行工具
@@ -101,7 +102,7 @@ class ExecTool(Tool):
         return "Execute a shell command in the workspace. REQUIRED: 'command' parameter must be provided with the shell command to execute."
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -157,12 +158,25 @@ class ExecTool(Tool):
             logger.info(f"执行命令: {command} (cwd: {cwd})")
             
             # 创建子进程
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd),
-            )
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(cwd),
+                )
+            except NotImplementedError as e:
+                error_msg = f"Error: Subprocess not supported on this platform: {str(e)}"
+                logger.error(error_msg)
+                return error_msg
+            except PermissionError as e:
+                error_msg = f"Error: Permission denied: {str(e)}"
+                logger.error(error_msg)
+                return error_msg
+            except OSError as e:
+                error_msg = f"Error: Failed to create subprocess: {str(e)}"
+                logger.error(error_msg)
+                return error_msg
             
             # 等待完成（带超时）
             try:
@@ -258,7 +272,7 @@ class ExecTool(Tool):
         logger.warning(f"所有编码尝试失败，使用 UTF-8 replace 模式。已尝试: {unique_encodings}")
         return output.decode('utf-8', errors='replace')
 
-    def _guard_command(self, command: str, cwd: str) -> str | None:
+    def _guard_command(self, command: str, cwd: str) -> Optional[str]:
         """命令安全检查
         
         Args:

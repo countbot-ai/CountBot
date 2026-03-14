@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 
 @dataclass
@@ -10,18 +10,18 @@ class ToolCall:
     """工具调用数据"""
     id: str
     name: str
-    arguments: dict[str, Any]
+    arguments: Dict[str, Any]
 
 
 @dataclass
 class StreamChunk:
     """流式响应块"""
-    content: str | None = None
-    tool_call: ToolCall | None = None
-    finish_reason: str | None = None
-    usage: dict[str, int] | None = None
-    error: str | None = None
-    reasoning_content: str | None = None
+    content: Optional[str] = None
+    tool_call: Optional[ToolCall] = None
+    finish_reason: Optional[str] = None
+    usage: Optional[Dict[str, int]] = None
+    error: Optional[str] = None
+    reasoning_content: Optional[str] = None
 
     @property
     def is_content(self) -> bool:
@@ -49,9 +49,9 @@ class LLMProvider(ABC):
 
     def __init__(
         self,
-        api_key: str | None = None,
-        api_base: str | None = None,
-        default_model: str | None = None,
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        default_model: Optional[str] = None,
         timeout: float = 120.0,
         max_retries: int = 3,
     ):
@@ -64,9 +64,9 @@ class LLMProvider(ABC):
     @abstractmethod
     async def chat_stream(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        model: str | None = None,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
         **kwargs: Any,
@@ -83,7 +83,7 @@ class LLMProvider(ABC):
         self,
         audio_file: bytes,
         model: str = "whisper-1",
-        language: str | None = None,
+        language: Optional[str] = None,
         **kwargs: Any,
     ) -> str:
         """音频转文本（可选能力）"""

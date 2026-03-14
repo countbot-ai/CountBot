@@ -1,5 +1,6 @@
 """认证 API 端点"""
 
+from typing import Tuple
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -41,7 +42,7 @@ _AUTH_KEY_USERNAME = "auth.username"
 _AUTH_KEY_PASSWORD_HASH = "auth.password_hash"
 
 
-async def get_stored_credentials() -> tuple[str, str]:
+async def get_stored_credentials() -> Tuple[str, str]:
     """获取存储的用户名和密码哈希"""
     from sqlalchemy import select
     from backend.database import AsyncSessionLocal

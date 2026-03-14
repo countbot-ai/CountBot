@@ -1,7 +1,7 @@
 """文件系统工具 - 支持行号显示、行范围读取、追加写入、按行编辑"""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -78,7 +78,7 @@ class ReadFileTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -144,8 +144,8 @@ class ReadFileTool(Tool):
     async def _read_single_file(
         self, 
         path_str: str, 
-        start_line: int | None, 
-        end_line: int | None, 
+        start_line: Optional[int], 
+        end_line: Optional[int], 
         show_line_numbers: bool
     ) -> str:
         """读取单个文件（原有逻辑）"""
@@ -210,7 +210,7 @@ class ReadFileTool(Tool):
             logger.error(f"Unexpected error reading file '{path_str}': {ex}")
             return f"Error reading file: {str(ex)}"
 
-    async def _read_multiple_files(self, paths_list: list[str], show_line_numbers: bool) -> str:
+    async def _read_multiple_files(self, paths_list: List[str], show_line_numbers: bool) -> str:
         """批量读取多个文件"""
         results = []
         success_count = 0
@@ -304,7 +304,7 @@ class WriteFileTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -384,7 +384,7 @@ class EditFileTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -473,7 +473,7 @@ class EditFileTool(Tool):
         return f"Edited {path_str} (replaced 1 occurrence)"
 
     def _edit_by_lines(self, file_path: Path, path_str: str, content: str,
-                       start_line: int, end_line: int | None,
+                       start_line: int, end_line: Optional[int],
                        new_text: str, insert_mode: bool) -> str:
         lines = content.splitlines(keepends=True)
         total = len(lines)
@@ -532,7 +532,7 @@ class ListDirTool(Tool):
         return "List contents of a directory. Returns files and subdirectories with sizes."
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple
 
 from loguru import logger
 from sqlalchemy import create_engine, inspect
@@ -36,7 +37,7 @@ class CompatibilityTableMigration:
     """单表兼容迁移定义。"""
 
     table_name: str
-    columns: tuple[CompatibilityColumnMigration, ...]
+    columns: Tuple[CompatibilityColumnMigration, ...]
 
 
 _SCHEMA_COMPATIBILITY_MIGRATIONS = (
@@ -117,7 +118,7 @@ def get_db_session_factory():
 
 def _apply_schema_compatibility_migrations(
     sync_conn,
-    migrations: tuple[CompatibilityTableMigration, ...] = _SCHEMA_COMPATIBILITY_MIGRATIONS,
+    migrations: Tuple[CompatibilityTableMigration, ...] = _SCHEMA_COMPATIBILITY_MIGRATIONS,
 ) -> None:
     """对旧版本数据库执行最小 schema 兼容迁移。"""
     inspector = inspect(sync_conn)

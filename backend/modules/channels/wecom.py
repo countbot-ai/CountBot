@@ -469,66 +469,68 @@ class LongConnBot:
         # 发送思考提示
         await self.send_thinking_reply(frame, stream_id)
         
-        # 调用处理器
         if self.handler:
             try:
-                # 创建流式处理器
                 async def stream_handler(text_chunk: str, is_final: bool = False, is_reasoning: bool = False):
+                    """流式处理器：累积文本并发送到企业微信"""
                     state = self.get_stream_state(message_id)
                     if not state:
+                        logger.warning(f"[LongConnBot] Stream state not found for message {message_id}")
                         return
                     
-                    # 更新状态
+                    # 累积文本
                     if is_reasoning:
                         state.reasoning_text += text_chunk
                     else:
                         state.accumulated_text += text_chunk
                     
-                    # 检查是否应该发送更新
-                    if not is_final and not self.can_send_intermediate(state):
+                    logger.debug(f"[LongConnBot] Stream: chunk={len(text_chunk)}, final={is_final}, total={len(state.accumulated_text)}")
+                    
+                    # 最终消息：发送完整内容
+                    if is_final:
+                        content_to_send = build_stream_content(
+                            reasoning_text=state.reasoning_text,
+                            visible_text=state.accumulated_text,
+                            finish=True
+                        )
+                        
+                        logger.info(f"[LongConnBot] Final reply: {len(content_to_send)} chars")
+                        await self.send_stream_reply(frame, stream_id, content_to_send, finish=True)
+                        
+                        state.finished = True
+                        self.delete_stream_state(message_id)
                         return
                     
-                    if not is_final and self.should_throttle_update(state):
+                    # 中间更新：检查节流
+                    if not self.can_send_intermediate(state):
                         return
                     
-                    # 构建内容
+                    if self.should_throttle_update(state):
+                        return
+                    
+                    # 发送中间更新
                     content_to_send = build_stream_content(
                         reasoning_text=state.reasoning_text,
                         visible_text=state.accumulated_text,
-                        finish=is_final
+                        finish=False
                     )
                     
-                    # 发送流式更新
-                    await self.send_stream_reply(frame, stream_id, content_to_send, finish=is_final)
-                    
+                    await self.send_stream_reply(frame, stream_id, content_to_send, finish=False)
                     state.last_send_time = time.time() * 1000
                     state.message_count += 1
-                    
-                    if is_final:
-                        state.finished = True
-                        self.delete_stream_state(message_id)
                 
-                # 调用处理器（支持流式）
-                if hasattr(self.handler, '__call__'):
-                    # 检查处理器是否支持流式
-                    import inspect
-                    sig = inspect.signature(self.handler)
-                    if 'stream_handler' in sig.parameters:
-                        # 支持流式的处理器
-                        await self.handler(sender_id, chat_id, content, frame.body, stream_handler=stream_handler)
-                    else:
-                        # 传统处理器
-                        response = await self.handler(sender_id, chat_id, content, frame.body)
-                        if response:
-                            await stream_handler(response, is_final=True)
+                # 通过 metadata 传递流式处理器
+                metadata = frame.body.copy()
+                metadata['_stream_handler'] = stream_handler
+                
+                await self.handler(sender_id, chat_id, content, metadata)
                 
             except Exception as e:
                 logger.error(f"[LongConnBot] Handler error: {e}")
-                # 发送错误回复
-                await stream_handler("处理消息时发生错误，请稍后重试。", is_final=True)
-            finally:
-                # 确保清理状态
-                self.delete_stream_state(message_id)
+                state = self.get_stream_state(message_id)
+                if state:
+                    await self.send_stream_reply(frame, stream_id, "处理消息时发生错误，请稍后重试。", finish=True)
+                    self.delete_stream_state(message_id)
     async def _handle_event_callback(self, frame: LongConnFrame) -> None:
         """处理事件回调"""
         if not frame.body:
@@ -805,42 +807,19 @@ class WeComChannel(BaseChannel):
     async def _handle_message_wrapper(self, sender_id: str, chat_id: str, content: str, metadata: Dict[str, Any], stream_handler=None) -> Optional[str]:
         """处理收到的消息 - 支持流式回复"""
         try:
-            # 创建入站消息对象
-            inbound_msg = InboundMessage(
-                channel=self.name,
+            await self._handle_message(
                 sender_id=sender_id,
                 chat_id=chat_id,
                 content=content,
                 metadata=metadata
             )
-            
-            # 如果有流式处理器，使用流式模式
-            if stream_handler:
-                # 调用基类的流式消息处理
-                await self._handle_message(
-                    sender_id=sender_id,
-                    chat_id=chat_id,
-                    content=content,
-                    metadata=metadata
-                )
-                return None  # 流式模式不需要返回值
-            else:
-                # 传统模式处理
-                await self._handle_message(
-                    sender_id=sender_id,
-                    chat_id=chat_id,
-                    content=content,
-                    metadata=metadata
-                )
-                return None
+            return None
             
         except Exception as e:
             logger.error(f"[WeCom] Message handler error: {e}")
             if stream_handler:
                 await stream_handler("处理消息时发生错误，请稍后重试。", is_final=True)
-                return None
-            else:
-                return "处理消息时发生错误"
+            return None
     
     async def send(self, msg: OutboundMessage) -> None:
         """发送消息"""

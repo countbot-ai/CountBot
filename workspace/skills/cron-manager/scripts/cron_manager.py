@@ -5,6 +5,7 @@
 支持创建、查看、修改、删除、启用/禁用、手动触发、验证表达式。
 """
 
+from typing import Optional, Union
 import argparse
 import json
 import sys
@@ -19,7 +20,7 @@ API_BASE = "http://127.0.0.1:8000/api/cron"
 BUILTIN_PREFIX = "builtin:"
 
 
-def _api_request(method: str, path: str, data: dict | None = None) -> dict:
+def _api_request(method: str, path: str, data: Optional[dict] = None) -> dict:
     """发送 API 请求"""
     url = f"{API_BASE}{path}"
     headers = {"Content-Type": "application/json"}

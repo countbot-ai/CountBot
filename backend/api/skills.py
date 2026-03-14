@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
@@ -29,7 +29,7 @@ class SkillInfo(BaseModel):
     description: str = Field(..., description="技能描述")
     enabled: bool = Field(..., description="是否启用")
     auto_load: bool = Field(..., description="是否自动加载", alias="autoLoad")
-    requirements: list[str] = Field(default_factory=list, description="依赖要求")
+    requirements: List[str] = Field(default_factory=list, description="依赖要求")
     source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
     
     class Config:
@@ -44,7 +44,7 @@ class SkillDetail(BaseModel):
     content: str = Field(..., description="技能内容")
     enabled: bool = Field(..., description="是否启用")
     auto_load: bool = Field(..., description="是否自动加载", alias="autoLoad")
-    requirements: list[str] = Field(default_factory=list, description="依赖要求")
+    requirements: List[str] = Field(default_factory=list, description="依赖要求")
     source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
     
     class Config:
@@ -54,7 +54,7 @@ class SkillDetail(BaseModel):
 class ListSkillsResponse(BaseModel):
     """技能列表响应"""
     
-    skills: list[SkillInfo] = Field(..., description="技能列表")
+    skills: List[SkillInfo] = Field(..., description="技能列表")
 
 
 class ToggleSkillRequest(BaseModel):
@@ -67,7 +67,7 @@ class ToggleSkillResponse(BaseModel):
     """切换技能响应"""
     
     success: bool = Field(..., description="是否成功")
-    message: str | None = Field(None, description="消息")
+    message: Optional[str] = Field(None, description="消息")
 
 
 class CreateSkillRequest(BaseModel):
@@ -77,7 +77,7 @@ class CreateSkillRequest(BaseModel):
     description: str = Field("", description="技能描述")
     content: str = Field(..., description="技能内容", min_length=1)
     auto_load: bool = Field(False, description="是否自动加载", alias="autoLoad")
-    requirements: list[str] = Field(default_factory=list, description="依赖要求")
+    requirements: List[str] = Field(default_factory=list, description="依赖要求")
     
     class Config:
         populate_by_name = True
@@ -89,7 +89,7 @@ class UpdateSkillRequest(BaseModel):
     description: str = Field("", description="技能描述")
     content: str = Field(..., description="技能内容", min_length=1)
     auto_load: bool = Field(False, description="是否自动加载", alias="autoLoad")
-    requirements: list[str] = Field(default_factory=list, description="依赖要求")
+    requirements: List[str] = Field(default_factory=list, description="依赖要求")
     
     class Config:
         populate_by_name = True
@@ -108,18 +108,18 @@ class ConfigFieldSchema(BaseModel):
     key: str = Field(..., description="字段键名")
     type: str = Field(..., description="字段类型")
     label: str = Field(..., description="显示标签")
-    description: str | None = Field(None, description="字段说明")
+    description: Optional[str] = Field(None, description="字段说明")
     required: bool = Field(False, description="是否必填")
     sensitive: bool = Field(False, description="是否敏感信息")
     readonly: bool = Field(False, description="是否只读")
     default: Any = Field(None, description="默认值")
-    placeholder: str | None = Field(None, description="占位符")
-    validation: str | None = Field(None, description="正则验证")
-    min: int | None = Field(None, description="最小值")
-    max: int | None = Field(None, description="最大值")
-    options: list[dict] | None = Field(None, description="选项列表")
-    help_url: str | None = Field(None, description="帮助链接")
-    fields: list['ConfigFieldSchema'] | None = Field(None, description="子字段")
+    placeholder: Optional[str] = Field(None, description="占位符")
+    validation: Optional[str] = Field(None, description="正则验证")
+    min: Optional[int] = Field(None, description="最小值")
+    max: Optional[int] = Field(None, description="最大值")
+    options: Optional[List[dict]] = Field(None, description="选项列表")
+    help_url: Optional[str] = Field(None, description="帮助链接")
+    fields: Optional[List['ConfigFieldSchema']] = Field(None, description="子字段")
     collapsible: bool = Field(False, description="是否可折叠")
 
 
@@ -127,7 +127,7 @@ class SkillConfigSchemaResponse(BaseModel):
     """技能配置Schema响应"""
     
     has_schema: bool = Field(..., description="是否有Schema")
-    schema_definition: dict | None = Field(None, description="Schema定义", alias="schema")
+    schema_definition: Optional[dict] = Field(None, description="Schema定义", alias="schema")
 
     class Config:
         populate_by_name = True
@@ -137,9 +137,9 @@ class SkillConfigResponse(BaseModel):
     """技能配置响应"""
     
     has_config: bool = Field(..., description="是否有配置文件")
-    config: dict | None = Field(None, description="配置内容")
+    config: Optional[dict] = Field(None, description="配置内容")
     status: str = Field(..., description="配置状态")
-    errors: list[str] = Field(default_factory=list, description="错误列表")
+    errors: List[str] = Field(default_factory=list, description="错误列表")
 
 
 class UpdateSkillConfigRequest(BaseModel):
@@ -153,14 +153,14 @@ class SkillConfigStatusResponse(BaseModel):
     
     status: str = Field(..., description="配置状态")
     message: str = Field(..., description="状态消息")
-    errors: list[str] = Field(default_factory=list, description="错误列表")
+    errors: List[str] = Field(default_factory=list, description="错误列表")
 
 
 class SkillConfigHelpResponse(BaseModel):
     """技能配置帮助响应"""
     
     has_help: bool = Field(..., description="是否有帮助文档")
-    content: str | None = Field(None, description="帮助内容")
+    content: Optional[str] = Field(None, description="帮助内容")
 
 
 class FixSkillConfigResponse(BaseModel):

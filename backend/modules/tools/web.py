@@ -4,7 +4,7 @@ import json
 import os
 import re
 from contextlib import redirect_stdout
-from typing import Any
+from typing import Any, Dict, Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -31,7 +31,7 @@ USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 
 MAX_REDIRECTS = 5
 
 
-def _validate_url(url: str) -> tuple[bool, str]:
+def _validate_url(url: str) -> Tuple[bool, str]:
     """验证 URL：必须是 http(s) 且有有效域名"""
     try:
         p = urlparse(url)
@@ -201,7 +201,7 @@ class WebFetchTool(Tool):
         return "Fetch and extract web page content. Returns clean text by default (best for AI). Supports outputFormat: text/html/json. Supports mode: basic/stealth/max-stealth for anti-bot protection."
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {

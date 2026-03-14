@@ -5,7 +5,7 @@ python-telegram-bot 内置自动重连机制，无需额外处理。
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Dict
 
 from loguru import logger
 
@@ -24,7 +24,7 @@ class TelegramChannel(BaseChannel):
     def __init__(self, config: Any):
         super().__init__(config)
         self._app = None
-        self._chat_ids: dict[str, int] = {}
+        self._chat_ids: Dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -184,7 +184,7 @@ class TelegramChannel(BaseChannel):
     # 连接测试
     # ------------------------------------------------------------------
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试 Telegram 连接（验证 bot token）。"""
         if not self.config.token:
             return {"success": False, "message": "Token not configured"}

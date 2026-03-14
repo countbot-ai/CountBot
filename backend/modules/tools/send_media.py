@@ -1,7 +1,7 @@
 """发送媒体文件工具"""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional, Tuple
 from loguru import logger
 
 from backend.modules.tools.base import Tool
@@ -80,7 +80,7 @@ class SendMediaTool(Tool):
         ext = file_path.suffix.lower()
         return ext in IMAGE_EXTENSIONS or ext in FILE_EXTENSIONS
 
-    async def _upload_to_oss_if_needed(self, file_path: Path, channel: str) -> str | None:
+    async def _upload_to_oss_if_needed(self, file_path: Path, channel: str) -> Optional[str]:
         """根据频道类型处理文件路径
         
         QQ 需要公网 URL，上传到 OSS
@@ -107,7 +107,7 @@ class SendMediaTool(Tool):
             return None
 
     
-    async def _parse_session_info(self) -> tuple[str, str] | None:
+    async def _parse_session_info(self) -> Optional[Tuple[str, str]]:
         """从会话名称解析频道和聊天 ID
         
         会话名称格式:
@@ -157,7 +157,7 @@ class SendMediaTool(Tool):
             logger.error(f"Error parsing session info: {e}")
             return None
     
-    async def execute(self, file_paths: list[str], message: str = "") -> str:
+    async def execute(self, file_paths: List[str], message: str = "") -> str:
         """执行发送媒体文件"""
         try:
             if not self.channel_manager:

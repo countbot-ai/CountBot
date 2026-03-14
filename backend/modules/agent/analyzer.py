@@ -6,6 +6,7 @@
 - 分割消息（要总结的 vs 要保留的）
 """
 
+from typing import List, Tuple
 from loguru import logger
 
 
@@ -24,7 +25,7 @@ class MessageAnalyzer:
 
     def format_messages_for_summary(
         self,
-        messages: list[dict],
+        messages: List[dict],
         max_chars: int = 4000,
     ) -> str:
         """将消息列表格式化为文本，用于 LLM 总结
@@ -66,7 +67,7 @@ class MessageAnalyzer:
 
     def should_summarize(
         self,
-        messages: list[dict],
+        messages: List[dict],
         message_threshold: int = 20,
         char_threshold: int = 10000,
     ) -> bool:
@@ -91,9 +92,9 @@ class MessageAnalyzer:
 
     def split_messages(
         self,
-        messages: list[dict],
+        messages: List[dict],
         keep_recent: int = 10,
-    ) -> tuple[list[dict], list[dict]]:
+    ) -> Tuple[List[dict], List[dict]]:
         """分割消息: 要总结的和要保留的
 
         Args:

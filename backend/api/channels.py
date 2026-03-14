@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Dict, Optional
 from loguru import logger
 
 from backend.modules.config.loader import config_loader
@@ -11,7 +11,7 @@ from backend.modules.channels.manager import ChannelManager
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 # 全局渠道管理器实例（将在应用启动时初始化）
-_channel_manager: ChannelManager | None = None
+_channel_manager: Optional[ChannelManager] = None
 
 
 def set_channel_manager(manager: ChannelManager):
@@ -30,13 +30,13 @@ def get_channel_manager() -> ChannelManager:
 class ChannelConfigUpdate(BaseModel):
     """渠道配置更新请求"""
     channel: str
-    config: dict[str, Any]
+    config: Dict[str, Any]
 
 
 class ChannelTestRequest(BaseModel):
     """渠道测试请求"""
     channel: str
-    config: dict[str, Any] | None = None  # 可选的临时配置
+    config: Optional[Dict[str, Any]] = None  # 可选的临时配置
 
 
 @router.get("/list")

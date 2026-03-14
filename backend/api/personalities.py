@@ -1,5 +1,6 @@
 """性格管理 API"""
 
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -16,19 +17,19 @@ class PersonalityCreate(BaseModel):
     id: str = Field(..., min_length=1, max_length=50, pattern="^[a-z0-9_-]+$")
     name: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
-    traits: list[str] = Field(..., min_items=1)
+    traits: List[str] = Field(..., min_items=1)
     speaking_style: str = Field(..., min_length=1)
     icon: str = Field(default="Smile", max_length=50)
 
 
 class PersonalityUpdate(BaseModel):
     """更新性格请求"""
-    name: str | None = Field(None, min_length=1, max_length=100)
-    description: str | None = Field(None, min_length=1)
-    traits: list[str] | None = Field(None, min_items=1)
-    speaking_style: str | None = Field(None, min_length=1)
-    icon: str | None = Field(None, max_length=50)
-    is_active: bool | None = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, min_length=1)
+    traits: Optional[List[str]] = Field(None, min_items=1)
+    speaking_style: Optional[str] = Field(None, min_length=1)
+    icon: Optional[str] = Field(None, max_length=50)
+    is_active: Optional[bool] = None
 
 
 @router.get("")
@@ -162,7 +163,7 @@ async def delete_personality(
 class DuplicateRequest(BaseModel):
     """复制性格请求"""
     new_id: str = Field(..., min_length=1, max_length=50, pattern="^[a-z0-9_-]+$")
-    new_name: str | None = None
+    new_name: Optional[str] = None
 
 
 @router.post("/{personality_id}/duplicate")

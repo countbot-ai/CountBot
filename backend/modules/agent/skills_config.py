@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional, Tuple
 
 from loguru import logger
 
@@ -113,7 +113,7 @@ class SkillConfigManager:
             logger.error(f"Failed to save config for {skill_name}: {e}")
             return False
     
-    def get_config_status(self, skill_name: str) -> tuple[str, list[str]]:
+    def get_config_status(self, skill_name: str) -> Tuple[str, List[str]]:
         """
         检查配置状态
         
@@ -188,7 +188,7 @@ class SkillConfigManager:
             logger.error(f"Failed to auto-fix config for {skill_name}: {e}")
             return False
     
-    def _add_missing_fields(self, config: dict, fields: list[dict]) -> None:
+    def _add_missing_fields(self, config: dict, fields: List[dict]) -> None:
         """
         递归添加缺失的字段
         

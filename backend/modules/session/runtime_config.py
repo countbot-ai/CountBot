@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, Optional, Union
 
 from loguru import logger
 
@@ -12,7 +12,7 @@ from backend.modules.config.schema import AppConfig, ModelConfig, PersonaConfig
 from backend.modules.providers.registry import get_provider_metadata
 
 
-@dataclass(slots=True)
+@dataclass
 class SessionRuntimeConfig:
     """单个会话的最终运行时配置。"""
 
@@ -25,14 +25,14 @@ class SessionRuntimeConfig:
     max_tokens: int
     max_iterations: int
     api_key: str
-    api_base: str | None
+    api_base: Optional[str]
     model_config: ModelConfig
     persona_config: PersonaConfig
-    model_response: dict[str, Any]
-    persona_response: dict[str, Any]
+    model_response: Dict[str, Any]
+    persona_response: Dict[str, Any]
 
 
-def _parse_session_json(raw: str | None, *, session_id: str | None, field_name: str) -> dict[str, Any]:
+def _parse_session_json(raw: Optional[str], *, session_id: Optional[str], field_name: str) -> Dict[str, Any]:
     if not raw:
         return {}
 
@@ -49,7 +49,7 @@ def _parse_session_json(raw: str | None, *, session_id: str | None, field_name: 
     return {}
 
 
-def _normalized_text(value: Any) -> str | None:
+def _normalized_text(value: Any) -> Optional[str]:
     if value is None:
         return None
     if not isinstance(value, str):
@@ -58,7 +58,7 @@ def _normalized_text(value: Any) -> str | None:
     return value or None
 
 
-def resolve_session_runtime_config(app_config: AppConfig, session: Any | None) -> SessionRuntimeConfig:
+def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]) -> SessionRuntimeConfig:
     """解析会话最终配置。
 
     优先级：会话配置 > 全局 provider 配置 > provider 默认值（仅 api_base）。

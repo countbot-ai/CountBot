@@ -1,7 +1,7 @@
 """Tool Base Class - 工具基类"""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Dict, List
 
 from loguru import logger
 
@@ -48,7 +48,7 @@ class Tool(ABC):
 
     @property
     @abstractmethod
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         """
         返回工具参数的 JSON Schema
         
@@ -73,21 +73,21 @@ class Tool(ABC):
         """
         pass
 
-    def validate_params(self, params: dict[str, Any]) -> list[str]:
+    def validate_params(self, params: Dict[str, Any]) -> List[str]:
         """验证工具参数是否符合 JSON Schema
 
         Args:
             params: 要验证的参数字典
 
         Returns:
-            list[str]: 错误列表（空列表表示验证通过）
+            List[str]: 错误列表（空列表表示验证通过）
         """
         schema = self.parameters or {}
         if schema.get("type", "object") != "object":
             raise ValueError(f"Schema must be object type, got {schema.get('type')!r}")
         return self._validate(params, {**schema, "type": "object"}, "")
 
-    def _validate(self, val: Any, schema: dict[str, Any], path: str) -> list[str]:
+    def _validate(self, val: Any, schema: Dict[str, Any], path: str) -> List[str]:
         """
         递归验证值是否符合 schema
         
@@ -97,7 +97,7 @@ class Tool(ABC):
             path: 当前路径（用于错误消息）
             
         Returns:
-            list[str]: 错误列表
+            List[str]: 错误列表
         """
         t, label = schema.get("type"), path or "parameter"
         
@@ -150,7 +150,7 @@ class Tool(ABC):
         
         return errors
 
-    def get_definition(self) -> dict[str, Any]:
+    def get_definition(self) -> Dict[str, Any]:
         """
         获取完整的工具定义，用于 LLM 函数调用
         
@@ -169,6 +169,6 @@ class Tool(ABC):
         logger.debug(f"Generated definition for tool: {self.name}")
         return definition
 
-    def to_schema(self) -> dict[str, Any]:
+    def to_schema(self) -> Dict[str, Any]:
         """转换为 OpenAI 函数 schema 格式（别名方法）"""
         return self.get_definition()

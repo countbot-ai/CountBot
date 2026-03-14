@@ -1,6 +1,6 @@
 """配置数据模型"""
 
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -93,11 +93,11 @@ class SecurityConfig(BaseModel):
     """安全配置"""
     # 危险命令检测
     dangerous_commands_blocked: bool = Field(default=True, description="是否阻止危险命令")
-    custom_deny_patterns: list[str] = Field(default_factory=list, description="自定义拒绝模式列表")
+    custom_deny_patterns: List[str] = Field(default_factory=list, description="自定义拒绝模式列表")
     
     # 命令白名单
     command_whitelist_enabled: bool = Field(default=False, description="是否启用命令白名单")
-    custom_allow_patterns: list[str] = Field(default_factory=list, description="自定义允许模式列表")
+    custom_allow_patterns: List[str] = Field(default_factory=list, description="自定义允许模式列表")
     
     # 审计日志
     audit_log_enabled: bool = Field(default=True, description="是否启用审计日志")
@@ -118,14 +118,14 @@ class TelegramConfig(BaseModel):
     enabled: bool = False
     token: str = ""
     proxy: Optional[str] = None
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class DiscordConfig(BaseModel):
     """Discord 渠道配置"""
     enabled: bool = False
     token: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class TencentOSSConfig(BaseModel):
@@ -141,7 +141,7 @@ class QQConfig(BaseModel):
     enabled: bool = False
     app_id: str = ""
     secret: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
     markdown_enabled: bool = True
     group_markdown_enabled: bool = True
     oss: Optional[TencentOSSConfig] = Field(default_factory=TencentOSSConfig)
@@ -155,7 +155,7 @@ class DingTalkConfig(BaseModel):
     enabled: bool = False
     client_id: str = ""
     client_secret: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class FeishuConfig(BaseModel):
@@ -165,7 +165,7 @@ class FeishuConfig(BaseModel):
     app_secret: str = ""
     encrypt_key: str = ""
     verification_token: str = ""
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class WeiboConfig(BaseModel):
@@ -176,7 +176,7 @@ class WeiboConfig(BaseModel):
     account_id: str = Field(default="default", description="账号 ID，用于多账号支持")
     token_endpoint: str = Field(default="http://open-im.api.weibo.com/open/auth/ws_token")
     ws_endpoint: str = Field(default="ws://open-im.api.weibo.com/ws/stream")
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class WeComConfig(BaseModel):
@@ -185,7 +185,7 @@ class WeComConfig(BaseModel):
     bot_id: str = ""
     secret: str = ""
     websocket_url: str = Field(default="wss://openws.work.weixin.qq.com", description="WebSocket 连接地址")
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class XiaozhiConfig(BaseModel):
@@ -193,7 +193,7 @@ class XiaozhiConfig(BaseModel):
     enabled: bool = False
     endpoint: str = Field(default="", description="小智AI MCP WebSocket 接入点，如 ws://192.168.1.x:8765")
     enable_conversation: bool = Field(default=False, description="启用对话模式（通过 send_message 工具接收用户消息）")
-    allow_from: list[str] = Field(default_factory=list)
+    allow_from: List[str] = Field(default_factory=list)
 
 
 class ChannelsConfig(BaseModel):
@@ -210,7 +210,7 @@ class ChannelsConfig(BaseModel):
 
 class AppConfig(BaseModel):
     """应用配置"""
-    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    providers: Dict[str, ProviderConfig] = Field(default_factory=dict)
     model: ModelConfig = Field(default_factory=ModelConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)

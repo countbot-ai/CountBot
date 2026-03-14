@@ -6,6 +6,7 @@ and returning the best description found. Supports train/test split to prevent
 overfitting.
 """
 
+from typing import List, Optional, Tuple, Union
 import argparse
 import json
 import random
@@ -21,7 +22,7 @@ from scripts.run_eval import find_project_root, run_eval
 from scripts.utils import parse_skill_md
 
 
-def split_eval_set(eval_set: list[dict], holdout: float, seed: int = 42) -> tuple[list[dict], list[dict]]:
+def split_eval_set(eval_set: List[dict], holdout: float, seed: int = 42) -> Tuple[List[dict], List[dict]]:
     """Split eval set into train and test sets, stratified by should_trigger."""
     random.seed(seed)
 
@@ -45,9 +46,9 @@ def split_eval_set(eval_set: list[dict], holdout: float, seed: int = 42) -> tupl
 
 
 def run_loop(
-    eval_set: list[dict],
+    eval_set: List[dict],
     skill_path: Path,
-    description_override: str | None,
+    description_override: Optional[str],
     num_workers: int,
     timeout: int,
     max_iterations: int,
@@ -56,8 +57,8 @@ def run_loop(
     holdout: float,
     model: str,
     verbose: bool,
-    live_report_path: Path | None = None,
-    log_dir: Path | None = None,
+    live_report_path: Optional[Path] = None,
+    log_dir: Optional[Path] = None,
 ) -> dict:
     """Run the eval + improvement loop."""
     project_root = find_project_root()

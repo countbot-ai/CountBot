@@ -6,6 +6,7 @@ showing each description attempt with check/x for each test case.
 Distinguishes between train and test queries.
 """
 
+from typing import List, Tuple
 import argparse
 import html
 import json
@@ -20,8 +21,8 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
     title_prefix = html.escape(skill_name + " \u2014 ") if skill_name else ""
 
     # Get all unique queries from train and test sets, with should_trigger info
-    train_queries: list[dict] = []
-    test_queries: list[dict] = []
+    train_queries: List[dict] = []
+    test_queries: List[dict] = []
     if history:
         for r in history[0].get("train_results", history[0].get("results", [])):
             train_queries.append({"query": r["query"], "should_trigger": r.get("should_trigger", True)})
@@ -224,7 +225,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
         test_by_query = {r["query"]: r for r in test_results} if test_results else {}
 
         # Compute aggregate correct/total runs across all retries
-        def aggregate_runs(results: list[dict]) -> tuple[int, int]:
+        def aggregate_runs(results: List[dict]) -> Tuple[int, int]:
             correct = 0
             total = 0
             for r in results:

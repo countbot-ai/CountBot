@@ -5,7 +5,7 @@ multi-agent workflow and receives the fully compiled results when
 all sub-agents have finished.
 """
 
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -30,7 +30,7 @@ class WorkflowTool(Tool):
     def __init__(self, subagent_manager, skills=None) -> None:
         self._manager = subagent_manager
         self._skills = skills  # 技能系统实例
-        self._session_id: str | None = None
+        self._session_id: Optional[str] = None
         self._cancel_token = None
 
     def set_session_id(self, session_id: str) -> None:
@@ -62,7 +62,7 @@ class WorkflowTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -144,11 +144,11 @@ class WorkflowTool(Tool):
 
     async def execute(
         self,
-        mode: str | None = None,
+        mode: Optional[str] = None,
         goal: str = "",
-        agents: list[dict] | None = None,
+        agents: Optional[List[dict]] = None,
         cross_review: bool = True,
-        team_name: str | None = None,
+        team_name: Optional[str] = None,
         **kwargs: Any,
     ) -> str:
         agents = agents or []

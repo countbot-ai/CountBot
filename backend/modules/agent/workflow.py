@@ -10,7 +10,7 @@ import asyncio
 import json as _json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from loguru import logger
 
@@ -35,23 +35,23 @@ class AgentSlot:
     slot_id: str
     label: str
     prompt_template: str
-    depends_on: list[str] = field(default_factory=list)
-    condition: dict | None = None  # 可选：执行条件
+    depends_on: List[str] = field(default_factory=list)
+    condition: Optional[dict] = None  # 可选：执行条件
     phase: SlotPhase = SlotPhase.WAITING
-    output: str | None = None
-    error: str | None = None
+    output: Optional[str] = None
+    error: Optional[str] = None
     skipped: bool = False  # 是否因条件不满足而跳过
 
 
 class WorkflowEngine:
     """多智能体工作流引擎 — 编排 Pipeline / Graph / Council 三种执行模式。"""
 
-    def __init__(self, subagent_manager, session_id: str | None = None, cancel_token=None, skills=None) -> None:
+    def __init__(self, subagent_manager, session_id: Optional[str] = None, cancel_token=None, skills=None) -> None:
         self._mgr = subagent_manager
         self._session_id = session_id
         self._cancel_token = cancel_token
         self._skills = skills
-        self._execution_data: dict[str, dict] = {}
+        self._execution_data: Dict[str, dict] = {}
 
     # ------------------------------------------------------------------
     # 内部方法
@@ -79,7 +79,7 @@ class WorkflowEngine:
         self,
         prompt: str,
         label: str = "",
-        system_prompt: str | None = None,
+        system_prompt: Optional[str] = None,
         agent_id: str = "",
         enable_skills: bool = False,
     ) -> str:
@@ -164,10 +164,10 @@ class WorkflowEngine:
         )
         return result
 
-    def _detect_cycle(self, dep_map: dict[str, list[str]]) -> bool:
+    def _detect_cycle(self, dep_map: Dict[str, List[str]]) -> bool:
         """检测依赖图环路"""
-        visited: set[str] = set()
-        in_stack: set[str] = set()
+        visited: Set[str] = set()
+        in_stack: Set[str] = set()
 
         def _dfs(node: str) -> bool:
             visited.add(node)
@@ -183,7 +183,7 @@ class WorkflowEngine:
 
         return any(_dfs(n) for n in dep_map if n not in visited)
 
-    def _evaluate_condition(self, condition: dict, slot_map: dict[str, AgentSlot]) -> bool:
+    def _evaluate_condition(self, condition: dict, slot_map: Dict[str, AgentSlot]) -> bool:
         """评估节点执行条件，通过检查依赖节点的LLM输出文本决定是否执行"""
         if not condition:
             return True
@@ -218,13 +218,13 @@ class WorkflowEngine:
     # Pipeline 模式
     # ------------------------------------------------------------------
 
-    async def run_pipeline(self, goal: str, stages: list[dict[str, Any]], enable_skills: bool = False) -> str:
+    async def run_pipeline(self, goal: str, stages: List[Dict[str, Any]], enable_skills: bool = False) -> str:
         """顺序流水线，每个阶段继承前序输出"""
         if not stages:
             return "No pipeline stages defined."
 
         accumulated: str = ""
-        stage_outputs: list[dict] = []
+        stage_outputs: List[dict] = []
 
         for idx, stage in enumerate(stages):
             if self._is_cancelled():
@@ -271,14 +271,14 @@ class WorkflowEngine:
     # Graph 模式
     # ------------------------------------------------------------------
 
-    async def run_graph(self, goal: str, slots: list[dict[str, Any]], enable_skills: bool = False) -> str:
+    async def run_graph(self, goal: str, slots: List[Dict[str, Any]], enable_skills: bool = False) -> str:
         """依赖DAG，自动并行调度"""
         if not slots:
             return "No graph slots defined."
 
-        slot_system_prompts: dict[str, str | None] = {}
-        slot_map: dict[str, AgentSlot] = {}
-        dep_map: dict[str, list[str]] = {}
+        slot_system_prompts: Optional[Dict[str, str]] = {}
+        slot_map: Dict[str, AgentSlot] = {}
+        dep_map: Dict[str, List[str]] = {}
 
         for s in slots:
             sid = s.get("id", "")
@@ -406,15 +406,15 @@ class WorkflowEngine:
     # Council 模式
     # ------------------------------------------------------------------
 
-    async def run_council(self, question: str, members: list[dict[str, Any]], cross_review: bool = True, enable_skills: bool = False) -> str:
+    async def run_council(self, question: str, members: List[Dict[str, Any]], cross_review: bool = True, enable_skills: bool = False) -> str:
         """多视角评审：立场陈述 → [可选]交叉评审 → 综合输出"""
         if not members:
             return "No council members defined."
 
-        member_map: dict[str, str] = {
+        member_map: Dict[str, str] = {
             m["id"]: m.get("perspective", "neutral analyst") for m in members
         }
-        member_system_prompts: dict[str, str] = {}
+        member_system_prompts: Dict[str, str] = {}
         for m in members:
             mid = m["id"]
             perspective = member_map[mid]
@@ -425,7 +425,7 @@ class WorkflowEngine:
                 "with evidence, and engage constructively with other members' arguments."
             )
 
-        async def _initial(member: dict) -> tuple[str, str]:
+        async def _initial(member: dict) -> Tuple[str, str]:
             mid = member["id"]
             perspective = member_map[mid]
             prompt = (
@@ -444,7 +444,7 @@ class WorkflowEngine:
             )
             return mid, result
 
-        round1: dict[str, str] = dict(
+        round1: Dict[str, str] = dict(
             await asyncio.gather(*[_initial(m) for m in members])
         )
 
@@ -470,7 +470,7 @@ class WorkflowEngine:
                 f"*分析完成 — 共 {len(members)} 位成员独立分析，无交叉评审。*"
             ) + self._build_exec_metadata()
 
-        async def _cross_review(member: dict) -> tuple[str, str]:
+        async def _cross_review(member: dict) -> Tuple[str, str]:
             mid = member["id"]
             perspective = member_map[mid]
             others = "\n\n".join(
@@ -498,7 +498,7 @@ class WorkflowEngine:
             )
             return mid, result
 
-        round2: dict[str, str] = dict(
+        round2: Dict[str, str] = dict(
             await asyncio.gather(*[_cross_review(m) for m in members])
         )
 

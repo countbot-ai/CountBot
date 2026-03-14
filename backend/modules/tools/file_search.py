@@ -7,7 +7,7 @@ import os
 import fnmatch
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 from datetime import datetime
 
 from loguru import logger
@@ -43,7 +43,7 @@ class FileSearchTool(Tool):
         return "Search files with wildcards (*.txt, *.pdf)"
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {

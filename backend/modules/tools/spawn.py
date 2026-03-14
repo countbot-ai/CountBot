@@ -1,7 +1,7 @@
 """Spawn Tool - 生成子 Agent 工具"""
 
 import asyncio
-from typing import Any
+from typing import Any, Dict, Optional
 
 from backend.modules.tools.base import Tool
 
@@ -29,7 +29,7 @@ class SpawnTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -56,7 +56,7 @@ class SpawnTool(Tool):
         # 默认 600 秒（10 分钟）
         return 600
 
-    async def execute(self, task: str, label: str | None = None, **kwargs: Any) -> str:
+    async def execute(self, task: str, label: Optional[str] = None, **kwargs: Any) -> str:
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
 
         task_id = self._manager.create_task(

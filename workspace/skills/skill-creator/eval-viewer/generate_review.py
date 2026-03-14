@@ -12,6 +12,7 @@ Usage:
 No dependencies beyond the Python stdlib are required.
 """
 
+from typing import Dict, List, Optional, Union
 import argparse
 import base64
 import json
@@ -57,15 +58,15 @@ def get_mime_type(path: Path) -> str:
     return mime or "application/octet-stream"
 
 
-def find_runs(workspace: Path) -> list[dict]:
+def find_runs(workspace: Path) -> List[dict]:
     """Recursively find directories that contain an outputs/ subdirectory."""
-    runs: list[dict] = []
+    runs: List[dict] = []
     _find_runs_recursive(workspace, workspace, runs)
     runs.sort(key=lambda r: (r.get("eval_id", float("inf")), r["id"]))
     return runs
 
 
-def _find_runs_recursive(root: Path, current: Path, runs: list[dict]) -> None:
+def _find_runs_recursive(root: Path, current: Path, runs: List[dict]) -> None:
     if not current.is_dir():
         return
 
@@ -82,7 +83,7 @@ def _find_runs_recursive(root: Path, current: Path, runs: list[dict]) -> None:
             _find_runs_recursive(root, child, runs)
 
 
-def build_run(root: Path, run_dir: Path) -> dict | None:
+def build_run(root: Path, run_dir: Path) -> Optional[dict]:
     """Build a run dict with prompt, outputs, and grading data."""
     prompt = ""
     eval_id = None
@@ -120,7 +121,7 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
 
     # Collect output files
     outputs_dir = run_dir / "outputs"
-    output_files: list[dict] = []
+    output_files: List[dict] = []
     if outputs_dir.is_dir():
         for f in sorted(outputs_dir.iterdir()):
             if f.is_file() and f.name not in METADATA_FILES:
@@ -210,15 +211,15 @@ def embed_file(path: Path) -> dict:
         }
 
 
-def load_previous_iteration(workspace: Path) -> dict[str, dict]:
+def load_previous_iteration(workspace: Path) -> Dict[str, dict]:
     """Load previous iteration's feedback and outputs.
 
-    Returns a map of run_id -> {"feedback": str, "outputs": list[dict]}.
+    Returns a map of run_id -> {"feedback": str, "outputs": List[dict]}.
     """
-    result: dict[str, dict] = {}
+    result: Dict[str, dict] = {}
 
     # Load feedback
-    feedback_map: dict[str, str] = {}
+    feedback_map: Dict[str, str] = {}
     feedback_path = workspace / "feedback.json"
     if feedback_path.exists():
         try:
@@ -248,18 +249,18 @@ def load_previous_iteration(workspace: Path) -> dict[str, dict]:
 
 
 def generate_html(
-    runs: list[dict],
+    runs: List[dict],
     skill_name: str,
-    previous: dict[str, dict] | None = None,
-    benchmark: dict | None = None,
+    previous: Optional[Dict[str, dict]] = None,
+    benchmark: Optional[dict] = None,
 ) -> str:
     """Generate the complete standalone HTML page with embedded data."""
     template_path = Path(__file__).parent / "viewer.html"
     template = template_path.read_text()
 
     # Build previous_feedback and previous_outputs maps for the template
-    previous_feedback: dict[str, str] = {}
-    previous_outputs: dict[str, list[dict]] = {}
+    previous_feedback: Dict[str, str] = {}
+    previous_outputs: Dict[str, List[dict]] = {}
     if previous:
         for run_id, data in previous.items():
             if data.get("feedback"):
@@ -317,8 +318,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
         workspace: Path,
         skill_name: str,
         feedback_path: Path,
-        previous: dict[str, dict],
-        benchmark_path: Path | None,
+        previous: Dict[str, dict],
+        benchmark_path: Optional[Path],
         *args,
         **kwargs,
     ):
@@ -416,7 +417,7 @@ def main() -> None:
     skill_name = args.skill_name or workspace.name.replace("-workspace", "")
     feedback_path = workspace / "feedback.json"
 
-    previous: dict[str, dict] = {}
+    previous: Dict[str, dict] = {}
     if args.previous_workspace:
         previous = load_previous_iteration(args.previous_workspace.resolve())
 

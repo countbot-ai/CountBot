@@ -1,5 +1,6 @@
 """队列与任务管理 API"""
 
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel
@@ -12,7 +13,7 @@ class QueueStatsResponse(BaseModel):
     inbound_size: int
     outbound_size: int
     active_tasks: int
-    rate_limiter: dict | None
+    rate_limiter: Optional[dict]
 
 
 class CancelTaskRequest(BaseModel):

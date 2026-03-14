@@ -1,5 +1,6 @@
 """工具注册统一配置模块"""
 
+from typing import List, Optional
 from pathlib import Path
 from loguru import logger
 
@@ -12,12 +13,12 @@ def register_all_tools(
     max_output_length: int = 10000,
     allow_dangerous: bool = False,
     restrict_to_workspace: bool = True,
-    custom_deny_patterns: list[str] | None = None,
-    custom_allow_patterns: list[str] | None = None,
+    custom_deny_patterns: Optional[List[str]] = None,
+    custom_allow_patterns: Optional[List[str]] = None,
     audit_log_enabled: bool = True,
     subagent_manager=None,
     skills_loader=None,
-    session_id: str | None = None,
+    session_id: Optional[str] = None,
     channel_manager=None,
     session_manager=None,
     memory_store=None,

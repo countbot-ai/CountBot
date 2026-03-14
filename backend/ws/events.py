@@ -9,7 +9,7 @@
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Dict
 
 from fastapi import WebSocket
 from loguru import logger
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.config.loader import config_loader
-from backend.modules.providers.litellm_provider import LiteLLMProvider
+from backend.modules.providers import create_provider
 from backend.modules.session import resolve_session_runtime_config
 from backend.modules.session.manager import SessionManager
 from backend.ws.connection import (
@@ -107,7 +107,7 @@ async def handle_message_event(
                 if runtime_config.has_custom_model_config:
                     provider_config = config_loader.config.providers.get(runtime_config.provider_name)
                     if provider_config and provider_config.enabled:
-                        temp_provider = LiteLLMProvider(
+                        temp_provider = create_provider(
                             api_key=runtime_config.api_key,
                             api_base=runtime_config.api_base,
                             default_model=runtime_config.model_name,
@@ -303,7 +303,7 @@ async def handle_message_event(
 async def handle_tool_execution(
     session_id: str,
     tool_name: str,
-    arguments: dict[str, Any],
+    arguments: Dict[str, Any],
     agent_loop: AgentLoop,
 ) -> None:
     """处理工具执行事件
@@ -385,7 +385,7 @@ async def handle_unsubscribe_event(
 async def route_event(
     connection_id: str,
     event_type: str,
-    event_data: dict[str, Any],
+    event_data: Dict[str, Any],
     agent_loop: AgentLoop,
     db: AsyncSession,
 ) -> None:

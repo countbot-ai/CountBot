@@ -8,7 +8,7 @@
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -36,7 +36,7 @@ class TaskStatusMessage(ServerMessage):
     task_id: str
     status: str  # running, completed, failed
     progress: int  # 0-100
-    message: str | None = None
+    message: Optional[str] = None
 
 
 class TaskProgressMessage(ServerMessage):
@@ -45,9 +45,9 @@ class TaskProgressMessage(ServerMessage):
     type: str = "task_progress"
     task_id: str
     progress: int  # 0-100
-    current: int | None = None
-    total: int | None = None
-    message: str | None = None
+    current: Optional[int] = None
+    total: Optional[int] = None
+    message: Optional[str] = None
 
 
 class TaskCompleteMessage(ServerMessage):
@@ -55,7 +55,7 @@ class TaskCompleteMessage(ServerMessage):
 
     type: str = "task_complete"
     task_id: str
-    result: str | None = None
+    result: Optional[str] = None
     duration_ms: float
 
 
@@ -116,7 +116,7 @@ class TaskNotificationHandler:
     - 完成/失败通知
     """
 
-    def __init__(self, task_id: str, label: str, session_id: str | None = None):
+    def __init__(self, task_id: str, label: str, session_id: Optional[str] = None):
         """初始化任务通知处理器
 
         Args:
@@ -151,7 +151,7 @@ class TaskNotificationHandler:
         await self._send(message)
 
     async def notify_status(
-        self, status: str, progress: int | None = None, message: str | None = None
+        self, status: str, progress: Optional[int] = None, message: Optional[str] = None
     ) -> None:
         """通知任务状态更新
 
@@ -178,9 +178,9 @@ class TaskNotificationHandler:
     async def notify_progress(
         self,
         progress: int,
-        current: int | None = None,
-        total: int | None = None,
-        message: str | None = None,
+        current: Optional[int] = None,
+        total: Optional[int] = None,
+        message: Optional[str] = None,
     ) -> None:
         """通知任务进度更新
 
@@ -204,7 +204,7 @@ class TaskNotificationHandler:
 
         await self._send(notification)
 
-    async def notify_complete(self, result: str | None = None) -> None:
+    async def notify_complete(self, result: Optional[str] = None) -> None:
         """通知任务完成
 
         Args:
@@ -326,9 +326,9 @@ class TaskNotificationManager:
 
     def __init__(self):
         """初始化任务通知管理器"""
-        self.handlers: dict[str, TaskNotificationHandler] = {}
+        self.handlers: Dict[str, TaskNotificationHandler] = {}
 
-    def create_handler(self, task_id: str, label: str, session_id: str | None = None) -> TaskNotificationHandler:
+    def create_handler(self, task_id: str, label: str, session_id: Optional[str] = None) -> TaskNotificationHandler:
         """创建任务通知处理器
 
         Args:
@@ -343,7 +343,7 @@ class TaskNotificationManager:
         self.handlers[task_id] = handler
         return handler
 
-    def get_handler(self, task_id: str) -> TaskNotificationHandler | None:
+    def get_handler(self, task_id: str) -> Optional[TaskNotificationHandler]:
         """获取任务通知处理器
 
         Args:
@@ -363,11 +363,11 @@ class TaskNotificationManager:
         if task_id in self.handlers:
             del self.handlers[task_id]
 
-    def get_all_handlers(self) -> list[TaskNotificationHandler]:
+    def get_all_handlers(self) -> List[TaskNotificationHandler]:
         """获取所有任务通知处理器
 
         Returns:
-            list[TaskNotificationHandler]: 任务通知处理器列表
+            List[TaskNotificationHandler]: 任务通知处理器列表
         """
         return list(self.handlers.values())
 
@@ -390,7 +390,7 @@ task_notification_manager = TaskNotificationManager()
 # ============================================================================
 
 
-async def notify_task_created(task_id: str, label: str, session_id: str | None = None) -> TaskNotificationHandler:
+async def notify_task_created(task_id: str, label: str, session_id: Optional[str] = None) -> TaskNotificationHandler:
     """通知任务创建（便捷函数）
 
     Args:
@@ -409,8 +409,8 @@ async def notify_task_created(task_id: str, label: str, session_id: str | None =
 async def notify_task_status(
     task_id: str,
     status: str,
-    progress: int | None = None,
-    message: str | None = None,
+    progress: Optional[int] = None,
+    message: Optional[str] = None,
 ) -> None:
     """通知任务状态更新（便捷函数）
 
@@ -428,9 +428,9 @@ async def notify_task_status(
 async def notify_task_progress(
     task_id: str,
     progress: int,
-    current: int | None = None,
-    total: int | None = None,
-    message: str | None = None,
+    current: Optional[int] = None,
+    total: Optional[int] = None,
+    message: Optional[str] = None,
 ) -> None:
     """通知任务进度更新（便捷函数）
 
@@ -446,7 +446,7 @@ async def notify_task_progress(
         await handler.notify_progress(progress, current, total, message)
 
 
-async def notify_task_complete(task_id: str, result: str | None = None) -> None:
+async def notify_task_complete(task_id: str, result: Optional[str] = None) -> None:
     """通知任务完成（便捷函数）
 
     Args:

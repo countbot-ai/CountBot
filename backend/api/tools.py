@@ -1,5 +1,6 @@
 """Tools API 端点"""
 
+from typing import Dict, List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status, Query
@@ -39,19 +40,19 @@ class ExecuteToolResponse(BaseModel):
     
     result: str = Field(..., description="执行结果")
     success: bool = Field(..., description="是否成功")
-    error: str | None = Field(None, description="错误信息")
+    error: Optional[str] = Field(None, description="错误信息")
 
 
 class ListToolsResponse(BaseModel):
     """工具列表响应"""
     
-    tools: list[ToolDefinition] = Field(..., description="工具列表")
+    tools: List[ToolDefinition] = Field(..., description="工具列表")
 
 
 class ConversationHistoryResponse(BaseModel):
     """工具调用对话历史响应"""
     
-    conversations: list[dict] = Field(..., description="对话记录列表")
+    conversations: List[dict] = Field(..., description="对话记录列表")
     total: int = Field(..., description="总记录数")
 
 
@@ -59,8 +60,8 @@ class ConversationStatsResponse(BaseModel):
     """工具调用对话统计响应"""
     
     total: int = Field(..., description="总记录数")
-    by_tool: dict[str, int] = Field(..., description="按工具统计")
-    by_session: dict[str, int] = Field(..., description="按会话统计")
+    by_tool: Dict[str, int] = Field(..., description="按工具统计")
+    by_session: Dict[str, int] = Field(..., description="按会话统计")
     success_rate: float = Field(..., description="成功率")
 
 
@@ -208,9 +209,9 @@ async def list_tools() -> ListToolsResponse:
 
 @router.get("/conversations", response_model=ConversationHistoryResponse)
 async def get_conversations(
-    session_id: str | None = Query(None, description="按会话ID过滤"),
-    tool_name: str | None = Query(None, description="按工具名称过滤"),
-    limit: int | None = Query(None, description="限制返回数量"),
+    session_id: Optional[str] = Query(None, description="按会话ID过滤"),
+    tool_name: Optional[str] = Query(None, description="按工具名称过滤"),
+    limit: Optional[int] = Query(None, description="限制返回数量"),
     offset: int = Query(0, description="偏移量，用于分页")
 ) -> ConversationHistoryResponse:
     """
@@ -316,7 +317,7 @@ async def clear_conversations() -> dict:
 @router.get("/audit/history")
 async def get_audit_history(
     limit: int = 50,
-    session_id: str | None = None
+    session_id: Optional[str] = None
 ):
     """
     获取工具调用审计历史（从文件）

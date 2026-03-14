@@ -10,7 +10,7 @@ import base64
 import os
 import platform
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Dict, Literal
 
 from loguru import logger
 
@@ -56,7 +56,7 @@ class ScreenshotTool(Tool):
         return "Capture desktop or webpage screenshots"
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {

@@ -6,7 +6,7 @@ import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -19,7 +19,7 @@ from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.agent.skills import SkillsLoader
 from backend.modules.config.loader import config_loader
-from backend.modules.providers.litellm_provider import LiteLLMProvider
+from backend.modules.providers import create_provider
 from backend.modules.session import resolve_session_runtime_config
 from backend.modules.session.manager import SessionManager
 from backend.modules.tools.registry import ToolRegistry
@@ -38,7 +38,7 @@ class SendMessageRequest(BaseModel):
 
     session_id: str = Field(..., description="会话 ID")
     message: str = Field(..., min_length=1, description="用户消息内容")
-    attachments: list[str] | None = Field(None, description="附件路径列表（可选）")
+    attachments: Optional[List[str]] = Field(None, description="附件路径列表（可选）")
 
 
 class UpdateSessionSummaryRequest(BaseModel):
@@ -52,7 +52,7 @@ class SummarizeSessionResponse(BaseModel):
     
     success: bool = Field(..., description="是否成功")
     summary: str = Field(..., description="生成的总结")
-    message: str | None = Field(None, description="消息")
+    message: Optional[str] = Field(None, description="消息")
 
 
 class SendMessageResponse(BaseModel):
@@ -69,8 +69,8 @@ class SessionResponse(BaseModel):
     name: str
     created_at: str
     updated_at: str
-    summary: str | None = None
-    summary_updated_at: str | None = None
+    summary: Optional[str] = None
+    summary_updated_at: Optional[str] = None
 
 
 class ToolCallResponse(BaseModel):
@@ -78,12 +78,12 @@ class ToolCallResponse(BaseModel):
     
     id: str
     name: str
-    arguments: dict[str, Any]
-    result: str | None = None
-    error: str | None = None
+    arguments: Dict[str, Any]
+    result: Optional[str] = None
+    error: Optional[str] = None
     status: str = "success"
-    duration: int | None = None
-    spawn_task: dict[str, Any] | None = None  # 子代理任务详情（仅 spawn 工具调用）
+    duration: Optional[int] = None
+    spawn_task: Optional[Dict[str, Any]] = None  # 子代理任务详情（仅 spawn 工具调用）
 
 
 class MessageResponse(BaseModel):
@@ -94,7 +94,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     created_at: str
-    tool_calls: list[ToolCallResponse] = Field(default_factory=list, description="工具调用记录")
+    tool_calls: List[ToolCallResponse] = Field(default_factory=list, description="工具调用记录")
 
 
 # ============================================================================
@@ -124,7 +124,7 @@ def get_global_subagent_manager():
 async def get_agent_loop(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    session_id: str | None = None
+    session_id: Optional[str] = None
 ) -> AgentLoop:
     """获取 AgentLoop 实例（依赖注入）
     
@@ -166,7 +166,7 @@ async def get_agent_loop(
                 detail=f"Provider '{provider_name}' is not configured or disabled"
             )
         
-        provider = LiteLLMProvider(
+        provider = create_provider(
             api_key=runtime_config.api_key,
             api_base=runtime_config.api_base,
             default_model=runtime_config.model_name,
@@ -268,7 +268,7 @@ async def get_agent_loop(
 # ============================================================================
 
 # 记录已自动总结的会话，避免重复触发（session_id -> 上次总结时的消息数）
-_auto_summarized_sessions: dict[str, int] = {}
+_auto_summarized_sessions: Dict[str, int] = {}
 
 # 自动总结阈值
 _AUTO_SUMMARIZE_MESSAGE_THRESHOLD = 30
@@ -544,12 +544,12 @@ async def send_message(
         )
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+@router.get("/sessions", response_model=List[SessionResponse])
 async def list_sessions(
-    limit: int | None = None,
+    limit: Optional[int] = None,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-) -> list[SessionResponse]:
+) -> List[SessionResponse]:
     """
     获取所有会话列表
     
@@ -559,7 +559,7 @@ async def list_sessions(
         db: 数据库会话
         
     Returns:
-        list[SessionResponse]: 会话列表
+        List[SessionResponse]: 会话列表
     """
     try:
         session_manager = SessionManager(db)
@@ -623,7 +623,7 @@ async def create_session(
 async def delete_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> Dict[str, bool]:
     """
     删除会话
     
@@ -711,13 +711,13 @@ async def update_session(
         )
 
 
-@router.get("/sessions/{session_id}/messages", response_model=list[MessageResponse])
+@router.get("/sessions/{session_id}/messages", response_model=List[MessageResponse])
 async def get_session_messages(
     session_id: str,
-    limit: int | None = None,
+    limit: Optional[int] = None,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-) -> list[MessageResponse]:
+) -> List[MessageResponse]:
     """
     获取会话的消息列表（包含工具调用记录）
     
@@ -728,7 +728,7 @@ async def get_session_messages(
         db: 数据库会话
         
     Returns:
-        list[MessageResponse]: 消息列表（包含关联的工具调用）
+        List[MessageResponse]: 消息列表（包含关联的工具调用）
         
     Raises:
         HTTPException: 会话不存在
@@ -776,7 +776,7 @@ async def get_session_messages(
         all_tool_calls = tool_calls_result.scalars().all()
         
         # 按 message_id 分组工具调用
-        tool_calls_by_message: dict[int, list[ToolConversation]] = {}
+        tool_calls_by_message: Dict[int, List[ToolConversation]] = {}
         for tc in all_tool_calls:
             if tc.message_id is not None:
                 if tc.message_id not in tool_calls_by_message:
@@ -1401,8 +1401,8 @@ async def summarize_session_to_memory(
 
 class SessionConfigRequest(BaseModel):
     """会话配置请求"""
-    model: dict[str, Any] | None = Field(None, alias='model_config')
-    persona: dict[str, Any] | None = Field(None, alias='persona_config')
+    model: Optional[Dict[str, Any]] = Field(None, alias='model_config')
+    persona: Optional[Dict[str, Any]] = Field(None, alias='persona_config')
     
     class Config:
         populate_by_name = True
@@ -1412,9 +1412,9 @@ class SessionConfigResponse(BaseModel):
     """会话配置响应"""
     session_id: str
     use_custom_config: bool
-    model: dict[str, Any] = Field(..., alias='model_config')
-    persona: dict[str, Any] = Field(..., alias='persona_config')
-    global_defaults: dict[str, Any]
+    model: Dict[str, Any] = Field(..., alias='model_config')
+    persona: Dict[str, Any] = Field(..., alias='persona_config')
+    global_defaults: Dict[str, Any]
     
     class Config:
         populate_by_name = True

@@ -9,7 +9,7 @@
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -32,7 +32,7 @@ class ToolStartMessage(ServerMessage):
 
     type: str = "tool_start"
     tool: str
-    arguments: dict[str, Any]
+    arguments: Dict[str, Any]
     timestamp: float
 
 
@@ -42,7 +42,7 @@ class ToolProgressMessage(ServerMessage):
     type: str = "tool_progress"
     tool: str
     progress: int  # 0-100
-    message: str | None = None
+    message: Optional[str] = None
 
 
 class ToolCompleteMessage(ServerMessage):
@@ -89,7 +89,7 @@ class ToolNotificationHandler:
         self.start_time = time.time()
         self.progress = 0
 
-    async def notify_start(self, arguments: dict[str, Any]) -> None:
+    async def notify_start(self, arguments: Dict[str, Any]) -> None:
         """通知工具开始执行
 
         Args:
@@ -106,7 +106,7 @@ class ToolNotificationHandler:
         await connection_manager.send_to_session(self.session_id, message)
 
     async def notify_progress(
-        self, progress: int, message: str | None = None
+        self, progress: int, message: Optional[str] = None
     ) -> None:
         """通知工具执行进度
 
@@ -183,7 +183,7 @@ class ToolNotificationHandler:
 async def execute_tool_with_notifications(
     session_id: str,
     tool_name: str,
-    arguments: dict[str, Any],
+    arguments: Dict[str, Any],
     executor: callable,
 ) -> str:
     """执行工具并发送通知
@@ -238,7 +238,7 @@ class BatchToolNotificationHandler:
             session_id: 会话 ID
         """
         self.session_id = session_id
-        self.handlers: dict[str, ToolNotificationHandler] = {}
+        self.handlers: Dict[str, ToolNotificationHandler] = {}
 
     def create_handler(self, tool_name: str) -> ToolNotificationHandler:
         """创建工具通知处理器
@@ -253,7 +253,7 @@ class BatchToolNotificationHandler:
         self.handlers[tool_name] = handler
         return handler
 
-    def get_handler(self, tool_name: str) -> ToolNotificationHandler | None:
+    def get_handler(self, tool_name: str) -> Optional[ToolNotificationHandler]:
         """获取工具通知处理器
 
         Args:
@@ -264,15 +264,15 @@ class BatchToolNotificationHandler:
         """
         return self.handlers.get(tool_name)
 
-    def get_all_handlers(self) -> list[ToolNotificationHandler]:
+    def get_all_handlers(self) -> List[ToolNotificationHandler]:
         """获取所有工具通知处理器
 
         Returns:
-            list[ToolNotificationHandler]: 工具通知处理器列表
+            List[ToolNotificationHandler]: 工具通知处理器列表
         """
         return list(self.handlers.values())
 
-    async def notify_batch_start(self, tools: list[tuple[str, dict[str, Any]]]) -> None:
+    async def notify_batch_start(self, tools: List[Tuple[str, Dict[str, Any]]]) -> None:
         """通知批量工具开始执行
 
         Args:
@@ -296,9 +296,9 @@ class BatchToolNotificationHandler:
 async def notify_tool_execution(
     session_id: str,
     tool_name: str,
-    arguments: dict[str, Any],
-    result: str | None = None,
-    error: str | None = None,
+    arguments: Dict[str, Any],
+    result: Optional[str] = None,
+    error: Optional[str] = None,
 ) -> None:
     """发送工具执行通知（便捷函数）
 

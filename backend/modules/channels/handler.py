@@ -5,6 +5,7 @@
 确保频道和网页 UI 使用完全一致的提示词、技能、工具。
 """
 
+from typing import Dict, List, Optional
 import asyncio
 import re
 import time
@@ -22,7 +23,7 @@ from backend.modules.channels.base import InboundMessage, OutboundMessage
 from backend.modules.config.loader import config_loader
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 from backend.modules.messaging.rate_limiter import RateLimiter
-from backend.modules.providers.litellm_provider import LiteLLMProvider
+from backend.modules.providers import create_provider
 from backend.modules.session import resolve_session_runtime_config
 from backend.modules.tools.setup import register_all_tools
 
@@ -62,7 +63,7 @@ class ChannelMessageHandler:
 
     def __init__(
         self,
-        provider: LiteLLMProvider,
+        provider,  # LLMProvider
         workspace: Path,
         model: str,
         bus: EnterpriseMessageQueue,
@@ -70,7 +71,7 @@ class ChannelMessageHandler:
         tool_params: dict,
         subagent_manager=None,
         max_iterations: int = 10,
-        rate_limiter: RateLimiter | None = None,
+        rate_limiter: Optional[RateLimiter] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         max_history_messages: int = 50,
@@ -78,8 +79,8 @@ class ChannelMessageHandler:
     ):
         self.bus = bus
         self.rate_limiter = rate_limiter
-        self._active_tasks: dict[str, CancellationToken] = {}
-        self._last_session_list_scope: dict[str, str] = {}
+        self._active_tasks: Dict[str, CancellationToken] = {}
+        self._last_session_list_scope: Dict[str, str] = {}
         self.db_session_factory = get_db_session_factory()
         self.channel_manager = None
         self.max_history_messages = max_history_messages
@@ -112,11 +113,11 @@ class ChannelMessageHandler:
     def reload_config(
         self,
         provider=None,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        max_iterations: int | None = None,
-        max_history_messages: int | None = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        max_iterations: Optional[int] = None,
+        max_history_messages: Optional[int] = None,
         persona_config=None,
         workspace=None,
     ) -> None:
@@ -194,10 +195,13 @@ class ChannelMessageHandler:
                     await asyncio.sleep(1)
 
     async def handle_message(self, msg: InboundMessage) -> None:
-        """处理单条入站消息：命令识别、Agent 处理、回复。"""
+        """处理单条入站消息：命令识别、Agent 处理、回复"""
         cancel_token = CancellationToken()
         session_id = None
         start_time = time.time()
+        
+        # 检查是否有流式处理器（企业微信等频道）
+        stream_handler = msg.metadata.get('_stream_handler') if msg.metadata else None
 
         try:
             logger.info(
@@ -212,7 +216,10 @@ class ChannelMessageHandler:
                 allowed, error_msg = await self.rate_limiter.check(msg.sender_id)
                 if not allowed:
                     logger.warning(f"[{msg.channel}] Rate limit for {msg.sender_id}")
-                    await self._send_reply(msg, error_msg)
+                    if stream_handler:
+                        await stream_handler(error_msg, is_final=True)
+                    else:
+                        await self._send_reply(msg, error_msg)
                     return
 
             # 命令分发
@@ -259,18 +266,42 @@ class ChannelMessageHandler:
             if history:
                 history = history[:-1]
 
-            response = await self._process_with_agent(
-                session_id, msg.content, history, cancel_token,
-                channel=msg.channel, chat_id=msg.chat_id,
-            )
+            # 流式模式：实时发送每个 chunk
+            if stream_handler:
+                response_parts = []
+                async for chunk in self.agent_loop.process_message(
+                    message=msg.content,
+                    session_id=session_id,
+                    context=history,
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    cancel_token=cancel_token,
+                    yield_intermediate=True,
+                ):
+                    if cancel_token.is_cancelled:
+                        break
+                    response_parts.append(chunk)
+                    await stream_handler(chunk, is_final=False)
+                
+                response = "".join(response_parts)
+                await stream_handler("", is_final=True)
+            else:
+                # 传统模式：收集所有响应后再发送
+                response = await self._process_with_agent(
+                    session_id, msg.content, history, cancel_token,
+                    channel=msg.channel, chat_id=msg.chat_id,
+                )
 
             if cancel_token.is_cancelled:
                 logger.info(f"[{msg.channel}] Task cancelled for session {session_id}")
-                await self._send_reply(msg, "Task cancelled")
+                if stream_handler:
+                    await stream_handler("Task cancelled", is_final=True)
+                else:
+                    await self._send_reply(msg, "Task cancelled")
                 return
 
             if response:
-                # 使用 SessionManager 保存消息（与 Web UI 一致）
+                # 保存消息到数据库
                 async with self.db_session_factory() as db:
                     from backend.modules.session.manager import SessionManager
                     session_manager = SessionManager(db)
@@ -281,7 +312,7 @@ class ChannelMessageHandler:
                         content=response,
                     )
                     
-                    # 回填 message_id 到工具调用记录（与 Web UI 一致）
+                    # 回填 message_id 到工具调用记录
                     try:
                         from backend.modules.tools.conversation_history import get_conversation_history
                         conversation_history = get_conversation_history()
@@ -297,22 +328,29 @@ class ChannelMessageHandler:
                     except Exception as e:
                         logger.warning(f"[{msg.channel}] Failed to backfill message_id: {e}")
                 
-                # 剥离工作流元数据注释（仅用于 Web UI 恢复面板，频道无需此内容）
+                # 剥离工作流元数据注释
                 channel_response = _WORKFLOW_META_RE.sub("", response).strip()
-                await self._send_reply(msg, channel_response or response)
+                
+                # 非流式模式才需要发送回复
+                if not stream_handler:
+                    await self._send_reply(msg, channel_response or response)
+                
                 duration = time.time() - start_time
-                logger.info(
-                    f"[{msg.channel}] Handled session {session_id} in {duration:.2f}s"
-                )
+                logger.info(f"[{msg.channel}] Handled session {session_id} in {duration:.2f}s")
             else:
                 logger.warning(f"[{msg.channel}] No response for session {session_id}")
 
         except Exception as e:
             duration = time.time() - start_time
-            logger.exception(
-                f"[{msg.channel}] Error after {duration:.2f}s: {e}"
-            )
-            await self._send_reply(msg, _friendly_channel_error(str(e)))
+            logger.exception(f"[{msg.channel}] Error after {duration:.2f}s: {e}")
+            
+            if stream_handler:
+                try:
+                    await stream_handler(_friendly_channel_error(str(e)), is_final=True)
+                except Exception as se:
+                    logger.error(f"[{msg.channel}] Failed to send error via stream_handler: {se}")
+            else:
+                await self._send_reply(msg, _friendly_channel_error(str(e)))
 
         finally:
             if session_id and session_id in self._active_tasks:
@@ -326,10 +364,10 @@ class ChannelMessageHandler:
         self,
         session_id: str,
         user_message: str,
-        history: list[dict],
+        history: List[dict],
         cancel_token: CancellationToken,
-        channel: str | None = None,
-        chat_id: str | None = None,
+        channel: Optional[str] = None,
+        chat_id: Optional[str] = None,
     ) -> str:
         """运行 Agent 循环并收集响应。"""
         original_provider = None
@@ -357,7 +395,7 @@ class ChannelMessageHandler:
                             original_max_tokens = self.agent_loop.max_tokens
                             original_max_iterations = self.agent_loop.max_iterations
 
-                            self.agent_loop.provider = LiteLLMProvider(
+                            self.agent_loop.provider = create_provider(
                                 api_key=runtime_config.api_key,
                                 api_base=runtime_config.api_base,
                                 default_model=runtime_config.model_name,
@@ -394,7 +432,7 @@ class ChannelMessageHandler:
                 channel=channel,
                 chat_id=chat_id,
                 cancel_token=cancel_token,
-                yield_intermediate=False,
+                yield_intermediate=True,  # 启用流式输出
             ):
                 if cancel_token.is_cancelled:
                     break
@@ -450,7 +488,7 @@ class ChannelMessageHandler:
 
     async def _load_recent_sessions(
         self, msg: InboundMessage, include_all: bool = False, limit: int = 10
-    ) -> list[Session]:
+    ) -> List[Session]:
         """加载最近会话列表。"""
         from sqlalchemy import select
 
@@ -465,7 +503,7 @@ class ChannelMessageHandler:
             result = await db.execute(query)
             return list(result.scalars().all())
 
-    async def _load_session_message_counts(self, session_ids: list[str]) -> dict[str, int]:
+    async def _load_session_message_counts(self, session_ids: List[str]) -> Dict[str, int]:
         """批量加载会话消息数量。"""
         from sqlalchemy import func, select
 
@@ -480,7 +518,7 @@ class ChannelMessageHandler:
             )
             return {session_id: count for session_id, count in result.all()}
 
-    async def _get_session_by_id(self, session_id: str) -> Session | None:
+    async def _get_session_by_id(self, session_id: str) -> Optional[Session]:
         """根据 ID 查找会话。"""
         from sqlalchemy import select
 
@@ -980,7 +1018,7 @@ class ChannelMessageHandler:
             db.add(Message(session_id=session_id, role=role, content=content))
             await db.commit()
 
-    async def _get_session_history(self, session_id: str) -> list[dict]:
+    async def _get_session_history(self, session_id: str) -> List[dict]:
         """获取会话历史消息。"""
         from sqlalchemy import select
 
@@ -1023,7 +1061,7 @@ class ChannelMessageHandler:
             return True
         return False
 
-    def get_active_tasks(self) -> list[str]:
+    def get_active_tasks(self) -> List[str]:
         """获取所有活跃任务的会话 ID。"""
         return list(self._active_tasks.keys())
 

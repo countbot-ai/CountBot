@@ -5,6 +5,7 @@ Tests whether a skill's description causes Claude to trigger (read the skill)
 for a set of queries. Outputs results as JSON.
 """
 
+from typing import Dict, List, Optional, Union
 import argparse
 import json
 import os
@@ -38,7 +39,7 @@ def run_single_query(
     skill_description: str,
     timeout: int,
     project_root: str,
-    model: str | None = None,
+    model: Optional[str] = None,
 ) -> bool:
     """Run a single query and return whether the skill was triggered.
 
@@ -182,7 +183,7 @@ def run_single_query(
 
 
 def run_eval(
-    eval_set: list[dict],
+    eval_set: List[dict],
     skill_name: str,
     description: str,
     num_workers: int,
@@ -190,7 +191,7 @@ def run_eval(
     project_root: Path,
     runs_per_query: int = 1,
     trigger_threshold: float = 0.5,
-    model: str | None = None,
+    model: Optional[str] = None,
 ) -> dict:
     """Run the full eval set and return results."""
     results = []
@@ -210,8 +211,8 @@ def run_eval(
                 )
                 future_to_info[future] = (item, run_idx)
 
-        query_triggers: dict[str, list[bool]] = {}
-        query_items: dict[str, dict] = {}
+        query_triggers: Dict[str, List[bool]] = {}
+        query_items: Dict[str, dict] = {}
         for future in as_completed(future_to_info):
             item, _ = future_to_info[future]
             query = item["query"]

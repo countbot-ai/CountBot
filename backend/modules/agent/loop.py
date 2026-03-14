@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 from backend.modules.tools.conversation_history import get_conversation_history
@@ -21,7 +21,7 @@ class AgentLoop:
         context_builder=None,
         session_manager=None,
         subagent_manager=None,
-        model: str | None = None,
+        model: Optional[str] = None,
         max_iterations: int = 25,
         max_retries: int = 3,
         retry_delay: float = 1.0,
@@ -49,10 +49,10 @@ class AgentLoop:
         self,
         message: str,
         session_id: str,
-        context: list[dict[str, Any]] | None = None,
-        media: list[str] | None = None,
-        channel: str | None = None,
-        chat_id: str | None = None,
+        context: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List[str]] = None,
+        channel: Optional[str] = None,
+        chat_id: Optional[str] = None,
         cancel_token=None,
         yield_intermediate: bool = True,
     ) -> AsyncIterator[str]:
@@ -344,7 +344,7 @@ class AgentLoop:
     async def execute_tool(
         self,
         tool_name: str,
-        arguments: dict[str, Any],
+        arguments: Dict[str, Any],
     ) -> str:
         """
         执行工具调用

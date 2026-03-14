@@ -6,7 +6,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -19,8 +19,8 @@ class InboundMessage:
     sender_id: str
     chat_id: str
     content: str
-    media: list[str] = None
-    metadata: dict[str, Any] = None
+    media: List[str] = None
+    metadata: Dict[str, Any] = None
 
     def __post_init__(self):
         if self.media is None:
@@ -36,8 +36,8 @@ class OutboundMessage:
     channel: str
     chat_id: str
     content: str
-    media: list[str] | None = None
-    metadata: dict[str, Any] = None
+    media: Optional[List[str]] = None
+    metadata: Dict[str, Any] = None
 
     def __post_init__(self):
         if self.media is None:
@@ -80,7 +80,7 @@ class BaseChannel(ABC):
         """通过此频道发送消息。"""
 
     @abstractmethod
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试频道连接，返回 ``{success: bool, message: str}``。"""
 
     # ------------------------------------------------------------------
@@ -122,8 +122,8 @@ class BaseChannel(ABC):
         sender_id: str,
         chat_id: str,
         content: str,
-        media: list[str] | None = None,
-        metadata: dict[str, Any] | None = None,
+        media: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """处理入站消息：校验权限后转发到回调。"""
         if not self.is_allowed(sender_id):

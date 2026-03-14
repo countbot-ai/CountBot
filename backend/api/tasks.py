@@ -1,5 +1,6 @@
 """Tasks API - 子 Agent 任务管理"""
 
+from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -21,15 +22,15 @@ class TaskResponse(BaseModel):
     task_id: str
     label: str
     message: str
-    session_id: str | None
+    session_id: Optional[str]
     status: str
     progress: int
-    result: str | None
-    error: str | None
+    result: Optional[str]
+    error: Optional[str]
     created_at: str
-    started_at: str | None
-    completed_at: str | None
-    tool_call_records: list[dict] = []
+    started_at: Optional[str]
+    completed_at: Optional[str]
+    tool_call_records: List[dict] = []
 
 
 class TaskStatsResponse(BaseModel):
@@ -69,11 +70,11 @@ def require_subagent_manager():
 # ============================================================================
 
 
-@router.get("/", response_model=list[TaskResponse])
+@router.get("/", response_model=List[TaskResponse])
 async def list_tasks(
-    status_filter: str | None = None,
-    session_id: str | None = None,
-) -> list[TaskResponse]:
+    status_filter: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> List[TaskResponse]:
     """
     列出所有任务
     
@@ -82,7 +83,7 @@ async def list_tasks(
         session_id: 会话 ID 过滤
         
     Returns:
-        list[TaskResponse]: 任务列表
+        List[TaskResponse]: 任务列表
     """
     try:
         manager = require_subagent_manager()
@@ -243,7 +244,7 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResp
 
 
 @router.delete("/{task_id}")
-async def cancel_task(task_id: str) -> dict[str, bool]:
+async def cancel_task(task_id: str) -> Dict[str, bool]:
     """
     取消任务
     
@@ -279,7 +280,7 @@ async def cancel_task(task_id: str) -> dict[str, bool]:
 
 
 @router.post("/{task_id}/delete")
-async def delete_task(task_id: str) -> dict[str, bool]:
+async def delete_task(task_id: str) -> Dict[str, bool]:
     """
     删除任务
     

@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional, Tuple
 
 from loguru import logger
 
@@ -376,7 +376,7 @@ class SkillConfigSchema:
         
         return SKILL_SCHEMAS[skill_name]
     
-    def validate_config(self, skill_name: str, config: dict) -> tuple[bool, list[str]]:
+    def validate_config(self, skill_name: str, config: dict) -> Tuple[bool, List[str]]:
         """
         验证配置是否符合Schema
         
@@ -399,8 +399,8 @@ class SkillConfigSchema:
     def _validate_fields(
         self, 
         config: dict, 
-        fields: list[dict], 
-        errors: list[str],
+        fields: List[dict], 
+        errors: List[str],
         prefix: str = ""
     ) -> None:
         """
@@ -493,7 +493,7 @@ class SkillConfigSchema:
         self._generate_default_fields(config, schema.get('fields', []))
         return config
     
-    def _generate_default_fields(self, config: dict, fields: list[dict]) -> None:
+    def _generate_default_fields(self, config: dict, fields: List[dict]) -> None:
         """
         递归生成默认字段值
         

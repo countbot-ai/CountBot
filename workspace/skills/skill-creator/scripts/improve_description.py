@@ -6,6 +6,7 @@ by calling `claude -p` as a subprocess (same auth pattern as run_eval.py —
 uses the session's Claude Code auth, no separate ANTHROPIC_API_KEY needed).
 """
 
+from typing import List, Optional, Union
 import argparse
 import json
 import os
@@ -17,7 +18,7 @@ from pathlib import Path
 from scripts.utils import parse_skill_md
 
 
-def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
+def _call_claude(prompt: str, model: Optional[str], timeout: int = 300) -> str:
     """Run `claude -p` with the prompt on stdin and return the text response.
 
     Prompt goes over stdin (not argv) because it embeds the full SKILL.md
@@ -52,11 +53,11 @@ def improve_description(
     skill_content: str,
     current_description: str,
     eval_results: dict,
-    history: list[dict],
+    history: List[dict],
     model: str,
-    test_results: dict | None = None,
-    log_dir: Path | None = None,
-    iteration: int | None = None,
+    test_results: Optional[dict] = None,
+    log_dir: Optional[Path] = None,
+    iteration: Optional[int] = None,
 ) -> str:
     """Call Claude to improve the description based on eval results."""
     failed_triggers = [

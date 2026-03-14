@@ -1,6 +1,6 @@
 """任务取消令牌"""
 
-from typing import Callable
+from typing import Callable, List
 
 from loguru import logger
 
@@ -10,7 +10,7 @@ class CancellationToken:
 
     def __init__(self):
         self._cancelled = False
-        self._callbacks: list[Callable] = []
+        self._callbacks: List[Callable] = []
 
     def cancel(self):
         """标记为已取消并执行回调"""

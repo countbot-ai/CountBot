@@ -21,7 +21,7 @@ class TencentOSSUploader:
     async def upload(self, file_path: Path) -> Optional[str]:
         """上传文件到腾讯云 OSS"""
         try:
-            import aiohttp
+            import httpx
             from urllib.parse import quote
             
             object_key = f"images/{file_path.name}"
@@ -66,19 +66,20 @@ class TencentOSSUploader:
             
             logger.info(f"上传到腾讯云 OSS: {file_path.name}")
             
-            async with aiohttp.ClientSession() as session:
-                async with session.put(
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.put(
                     url,
-                    data=file_data,
+                    content=file_data,
                     headers={"Authorization": authorization}
-                ) as response:
-                    if response.status == 200:
-                        logger.info(f"上传成功: {url}")
-                        return url
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"上传失败 ({response.status}): {error_text}")
-                        return None
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"上传成功: {url}")
+                    return url
+                else:
+                    error_text = response.text
+                    logger.error(f"上传失败 ({response.status_code}): {error_text}")
+                    return None
             
         except Exception as e:
             logger.error(f"腾讯云 OSS 上传失败: {e}")
@@ -120,7 +121,7 @@ def get_upload_manager() -> ImageUploadManager:
     return _upload_manager
 
 
-def init_oss_uploader(config: dict | None = None):
+def init_oss_uploader(config: Optional[dict] = None):
     """初始化腾讯云 OSS 上传
     
     Args:

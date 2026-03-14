@@ -5,7 +5,7 @@
 - MemoryWriteTool / MemorySearchTool / MemoryReadTool: 保留用于向后兼容
 """
 
-from typing import Any
+from typing import Any, Dict, Optional
 from loguru import logger
 from backend.modules.tools.base import Tool
 from backend.modules.agent.memory import MemoryStore
@@ -16,9 +16,9 @@ class MemoryWriteTool(Tool):
 
     def __init__(self, memory_store: MemoryStore):
         self._memory = memory_store
-        self._channel: str | None = None
+        self._channel: Optional[str] = None
 
-    def set_channel(self, channel: str | None) -> None:
+    def set_channel(self, channel: Optional[str]) -> None:
         """设置当前渠道，用作记忆来源"""
         self._channel = channel
 
@@ -35,7 +35,7 @@ class MemoryWriteTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -78,7 +78,7 @@ class MemorySearchTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -131,7 +131,7 @@ class MemoryReadTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -154,8 +154,8 @@ class MemoryReadTool(Tool):
 
     async def execute(
         self,
-        start_line: int | None = None,
-        end_line: int | None = None,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
         recent_count: int = 10,
         **kwargs,
     ) -> str:
@@ -189,9 +189,9 @@ class MemoryTool(Tool):
 
     def __init__(self, memory_store: MemoryStore):
         self._memory = memory_store
-        self._channel: str | None = None
+        self._channel: Optional[str] = None
 
-    def set_channel(self, channel: str | None) -> None:
+    def set_channel(self, channel: Optional[str]) -> None:
         """设置当前渠道，用作 write 操作的记忆来源"""
         self._channel = channel
 
@@ -208,7 +208,7 @@ class MemoryTool(Tool):
         )
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -256,12 +256,12 @@ class MemoryTool(Tool):
     async def execute(
         self,
         action: str,
-        content: str | None = None,
-        keywords: str | None = None,
+        content: Optional[str] = None,
+        keywords: Optional[str] = None,
         max_results: int = 15,
         match_mode: str = "or",
-        start_line: int | None = None,
-        end_line: int | None = None,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
         recent_count: int = 10,
         **kwargs,
     ) -> str:

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +40,7 @@ class SessionManager:
         )
         return result.scalar_one_or_none()
 
-    async def list_sessions(self, limit: Optional[int] = None, offset: int = 0) -> list[Session]:
+    async def list_sessions(self, limit: Optional[int] = None, offset: int = 0) -> List[Session]:
         """列出所有会话，按更新时间倒序排列"""
         query = select(Session).order_by(Session.updated_at.desc())
         
@@ -119,7 +119,7 @@ class SessionManager:
         session_id: str,
         limit: Optional[int] = None,
         offset: int = 0
-    ) -> list[Message]:
+    ) -> List[Message]:
         """获取会话的消息列表，按创建时间正序排列
         
         Args:
@@ -250,7 +250,7 @@ class SessionManager:
         self,
         session_id: str,
         limit: Optional[int] = 50
-    ) -> list[dict]:
+    ) -> List[dict]:
         """获取带总结的对话历史（短期记忆优化）"""
         messages = await self.get_messages(session_id=session_id, limit=limit)
 
@@ -290,7 +290,7 @@ class SessionManager:
         session_id: str,
         max_history: int,
         provider=None,
-        model: str | None = None,
+        model: Optional[str] = None,
         memory_store=None,
     ) -> None:
         """滚动窗口溢出总结：将超出 max_history 的旧消息总结写入 MEMORY.md。

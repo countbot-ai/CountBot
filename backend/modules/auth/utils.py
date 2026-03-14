@@ -3,7 +3,7 @@
 import hashlib
 import secrets
 import time
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 from loguru import logger
 
@@ -13,7 +13,7 @@ from loguru import logger
 # ============================================================================
 
 
-def validate_password(password: str) -> tuple[bool, str]:
+def validate_password(password: str) -> Tuple[bool, str]:
     """验证密码强度：至少8位，必须包含大写字母、小写字母和数字
 
     Returns:
@@ -50,7 +50,7 @@ def verify_password(password: str, stored_hash: str) -> bool:
 # ============================================================================
 
 # 内存中的 session 存储: {token: {"username": str, "created_at": float}}
-_sessions: dict[str, dict] = {}
+_sessions: Dict[str, dict] = {}
 
 # Token 有效期（秒）：24 小时
 TOKEN_EXPIRY = 86400

@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Callable, Awaitable
+from typing import Awaitable, Callable, Optional, Set
 
 from backend.modules.cron.service import CronService, SHANGHAI_TZ
 from backend.utils.logger import logger
@@ -37,8 +37,8 @@ class CronScheduler:
         self._timer_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()  # 防止并发调度问题
         self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._active_jobs: set[str] = set()  # 正在执行的 job_id 集合
-        self._active_tasks: set[asyncio.Task] = set()  # 正在执行的 asyncio.Task
+        self._active_jobs: Set[str] = set()  # 正在执行的 job_id 集合
+        self._active_tasks: Set[asyncio.Task] = set()  # 正在执行的 asyncio.Task
     
     async def start(self):
         """启动调度器"""

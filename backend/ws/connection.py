@@ -11,7 +11,7 @@
 import asyncio
 import json
 import uuid
-from typing import Any
+from typing import Any, Dict, Optional, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 # 全局取消令牌管理器
 from backend.modules.agent.task_manager import CancellationToken
 
-_session_cancel_tokens: dict[str, CancellationToken] = {}
+_session_cancel_tokens: Dict[str, CancellationToken] = {}
 
 
 @dataclass
@@ -35,8 +35,8 @@ class SessionTask:
 
 
 # 会话任务管理器
-_session_tasks: dict[str, SessionTask] = {}
-_pending_cancellations: dict[str, asyncio.Task] = {}
+_session_tasks: Dict[str, SessionTask] = {}
+_pending_cancellations: Dict[str, asyncio.Task] = {}
 
 
 def get_cancel_token(session_id: str) -> CancellationToken:
@@ -224,7 +224,7 @@ class ClientMessage(BaseModel):
 
     type: str = Field(..., description="消息类型")
     session_id: str = Field(..., alias="sessionId", description="会话 ID")
-    content: str | None = Field(None, description="消息内容（ping 消息可选）")
+    content: Optional[str] = Field(None, description="消息内容（ping 消息可选）")
 
 
 class ServerMessage(BaseModel):
@@ -251,8 +251,8 @@ class ToolCall(ServerMessage):
 
     type: str = Field(default="tool_call", description="消息类型")
     tool: str = Field(..., description="工具名称")
-    arguments: dict[str, Any] = Field(..., description="工具参数")
-    message_id: int | None = Field(None, alias="messageId", description="关联的消息ID")
+    arguments: Dict[str, Any] = Field(..., description="工具参数")
+    message_id: Optional[int] = Field(None, alias="messageId", description="关联的消息ID")
 
 
 class ToolResult(ServerMessage):
@@ -263,8 +263,8 @@ class ToolResult(ServerMessage):
     type: str = Field(default="tool_result", description="消息类型")
     tool: str = Field(..., description="工具名称")
     result: str = Field(..., description="执行结果")
-    message_id: int | None = Field(None, alias="messageId", description="关联的消息ID")
-    duration: float | None = Field(None, description="执行耗时（毫秒）")
+    message_id: Optional[int] = Field(None, alias="messageId", description="关联的消息ID")
+    duration: Optional[float] = Field(None, description="执行耗时（毫秒）")
 
 
 class MessageComplete(ServerMessage):
@@ -281,7 +281,7 @@ class ErrorMessage(ServerMessage):
 
     type: str = Field(default="error", description="消息类型")
     message: str = Field(..., description="错误描述")
-    code: str | None = Field(None, description="错误代码")
+    code: Optional[str] = Field(None, description="错误代码")
 
 
 # ============================================================================
@@ -301,15 +301,15 @@ class ConnectionManager:
     def __init__(self):
         """初始化连接管理器"""
         # 存储所有活跃连接: {connection_id: websocket}
-        self._connections: dict[str, WebSocket] = {}
+        self._connections: Dict[str, WebSocket] = {}
 
         # 存储会话到连接的映射: {session_id: set(connection_id)}
-        self._session_connections: dict[str, set[str]] = {}
+        self._session_connections: Dict[str, Set[str]] = {}
 
         # 连接锁，防止并发修改
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket, connection_id: str | None = None) -> str:
+    async def connect(self, websocket: WebSocket, connection_id: Optional[str] = None) -> str:
         """注册新连接
 
         Args:
@@ -591,7 +591,7 @@ async def send_message_chunk(session_id: str, content: str) -> int:
     )
 
 
-async def send_tool_call(session_id: str, tool: str, arguments: dict[str, Any], message_id: int | None = None) -> int:
+async def send_tool_call(session_id: str, tool: str, arguments: Dict[str, Any], message_id: Optional[int] = None) -> int:
     """发送工具调用通知到会话
 
     Args:
@@ -608,7 +608,7 @@ async def send_tool_call(session_id: str, tool: str, arguments: dict[str, Any], 
     )
 
 
-async def send_tool_result(session_id: str, tool: str, result: str, message_id: int | None = None, duration: float | None = None) -> int:
+async def send_tool_result(session_id: str, tool: str, result: str, message_id: Optional[int] = None, duration: Optional[float] = None) -> int:
     """发送工具执行结果到会话
 
     Args:
@@ -672,7 +672,7 @@ async def send_dict_to_session(session_id: str, data: dict) -> int:
     return success_count
 
 
-async def send_error(session_id: str, message: str, code: str | None = None) -> int:
+async def send_error(session_id: str, message: str, code: Optional[str] = None) -> int:
     """发送错误消息到会话
 
     Args:

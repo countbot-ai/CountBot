@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from loguru import logger
 from backend.utils.paths import APPLICATION_ROOT
@@ -44,7 +44,7 @@ class Skill:
         # 添加 auto_load 属性，从 metadata 中获取
         self.auto_load = self.metadata.get("always", False)
 
-    def _parse_metadata(self) -> dict[str, Any]:
+    def _parse_metadata(self) -> Dict[str, Any]:
         """解析技能文件的元数据（YAML frontmatter）"""
         metadata = {
             "title": self.name,
@@ -140,8 +140,8 @@ class SkillsLoader:
     def __init__(
         self,
         skills_dir: Path,
-        builtin_skills_dir: Path | None = None,
-        external_skills_dirs: list[Path] | None = None,
+        builtin_skills_dir: Optional[Path] = None,
+        external_skills_dirs: Optional[List[Path]] = None,
     ):
         """
         初始化 SkillsLoader
@@ -157,7 +157,7 @@ class SkillsLoader:
         self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
         self.external_skills_dirs = external_skills_dirs
         
-        self.skills: dict[str, Skill] = {}
+        self.skills: Dict[str, Skill] = {}
         
         # 加载禁用配置
         self.config_file = self.workspace_skills.parent / ".skills_config.json"
@@ -167,7 +167,7 @@ class SkillsLoader:
         
         logger.info(f"Loaded {len(self.skills)} skills")
     
-    def _load_disabled_skills(self) -> set[str]:
+    def _load_disabled_skills(self) -> Set[str]:
         """从配置文件加载禁用的技能列表"""
         if not self.config_file.exists():
             logger.debug(f"Skills config file not found: {self.config_file}")
@@ -182,7 +182,7 @@ class SkillsLoader:
             logger.warning(f"Failed to load skills config from {self.config_file}: {e}")
             return set()
 
-    def _discover_openclaw_skill_dirs(self) -> list[Path]:
+    def _discover_openclaw_skill_dirs(self) -> List[Path]:
         """发现外部 OpenClaw / 兼容技能目录"""
         if self.external_skills_dirs is not None:
             candidates = [Path(path) for path in self.external_skills_dirs]
@@ -197,8 +197,8 @@ class SkillsLoader:
             if userprofile:
                 candidates.insert(0, Path(userprofile) / ".openclaw" / "skills")
 
-        discovered: list[Path] = []
-        seen: set[str] = set()
+        discovered: List[Path] = []
+        seen: Set[str] = set()
 
         for candidate in candidates:
             resolved = candidate.expanduser().resolve(strict=False)
@@ -320,7 +320,7 @@ class SkillsLoader:
         except Exception as e:
             logger.error(f"Failed to load skills: {e}")
 
-    def list_skills(self, enabled_only: bool = False, filter_unavailable: bool = False) -> list[dict]:
+    def list_skills(self, enabled_only: bool = False, filter_unavailable: bool = False) -> List[dict]:
         """
         列出所有技能
         
@@ -397,7 +397,7 @@ class SkillsLoader:
         else:
             return self.disable_skill(name)
 
-    def get_always_skills(self) -> list[str]:
+    def get_always_skills(self) -> List[str]:
         """
         获取标记为 always=true 且满足依赖的技能
         
@@ -410,7 +410,7 @@ class SkillsLoader:
                 result.append(name)
         return result
 
-    def load_skills_for_context(self, skill_names: list[str]) -> str:
+    def load_skills_for_context(self, skill_names: List[str]) -> str:
         """
         加载特定技能用于包含在 agent 上下文中
         
@@ -472,7 +472,7 @@ class SkillsLoader:
                 return content[match.end():].strip()
         return content
 
-    def get_skill(self, name: str) -> Skill | None:
+    def get_skill(self, name: str) -> Optional[Skill]:
         """
         获取指定技能
         
@@ -555,7 +555,7 @@ class SkillsLoader:
         logger.info(f"Disabled skill: {name}")
         return True
 
-    def check_dependencies(self, name: str) -> tuple[bool, list[str]]:
+    def check_dependencies(self, name: str) -> Tuple[bool, List[str]]:
         """
         检查技能依赖
         
@@ -606,7 +606,7 @@ class SkillsLoader:
         
         return "\n".join(summaries)
 
-    def get_auto_load_skills(self) -> list[str]:
+    def get_auto_load_skills(self) -> List[str]:
         """
         获取所有自动加载的技能
         
@@ -765,7 +765,7 @@ class SkillsLoader:
             logger.error(f"Failed to delete skill '{name}': {e}")
             return False
 
-    def get_stats(self) -> dict[str, int]:
+    def get_stats(self) -> Dict[str, int]:
         """
         获取技能统计信息
         

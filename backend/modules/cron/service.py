@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Dict, List, Optional
 
 from croniter import croniter
 from sqlalchemy import select
@@ -23,7 +23,7 @@ class CronService:
     def __init__(self, db: AsyncSession, scheduler=None):
         self.db = db
         self.scheduler = scheduler
-        self._running_jobs: dict[str, asyncio.Task] = {}
+        self._running_jobs: Dict[str, asyncio.Task] = {}
 
     async def add_job(
         self,
@@ -85,7 +85,7 @@ class CronService:
         )
         return result.scalar_one_or_none()
 
-    async def list_jobs(self, enabled_only: bool = False) -> list[CronJob]:
+    async def list_jobs(self, enabled_only: bool = False) -> List[CronJob]:
         """列出所有任务"""
         query = select(CronJob).order_by(CronJob.created_at.desc())
         
@@ -189,7 +189,7 @@ class CronService:
         
         return True
 
-    async def get_due_jobs(self) -> list[CronJob]:
+    async def get_due_jobs(self) -> List[CronJob]:
         """获取到期任务（基于北京时间）"""
         now = datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
         result = await self.db.execute(
@@ -285,7 +285,7 @@ class CronService:
             return None
         return self.to_job_info(job)
 
-    async def list_job_infos(self, enabled_only: bool = False) -> list[CronJobInfo]:
+    async def list_job_infos(self, enabled_only: bool = False) -> List[CronJobInfo]:
         """列出所有任务信息"""
         jobs = await self.list_jobs(enabled_only=enabled_only)
         return [self.to_job_info(job) for job in jobs]

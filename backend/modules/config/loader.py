@@ -1,7 +1,7 @@
 """配置加载器"""
 
 import json
-from typing import Any
+from typing import Any, Dict
 
 from loguru import logger
 from sqlalchemy import select
@@ -30,7 +30,7 @@ class ConfigLoader:
                 await self.save()
                 return self.config
 
-            config_dict: dict[str, Any] = {}
+            config_dict: Dict[str, Any] = {}
             for setting in settings:
                 key_path = setting.key.replace("config.", "")
                 value = json.loads(setting.value)
@@ -99,7 +99,7 @@ class ConfigLoader:
             workspace_manager.activate_workspace_path(workspace_path)
 
     async def _save_nested_dict(
-        self, session: Any, data: dict[str, Any], prefix: str
+        self, session: Any, data: Dict[str, Any], prefix: str
     ) -> None:
         """递归保存嵌套字典"""
         for key, value in data.items():
@@ -110,7 +110,7 @@ class ConfigLoader:
                 setting = Setting(key=full_key, value=json.dumps(value))
                 await session.merge(setting)
 
-    def _set_nested_value(self, data: dict[str, Any], key_path: str, value: Any) -> None:
+    def _set_nested_value(self, data: Dict[str, Any], key_path: str, value: Any) -> None:
         """设置嵌套字典值"""
         keys = key_path.split(".")
         current = data

@@ -1,5 +1,6 @@
 """Cron API 端点"""
 
+from typing import List, Optional, Union
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from loguru import logger
@@ -23,7 +24,7 @@ def _now_beijing() -> datetime:
     return datetime.now(_SHANGHAI_TZ).replace(tzinfo=None)
 
 
-def _to_shanghai_iso(dt: datetime | None) -> str | None:
+def _to_shanghai_iso(dt: Optional[datetime]) -> Optional[str]:
     """将 naive datetime（北京时间）转为带时区的 ISO 字符串"""
     if dt is None:
         return None
@@ -51,13 +52,13 @@ class CronJobInfo(BaseModel):
     schedule: str = Field(..., description="Cron 表达式")
     message: str = Field(..., description="要执行的消息")
     enabled: bool = Field(..., description="是否启用")
-    channel: str | None = Field(None, description="渠道名称")
-    chat_id: str | None = Field(None, description="聊天 ID")
+    channel: Optional[str] = Field(None, description="渠道名称")
+    chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
-    last_run: str | None = Field(None, description="上次运行时间")
-    next_run: str | None = Field(None, description="下次运行时间")
-    last_status: str | None = Field(None, description="上次执行状态")
-    last_error: str | None = Field(None, description="上次错误信息")
+    last_run: Optional[str] = Field(None, description="上次运行时间")
+    next_run: Optional[str] = Field(None, description="下次运行时间")
+    last_status: Optional[str] = Field(None, description="上次执行状态")
+    last_error: Optional[str] = Field(None, description="上次错误信息")
     run_count: int = Field(0, description="执行次数")
     error_count: int = Field(0, description="错误次数")
     created_at: str = Field(..., description="创建时间")
@@ -69,7 +70,7 @@ class CronJobInfo(BaseModel):
 class ListCronJobsResponse(BaseModel):
     """Cron 任务列表响应"""
     
-    jobs: list[CronJobInfo] = Field(..., description="任务列表")
+    jobs: List[CronJobInfo] = Field(..., description="任务列表")
 
 
 class CreateCronJobRequest(BaseModel):
@@ -79,8 +80,8 @@ class CreateCronJobRequest(BaseModel):
     schedule: str = Field(..., description="Cron 表达式")
     message: str = Field(..., description="要执行的消息")
     enabled: bool = Field(True, description="是否启用")
-    channel: str | None = Field(None, description="渠道名称")
-    chat_id: str | None = Field(None, description="聊天 ID")
+    channel: Optional[str] = Field(None, description="渠道名称")
+    chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
     max_retries: int = Field(0, description="最大重试次数（0=不重试）")
     retry_delay: int = Field(60, description="重试延迟（秒）")
@@ -90,16 +91,16 @@ class CreateCronJobRequest(BaseModel):
 class UpdateCronJobRequest(BaseModel):
     """更新 Cron 任务请求"""
     
-    name: str | None = Field(None, description="任务名称")
-    schedule: str | None = Field(None, description="Cron 表达式")
-    message: str | None = Field(None, description="要执行的消息")
-    enabled: bool | None = Field(None, description="是否启用")
-    channel: str | None = Field(None, description="渠道名称")
-    chat_id: str | None = Field(None, description="聊天 ID")
-    deliver_response: bool | None = Field(None, description="是否发送响应到渠道")
-    max_retries: int | None = Field(None, description="最大重试次数")
-    retry_delay: int | None = Field(None, description="重试延迟（秒）")
-    delete_on_success: bool | None = Field(None, description="成功后自动删除")
+    name: Optional[str] = Field(None, description="任务名称")
+    schedule: Optional[str] = Field(None, description="Cron 表达式")
+    message: Optional[str] = Field(None, description="要执行的消息")
+    enabled: Optional[bool] = Field(None, description="是否启用")
+    channel: Optional[str] = Field(None, description="渠道名称")
+    chat_id: Optional[str] = Field(None, description="聊天 ID")
+    deliver_response: Optional[bool] = Field(None, description="是否发送响应到渠道")
+    max_retries: Optional[int] = Field(None, description="最大重试次数")
+    retry_delay: Optional[int] = Field(None, description="重试延迟（秒）")
+    delete_on_success: Optional[bool] = Field(None, description="成功后自动删除")
 
 
 class CronJobResponse(BaseModel):
@@ -118,7 +119,7 @@ class ExecuteCronJobResponse(BaseModel):
     """执行 Cron 任务响应"""
     
     success: bool = Field(..., description="是否成功")
-    message: str | None = Field(None, description="消息")
+    message: Optional[str] = Field(None, description="消息")
 
 
 class ValidateCronRequest(BaseModel):
@@ -131,14 +132,14 @@ class ValidateCronResponse(BaseModel):
     """验证 Cron 表达式响应"""
     
     valid: bool = Field(..., description="是否有效")
-    description: str | None = Field(None, description="表达式描述")
-    next_run: str | None = Field(None, description="下次运行时间")
+    description: Optional[str] = Field(None, description="表达式描述")
+    next_run: Optional[str] = Field(None, description="下次运行时间")
 
 
 class BatchCreateCronJobsRequest(BaseModel):
     """批量创建 Cron 任务请求"""
     
-    jobs: list[CreateCronJobRequest] = Field(..., description="任务列表")
+    jobs: List[CreateCronJobRequest] = Field(..., description="任务列表")
 
 
 class BatchCreateCronJobsResponse(BaseModel):
@@ -146,14 +147,14 @@ class BatchCreateCronJobsResponse(BaseModel):
     
     success_count: int = Field(..., description="成功创建数量")
     failed_count: int = Field(..., description="失败数量")
-    jobs: list[CronJobInfo] = Field(..., description="成功创建的任务")
-    errors: list[dict] = Field(..., description="失败的任务及错误信息")
+    jobs: List[CronJobInfo] = Field(..., description="成功创建的任务")
+    errors: List[dict] = Field(..., description="失败的任务及错误信息")
 
 
 class BatchDeleteCronJobsRequest(BaseModel):
     """批量删除 Cron 任务请求"""
     
-    job_ids: list[str] = Field(..., description="任务 ID 列表")
+    job_ids: List[str] = Field(..., description="任务 ID 列表")
 
 
 class BatchDeleteCronJobsResponse(BaseModel):
@@ -161,16 +162,16 @@ class BatchDeleteCronJobsResponse(BaseModel):
     
     success_count: int = Field(..., description="成功删除数量")
     failed_count: int = Field(..., description="失败数量")
-    deleted_ids: list[str] = Field(..., description="成功删除的任务 ID")
-    errors: list[dict] = Field(..., description="失败的任务及错误信息")
+    deleted_ids: List[str] = Field(..., description="成功删除的任务 ID")
+    errors: List[dict] = Field(..., description="失败的任务及错误信息")
 
 
 class CronJobDetailResponse(BaseModel):
     """Cron 任务详细信息响应"""
     
     job: CronJobInfo = Field(..., description="任务信息")
-    last_response: str | None = Field(None, description="完整的上次响应")
-    last_error: str | None = Field(None, description="完整的上次错误")
+    last_response: Optional[str] = Field(None, description="完整的上次响应")
+    last_error: Optional[str] = Field(None, description="完整的上次错误")
 
 
 # ============================================================================

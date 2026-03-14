@@ -9,7 +9,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional, Set
 
 import httpx
 from loguru import logger
@@ -171,14 +171,14 @@ class DingTalkChannel(BaseChannel):
     def __init__(self, config: Any):
         super().__init__(config)
         self._client = None
-        self._http: httpx.AsyncClient | None = None
-        self._access_token: str | None = None
+        self._http: Optional[httpx.AsyncClient] = None
+        self._access_token: Optional[str] = None
         self._token_expiry: float = 0
-        self._old_api_token: str | None = None
+        self._old_api_token: Optional[str] = None
         self._old_token_expiry: float = 0
-        self._background_tasks: set[asyncio.Task] = set()
+        self._background_tasks: Set[asyncio.Task] = set()
         # sessionWebhook 缓存：chat_id -> {url, expired_time, sender_staff_id}
-        self._webhook_cache: dict[str, dict] = {}
+        self._webhook_cache: Dict[str, dict] = {}
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -223,7 +223,7 @@ class DingTalkChannel(BaseChannel):
     # Token 管理
     # ------------------------------------------------------------------
 
-    async def _get_access_token(self) -> str | None:
+    async def _get_access_token(self) -> Optional[str]:
         """获取或刷新 Access Token（OpenAPI v1.0）。"""
         if self._access_token and time.time() < self._token_expiry:
             return self._access_token
@@ -248,7 +248,7 @@ class DingTalkChannel(BaseChannel):
             logger.error(f"Failed to get access token: {e}")
             return None
 
-    async def _get_old_api_token(self) -> str | None:
+    async def _get_old_api_token(self) -> Optional[str]:
         """获取旧版 API token（用于 oapi 媒体上传接口）。"""
         if self._old_api_token and time.time() < self._old_token_expiry:
             return self._old_api_token
@@ -280,7 +280,7 @@ class DingTalkChannel(BaseChannel):
     # 图片 URL 获取
     # ------------------------------------------------------------------
 
-    async def _get_image_url(self, download_code: str) -> str | None:
+    async def _get_image_url(self, download_code: str) -> Optional[str]:
         """通过下载码获取图片 OSS URL。"""
         try:
             token = await self._get_access_token()
@@ -532,7 +532,7 @@ class DingTalkChannel(BaseChannel):
 
     async def _upload_media(
         self, file_path: Path, token: str, media_type: str = "image"
-    ) -> str | None:
+    ) -> Optional[str]:
         """通过旧版 oapi 接口上传媒体文件，返回 media_id。"""
         try:
             mime = "image/png" if media_type == "image" else "application/octet-stream"
@@ -566,8 +566,8 @@ class DingTalkChannel(BaseChannel):
         sender_name: str,
         conversation_id: str,
         is_group: bool,
-        session_webhook: str | None = None,
-        session_webhook_expired_time: int | None = None,
+        session_webhook: Optional[str] = None,
+        session_webhook_expired_time: Optional[int] = None,
     ) -> None:
         """处理入站消息，缓存 webhook 后转发到消息回调。"""
         try:
@@ -603,7 +603,7 @@ class DingTalkChannel(BaseChannel):
     # 连接测试
     # ------------------------------------------------------------------
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试钉钉连接（获取 access token 验证凭据）。"""
         if not self.config.client_id or not self.config.client_secret:
             return {"success": False, "message": "Client ID or Client Secret not configured"}

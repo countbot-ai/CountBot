@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from typing import List, Optional
 """AI 性格预设配置
 
 12 种性格预设 + 自定义性格，通过 get_personality_prompt() 转换为系统提示词。
@@ -201,11 +202,11 @@ def get_personality_prompt(personality_id: str, custom_text: str = "") -> str:
     )
 
 
-def get_all_personality_ids() -> list[str]:
+def get_all_personality_ids() -> List[str]:
     """获取所有预设性格 ID 列表"""
     return list(PERSONALITY_PRESETS.keys())
 
 
-def get_personality_info(personality_id: str) -> dict | None:
+def get_personality_info(personality_id: str) -> Optional[dict]:
     """获取指定性格的完整信息"""
     return PERSONALITY_PRESETS.get(personality_id)

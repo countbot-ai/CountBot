@@ -5,7 +5,7 @@
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -13,7 +13,7 @@ from backend.modules.channels.base import BaseChannel, InboundMessage, OutboundM
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 
 # 频道注册表：name -> (module_path, class_name)
-_CHANNEL_REGISTRY: dict[str, tuple[str, str]] = {
+_CHANNEL_REGISTRY: Dict[str, Tuple[str, str]] = {
     "telegram": ("backend.modules.channels.telegram", "TelegramChannel"),
     "discord": ("backend.modules.channels.discord", "DiscordChannel"),
     "qq": ("backend.modules.channels.qq", "QQChannel"),
@@ -38,7 +38,7 @@ class ChannelManager:
     def __init__(self, config: Any, bus: EnterpriseMessageQueue):
         self.config = config
         self.bus = bus
-        self.channels: dict[str, BaseChannel] = {}
+        self.channels: Dict[str, BaseChannel] = {}
         self._running = False
         self._init_channels()
 
@@ -171,11 +171,11 @@ class ChannelManager:
         """发送消息到指定频道（通过消息总线）。"""
         await self.bus.publish_outbound(msg)
 
-    def get_channel(self, name: str) -> BaseChannel | None:
+    def get_channel(self, name: str) -> Optional[BaseChannel]:
         """按名称获取频道实例。"""
         return self.channels.get(name)
 
-    async def test_channel(self, name: str) -> dict[str, Any]:
+    async def test_channel(self, name: str) -> Dict[str, Any]:
         """测试指定频道的连接。"""
         if name not in _CHANNEL_REGISTRY:
             return {"success": False, "message": f"Unknown channel: {name}"}
@@ -210,7 +210,7 @@ class ChannelManager:
             logger.error(f"Error testing {name}: {e}")
             return {"success": False, "message": f"Test failed: {e}"}
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> Dict[str, Any]:
         """获取所有频道的运行状态。"""
         return {
             name: {
@@ -222,7 +222,7 @@ class ChannelManager:
         }
 
     @property
-    def enabled_channels(self) -> list[str]:
+    def enabled_channels(self) -> List[str]:
         return list(self.channels.keys())
 
     @property

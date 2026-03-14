@@ -5,7 +5,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional, Tuple, Union
 
 from loguru import logger
 
@@ -82,7 +82,7 @@ class WorkspaceManager:
             "new_skills_path": str(new_skills_dir)
         }
 
-    def prepare_workspace_path(self, path: str | Path) -> Path:
+    def prepare_workspace_path(self, path: Union[str, Path]) -> Path:
         """校验并准备工作空间路径，但不修改当前运行态。"""
         workspace_path = Path(path).expanduser().resolve()
         workspace_path.mkdir(parents=True, exist_ok=True)
@@ -91,7 +91,7 @@ class WorkspaceManager:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return workspace_path
 
-    def activate_workspace_path(self, workspace_path: str | Path) -> Path:
+    def activate_workspace_path(self, workspace_path: Union[str, Path]) -> Path:
         """激活一个已经校验通过的工作空间路径。"""
         resolved_path = Path(workspace_path).expanduser().resolve()
         temp_dir = resolved_path / "temp"
@@ -107,7 +107,7 @@ class WorkspaceManager:
         logger.info(f"工作空间路径: {resolved_path}")
         return resolved_path
 
-    def resolve_workspace_path_or_default(self, path: str | Path | None) -> tuple[Path, bool]:
+    def resolve_workspace_path_or_default(self, path: Optional[Union[str, Path]]) -> Tuple[Path, bool]:
         """解析工作空间路径；失败时回退到默认工作空间。"""
         if path:
             try:
@@ -240,7 +240,7 @@ class WorkspaceManager:
         workspace = self.workspace_path
         temp_dir = self.temp_dir
         
-        def get_dir_stats(path: Path, max_depth: int = 10) -> tuple[int, int, int]:
+        def get_dir_stats(path: Path, max_depth: int = 10) -> Tuple[int, int, int]:
             """获取目录统计信息（文件数、目录数、总大小）
             
             Args:

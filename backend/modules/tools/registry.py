@@ -2,7 +2,7 @@
 
 import contextvars
 import uuid
-from typing import Any
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 from loguru import logger
@@ -12,10 +12,10 @@ from backend.modules.tools.file_audit_logger import file_audit_logger
 
 # 使用 contextvars 实现异步安全的 session_id 存储
 # 每个异步任务都有独立的上下文，避免并发冲突
-_session_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+_session_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'session_id', default=None
 )
-_channel_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+_channel_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'channel', default=None
 )
 
@@ -23,13 +23,13 @@ _channel_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 _agent_type_context: contextvars.ContextVar[str] = contextvars.ContextVar(
     'agent_type', default='main'
 )
-_agent_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+_agent_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'agent_id', default=None
 )
-_workflow_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+_workflow_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'workflow_id', default=None
 )
-_parent_tool_call_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+_parent_tool_call_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'parent_tool_call_id', default=None
 )
 
@@ -39,7 +39,7 @@ class ToolRegistry:
 
     def __init__(self):
         """初始化工具注册表"""
-        self._tools: dict[str, Tool] = {}
+        self._tools: Dict[str, Tool] = {}
         self._audit_enabled: bool = True
         # 注意：不再使用实例变量存储 session_id，改用 contextvars
         logger.debug("ToolRegistry initialized (using contextvars for session isolation)")
@@ -50,7 +50,7 @@ class ToolRegistry:
         file_audit_logger.set_enabled(enabled)
         logger.debug(f"Audit logging {'enabled' if enabled else 'disabled'}")
     
-    def set_session_id(self, session_id: str | None) -> None:
+    def set_session_id(self, session_id: Optional[str]) -> None:
         """设置当前上下文的会话 ID（异步安全）
         
         使用 contextvars 确保每个异步任务都有独立的 session_id，
@@ -64,7 +64,7 @@ class ToolRegistry:
                 tool.set_session_id(session_id)
     
     @property
-    def _session_id(self) -> str | None:
+    def _session_id(self) -> Optional[str]:
         """获取当前上下文的会话 ID（异步安全）"""
         return _session_id_context.get()
 
@@ -77,9 +77,9 @@ class ToolRegistry:
     def set_agent_context(
         self,
         agent_type: str = "main",
-        agent_id: str | None = None,
-        workflow_id: str | None = None,
-        parent_tool_call_id: str | None = None,
+        agent_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        parent_tool_call_id: Optional[str] = None,
     ) -> None:
         """设置代理上下文信息（异步安全）
         
@@ -94,7 +94,7 @@ class ToolRegistry:
         _workflow_id_context.set(workflow_id)
         _parent_tool_call_id_context.set(parent_tool_call_id)
     
-    def set_channel(self, channel: str | None) -> None:
+    def set_channel(self, channel: Optional[str]) -> None:
         """设置当前上下文的消息来源渠道（异步安全）
         
         如 dingtalk, telegram, web-chat
@@ -107,7 +107,7 @@ class ToolRegistry:
             memory_tool.set_channel(channel)
 
     @property
-    def channel(self) -> str | None:
+    def channel(self) -> Optional[str]:
         """获取当前上下文的渠道（异步安全）"""
         return _channel_context.get()
 
@@ -145,7 +145,7 @@ class ToolRegistry:
             logger.warning(f"Tool '{tool_name}' not found for unregistration")
             return False
 
-    def get_tool(self, tool_name: str) -> Tool | None:
+    def get_tool(self, tool_name: str) -> Optional[Tool]:
         """
         获取工具实例
         
@@ -169,29 +169,29 @@ class ToolRegistry:
         """
         return tool_name in self._tools
 
-    def list_tools(self) -> list[str]:
+    def list_tools(self) -> List[str]:
         """
         列出所有已注册的工具名称
         
         Returns:
-            list[str]: 工具名称列表
+            List[str]: 工具名称列表
         """
         return list(self._tools.keys())
 
-    def get_definitions(self) -> list[dict[str, Any]]:
+    def get_definitions(self) -> List[Dict[str, Any]]:
         """
         获取所有工具的定义
         
         用于生成 LLM 函数调用的工具列表。
         
         Returns:
-            list[dict]: 工具定义列表
+            List[dict]: 工具定义列表
         """
         definitions = [tool.get_definition() for tool in self._tools.values()]
         logger.debug(f"Generated {len(definitions)} tool definitions")
         return definitions
 
-    async def execute(self, tool_name: str, arguments: dict[str, Any], auto_record: bool = True) -> str:
+    async def execute(self, tool_name: str, arguments: Dict[str, Any], auto_record: bool = True) -> str:
         """
         执行工具
         
@@ -306,7 +306,7 @@ class ToolRegistry:
             
             return error_msg
 
-    def get_stats(self) -> dict[str, Any]:
+    def get_stats(self) -> Dict[str, Any]:
         """
         获取注册表统计信息
         
@@ -327,12 +327,12 @@ class ToolRegistry:
         logger.info(f"Cleared {count} tools from registry")
 
     @property
-    def tool_names(self) -> list[str]:
+    def tool_names(self) -> List[str]:
         """
         获取所有已注册的工具名称列表
         
         Returns:
-            list[str]: 工具名称列表
+            List[str]: 工具名称列表
         """
         return list(self._tools.keys())
 

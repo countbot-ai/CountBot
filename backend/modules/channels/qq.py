@@ -7,7 +7,7 @@ QQ 被动回复有 5 分钟窗口限制，超时后自动降级为主动消息�
 import asyncio
 import time
 from collections import OrderedDict
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -70,7 +70,7 @@ class QQChannel(BaseChannel):
         self._group_markdown_enabled = getattr(config, "group_markdown_enabled", True)
         self._client = None
         self._processed_ids: OrderedDict[str, None] = OrderedDict()
-        self._bot_task: asyncio.Task | None = None
+        self._bot_task: Optional[asyncio.Task] = None
         # 被动回复上下文缓存：chat_id -> {msg_id, event_id, is_group, timestamp}
         self._reply_context: OrderedDict[str, dict] = OrderedDict()
         self._msg_seq = 1
@@ -212,7 +212,7 @@ class QQChannel(BaseChannel):
             logger.error(f"Error sending QQ message to {msg.chat_id}: {e}")
             self._log_error_hint(str(e))
 
-    def _get_reply_context(self, chat_id: str) -> dict | None:
+    def _get_reply_context(self, chat_id: str) -> Optional[dict]:
         """获取有效的被动回复上下文，过期则清除。"""
         ctx = self._reply_context.get(chat_id)
         if not ctx:
@@ -259,8 +259,8 @@ class QQChannel(BaseChannel):
         self,
         chat_id: str,
         content: str,
-        msg_id: str | None = None,
-        event_id: str | None = None,
+        msg_id: Optional[str] = None,
+        event_id: Optional[str] = None,
         use_markdown: bool = False,
     ) -> None:
         """发送群聊消息，markdown 失败自动降级为纯文本。"""
@@ -293,9 +293,9 @@ class QQChannel(BaseChannel):
         self,
         chat_id: str,
         content: str,
-        msg_id: str | None = None,
-        event_id: str | None = None,
-        msg_seq: int | None = None,
+        msg_id: Optional[str] = None,
+        event_id: Optional[str] = None,
+        msg_seq: Optional[int] = None,
         use_markdown: bool = False,
     ) -> None:
         """发送私聊消息，markdown 失败自动降级为纯文本。"""
@@ -357,8 +357,8 @@ class QQChannel(BaseChannel):
         is_group: bool,
         chat_id: str,
         content: str,
-        media_files: list[str],
-        msg_id: str | None = None,
+        media_files: List[str],
+        msg_id: Optional[str] = None,
     ) -> None:
         """发送富媒体消息（图片/文件 URL）。"""
         for media_path in media_files:
@@ -418,7 +418,7 @@ class QQChannel(BaseChannel):
     # 连接测试
     # ------------------------------------------------------------------
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试 QQ 连接（验证凭据）。"""
         if not self.config.app_id or not self.config.secret:
             return {"success": False, "message": "App ID or Secret not configured"}

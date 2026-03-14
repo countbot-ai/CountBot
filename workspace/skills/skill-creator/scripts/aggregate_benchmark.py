@@ -34,6 +34,7 @@ The script supports two directory layouts:
                 └── run-1/grading.json
 """
 
+from typing import Dict, List
 import argparse
 import json
 import math
@@ -42,7 +43,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def calculate_stats(values: list[float]) -> dict:
+def calculate_stats(values: List[float]) -> dict:
     """Calculate mean, stddev, min, max for a list of values."""
     if not values:
         return {"mean": 0.0, "stddev": 0.0, "min": 0.0, "max": 0.0}
@@ -81,7 +82,7 @@ def load_run_results(benchmark_dir: Path) -> dict:
         print(f"No eval directories found in {benchmark_dir} or {benchmark_dir / 'runs'}")
         return {}
 
-    results: dict[str, list] = {}
+    results: Dict[str, list] = {}
 
     for eval_idx, eval_dir in enumerate(sorted(search_dir.glob("eval-*"))):
         metadata_path = eval_dir / "eval_metadata.json"

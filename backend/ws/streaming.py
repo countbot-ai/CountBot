@@ -8,7 +8,7 @@
 """
 
 import asyncio
-from typing import AsyncIterator, Callable
+from typing import AsyncIterator, Callable, Dict, Optional
 
 from loguru import logger
 
@@ -35,7 +35,7 @@ class StreamingResponseHandler:
         session_id: str,
         chunk_size: int = 50,
         delay_ms: int = 0,
-        on_progress: Callable[[int, int], None] | None = None,
+        on_progress: Optional[Callable[[int, int], None]] = None,
     ):
         """初始化流式响应处理器
 
@@ -123,7 +123,7 @@ class StreamingResponseHandler:
 
         return sent_count
 
-    def get_stats(self) -> dict[str, int]:
+    def get_stats(self) -> Dict[str, int]:
         """获取统计信息
 
         Returns:
@@ -221,7 +221,7 @@ class BufferedStreamingHandler:
         # 确保刷新剩余内容
         await self.flush()
 
-    def get_stats(self) -> dict[str, int]:
+    def get_stats(self) -> Dict[str, int]:
         """获取统计信息
 
         Returns:
@@ -244,7 +244,7 @@ async def stream_response(
     iterator: AsyncIterator[str],
     use_buffer: bool = True,
     buffer_size: int = 100,
-) -> dict[str, int]:
+) -> Dict[str, int]:
     """流式推送响应（便捷函数）
 
     Args:
@@ -274,7 +274,7 @@ async def stream_text(
     text: str,
     chunk_size: int = 50,
     delay_ms: int = 0,
-) -> dict[str, int]:
+) -> Dict[str, int]:
     """流式推送文本（便捷函数）
 
     Args:

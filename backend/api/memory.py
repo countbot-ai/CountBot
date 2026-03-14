@@ -8,6 +8,7 @@
 - POST /api/memory/search — 搜索记忆
 """
 
+from typing import Dict, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
@@ -30,12 +31,12 @@ class UpdateMemoryRequest(BaseModel):
 
 class UpdateMemoryResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
-    message: str | None = Field(None, description="消息")
+    message: Optional[str] = Field(None, description="消息")
 
 
 class MemoryStatsResponse(BaseModel):
     total: int
-    sources: dict[str, int]
+    sources: Dict[str, int]
     date_range: str
 
 

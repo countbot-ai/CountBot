@@ -18,7 +18,7 @@ setup_logger()
 def _create_shared_components(config, config_loader=None):
     """创建共享组件（WebSocket 和渠道处理器共用）"""
     from loguru import logger
-    from backend.modules.providers.litellm_provider import LiteLLMProvider
+    from backend.modules.providers import create_provider
     from backend.modules.providers.registry import get_provider_metadata
     from backend.modules.agent.context import ContextBuilder
     from backend.modules.agent.memory import MemoryStore
@@ -48,8 +48,8 @@ def _create_shared_components(config, config_loader=None):
         config.workspace.path = str(workspace)
         logger.warning(f"共享组件启动时已回退到默认工作空间: {workspace}")
 
-    logger.info("Creating LiteLLM provider...")
-    provider = LiteLLMProvider(
+    logger.info("Creating LLM provider...")
+    provider = create_provider(
         api_key=api_key,
         api_base=api_base,
         default_model=config.model.model,
@@ -410,7 +410,7 @@ from backend.ws.connection import handle_websocket
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket 聊天端点，复用共享组件"""
     from backend.modules.agent.loop import AgentLoop
-    from backend.modules.providers.litellm_provider import LiteLLMProvider
+    from backend.modules.providers import create_provider
     from backend.modules.providers.registry import get_provider_metadata
     from backend.modules.tools.setup import register_all_tools
 
@@ -480,7 +480,7 @@ async def websocket_endpoint(websocket: WebSocket):
         else (provider_meta.default_api_base if provider_meta else None)
     )
 
-    provider = LiteLLMProvider(
+    provider = create_provider(
         api_key=api_key,
         api_base=api_base,
         default_model=config.model.model,

@@ -11,7 +11,7 @@ import re
 from collections import OrderedDict
 from multiprocessing import Process, Queue
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -26,6 +26,8 @@ try:
         CreateMessageReactionRequestBody,
         CreateImageRequest,
         CreateImageRequestBody,
+        PatchMessageRequest,
+        PatchMessageRequestBody,
         Emoji,
     )
 
@@ -64,10 +66,11 @@ class FeishuChannel(BaseChannel):
     def __init__(self, config: Any):
         super().__init__(config)
         self._client = None
-        self._ws_process: Process | None = None
-        self._message_queue: Queue | None = None
+        self._ws_process: Optional[Process] = None
+        self._message_queue: Optional[Queue] = None
         self._processed_ids: OrderedDict[str, None] = OrderedDict()
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._stream_states: Dict[str, Dict[str, Any]] = {}  # 流式状态管理
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -178,7 +181,7 @@ class FeishuChannel(BaseChannel):
     # ------------------------------------------------------------------
 
     async def _process_message(self, msg_data: dict) -> None:
-        """处理来自 WebSocket 子进程的消息。"""
+        """处理来自 WebSocket 子进程的消息"""
         try:
             message_id = msg_data["message_id"]
 
@@ -214,23 +217,76 @@ class FeishuChannel(BaseChannel):
                 return
 
             reply_to = chat_id if chat_type == "group" else sender_id
+            receive_id_type = "chat_id" if chat_type == "group" else "open_id"
+            
+            # 创建流式处理器
+            import time
+            
+            async def stream_handler(text_chunk: str, is_final: bool = False, is_reasoning: bool = False):
+                """飞书流式处理器：通过更新消息实现打字机效果"""
+                state = self._stream_states.get(message_id)
+                
+                if not state:
+                    # 首次：发送初始"思考中..."消息
+                    response = await self._send_initial_message(reply_to, "🤔 思考中...", receive_id_type)
+                    if response and response.success():
+                        state = {
+                            'feishu_message_id': response.data.message_id,
+                            'accumulated_text': '',
+                            'last_update': 0,
+                            'receive_id_type': receive_id_type
+                        }
+                        self._stream_states[message_id] = state
+                        logger.debug(f"[Feishu] Created stream state for {message_id}")
+                    else:
+                        logger.error(f"[Feishu] Failed to send initial message")
+                        return
+                
+                # 累积文本（忽略 reasoning）
+                if not is_reasoning:
+                    state['accumulated_text'] += text_chunk
+                
+                logger.debug(f"[Feishu] Stream: chunk={len(text_chunk)}, final={is_final}, total={len(state['accumulated_text'])}")
+                
+                # 最终消息或节流更新
+                now = time.time() * 1000
+                should_update = is_final or (now - state['last_update'] > 800)
+                
+                if should_update and state['accumulated_text']:
+                    success = await self._update_message(
+                        state['feishu_message_id'],
+                        state['accumulated_text']
+                    )
+                    if success:
+                        state['last_update'] = now
+                        logger.debug(f"[Feishu] Updated message: {len(state['accumulated_text'])} chars")
+                
+                # 清理状态
+                if is_final:
+                    del self._stream_states[message_id]
+                    logger.info(f"[Feishu] Stream completed for {message_id}")
+            
+            # 通过 metadata 传递流式处理器
+            metadata = {
+                "message_id": message_id,
+                "chat_type": chat_type,
+                "msg_type": msg_type,
+                "_stream_handler": stream_handler,
+            }
+            
             await self._handle_message(
                 sender_id=sender_id,
                 chat_id=reply_to,
                 content=content,
                 media=media_files or None,
-                metadata={
-                    "message_id": message_id,
-                    "chat_type": chat_type,
-                    "msg_type": msg_type,
-                },
+                metadata=metadata,
             )
         except Exception as e:
             logger.error(f"Error processing Feishu message: {e}")
 
     async def _handle_image_message(
         self, raw_content: str, message_id: str
-    ) -> tuple[str, list[str]]:
+    ) -> Tuple[str, List[str]]:
         """处理图片消息，返回 (content, media_files)。"""
         media_files = []
         try:
@@ -292,7 +348,7 @@ class FeishuChannel(BaseChannel):
     # 图片下载
     # ------------------------------------------------------------------
 
-    async def _download_image(self, image_key: str, message_id: str) -> str | None:
+    async def _download_image(self, image_key: str, message_id: str) -> Optional[str]:
         """下载图片并保存到本地。"""
         try:
             from lark_oapi.api.im.v1 import GetMessageResourceRequest
@@ -326,7 +382,7 @@ class FeishuChannel(BaseChannel):
             logger.error(f"Error downloading image: {e}")
             return await self._download_image_fallback(image_key, message_id)
 
-    async def _download_image_fallback(self, image_key: str, message_id: str) -> str | None:
+    async def _download_image_fallback(self, image_key: str, message_id: str) -> Optional[str]:
         """备用下载方法：使用 GetImageRequest。"""
         try:
             from lark_oapi.api.im.v1 import GetImageRequest
@@ -361,13 +417,13 @@ class FeishuChannel(BaseChannel):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_md_table(table_text: str) -> dict | None:
+    def _parse_md_table(table_text: str) -> Optional[dict]:
         """解析 markdown 表格为飞书表格元素。"""
         lines = [line.strip() for line in table_text.strip().split("\n") if line.strip()]
         if len(lines) < 3:
             return None
 
-        def _split(line: str) -> list[str]:
+        def _split(line: str) -> List[str]:
             return [c.strip() for c in line.strip("|").split("|")]
 
         headers = _split(lines[0])
@@ -386,7 +442,7 @@ class FeishuChannel(BaseChannel):
             ],
         }
 
-    def _build_card_elements(self, content: str) -> list[dict]:
+    def _build_card_elements(self, content: str) -> List[dict]:
         """将内容拆分为 markdown + 表格元素用于飞书卡片。"""
         elements = []
         last_end = 0
@@ -428,7 +484,7 @@ class FeishuChannel(BaseChannel):
             logger.error(f"Error sending Feishu message: {e}")
 
     async def _send_card(self, chat_id: str, content: str, receive_id_type: str) -> None:
-        """发送卡片消息（支持 markdown + 表格）。"""
+        """发送卡片消息（支持 markdown + 表格）"""
         elements = self._build_card_elements(content)
         card = {"config": {"wide_screen_mode": True}, "elements": elements}
         card_json = json.dumps(card, ensure_ascii=False)
@@ -454,6 +510,59 @@ class FeishuChannel(BaseChannel):
             )
         else:
             logger.debug(f"Feishu message sent to {chat_id}")
+    
+    async def _send_initial_message(self, chat_id: str, content: str, receive_id_type: str):
+        """发送初始消息（用于流式输出）"""
+        elements = self._build_card_elements(content)
+        card = {"config": {"wide_screen_mode": True}, "elements": elements}
+        card_json = json.dumps(card, ensure_ascii=False)
+
+        request = (
+            CreateMessageRequest.builder()
+            .receive_id_type(receive_id_type)
+            .request_body(
+                CreateMessageRequestBody.builder()
+                .receive_id(chat_id)
+                .msg_type("interactive")
+                .content(card_json)
+                .build()
+            )
+            .build()
+        )
+        response = self._client.im.v1.message.create(request)
+        
+        if not response.success():
+            logger.error(f"Failed to send initial message: {response.msg}")
+        
+        return response
+    
+    async def _update_message(self, message_id: str, content: str) -> bool:
+        """更新消息内容（用于流式输出）"""
+        try:
+            elements = self._build_card_elements(content)
+            card = {"config": {"wide_screen_mode": True}, "elements": elements}
+            card_json = json.dumps(card, ensure_ascii=False)
+
+            request = (
+                PatchMessageRequest.builder()
+                .message_id(message_id)
+                .request_body(
+                    PatchMessageRequestBody.builder()
+                    .content(card_json)
+                    .build()
+                )
+                .build()
+            )
+            response = self._client.im.v1.message.patch(request)
+            
+            if not response.success():
+                logger.error(f"Failed to update message: code={response.code}, msg={response.msg}")
+                return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error updating message: {e}")
+            return False
 
     async def _send_with_media(self, msg: OutboundMessage, receive_id_type: str) -> None:
         """发送带媒体文件的消息。"""
@@ -589,7 +698,7 @@ class FeishuChannel(BaseChannel):
     # 连接测试
     # ------------------------------------------------------------------
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试飞书连接（获取 tenant_access_token 验证凭据）。"""
         if not self.config.app_id or not self.config.app_secret:
             return {"success": False, "message": "App ID or App Secret not configured"}

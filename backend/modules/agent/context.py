@@ -5,7 +5,7 @@ import mimetypes
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 from loguru import logger
 
@@ -45,7 +45,7 @@ class ContextBuilder:
         """
         self.persona_config = new_config
 
-    def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
+    def build_system_prompt(self, skill_names: Optional[List[str]] = None) -> str:
         """构建系统提示词"""
 
         parts = []
@@ -126,7 +126,7 @@ class ContextBuilder:
         if not teams:
             return ""
 
-        lines: list[str] = [
+        lines: List[str] = [
             "# 可用的多智能体团队",
             "",
             "当用户@对应团队时，务必使用 workflow_run 工具调用以下团队进行协作：",
@@ -134,7 +134,7 @@ class ContextBuilder:
         ]
 
         for team in teams:
-            agents: list[dict] = team.agents or []
+            agents: List[dict] = team.agents or []
             mode_label = MODE_NAMES.get(team.mode, team.mode)
             
             # 添加交叉/独立标识（仅 council 模式）
@@ -346,14 +346,14 @@ class ContextBuilder:
 
     def build_messages(
         self,
-        history: list[dict[str, Any]],
+        history: List[Dict[str, Any]],
         current_message: str,
-        session_summary: str | None = None,
-        skill_names: list[str] | None = None,
-        media: list[str] | None = None,
-        channel: str | None = None,
-        chat_id: str | None = None,
-    ) -> list[dict[str, Any]]:
+        session_summary: Optional[str] = None,
+        skill_names: Optional[List[str]] = None,
+        media: Optional[List[str]] = None,
+        channel: Optional[str] = None,
+        chat_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
         messages = []
         
@@ -376,8 +376,8 @@ class ContextBuilder:
     def _build_user_content(
         self,
         text: str,
-        media: list[str] | None
-    ) -> str | list[dict[str, Any]]:
+        media: Optional[List[str]]
+    ) -> Union[str, List[Dict[str, Any]]]:
         """构建用户消息内容, 可选 base64 编码的图片"""
         if not media:
             return text
@@ -405,11 +405,11 @@ class ContextBuilder:
 
     def add_tool_result(
         self,
-        messages: list[dict[str, Any]],
+        messages: List[Dict[str, Any]],
         tool_call_id: str,
         tool_name: str,
         result: str
-    ) -> list[dict[str, Any]]:
+    ) -> List[Dict[str, Any]]:
         """添加工具结果到消息列表"""
         messages.append({
             "role": "tool",
@@ -422,13 +422,13 @@ class ContextBuilder:
 
     def add_assistant_message(
         self,
-        messages: list[dict[str, Any]],
-        content: str | None,
-        tool_calls: list[dict[str, Any]] | None = None,
-        reasoning_content: str | None = None
-    ) -> list[dict[str, Any]]:
+        messages: List[Dict[str, Any]],
+        content: Optional[str],
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        reasoning_content: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """添加助手消息到消息列表"""
-        msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
+        msg: Dict[str, Any] = {"role": "assistant", "content": content or ""}
         
         if tool_calls:
             msg["tool_calls"] = tool_calls

@@ -17,7 +17,7 @@
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, Dict
 
 import websockets
 from loguru import logger
@@ -45,7 +45,7 @@ class XiaozhiChannel(BaseChannel):
         self._max_reconnect_delay = 300
         self._current_reconnect_delay = self._reconnect_delay
         self._initialized = False
-        self._pending_responses: dict[int, asyncio.Future] = {}
+        self._pending_responses: Dict[int, asyncio.Future] = {}
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -430,7 +430,7 @@ class XiaozhiChannel(BaseChannel):
     # 连接测试
     # ------------------------------------------------------------------
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试与小智AI的连接
         
         执行完整的 MCP 协议握手来验证连接是否正常。

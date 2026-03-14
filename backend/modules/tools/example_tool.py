@@ -3,7 +3,7 @@
 演示如何通过继承 Tool 基类来实现具体工具。
 """
 
-from typing import Any
+from typing import Any, Dict
 
 from backend.modules.tools.base import Tool
 
@@ -20,7 +20,7 @@ class EchoTool(Tool):
         return "Echoes back the input message. Useful for testing tool execution."
 
     @property
-    def parameters(self) -> dict[str, Any]:
+    def parameters(self) -> Dict[str, Any]:
         return {
             "type": "object",
             "properties": {

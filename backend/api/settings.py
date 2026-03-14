@@ -1,5 +1,6 @@
 """Settings API 端点"""
 
+from typing import Dict, List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -86,13 +87,13 @@ def _prepare_message_handler_reload_params(
     *,
     reload_provider_model: bool = False,
     reload_persona: bool = False,
-) -> dict[str, object]:
+) -> Dict[str, object]:
     """根据最新配置构建渠道消息处理器的热重载参数。"""
-    reload_params: dict[str, object] = {}
+    reload_params: Dict[str, object] = {}
 
     if reload_provider_model:
         try:
-            from backend.modules.providers.litellm_provider import LiteLLMProvider
+            from backend.modules.providers import create_provider
             from backend.modules.providers.registry import get_provider_metadata
 
             provider_id = config.model.provider
@@ -106,7 +107,7 @@ def _prepare_message_handler_reload_params(
                 else (provider_meta.default_api_base if provider_meta else None)
             )
 
-            reload_params['provider'] = LiteLLMProvider(
+            reload_params['provider'] = create_provider(
                 api_key=api_key,
                 api_base=api_base,
                 default_model=config.model.model,
@@ -139,7 +140,7 @@ async def _apply_saved_config_runtime(
     req: Request,
     config: AppConfig,
     *,
-    workspace_path: Path | None = None,
+    workspace_path: Optional[Path] = None,
     reload_persona: bool = False,
     reload_provider_model: bool = False,
     sync_heartbeat: bool = False,
@@ -200,7 +201,7 @@ async def get_dangerous_patterns():
     获取内置的危险命令模式及其描述
     
     Returns:
-        list[dict]: 危险命令模式列表，每个包含 pattern, description, key
+        List[dict]: 危险命令模式列表，每个包含 pattern, description, key
     """
     # 内置危险模式及其描述
     patterns = [
@@ -267,16 +268,16 @@ class ProviderMetadataResponse(BaseModel):
     
     id: str = Field(..., description="Provider ID")
     name: str = Field(..., description="显示名称")
-    default_api_base: str | None = Field(None, description="默认 API 基础 URL")
-    default_model: str | None = Field(None, description="默认模型名称")
+    default_api_base: Optional[str] = Field(None, description="默认 API 基础 URL")
+    default_model: Optional[str] = Field(None, description="默认模型名称")
 
 
 class ProviderConfigResponse(BaseModel):
     """Provider 配置响应"""
     
     enabled: bool = Field(..., description="是否启用")
-    api_key: str | None = Field(None, description="API 密钥（脱敏）")
-    api_base: str | None = Field(None, description="API 基础 URL")
+    api_key: Optional[str] = Field(None, description="API 密钥（脱敏）")
+    api_base: Optional[str] = Field(None, description="API 基础 URL")
 
 
 class ModelConfigResponse(BaseModel):
@@ -300,11 +301,11 @@ class SecurityConfigResponse(BaseModel):
     
     # 危险命令检测
     dangerous_commands_blocked: bool = Field(..., description="是否阻止危险命令")
-    custom_deny_patterns: list[str] = Field(..., description="自定义拒绝模式列表")
+    custom_deny_patterns: List[str] = Field(..., description="自定义拒绝模式列表")
     
     # 命令白名单
     command_whitelist_enabled: bool = Field(..., description="是否启用命令白名单")
-    custom_allow_patterns: list[str] = Field(..., description="自定义允许模式列表")
+    custom_allow_patterns: List[str] = Field(..., description="自定义允许模式列表")
     
     # 审计日志
     audit_log_enabled: bool = Field(..., description="是否启用审计日志")
@@ -344,22 +345,22 @@ class PersonaConfigResponse(BaseModel):
 class SettingsResponse(BaseModel):
     """设置响应"""
     
-    providers: dict[str, ProviderConfigResponse] = Field(..., description="Provider 配置")
+    providers: Dict[str, ProviderConfigResponse] = Field(..., description="Provider 配置")
     model: ModelConfigResponse = Field(..., description="模型配置")
     workspace: WorkspaceConfigResponse = Field(..., description="工作空间配置")
     security: SecurityConfigResponse = Field(..., description="安全配置")
     persona: PersonaConfigResponse = Field(..., description="用户信息和AI人设配置")
-    workspace_migration: dict | None = Field(None, description="工作区迁移提示信息")
+    workspace_migration: Optional[dict] = Field(None, description="工作区迁移提示信息")
 
 
 class UpdateSettingsRequest(BaseModel):
     """更新设置请求"""
     
-    providers: dict[str, dict] | None = Field(None, description="Provider 配置")
-    model: dict | None = Field(None, description="模型配置")
-    workspace: dict | None = Field(None, description="工作空间配置")
-    security: dict | None = Field(None, description="安全配置")
-    persona: dict | None = Field(None, description="用户信息和AI人设配置")
+    providers: Optional[Dict[str, dict]] = Field(None, description="Provider 配置")
+    model: Optional[dict] = Field(None, description="模型配置")
+    workspace: Optional[dict] = Field(None, description="工作空间配置")
+    security: Optional[dict] = Field(None, description="安全配置")
+    persona: Optional[dict] = Field(None, description="用户信息和AI人设配置")
 
 
 class TestConnectionRequest(BaseModel):
@@ -367,16 +368,16 @@ class TestConnectionRequest(BaseModel):
     
     provider: str = Field(..., description="Provider 名称")
     api_key: str = Field(default="", description="API 密钥")
-    api_base: str | None = Field(None, description="API 基础 URL")
-    model: str | None = Field(None, description="模型名称（可选）")
+    api_base: Optional[str] = Field(None, description="API 基础 URL")
+    model: Optional[str] = Field(None, description="模型名称（可选）")
 
 
 class TestConnectionResponse(BaseModel):
     """测试连接响应"""
     
     success: bool = Field(..., description="是否成功")
-    message: str | None = Field(None, description="消息")
-    error: str | None = Field(None, description="错误信息")
+    message: Optional[str] = Field(None, description="消息")
+    error: Optional[str] = Field(None, description="错误信息")
 
 
 # ============================================================================
@@ -384,13 +385,13 @@ class TestConnectionResponse(BaseModel):
 # ============================================================================
 
 
-@router.get("/providers", response_model=list[ProviderMetadataResponse])
-async def get_available_providers() -> list[ProviderMetadataResponse]:
+@router.get("/providers", response_model=List[ProviderMetadataResponse])
+async def get_available_providers() -> List[ProviderMetadataResponse]:
     """
     获取所有可用的 Provider
     
     Returns:
-        list[ProviderMetadataResponse]: Provider 列表
+        List[ProviderMetadataResponse]: Provider 列表
     """
     from backend.modules.providers.registry import get_all_providers
     
@@ -717,7 +718,7 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
     logger.info(f"Testing connection to {request.provider} with model {request.model}")
     
     try:
-        from backend.modules.providers.litellm_provider import LiteLLMProvider
+        from backend.modules.providers import create_provider
         from backend.modules.providers.registry import get_provider_metadata
         
         # 获取 provider 元数据
@@ -735,7 +736,7 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
         logger.info(f"Using {provider_meta.name}, model: {test_model}, base: {test_api_base}")
         
         # 创建临时 provider
-        provider = LiteLLMProvider(
+        provider = create_provider(
             api_key=request.api_key,
             api_base=test_api_base,
             default_model=test_model,
@@ -1018,7 +1019,7 @@ async def set_workspace_path(request: Request):
 @router.get("/export")
 async def export_settings(
     include_api_keys: bool = False,
-    sections: str | None = None
+    sections: Optional[str] = None
 ):
     """
     导出配置
@@ -1097,7 +1098,7 @@ class ImportSettingsRequest(BaseModel):
     version: str = Field(..., description="配置文件版本")
     config: dict = Field(..., description="配置数据")
     merge: bool = Field(default=False, description="是否合并现有配置")
-    sections: list[str] | None = Field(None, description="要导入的配置节")
+    sections: Optional[List[str]] = Field(None, description="要导入的配置节")
 
 
 @router.post("/import")

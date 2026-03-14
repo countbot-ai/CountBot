@@ -20,7 +20,7 @@ import base64
 import json
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import websockets
@@ -30,7 +30,7 @@ from backend.modules.channels.base import BaseChannel, OutboundMessage
 
 
 # 全局 WebSocket 客户端缓存（每个账号一个连接）
-_ws_clients: dict[str, websockets.WebSocketClientProtocol] = {}
+_ws_clients: Dict[str, websockets.WebSocketClientProtocol] = {}
 
 
 class WeiboChannel(BaseChannel):
@@ -112,7 +112,7 @@ class WeiboChannel(BaseChannel):
         
         logger.info(f"[{self._account_id}] Weibo bot stopped")
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """测试微博连接（验证凭据并获取 Token）"""
         if not self.config.app_id or not self.config.app_secret:
             return {
@@ -352,7 +352,7 @@ class WeiboChannel(BaseChannel):
 
     async def _process_attachments(
         self, input_data: list, message_id: str
-    ) -> list[str]:
+    ) -> List[str]:
         """处理消息附件（图片/文件）"""
         media_files = []
 
@@ -416,7 +416,7 @@ class WeiboChannel(BaseChannel):
             return None
 
     @staticmethod
-    def _generate_attachment_description(media_files: list[str]) -> str:
+    def _generate_attachment_description(media_files: List[str]) -> str:
         """生成附件描述文本"""
         descriptions = []
         for file_path in media_files:

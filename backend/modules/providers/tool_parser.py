@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Any
+from typing import Any, Dict, Optional
 from loguru import logger
 
 
@@ -19,7 +19,7 @@ class ToolCallParser:
     )
     
     @classmethod
-    def parse(cls, text: str) -> dict[str, Any] | None:
+    def parse(cls, text: str) -> Optional[Dict[str, Any]]:
         if not text or not isinstance(text, str):
             return None
         
@@ -43,7 +43,7 @@ class ToolCallParser:
         return None
     
     @classmethod
-    def _parse_json(cls, text: str) -> dict[str, Any] | None:
+    def _parse_json(cls, text: str) -> Optional[Dict[str, Any]]:
         match = cls.JSON_PATTERN.search(text)
         if not match:
             return None
@@ -62,7 +62,7 @@ class ToolCallParser:
             return None
     
     @classmethod
-    def _parse_pure_json(cls, text: str) -> dict[str, Any] | None:
+    def _parse_pure_json(cls, text: str) -> Optional[Dict[str, Any]]:
         try:
             data = json.loads(text)
             
@@ -89,7 +89,7 @@ class ToolCallParser:
         return None
     
     @classmethod
-    def _parse_simple(cls, text: str) -> dict[str, Any] | None:
+    def _parse_simple(cls, text: str) -> Optional[Dict[str, Any]]:
         match = cls.SIMPLE_PATTERN.search(text)
         if not match:
             return None

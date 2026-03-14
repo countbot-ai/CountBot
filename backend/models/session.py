@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -32,18 +32,18 @@ class Session(Base):
     )
     
     # 会话总结字段（20-200字符）
-    summary: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    summary_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    summary_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
     # 上下文滚动压缩：已总结到的消息ID（该ID及之前的消息已写入记忆）
-    last_summarized_msg_id: Mapped[int | None] = mapped_column(nullable=True)
+    last_summarized_msg_id: Mapped[Optional[int]] = mapped_column(nullable=True)
     
     # 会话级配置（可选）
-    session_model_config: Mapped[str | None] = mapped_column(Text, nullable=True)
-    session_persona_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_model_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    session_persona_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     use_custom_config: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    messages: Mapped[list["Message"]] = relationship(
+    messages: Mapped[List["Message"]] = relationship(
         "Message", back_populates="session", cascade="all, delete-orphan"
     )
 

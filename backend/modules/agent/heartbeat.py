@@ -4,7 +4,7 @@ import json
 import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from loguru import logger
 
@@ -102,7 +102,7 @@ class HeartbeatService:
         except Exception as e:
             logger.error(f"Failed to save heartbeat state: {e}")
 
-    def _generate_random_times(self, date: str) -> list[int]:
+    def _generate_random_times(self, date: str) -> List[int]:
         """为指定日期生成真随机的问候时间点（分钟数）
         
         使用日期+当天0点的时间戳作为种子，确保：
@@ -110,7 +110,7 @@ class HeartbeatService:
         2. 同一天多次调用结果一致（幂等性）
         
         Returns:
-            list[int]: 分钟数列表，如 [615, 780] 表示 10:15, 13:00
+            List[int]: 分钟数列表，如 [615, 780] 表示 10:15, 13:00
         """
         # 使用日期字符串的哈希值作为基础种子
         base_seed = hash(date)
