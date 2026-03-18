@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import inspect
 import json as _json
 from dataclasses import dataclass, field
 from enum import Enum
@@ -46,11 +47,21 @@ class AgentSlot:
 class WorkflowEngine:
     """多智能体工作流引擎 — 编排 Pipeline / Graph / Council 三种执行模式。"""
 
-    def __init__(self, subagent_manager, session_id: Optional[str] = None, cancel_token=None, skills=None) -> None:
+    def __init__(
+        self,
+        subagent_manager,
+        session_id: Optional[str] = None,
+        cancel_token=None,
+        skills=None,
+        team_model_config: Optional[Dict[str, Any]] = None,
+        event_callback=None,
+    ) -> None:
         self._mgr = subagent_manager
         self._session_id = session_id
         self._cancel_token = cancel_token
         self._skills = skills
+        self._team_model_config = team_model_config  # 团队模型配置
+        self._event_callback = event_callback
         self._execution_data: Dict[str, dict] = {}
 
     # ------------------------------------------------------------------
@@ -59,6 +70,14 @@ class WorkflowEngine:
 
     async def _emit_ws(self, event_type: str, **data: Any) -> None:
         """推送工作流事件到前端"""
+        if self._event_callback:
+            try:
+                maybe_result = self._event_callback(event_type, data)
+                if inspect.isawaitable(maybe_result):
+                    await maybe_result
+            except Exception as exc:
+                logger.warning(f"[Workflow] External event callback failed ({event_type}): {exc}")
+
         if not self._session_id:
             return
         try:
@@ -73,7 +92,20 @@ class WorkflowEngine:
 
     def _is_cancelled(self) -> bool:
         """检查是否已取消"""
-        return bool(self._cancel_token and self._cancel_token.is_cancelled)
+        is_cancelled = bool(self._cancel_token and self._cancel_token.is_cancelled)
+        if is_cancelled:
+            # 如果工作流被取消，尝试取消所有运行中的子任务
+            asyncio.create_task(self._cancel_all_subagents())
+        return is_cancelled
+
+    async def _cancel_all_subagents(self) -> None:
+        """取消所有运行中的子任务"""
+        try:
+            cancelled = await self._mgr.cancel_all_tasks()
+            if cancelled > 0:
+                logger.info(f"[Workflow] Cancelled {cancelled} running subagent tasks")
+        except Exception as e:
+            logger.warning(f"[Workflow] Failed to cancel subagent tasks: {e}")
 
     async def _invoke_agent(
         self,
@@ -85,6 +117,7 @@ class WorkflowEngine:
     ) -> str:
         """执行单个子Agent并返回输出"""
         if self._is_cancelled():
+            logger.info(f"[Workflow] Workflow cancelled, stopping agent '{agent_id or label}'")
             raise asyncio.CancelledError("Workflow cancelled before agent start")
 
         short_label = label or (prompt[:40] + ("..." if len(prompt) > 40 else ""))
@@ -112,6 +145,7 @@ class WorkflowEngine:
                 await self._emit_ws(
                     "workflow_agent_tool_call",
                     agent_id=aid,
+                    agent_label=label or aid,
                     tool=tool_name,
                     arguments=data if isinstance(data, dict) else {},
                 )
@@ -126,6 +160,7 @@ class WorkflowEngine:
                 await self._emit_ws(
                     "workflow_agent_tool_result",
                     agent_id=aid,
+                    agent_label=label or aid,
                     tool=tool_name,
                     result=result_preview,
                 )
@@ -133,6 +168,7 @@ class WorkflowEngine:
                 await self._emit_ws(
                     "workflow_agent_chunk",
                     agent_id=aid,
+                    agent_label=label or aid,
                     chunk=str(data),
                 )
 
@@ -142,6 +178,8 @@ class WorkflowEngine:
             system_prompt=system_prompt,
             event_callback=_tool_event,
             enable_skills=enable_skills,
+            model_override=self._team_model_config,  # 传递团队模型配置
+            cancel_token=self._cancel_token,  # 传递取消令牌
         )
         await self._mgr.execute_task(task_id)
         bg = self._mgr.running_tasks.get(task_id)
@@ -522,4 +560,3 @@ class WorkflowEngine:
             f"*评审完成 — 共 {len(members)} 位成员，2 轮交叉讨论。*\n\n"
             f"请将以上每位成员的完整分析内容如实呈现给用户，不要省略或替换为简短摘要。"
         ) + self._build_exec_metadata()
-

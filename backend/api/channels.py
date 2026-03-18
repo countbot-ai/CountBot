@@ -1,5 +1,6 @@
 """渠道管理 API 端点"""
 
+import asyncio
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
@@ -37,6 +38,203 @@ class ChannelTestRequest(BaseModel):
     """渠道测试请求"""
     channel: str
     config: Optional[Dict[str, Any]] = None  # 可选的临时配置
+    account_id: Optional[str] = None
+
+
+def _mask_channel_secret(key: str, value: Any) -> Any:
+    if value is None:
+        return value
+    lowered = key.lower()
+    if lowered in {"token", "secret", "app_secret", "client_secret", "bot_id"}:
+        text = str(value)
+        if not text:
+            return ""
+        if lowered == "bot_id":
+            return text[:8] + "..."
+        if lowered == "token":
+            return text[:10] + "..."
+        return "***"
+    if lowered in {"app_id", "client_id"}:
+        text = str(value)
+        return text[:8] + "..." if text else ""
+    return value
+
+
+def _normalize_accounts_payload(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(config_dict)
+    accounts = normalized.get("accounts", {}) or {}
+    normalized["accounts"] = {
+        str(account_id): {
+            **dict(account_cfg),
+            "account_id": str(account_id),
+        }
+        for account_id, account_cfg in accounts.items()
+    }
+    return normalized
+
+
+def _serialize_channel_for_list(channel_config: Any) -> Dict[str, Any]:
+    config_dict = _normalize_accounts_payload(channel_config.model_dump())
+    accounts = config_dict.get("accounts", {}) or {}
+    enabled = bool(config_dict.get("enabled")) or any(
+        bool(account_cfg.get("enabled"))
+        for account_cfg in accounts.values()
+    )
+    visible_config = {
+        key: _mask_channel_secret(key, value)
+        for key, value in config_dict.items()
+        if key != "accounts"
+    }
+    visible_accounts = {
+        account_id: {
+            key: _mask_channel_secret(key, value)
+            for key, value in account_cfg.items()
+        }
+        for account_id, account_cfg in accounts.items()
+    }
+
+    return {
+        "enabled": enabled,
+        "configured": any(
+            bool(account_cfg.get(field))
+            for account_cfg in [config_dict, *accounts.values()]
+            for field in ("token", "app_id", "client_id", "bot_id", "endpoint")
+        ),
+        "config": {
+            **visible_config,
+            "accounts": visible_accounts,
+            "account_count": (1 if any(config_dict.get(field) for field in ("token", "app_id", "client_id", "bot_id", "endpoint")) else 0) + len(visible_accounts),
+        },
+    }
+
+
+def _select_account_config(channel_config: Any, account_id: Optional[str]) -> Any:
+    config_dict = _normalize_accounts_payload(channel_config.model_dump())
+    selected_account_id = str(account_id or config_dict.get("account_id") or "default")
+    top_level_account_id = str(config_dict.get("account_id") or "default")
+    accounts = config_dict.get("accounts", {}) or {}
+
+    if selected_account_id == top_level_account_id:
+        return channel_config.__class__(**{**config_dict, "accounts": {}, "account_id": top_level_account_id})
+
+    account_cfg = accounts.get(selected_account_id)
+    if account_cfg is None:
+        if accounts:
+            raise ValueError(f"机器人账号不存在: {selected_account_id}")
+        return channel_config.__class__(**{**config_dict, "accounts": {}, "account_id": selected_account_id})
+
+    merged_data = {
+        **config_dict,
+        **account_cfg,
+        "accounts": {},
+        "account_id": selected_account_id,
+    }
+    return channel_config.__class__(**merged_data)
+
+
+_CHANNEL_UNIQUE_ID_FIELDS: Dict[str, tuple[str, ...]] = {
+    "telegram": ("token",),
+    "qq": ("app_id",),
+    "dingtalk": ("client_id",),
+    "feishu": ("app_id",),
+    "weibo": ("app_id",),
+    "wecom": ("bot_id",),
+}
+
+
+def _validate_duplicate_accounts(channel_name: str, channel_config: Any) -> None:
+    """校验多机器人配置中是否复用了同一物理机器人身份。"""
+    unique_fields = _CHANNEL_UNIQUE_ID_FIELDS.get(channel_name)
+    if not unique_fields:
+        return
+
+    config_dict = _normalize_accounts_payload(channel_config.model_dump())
+    seen: Dict[str, str] = {}
+
+    def build_signature(account_cfg: Dict[str, Any]) -> Optional[str]:
+        parts = []
+        for field in unique_fields:
+            value = str(account_cfg.get(field) or "").strip()
+            if not value:
+                return None
+            parts.append(f"{field}={value}")
+        return "|".join(parts)
+
+    accounts_to_check = [
+        (str(config_dict.get("account_id") or "default"), config_dict),
+        *[
+            (str(account_id), dict(account_cfg))
+            for account_id, account_cfg in (config_dict.get("accounts", {}) or {}).items()
+        ],
+    ]
+
+    for account_id, account_cfg in accounts_to_check:
+        signature = build_signature(account_cfg)
+        if not signature:
+            continue
+        previous_account = seen.get(signature)
+        if previous_account is not None:
+            fields_text = ", ".join(unique_fields)
+            raise ValueError(
+                f"检测到重复机器人配置：账号 '{account_id}' 与 '{previous_account}' 使用相同的 {fields_text}。"
+                "同一个物理机器人不能重复配置为多个账号。"
+            )
+        seen[signature] = account_id
+
+
+async def _restart_channel_manager(fastapi_request: Request) -> Optional[ChannelManager]:
+    """基于最新配置热重建渠道管理器。"""
+    app_state = fastapi_request.app.state
+    old_manager = getattr(app_state, "channel_manager", None)
+    old_task = getattr(app_state, "channel_manager_task", None)
+    message_queue = getattr(app_state, "message_queue", None)
+
+    if message_queue is None:
+        logger.warning("Skip channel manager reload: message_queue missing")
+        return old_manager
+
+    if old_manager is not None:
+        await old_manager.stop_all()
+
+    if old_task is not None:
+        try:
+            await asyncio.wait_for(old_task, timeout=5)
+        except asyncio.TimeoutError:
+            old_task.cancel()
+            await asyncio.gather(old_task, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
+
+    manager = ChannelManager(config_loader.config, message_queue)
+    app_state.channel_manager = manager
+    set_channel_manager(manager)
+
+    message_handler = getattr(app_state, "message_handler", None)
+    if message_handler is not None:
+        message_handler.set_channel_manager(manager)
+
+    cron_executor = getattr(app_state, "cron_executor", None)
+    if cron_executor is not None:
+        cron_executor.channel_manager = manager
+
+    background_tasks = getattr(app_state, "background_tasks", None)
+    if isinstance(background_tasks, list) and old_task is not None:
+        app_state.background_tasks = [
+            task for task in background_tasks
+            if task is not old_task and not task.done()
+        ]
+        background_tasks = app_state.background_tasks
+    new_task = None
+    if manager.enabled_channels:
+        new_task = asyncio.create_task(manager.start_all())
+        if isinstance(background_tasks, list):
+            background_tasks.append(new_task)
+    app_state.channel_manager_task = new_task
+
+    logger.info(
+        f"Reloaded channel manager with {len(manager.enabled_channels)} channel instance(s)"
+    )
+    return manager
 
 
 @router.get("/list")
@@ -46,105 +244,63 @@ async def list_channels():
         config = config_loader.config
         channels_config = config.channels
         
-        # 可用的渠道类型
+        telegram_data = _serialize_channel_for_list(channels_config.telegram)
+        discord_data = _serialize_channel_for_list(channels_config.discord)
+        qq_data = _serialize_channel_for_list(channels_config.qq)
+        dingtalk_data = _serialize_channel_for_list(channels_config.dingtalk)
+        feishu_data = _serialize_channel_for_list(channels_config.feishu)
+        weibo_data = _serialize_channel_for_list(channels_config.weibo)
+        wecom_data = _serialize_channel_for_list(channels_config.wecom)
+        xiaozhi_data = _serialize_channel_for_list(channels_config.xiaozhi)
+
         available_channels = {
             "telegram": {
                 "name": "Telegram",
                 "description": "Telegram messaging platform",
                 "icon": "telegram",
-                "enabled": channels_config.telegram.enabled if hasattr(channels_config, 'telegram') else False,
-                "configured": bool(channels_config.telegram.token) if hasattr(channels_config, 'telegram') else False,
-                "config": {
-                    "token": (channels_config.telegram.token[:10] + "...") if (hasattr(channels_config, 'telegram') and channels_config.telegram.token) else "",
-                    "proxy": channels_config.telegram.proxy if hasattr(channels_config, 'telegram') else None,
-                    "allow_from": channels_config.telegram.allow_from if hasattr(channels_config, 'telegram') else []
-                }
+                **telegram_data,
             },
             "discord": {
                 "name": "Discord",
                 "description": "Discord messaging platform",
                 "icon": "discord",
-                "enabled": channels_config.discord.enabled if hasattr(channels_config, 'discord') else False,
-                "configured": bool(channels_config.discord.token) if hasattr(channels_config, 'discord') else False,
-                "config": {
-                    "token": (channels_config.discord.token[:10] + "...") if (hasattr(channels_config, 'discord') and channels_config.discord.token) else "",
-                    "allow_from": channels_config.discord.allow_from if hasattr(channels_config, 'discord') else []
-                }
+                **discord_data,
             },
             "qq": {
                 "name": "QQ",
                 "description": "QQ messaging platform",
                 "icon": "qq",
-                "enabled": channels_config.qq.enabled if hasattr(channels_config, 'qq') else False,
-                "configured": bool(channels_config.qq.app_id and channels_config.qq.secret) if hasattr(channels_config, 'qq') else False,
-                "config": {
-                    "app_id": (channels_config.qq.app_id[:8] + "...") if (hasattr(channels_config, 'qq') and channels_config.qq.app_id) else "",
-                    "secret": "***" if (hasattr(channels_config, 'qq') and channels_config.qq.secret) else "",
-                    "allow_from": channels_config.qq.allow_from if hasattr(channels_config, 'qq') else []
-                }
+                **qq_data,
             },
             "dingtalk": {
-                "name": "DingTalk",
+                "name": "钉钉",
                 "description": "DingTalk messaging platform",
                 "icon": "dingtalk",
-                "enabled": channels_config.dingtalk.enabled if hasattr(channels_config, 'dingtalk') else False,
-                "configured": bool(channels_config.dingtalk.client_id and channels_config.dingtalk.client_secret) if hasattr(channels_config, 'dingtalk') else False,
-                "config": {
-                    "client_id": (channels_config.dingtalk.client_id[:8] + "...") if (hasattr(channels_config, 'dingtalk') and channels_config.dingtalk.client_id) else "",
-                    "client_secret": "***" if (hasattr(channels_config, 'dingtalk') and channels_config.dingtalk.client_secret) else "",
-                    "allow_from": channels_config.dingtalk.allow_from if hasattr(channels_config, 'dingtalk') else []
-                }
+                **dingtalk_data,
             },
             "feishu": {
-                "name": "Feishu",
+                "name": "飞书",
                 "description": "Feishu/Lark messaging platform",
                 "icon": "feishu",
-                "enabled": channels_config.feishu.enabled if hasattr(channels_config, 'feishu') else False,
-                "configured": bool(channels_config.feishu.app_id and channels_config.feishu.app_secret) if hasattr(channels_config, 'feishu') else False,
-                "config": {
-                    "app_id": (channels_config.feishu.app_id[:8] + "...") if (hasattr(channels_config, 'feishu') and channels_config.feishu.app_id) else "",
-                    "app_secret": "***" if (hasattr(channels_config, 'feishu') and channels_config.feishu.app_secret) else "",
-                    "encrypt_key": "***" if (hasattr(channels_config, 'feishu') and channels_config.feishu.encrypt_key) else "",
-                    "verification_token": "***" if (hasattr(channels_config, 'feishu') and channels_config.feishu.verification_token) else "",
-                    "allow_from": channels_config.feishu.allow_from if hasattr(channels_config, 'feishu') else []
-                }
+                **feishu_data,
             },
             "weibo": {
-                "name": "Weibo",
+                "name": "微博",
                 "description": "Weibo messaging platform",
                 "icon": "weibo",
-                "enabled": channels_config.weibo.enabled if hasattr(channels_config, 'weibo') else False,
-                "configured": bool(channels_config.weibo.app_id and channels_config.weibo.app_secret) if hasattr(channels_config, 'weibo') else False,
-                "config": {
-                    "app_id": (channels_config.weibo.app_id[:8] + "...") if (hasattr(channels_config, 'weibo') and channels_config.weibo.app_id) else "",
-                    "app_secret": "***" if (hasattr(channels_config, 'weibo') and channels_config.weibo.app_secret) else "",
-                    "allow_from": channels_config.weibo.allow_from if hasattr(channels_config, 'weibo') else []
-                }
+                **weibo_data,
             },
             "wecom": {
-                "name": "WeCom",
+                "name": "企业微信",
                 "description": "Enterprise WeChat messaging platform",
                 "icon": "wecom",
-                "enabled": channels_config.wecom.enabled if hasattr(channels_config, 'wecom') else False,
-                "configured": bool(channels_config.wecom.bot_id and channels_config.wecom.secret) if hasattr(channels_config, 'wecom') else False,
-                "config": {
-                    "bot_id": (channels_config.wecom.bot_id[:8] + "...") if (hasattr(channels_config, 'wecom') and channels_config.wecom.bot_id) else "",
-                    "secret": "***" if (hasattr(channels_config, 'wecom') and channels_config.wecom.secret) else "",
-                    "websocket_url": channels_config.wecom.websocket_url if hasattr(channels_config, 'wecom') else "wss://openws.work.weixin.qq.com",
-                    "allow_from": channels_config.wecom.allow_from if hasattr(channels_config, 'wecom') else []
-                }
+                **wecom_data,
             },
             "xiaozhi": {
                 "name": "小智AI",
                 "description": "小智机器人 MCP 接入（工具调用/对话模式）",
                 "icon": "xiaozhi",
-                "enabled": channels_config.xiaozhi.enabled if hasattr(channels_config, 'xiaozhi') else False,
-                "configured": bool(channels_config.xiaozhi.endpoint) if hasattr(channels_config, 'xiaozhi') else False,
-                "config": {
-                    "endpoint": channels_config.xiaozhi.endpoint if hasattr(channels_config, 'xiaozhi') else "",
-                    "enable_conversation": channels_config.xiaozhi.enable_conversation if hasattr(channels_config, 'xiaozhi') else False,
-                    "allow_from": channels_config.xiaozhi.allow_from if hasattr(channels_config, 'xiaozhi') else []
-                }
+                **xiaozhi_data,
             }
         }
         
@@ -186,16 +342,15 @@ async def test_channel(request: ChannelTestRequest):
     """测试指定渠道的连接"""
     try:
         manager = get_channel_manager()
+        account_id = str(request.account_id or "").strip() or None
         
         if request.config:
-            logger.info(f"Testing {request.channel} with temporary config")
-            
-            # 创建临时配置对象
-            from backend.modules.config.schema import (
-                QQConfig, FeishuConfig, DingTalkConfig,
-                TelegramConfig, DiscordConfig, WeiboConfig, WeComConfig
+            logger.info(
+                f"Testing {request.channel} with temporary config"
+                f"{f' for account {account_id}' if account_id else ''}"
             )
             
+            # 创建临时配置对象
             from backend.modules.config.schema import (
                 QQConfig, FeishuConfig, DingTalkConfig,
                 TelegramConfig, DiscordConfig, WeiboConfig, WeComConfig,
@@ -218,7 +373,11 @@ async def test_channel(request: ChannelTestRequest):
                     "message": f"不支持的渠道: {request.channel}"
                 }
 
-            temp_config = config_classes[request.channel](**request.config)
+            temp_channel_config = config_classes[request.channel](
+                **_normalize_accounts_payload(request.config)
+            )
+            _validate_duplicate_accounts(request.channel, temp_channel_config)
+            temp_config = _select_account_config(temp_channel_config, account_id)
 
             from backend.modules.channels.qq import QQChannel
             from backend.modules.channels.feishu import FeishuChannel
@@ -248,7 +407,7 @@ async def test_channel(request: ChannelTestRequest):
                 }
         else:
             # 使用已保存的配置测试
-            result = await manager.test_channel(request.channel)
+            result = await manager.test_channel(request.channel, account_id=account_id)
         
         # 翻译英文消息为中文
         message = result["message"]
@@ -350,7 +509,7 @@ async def test_channel(request: ChannelTestRequest):
                 "Format check passed. Real connection test will be performed when channel is enabled.": "格式检查通过。启用渠道后将进行真实连接测试。",
                 "Successfully obtained access token from Feishu API": "成功从飞书 API 获取访问令牌",
                 "Successfully authenticated with QQ API": "成功通过 QQ API 认证",
-                "Successfully authenticated with WeCom API": "成功通过企业微信 API 认证"
+                "Successfully authenticated with WeCom API": "成功通过企业微信 API 认证",
             }
             result["bot_info"]["note"] = note_translations.get(note, note)
         
@@ -392,16 +551,35 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         if request.channel not in supported_channels:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {request.channel}")
         
-        # 获取渠道配置对象
         channel_config = getattr(config.channels, request.channel, None)
         if not channel_config:
             raise HTTPException(status_code=404, detail=f"Channel configuration not found: {request.channel}")
-        
-        for key, value in request.config.items():
-            if hasattr(channel_config, key):
-                setattr(channel_config, key, value)
-            else:
-                logger.warning(f"Unknown config key '{key}' for channel {request.channel}")
+
+        from backend.modules.config.schema import (
+            TelegramConfig, DiscordConfig, QQConfig,
+            DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig,
+        )
+
+        config_classes = {
+            "telegram": TelegramConfig,
+            "discord": DiscordConfig,
+            "qq": QQConfig,
+            "dingtalk": DingTalkConfig,
+            "feishu": FeishuConfig,
+            "weibo": WeiboConfig,
+            "wecom": WeComConfig,
+            "xiaozhi": XiaozhiConfig,
+        }
+
+        merged_config = _normalize_accounts_payload(channel_config.model_dump())
+        merged_config.update(request.config)
+        merged_config = _normalize_accounts_payload(merged_config)
+        setattr(
+            config.channels,
+            request.channel,
+            config_classes[request.channel](**merged_config),
+        )
+        _validate_duplicate_accounts(request.channel, getattr(config.channels, request.channel))
         
         # 保存配置
         await config_loader.save()
@@ -411,13 +589,14 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
             if hasattr(fastapi_request.app.state, 'message_handler'):
                 message_handler = fastapi_request.app.state.message_handler
                 message_handler.reload_config()
-                # 重新注册工具（含 xiaozhi send_message 的条件注册）
-                channel_manager = getattr(fastapi_request.app.state, 'channel_manager', None)
+                channel_manager = await _restart_channel_manager(fastapi_request)
                 if channel_manager is not None:
                     message_handler.set_channel_manager(channel_manager)
-                logger.info(f"Reloaded message handler config after updating {request.channel}")
+                logger.info(
+                    f"Reloaded message handler and channel manager after updating {request.channel}"
+                )
         except Exception as e:
-            logger.warning(f"Failed to reload message handler config: {e}")
+            logger.warning(f"Failed to reload message handler/channel manager config: {e}")
         
         logger.info(f"Updated {request.channel} channel configuration")
         
@@ -463,37 +642,7 @@ async def get_channel_config(channel: str):
             setattr(config.channels, channel, channel_config)
             await config_loader.save()
 
-        config_dict = {
-            "enabled": channel_config.enabled,
-            "allow_from": getattr(channel_config, "allow_from", [])
-        }
-
-        if channel == "telegram":
-            config_dict.update({"token": channel_config.token, "proxy": getattr(channel_config, "proxy", None)})
-        elif channel == "discord":
-            config_dict.update({"token": channel_config.token})
-        elif channel == "qq":
-            config_dict.update({"app_id": channel_config.app_id, "secret": channel_config.secret})
-        elif channel == "dingtalk":
-            config_dict.update({"client_id": channel_config.client_id, "client_secret": channel_config.client_secret})
-        elif channel == "feishu":
-            config_dict.update({
-                "app_id": channel_config.app_id, "app_secret": channel_config.app_secret,
-                "encrypt_key": getattr(channel_config, "encrypt_key", ""),
-                "verification_token": getattr(channel_config, "verification_token", "")
-            })
-        elif channel == "weibo":
-            config_dict.update({"app_id": channel_config.app_id, "app_secret": channel_config.app_secret})
-        elif channel == "wecom":
-            config_dict.update({
-                "bot_id": channel_config.bot_id, "secret": channel_config.secret,
-                "websocket_url": getattr(channel_config, "websocket_url", "wss://openws.work.weixin.qq.com")
-            })
-        elif channel == "xiaozhi":
-            config_dict.update({
-                "endpoint": channel_config.endpoint,
-                "enable_conversation": channel_config.enable_conversation,
-            })
+        config_dict = _normalize_accounts_payload(channel_config.model_dump())
         
         return {
             "success": True,

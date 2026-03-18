@@ -46,13 +46,22 @@ class ContextBuilder:
         """
         self.persona_config = new_config
 
-    def build_system_prompt(self, skill_names: Optional[List[str]] = None) -> str:
+    def build_system_prompt(
+        self,
+        skill_names: Optional[List[str]] = None,
+        persona_config=None,
+        channel: Optional[str] = None,
+    ) -> str:
         """构建系统提示词"""
 
         parts = []
 
         # 1. 核心身份（包含所有必要的指导原则）
-        parts.append(self._get_identity())
+        parts.append(self._get_identity(persona_config=persona_config))
+
+        channel_rules = self._get_channel_rules(channel)
+        if channel_rules:
+            parts.append(channel_rules)
 
         # 2. 技能系统
         if self.skills:
@@ -102,6 +111,20 @@ class ContextBuilder:
         system_prompt = "\n\n---\n\n".join(parts)
 
         return system_prompt
+
+    def _get_channel_rules(self, channel: Optional[str]) -> str:
+        """返回渠道特定的默认输出规则。"""
+        if channel != "feishu":
+            return ""
+
+        return """# 渠道输出规则
+
+## 飞书输出规则
+- 语气短、自然、像同事之间对话，减少仪式化表达
+- 简单问题优先用短段落直接回答，不要为了完整性强行写列表
+- 结论优先，说完即止，不额外补“总结一下”式废话
+- 为兼容飞书卡片，优先使用简单 Markdown；避免复杂嵌套列表、超长表格和过度排版
+- 如果不确定飞书 Markdown 的兼容性，退回纯文本或简单短列表"""
 
     def _get_active_teams_section(self) -> str:
         """
@@ -219,7 +242,7 @@ class ContextBuilder:
             from backend.modules.agent.personalities import get_personality_prompt
             return get_personality_prompt(personality_id, custom_text)
 
-    def _get_identity(self) -> str:
+    def _get_identity(self, persona_config=None) -> str:
         """获取核心身份部分"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         workspace_path = str(self.workspace.expanduser().resolve())
@@ -233,13 +256,14 @@ class ContextBuilder:
         personality = "professional"
         custom_personality = ""
         
-        if self.persona_config:
-            ai_name = self.persona_config.ai_name or "小C"
-            user_name = self.persona_config.user_name or "用户"
-            user_address = getattr(self.persona_config, 'user_address', '') or ""
-            output_language = getattr(self.persona_config, 'output_language', None) or "中文"
-            personality = getattr(self.persona_config, 'personality', None) or "professional"
-            custom_personality = getattr(self.persona_config, 'custom_personality', None) or ""
+        active_persona_config = persona_config or self.persona_config
+        if active_persona_config:
+            ai_name = active_persona_config.ai_name or "小C"
+            user_name = active_persona_config.user_name or "用户"
+            user_address = getattr(active_persona_config, 'user_address', '') or ""
+            output_language = getattr(active_persona_config, 'output_language', None) or "中文"
+            personality = getattr(active_persona_config, 'personality', None) or "professional"
+            custom_personality = getattr(active_persona_config, 'custom_personality', None) or ""
         
         personality_desc = self._get_personality_from_db(personality, custom_personality)
         
@@ -301,6 +325,10 @@ class ContextBuilder:
 4. **语言风格**: 技术场景用专业术语，日常场景用自然语言
 5. **问题诊断**: 遇到问题时，可以主动使用工具辅助诊断
    - 读取日志文件: `read_file(path='data/logs/...')`
+6. **工具结果完整性**: 当使用工具获取数据后，在回复中应包含所有关键信息
+   - 例如：查询天气后，回复应包含温度、天气状况、湿度、风速等完整信息
+   - 例如：读取配置文件后，回复应包含用户可能询问的关键配置项
+   - 原则：假设用户可能会在后续对话中询问这些数据的细节
 
 ## 文件操作规范（必须遵守）
 1. **大文件分段写入**: 当需要写入的内容较长（如完整 HTML 页面、大段代码等超过 2000 字符），**必须**分多次调用 write_file：
@@ -382,11 +410,16 @@ class ContextBuilder:
         media: Optional[List[str]] = None,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
+        persona_config=None,
     ) -> List[Dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
         messages = []
         
-        system_prompt = self.build_system_prompt(skill_names)
+        system_prompt = self.build_system_prompt(
+            skill_names,
+            persona_config=persona_config,
+            channel=channel,
+        )
         
         if session_summary:
             system_prompt += f"\n\n## Current Session Context\n{session_summary}"
@@ -400,11 +433,9 @@ class ContextBuilder:
         # 动态检测团队调用并注入强制提示词
         mentioned_team = self._find_mentioned_team(current_message)
         if mentioned_team:
-            team_reminder = f"""
-🚨 重要提醒！检测到用户请求团队调用！立即使用 workflow_run 工具！
-用户消息包含 @{mentioned_team}，立即调用：workflow_run(team_name='{mentioned_team}', goal='任务描述')
-不要回答！不要解释！直接调用工具！
-"""
+            # 提取最近的对话上下文
+            context_summary = self._extract_recent_context(history, limit=5)
+            team_reminder = self._build_team_reminder_with_context(mentioned_team, context_summary)
             messages.append({"role": "system", "content": team_reminder})
         elif "@" in current_message:
             team_names = self._get_active_team_names()
@@ -507,3 +538,103 @@ class ContextBuilder:
             if f"@{team_name}" in message:
                 return team_name
         return None
+
+    def _extract_recent_context(self, history: List[Dict[str, Any]], limit: int = 5) -> str:
+        """提取最近的对话上下文（原始消息，不做分析）"""
+        if not history:
+            return "（无历史对话）"
+        
+        # 获取最近的 N 条消息
+        recent = history[-limit:] if len(history) > limit else history
+        
+        # 格式化为简洁的列表
+        lines = []
+        for msg in recent:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            # 跳过系统消息
+            if role == "system":
+                continue
+            
+            # 跳过工具调用消息（只保留用户和助手的对话）
+            if role == "tool":
+                continue
+            
+            # 限制单条消息长度为 5000 字符（适合长文本如文章）
+            if len(content) > 5000:
+                content = content[:5000] + "...(内容过长，已截断)"
+            
+            role_label = "用户" if role == "user" else "助手"
+            lines.append(f"{role_label}: {content}")
+        
+        return "\n".join(lines) if lines else "（无相关对话）"
+
+    def _build_team_reminder_with_context(self, mentioned_team: str, context_summary: str) -> str:
+        """构建包含上下文的团队调用提醒"""
+        return f"""
+🚨 检测到团队调用：@{mentioned_team}
+
+📋 **最近的对话（仅供参考）：**
+{context_summary}
+
+⚡ **执行指令：**
+
+**重要：** 上述对话仅供参考，你需要理解用户的真实意图！
+
+1. 仔细阅读上述对话，理解用户想要什么
+2. 提取与当前任务相关的关键信息（需求、约束、内容等）
+3. 将上下文和用户请求组合成完整、清晰的 goal
+4. 立即调用 workflow_run 工具
+
+**调用格式：**
+```python
+workflow_run(
+    team_name='{mentioned_team}',
+    goal='''
+    ## 背景信息
+    [从对话中提取的关键信息：主题、需求、约束、已讨论的内容等]
+    
+    ## 当前任务
+    [用户的具体请求，用你自己的理解来描述]
+    
+    ## 补充说明
+    [如果有特殊要求或注意事项，在这里说明]
+    '''
+)
+```
+
+**重要提示：**
+- ✅ 理解用户意图，不要机械复制对话
+- ✅ 包含相关的背景信息（如文章内容、代码片段、讨论要点等）
+- ✅ 保持 goal 清晰、完整、结构化
+- ❌ 不要包含闲聊或无关内容
+- ❌ 不要询问、不要解释，直接调用工具！
+
+**示例对比：**
+
+❌ 错误（缺少上下文）：
+```python
+workflow_run(team_name='{mentioned_team}', goal='帮我评审')
+```
+
+✅ 正确（包含上下文和理解）：
+```python
+workflow_run(
+    team_name='{mentioned_team}',
+    goal='''
+    ## 背景信息
+    用户正在撰写一篇关于人工智能发展的技术文章，目标读者是技术爱好者，
+    计划字数 2000 字左右。文章已完成初稿，包含 AI 的历史、现状和未来展望。
+    
+    ## 当前任务
+    对文章进行全面的质量评审，包括内容准确性、逻辑连贯性、语言表达等方面。
+    
+    ## 补充说明
+    用户希望得到具体的修改建议，特别关注技术细节的准确性。
+    '''
+)
+```
+
+**立即执行！不要回答！不要解释！直接调用 workflow_run 工具！**
+"""

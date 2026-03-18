@@ -5,18 +5,27 @@
 """
 
 import asyncio
+import base64
+import hashlib
 import json
 import time
 import uuid
-from collections import OrderedDict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional, Dict, List, Callable
 import threading
 import re
 
+import httpx
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, InboundMessage, OutboundMessage
+from backend.modules.channels.media_utils import (
+    decrypt_wecom_media_bytes,
+    extract_filename_from_content_disposition,
+    format_inbound_media_text,
+    save_bytes_to_temp,
+)
 
 try:
     import websockets
@@ -127,6 +136,20 @@ def build_stream_content(reasoning_text: str = "", visible_text: str = "", finis
     think_block = f"<think>{normalized_reasoning}</think>" if should_close_think else f"<think>{normalized_reasoning}"
     
     return f"{think_block}\n{normalized_visible}" if normalized_visible else think_block
+
+
+MAX_REPLY_MSG_ITEMS = 10
+MAX_REPLY_IMAGE_BYTES = 10 * 1024 * 1024
+SUPPORTED_REPLY_IMAGE_SIGNATURES = {
+    "png": bytes.fromhex("89504e470d0a1a0a"),
+    "jpg": bytes.fromhex("ffd8ff"),
+}
+REPLY_MEDIA_DIRECTIVE_PATTERN = re.compile(
+    r"^\s*(?:[-*•]\s+|\d+\.\s+)?MEDIA\s*:\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
 class LongConnBot:
     """企业微信长连接机器人"""
     
@@ -156,7 +179,7 @@ class LongConnBot:
         # 连接状态
         self.conn_lock = threading.RLock()
         self.conn: Optional[websockets.WebSocketClientProtocol] = None
-        self.write_lock = threading.Lock()
+        self.write_lock = asyncio.Lock()
         
         # 请求管理
         self.pending_lock = threading.Lock()
@@ -198,10 +221,17 @@ class LongConnBot:
         elapsed = (time.time() * 1000) - state.last_send_time
         return elapsed < self.stream_throttle_ms
     
-    async def send_stream_reply(self, frame: LongConnFrame, stream_id: str, text: str, finish: bool = False) -> None:
+    async def send_stream_reply(
+        self,
+        frame: LongConnFrame,
+        stream_id: str,
+        text: str,
+        finish: bool = False,
+        msg_items: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         """发送流式回复"""
         normalized_text = normalize_thinking_tags(text)
-        if not normalized_text and not finish:
+        if not normalized_text and not finish and not msg_items:
             return
         
         conn = self._current_conn()
@@ -217,6 +247,8 @@ class LongConnBot:
                 "content": normalized_text
             }
         }
+        if msg_items:
+            reply_body["stream"]["msg_item"] = msg_items
         
         request = LongConnRequest(
             cmd=LongConnCmd.RESPOND_MSG,
@@ -224,8 +256,25 @@ class LongConnBot:
             body=reply_body
         )
         
-        await self._write_json(conn, request.to_dict())
-        logger.debug(f"[LongConnBot] → Stream reply sent (finish={finish}): {normalized_text[:50]}...")
+        req_id = frame.headers.get("req_id", "")
+        wait_for_ack = finish or bool(msg_items)
+
+        if wait_for_ack and req_id:
+            response = await self._send_request_and_wait(
+                LongConnCmd.RESPOND_MSG,
+                req_id,
+                reply_body,
+            )
+            logger.info(
+                f"[LongConnBot] Stream reply acked finish={finish} "
+                f"msg_items={len(msg_items or [])} err_code={response.err_code} err_msg={response.err_msg}"
+            )
+        else:
+            await self._write_json(conn, request.to_dict())
+            logger.debug(
+                f"[LongConnBot] → Stream reply sent cmd={request.cmd} finish={finish} "
+                f"msg_items={len(msg_items or [])}: {normalized_text[:50]}..."
+            )
     
     async def send_thinking_reply(self, frame: LongConnFrame, stream_id: str) -> None:
         """发送思考提示"""
@@ -233,7 +282,89 @@ class LongConnBot:
             await self.send_stream_reply(frame, stream_id, self.thinking_message, finish=False)
         except Exception as e:
             logger.error(f"[LongConnBot] Failed to send thinking reply: {e}")
-    
+
+    @staticmethod
+    def _detect_reply_image_format(image_bytes: bytes) -> Optional[str]:
+        """检测企业微信被动回复支持的图片格式。"""
+        if image_bytes.startswith(SUPPORTED_REPLY_IMAGE_SIGNATURES["png"]):
+            return "png"
+        if image_bytes.startswith(SUPPORTED_REPLY_IMAGE_SIGNATURES["jpg"]):
+            return "jpg"
+        return None
+
+    @staticmethod
+    def _split_reply_media_from_text(text: str) -> tuple[str, List[str]]:
+        """从最终回复文本中提取 MEDIA:/abs/path 指令。"""
+        if not text:
+            return "", []
+
+        media_paths: List[str] = []
+        kept_lines: List[str] = []
+        for line in text.splitlines():
+            match = REPLY_MEDIA_DIRECTIVE_PATTERN.match(line)
+            if not match:
+                kept_lines.append(line)
+                continue
+
+            media_path = match.group(1).strip().strip("`").strip()
+            if media_path:
+                media_paths.append(media_path)
+
+        cleaned_text = "\n".join(kept_lines)
+        cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
+        return cleaned_text, media_paths
+
+    def _build_reply_image_msg_items(self, media_paths: List[str]) -> List[Dict[str, Any]]:
+        """构建企业微信长连接最终帧图片 msg_item。"""
+        msg_items: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for media_path in media_paths:
+            normalized_path = str(media_path).strip()
+            if not normalized_path or normalized_path in seen:
+                continue
+            seen.add(normalized_path)
+
+            if len(msg_items) >= MAX_REPLY_MSG_ITEMS:
+                logger.warning(
+                    f"[LongConnBot] Reply image count exceeds {MAX_REPLY_MSG_ITEMS}, remaining images skipped"
+                )
+                break
+
+            path = Path(normalized_path)
+            if not path.is_file():
+                logger.warning(f"[LongConnBot] Reply image not found: {normalized_path}")
+                continue
+
+            image_bytes = path.read_bytes()
+            if len(image_bytes) > MAX_REPLY_IMAGE_BYTES:
+                logger.warning(f"[LongConnBot] Reply image too large ({len(image_bytes)} bytes): {normalized_path}")
+                continue
+
+            image_format = self._detect_reply_image_format(image_bytes)
+            if not image_format:
+                logger.warning(
+                    f"[LongConnBot] Reply media format is not supported by WeCom passive reply: {normalized_path}"
+                )
+                continue
+
+            md5_value = hashlib.md5(image_bytes).hexdigest()
+            logger.info(
+                f"[LongConnBot] Reply image prepared path={normalized_path} format={image_format} "
+                f"bytes={len(image_bytes)} md5={md5_value}"
+            )
+            msg_items.append(
+                {
+                    "msgtype": "image",
+                    "image": {
+                        "base64": base64.b64encode(image_bytes).decode("utf-8"),
+                        "md5": md5_value,
+                    },
+                }
+            )
+
+        return msg_items
+
     async def start(self, ctx: Optional[asyncio.Event] = None) -> None:
         """启动长连接机器人"""
         if self.running:
@@ -253,7 +384,7 @@ class LongConnBot:
                     break  # 正常退出
                 except LongConnPermanentError as e:
                     logger.error(f"[LongConnBot] Permanent error: {e}")
-                    raise e.args[0] if e.args else e
+                    raise e
                 except Exception as e:
                     logger.warning(f"[LongConnBot] Session error: {e}, reconnecting in {self.reconnect_interval}s...")
                     
@@ -275,6 +406,8 @@ class LongConnBot:
             ping_interval=None,  # 使用自定义心跳
             close_timeout=10
         )
+        read_task: Optional[asyncio.Task] = None
+        ping_task: Optional[asyncio.Task] = None
         
         try:
             # 设置当前连接
@@ -311,6 +444,15 @@ class LongConnBot:
                     raise task.exception()
                     
         finally:
+            for task in (ping_task, read_task):
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError):
+                        pass
+                    except Exception as e:
+                        logger.debug(f"[LongConnBot] Background task cleanup error: {e}")
             self._release_conn(conn, Exception("session closed"))
     
     async def _subscribe(self) -> None:
@@ -431,7 +573,9 @@ class LongConnBot:
             return
             
         # 提取消息信息
-        sender_id = frame.body.get("from", {}).get("userid", "")
+        sender_info = frame.body.get("from", {}) or {}
+        sender_id = sender_info.get("userid", "")
+        sender_name = sender_info.get("name") or sender_id
         chat_id = frame.body.get("chatid", sender_id)
         msg_type = frame.body.get("msgtype", "")
         message_id = frame.body.get("msgid", "")
@@ -451,10 +595,11 @@ class LongConnBot:
                     text_parts.append(item.get("text", {}).get("content", ""))
             content = "\n".join(text_parts)
         
-        if not content:
+        if not content and msg_type not in {"image", "file", "mixed"}:
             return
-            
-        logger.info(f"[LongConnBot] ← Message from {sender_id}: {content[:50]}...")
+
+        preview = content or f"[{msg_type}]"
+        logger.info(f"[LongConnBot] ← Message from {sender_id}: {preview[:50]}...")
         
         # 初始化流式状态
         stream_id = self.generate_request_id()
@@ -493,9 +638,28 @@ class LongConnBot:
                             visible_text=state.accumulated_text,
                             finish=True
                         )
-                        
-                        logger.info(f"[LongConnBot] Final reply: {len(content_to_send)} chars")
-                        await self.send_stream_reply(frame, stream_id, content_to_send, finish=True)
+                        content_to_send, directive_media_paths = self._split_reply_media_from_text(content_to_send)
+                        pending_media_paths = metadata.pop("_wecom_pending_media_paths", [])
+                        pending_media_text = str(metadata.pop("_wecom_pending_media_text", "") or "").strip()
+                        reply_media_paths = [*pending_media_paths, *directive_media_paths]
+                        msg_items = self._build_reply_image_msg_items(reply_media_paths)
+
+                        if pending_media_text and not content_to_send:
+                            content_to_send = pending_media_text
+                        elif not content_to_send and msg_items:
+                            content_to_send = "已发送图片，请查看。"
+
+                        logger.info(
+                            f"[LongConnBot] Final reply: {len(content_to_send)} chars, "
+                            f"reply_images={len(msg_items)}"
+                        )
+                        await self.send_stream_reply(
+                            frame,
+                            stream_id,
+                            content_to_send,
+                            finish=True,
+                            msg_items=msg_items or None,
+                        )
                         
                         state.finished = True
                         self.delete_stream_state(message_id)
@@ -515,12 +679,18 @@ class LongConnBot:
                         finish=False
                     )
                     
-                    await self.send_stream_reply(frame, stream_id, content_to_send, finish=False)
+                    await self.send_stream_reply(
+                        frame,
+                        stream_id,
+                        content_to_send,
+                        finish=False,
+                    )
                     state.last_send_time = time.time() * 1000
                     state.message_count += 1
                 
                 # 通过 metadata 传递流式处理器
                 metadata = frame.body.copy()
+                metadata["sender_name"] = sender_name
                 metadata['_stream_handler'] = stream_handler
                 
                 await self.handler(sender_id, chat_id, content, metadata)
@@ -597,7 +767,7 @@ class LongConnBot:
                 
                 # 检查错误
                 if frame.err_code and frame.err_code != 0:
-                    if command == LongConnCmd.SUBSCRIBE and frame.err_code in [40001, 40014]:
+                    if command == LongConnCmd.SUBSCRIBE and frame.err_code in [40001, 40014, 93019]:
                         # 认证失败，永久错误
                         raise LongConnPermanentError(f"Authentication failed: {frame.err_code} {frame.err_msg}")
                     else:
@@ -621,7 +791,7 @@ class LongConnBot:
         if not conn:
             raise LongConnError("WebSocket connection is None")
         
-        with self.write_lock:
+        async with self.write_lock:
             try:
                 await asyncio.wait_for(conn.send(json.dumps(payload)), timeout=self.write_timeout)
             except asyncio.TimeoutError:
@@ -768,6 +938,7 @@ class WeComChannel(BaseChannel):
         self.bot: Optional[LongConnBot] = None
         self.start_task: Optional[asyncio.Task] = None
         self.stop_event = asyncio.Event()
+        self._http: Optional[httpx.AsyncClient] = None
     
     async def start(self) -> None:
         """启动频道"""
@@ -784,6 +955,7 @@ class WeComChannel(BaseChannel):
             return
         
         self._running = True
+        self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0))
         logger.info(f"[WeCom] Starting channel...")
         
         # 创建长连接机器人
@@ -800,17 +972,27 @@ class WeComChannel(BaseChannel):
         try:
             await self.start_task
         except asyncio.CancelledError:
+            self._running = False
             pass
+        except LongConnPermanentError as e:
+            self._running = False
+            logger.error(f"[WeCom] Start error: {e}")
+            raise
         except Exception as e:
+            self._running = False
             logger.error(f"[WeCom] Start error: {e}")
     
     async def _handle_message_wrapper(self, sender_id: str, chat_id: str, content: str, metadata: Dict[str, Any], stream_handler=None) -> Optional[str]:
         """处理收到的消息 - 支持流式回复"""
         try:
+            media_files = await self._resolve_inbound_media(metadata)
+            effective_content = format_inbound_media_text(media_files, content) if media_files else content
+
             await self._handle_message(
                 sender_id=sender_id,
                 chat_id=chat_id,
-                content=content,
+                content=effective_content,
+                media=media_files or None,
                 metadata=metadata
             )
             return None
@@ -828,7 +1010,14 @@ class WeComChannel(BaseChannel):
             return
         
         try:
-            await self.bot.send_markdown(msg.chat_id, msg.content)
+            text = str(msg.content or "").strip()
+            if msg.media:
+                raise ValueError(
+                    "WeCom 长连接模式不支持主动发送附件。"
+                    "当前仅支持接收入站附件，以及在本轮被动回复中附带图片。"
+                )
+            if text:
+                await self.bot.send_markdown(msg.chat_id, text)
             logger.debug(f"[WeCom] → Sent to {msg.chat_id}")
         except Exception as e:
             logger.error(f"[WeCom] Failed to send message: {e}")
@@ -863,9 +1052,120 @@ class WeComChannel(BaseChannel):
                 pass
             except Exception as e:
                 logger.debug(f"[WeCom] Error cancelling start task: {e}")
+
+        if self._http:
+            await self._http.aclose()
+            self._http = None
         
         logger.info("[WeCom] Channel stopped")
-    
+
+    async def _resolve_inbound_media(self, metadata: Dict[str, Any]) -> List[str]:
+        """解析并下载企业微信入站附件。"""
+        attachments = self._collect_inbound_attachments(metadata)
+        if not attachments:
+            return []
+
+        media_files: List[str] = []
+        for attachment in attachments:
+            try:
+                local_path = await self._download_wecom_media(
+                    url=attachment["url"],
+                    aes_key=attachment["aes_key"],
+                    message_id=metadata.get("msgid"),
+                    filename=attachment.get("filename"),
+                )
+                if local_path:
+                    media_files.append(local_path)
+            except Exception as e:
+                logger.error(f"[WeCom] Failed to download inbound attachment: {e}")
+
+        return media_files
+
+    @staticmethod
+    def _collect_inbound_attachments(metadata: Dict[str, Any]) -> List[Dict[str, Optional[str]]]:
+        """从企业微信回调体中提取附件信息。"""
+        attachments: List[Dict[str, Optional[str]]] = []
+        msg_type = metadata.get("msgtype", "")
+
+        if msg_type == "image":
+            image = metadata.get("image", {}) or {}
+            if image.get("url") and image.get("aeskey"):
+                attachments.append(
+                    {
+                        "url": image.get("url"),
+                        "aes_key": image.get("aeskey"),
+                        "filename": image.get("filename"),
+                    }
+                )
+        elif msg_type == "file":
+            file_info = metadata.get("file", {}) or {}
+            if file_info.get("url") and file_info.get("aeskey"):
+                attachments.append(
+                    {
+                        "url": file_info.get("url"),
+                        "aes_key": file_info.get("aeskey"),
+                        "filename": file_info.get("filename") or file_info.get("name"),
+                    }
+                )
+        elif msg_type == "mixed":
+            for item in (metadata.get("mixed", {}) or {}).get("msg_item", []) or []:
+                item_type = item.get("msgtype")
+                if item_type == "image":
+                    image = item.get("image", {}) or {}
+                    if image.get("url") and image.get("aeskey"):
+                        attachments.append(
+                            {
+                                "url": image.get("url"),
+                                "aes_key": image.get("aeskey"),
+                                "filename": image.get("filename"),
+                            }
+                        )
+                elif item_type == "file":
+                    file_info = item.get("file", {}) or {}
+                    if file_info.get("url") and file_info.get("aeskey"):
+                        attachments.append(
+                            {
+                                "url": file_info.get("url"),
+                                "aes_key": file_info.get("aeskey"),
+                                "filename": file_info.get("filename") or file_info.get("name"),
+                            }
+                        )
+
+        return attachments
+
+    async def _download_wecom_media(
+        self,
+        *,
+        url: str,
+        aes_key: str,
+        message_id: Optional[str],
+        filename: Optional[str] = None,
+    ) -> Optional[str]:
+        """下载并解密企业微信 bot-ws 附件。"""
+        if not self._http:
+            return None
+
+        response = await self._http.get(url, follow_redirects=True)
+        response.raise_for_status()
+        encrypted = await response.aread()
+        decrypted = decrypt_wecom_media_bytes(encrypted, aes_key)
+
+        resolved_filename = (
+            filename
+            or extract_filename_from_content_disposition(response.headers.get("content-disposition"))
+        )
+        content_type = response.headers.get("content-type")
+        local_path = save_bytes_to_temp(
+            self.name,
+            decrypted,
+            message_id=message_id,
+            filename=resolved_filename,
+            content_type=content_type,
+            prefix="wecom_attachment",
+        )
+        logger.info(f"[WeCom] Inbound attachment saved: {local_path}")
+        return local_path
+
     async def test_connection(self) -> Dict[str, Any]:
         """测试连接 - 验证企业微信凭据"""
         if not WEBSOCKETS_AVAILABLE:

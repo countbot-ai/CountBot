@@ -18,6 +18,9 @@ _session_id_context: contextvars.ContextVar[Optional[str]] = contextvars.Context
 _channel_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'channel', default=None
 )
+_message_context: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
+    'message_context', default=None
+)
 
 # 代理上下文
 _agent_type_context: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -106,10 +109,23 @@ class ToolRegistry:
         if memory_tool and hasattr(memory_tool, 'set_channel'):
             memory_tool.set_channel(channel)
 
+    def set_message_context(self, message_context: Optional[Dict[str, Any]]) -> None:
+        """设置当前上下文的入站消息上下文（异步安全）。"""
+        _message_context.set(message_context)
+
+        for tool in self._tools.values():
+            if hasattr(tool, 'set_message_context'):
+                tool.set_message_context(message_context)
+
     @property
     def channel(self) -> Optional[str]:
         """获取当前上下文的渠道（异步安全）"""
         return _channel_context.get()
+
+    @property
+    def message_context(self) -> Optional[Dict[str, Any]]:
+        """获取当前上下文的入站消息上下文（异步安全）。"""
+        return _message_context.get()
 
     def register(self, tool: Tool) -> None:
         """

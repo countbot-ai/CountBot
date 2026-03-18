@@ -2,16 +2,23 @@
 
 使用 qq-botpy SDK 通过 WebSocket 接收消息，支持私聊和群聊。
 QQ 被动回复有 5 分钟窗口限制，超时后自动降级为主动消息。
+富媒体发送通过官方文件上传接口完成，支持本地文件与公网 URL。
 """
 
 import asyncio
+import base64
+import hashlib
 import time
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
+from backend.modules.channels.media_utils import download_to_temp, format_inbound_media_text
 
 try:
     import botpy
@@ -27,6 +34,20 @@ except ImportError:
 
 # QQ 被动回复窗口（秒）
 _PASSIVE_REPLY_TTL = 290  # 5 分钟窗口，提前 10 秒过期
+_QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
+_QQ_API_BASE = "https://api.sgroup.qq.com"
+_UPLOAD_CACHE_LIMIT = 500
+
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+_VOICE_EXTENSIONS = {".silk", ".wav", ".mp3", ".amr", ".ogg", ".m4a"}
+
+
+class _QQMediaType:
+    IMAGE = 1
+    VIDEO = 2
+    VOICE = 3
+    FILE = 4
 
 
 def _make_bot_class(channel: "QQChannel") -> type:
@@ -69,11 +90,16 @@ class QQChannel(BaseChannel):
         self._markdown_enabled = getattr(config, "markdown_enabled", True)
         self._group_markdown_enabled = getattr(config, "group_markdown_enabled", True)
         self._client = None
+        self._http: Optional[httpx.AsyncClient] = None
         self._processed_ids: OrderedDict[str, None] = OrderedDict()
         self._bot_task: Optional[asyncio.Task] = None
         # 被动回复上下文缓存：chat_id -> {msg_id, event_id, is_group, timestamp}
         self._reply_context: OrderedDict[str, dict] = OrderedDict()
         self._msg_seq = 1
+        self._reply_sequences: OrderedDict[str, int] = OrderedDict()
+        self._access_token: Optional[str] = None
+        self._token_expiry: float = 0
+        self._upload_cache: OrderedDict[str, dict] = OrderedDict()
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -90,6 +116,7 @@ class QQChannel(BaseChannel):
             return
 
         self._running = True
+        self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0))
 
         bot_cls = _make_bot_class(self)
         if not bot_cls:
@@ -108,6 +135,8 @@ class QQChannel(BaseChannel):
             )
         except Exception as e:
             logger.warning(f"QQ bot connection exited: {e}")
+        finally:
+            self._running = False
 
     async def stop(self) -> None:
         """停止 QQ 机器人。"""
@@ -118,6 +147,9 @@ class QQChannel(BaseChannel):
                 await self._bot_task
             except asyncio.CancelledError:
                 pass
+        if self._http:
+            await self._http.aclose()
+            self._http = None
         logger.info("QQ bot stopped")
 
     # ------------------------------------------------------------------
@@ -142,8 +174,17 @@ class QQChannel(BaseChannel):
                 or getattr(author, "user_openid", None)
                 or getattr(author, "member_openid", "unknown")
             )
+            sender_name = str(
+                getattr(author, "username", None)
+                or getattr(author, "nick", None)
+                or getattr(author, "nickname", None)
+                or user_id
+            )
 
             content = (data.content or "").strip()
+            media_files = await self._download_inbound_attachments(data)
+            if media_files:
+                content = format_inbound_media_text(media_files, content)
             if not content:
                 return
 
@@ -169,12 +210,47 @@ class QQChannel(BaseChannel):
                 sender_id=user_id,
                 chat_id=chat_id,
                 content=content,
-                metadata={"message_id": message_id, "is_group": is_group},
+                media=media_files or None,
+                metadata={
+                    "message_id": message_id,
+                    "is_group": is_group,
+                    "sender_name": sender_name,
+                },
             )
 
         except Exception as e:
             logger.error(f"Error handling QQ message: {e}")
             logger.exception("Details:")
+
+    async def _download_inbound_attachments(self, data: Any) -> List[str]:
+        """下载 QQ 入站附件到本地临时目录。"""
+        if not self._http:
+            return []
+
+        media_files: List[str] = []
+        attachments = getattr(data, "attachments", None) or []
+        for attachment in attachments:
+            try:
+                url = getattr(attachment, "url", None)
+                if not url:
+                    continue
+                if str(url).startswith("//"):
+                    url = f"https:{url}"
+
+                local_path = await download_to_temp(
+                    self.name,
+                    str(url),
+                    client=self._http,
+                    message_id=getattr(data, "id", None),
+                    filename=getattr(attachment, "filename", None),
+                    content_type=getattr(attachment, "content_type", None),
+                    prefix="qq_attachment",
+                )
+                media_files.append(local_path)
+            except Exception as e:
+                logger.error(f"Failed to download QQ attachment: {e}")
+
+        return media_files
 
     # ------------------------------------------------------------------
     # 出站消息发送
@@ -196,13 +272,7 @@ class QQChannel(BaseChannel):
                 is_group = ctx["is_group"]
 
             if has_media:
-                await self._send_media_message(
-                    is_group=is_group,
-                    chat_id=msg.chat_id,
-                    content=msg.content,
-                    media_files=msg.media,
-                    msg_id=ctx["msg_id"] if ctx else None,
-                )
+                await self._send_with_media(msg, is_group, ctx)
             elif ctx:
                 await self._send_passive_reply(msg, is_group, ctx)
             else:
@@ -219,10 +289,22 @@ class QQChannel(BaseChannel):
             return None
 
         if time.time() - ctx["timestamp"] > _PASSIVE_REPLY_TTL:
+            if ctx.get("msg_id"):
+                self._reply_sequences.pop(ctx["msg_id"], None)
             del self._reply_context[chat_id]
             return None
 
         return ctx
+
+    def _next_reply_seq(self, msg_id: str, requested: Optional[int] = None) -> int:
+        """为同一条被动回复上下文分配递增 msg_seq，避免被 QQ 去重。"""
+        last_seq = self._reply_sequences.get(msg_id, 0)
+        seq = max(last_seq + 1, requested or 0) if requested is not None else last_seq + 1
+        self._reply_sequences[msg_id] = seq
+        self._reply_sequences.move_to_end(msg_id)
+        while len(self._reply_sequences) > 500:
+            self._reply_sequences.popitem(last=False)
+        return seq
 
     async def _send_passive_reply(
         self, msg: OutboundMessage, is_group: bool, ctx: dict
@@ -244,12 +326,12 @@ class QQChannel(BaseChannel):
 
     async def _send_active_message(self, msg: OutboundMessage, is_group: bool) -> None:
         """发送主动消息（无被动回复上下文时）。"""
-        if is_group:
-            use_md = self._group_markdown_enabled and self._markdown_enabled
-            await self._send_group_message(msg.chat_id, msg.content, use_markdown=use_md)
-        else:
-            self._msg_seq += 1
-            await self._send_private_wakeup(msg.chat_id, msg.content, self._msg_seq)
+        use_md = (
+            self._group_markdown_enabled and self._markdown_enabled
+            if is_group
+            else self._markdown_enabled
+        )
+        await self._send_proactive_message(msg.chat_id, msg.content, is_group, use_md)
 
     # ------------------------------------------------------------------
     # 底层发送方法
@@ -261,6 +343,7 @@ class QQChannel(BaseChannel):
         content: str,
         msg_id: Optional[str] = None,
         event_id: Optional[str] = None,
+        msg_seq: Optional[int] = None,
         use_markdown: bool = False,
     ) -> None:
         """发送群聊消息，markdown 失败自动降级为纯文本。"""
@@ -272,7 +355,7 @@ class QQChannel(BaseChannel):
         }
         if msg_id:
             params["msg_id"] = msg_id
-            params["msg_seq"] = 1
+            params["msg_seq"] = self._next_reply_seq(msg_id, msg_seq)
         if event_id:
             params["event_id"] = event_id
         params = {k: v for k, v in params.items() if v is not None}
@@ -307,7 +390,7 @@ class QQChannel(BaseChannel):
         }
         if msg_id:
             params["msg_id"] = msg_id
-            params["msg_seq"] = msg_seq or 1
+            params["msg_seq"] = self._next_reply_seq(msg_id, msg_seq)
         if event_id:
             params["event_id"] = event_id
         params = {k: v for k, v in params.items() if v is not None}
@@ -352,48 +435,313 @@ class QQChannel(BaseChannel):
             else:
                 raise
 
-    async def _send_media_message(
+    async def _send_proactive_message(
         self,
-        is_group: bool,
         chat_id: str,
         content: str,
-        media_files: List[str],
-        msg_id: Optional[str] = None,
+        is_group: bool,
+        use_markdown: bool,
     ) -> None:
-        """发送富媒体消息（图片/文件 URL）。"""
-        for media_path in media_files:
-            try:
-                if not media_path.startswith(("http://", "https://")):
-                    logger.warning(f"Non-URL media path ignored: {media_path}")
-                    continue
+        """通过官方 REST 接口发送主动消息。"""
+        if not self._http:
+            return
 
-                ext = media_path.lower().rsplit(".", 1)[-1] if "." in media_path else ""
-                file_type = 1 if ext in ("jpg", "jpeg", "png", "gif", "bmp", "webp") else 2
+        access_token = await self._get_access_token()
+        if not access_token:
+            return
 
+        body: Dict[str, Any] = (
+            {"msg_type": 2, "markdown": {"content": content}}
+            if use_markdown
+            else {"msg_type": 0, "content": content}
+        )
+        endpoint = (
+            f"/v2/groups/{chat_id}/messages"
+            if is_group
+            else f"/v2/users/{chat_id}/messages"
+        )
+        headers = {
+            "Authorization": f"QQBot {access_token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            resp = await self._http.post(
+                f"{_QQ_API_BASE}{endpoint}",
+                json=body,
+                headers=headers,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            if use_markdown and ("11255" in str(e) or "invalid request" in str(e)):
+                logger.warning(
+                    f"QQ proactive markdown not supported, fallback to plain text: {e}"
+                )
+                await self._send_proactive_message(chat_id, content, is_group, False)
+                return
+            raise
+
+    async def _send_with_media(
+        self,
+        msg: OutboundMessage,
+        is_group: bool,
+        ctx: Optional[dict],
+    ) -> None:
+        """发送带媒体文件的消息。"""
+        seq = 0
+
+        if msg.content and msg.content.strip():
+            seq += 1
+            if ctx:
                 if is_group:
-                    await self._client.api.post_group_file(
-                        group_openid=chat_id, file_type=file_type,
-                        url=media_path, srv_send_msg=True,
+                    await self._send_group_message(
+                        msg.chat_id,
+                        msg.content,
+                        ctx.get("msg_id"),
+                        ctx.get("event_id"),
+                        msg_seq=seq,
+                        use_markdown=self._group_markdown_enabled and self._markdown_enabled,
                     )
                 else:
-                    await self._client.api.post_c2c_file(
-                        openid=chat_id, file_type=file_type,
-                        url=media_path, srv_send_msg=True,
+                    await self._send_private_message(
+                        msg.chat_id,
+                        msg.content,
+                        ctx.get("msg_id"),
+                        ctx.get("event_id"),
+                        msg_seq=seq,
+                        use_markdown=self._markdown_enabled,
                     )
+            else:
+                await self._send_active_message(msg, is_group)
 
-                # 媒体后追加文本说明
-                if content:
-                    await asyncio.sleep(0.5)
-                    if is_group:
-                        await self._send_group_message(chat_id, content)
-                    else:
-                        self._msg_seq += 1
-                        await self._send_private_message(
-                            chat_id, content, msg_seq=self._msg_seq
-                        )
+        for media_path in msg.media:
+            if not media_path:
+                continue
+            seq += 1
+            await self._send_media_file(msg.chat_id, media_path, is_group, ctx, seq)
 
-            except Exception as e:
-                logger.error(f"Failed to send media {media_path}: {e}")
+    async def _send_media_file(
+        self,
+        chat_id: str,
+        media_path: str,
+        is_group: bool,
+        ctx: Optional[dict],
+        msg_seq: int,
+    ) -> None:
+        """根据文件类型发送图片、视频、语音或文件。"""
+        media_kind = self._detect_media_kind(media_path)
+        try:
+            if media_kind == _QQMediaType.IMAGE:
+                await self._send_rich_media(chat_id, media_path, is_group, ctx, msg_seq, _QQMediaType.IMAGE)
+            elif media_kind == _QQMediaType.VIDEO:
+                await self._send_rich_media(chat_id, media_path, is_group, ctx, msg_seq, _QQMediaType.VIDEO)
+            elif media_kind == _QQMediaType.VOICE:
+                await self._send_rich_media(chat_id, media_path, is_group, ctx, msg_seq, _QQMediaType.VOICE)
+            else:
+                await self._send_rich_media(chat_id, media_path, is_group, ctx, msg_seq, _QQMediaType.FILE)
+        except Exception as e:
+            logger.error(f"Failed to send media {media_path}: {e}")
+
+    @staticmethod
+    def _detect_media_kind(media_path: str) -> int:
+        suffix = Path(media_path).suffix.lower()
+        if suffix in _IMAGE_EXTENSIONS:
+            return _QQMediaType.IMAGE
+        if suffix in _VIDEO_EXTENSIONS:
+            return _QQMediaType.VIDEO
+        if suffix in _VOICE_EXTENSIONS:
+            return _QQMediaType.VOICE
+        return _QQMediaType.FILE
+
+    @staticmethod
+    def _is_remote_media(media_path: str) -> bool:
+        return media_path.startswith(("http://", "https://"))
+
+    @staticmethod
+    def _build_upload_cache_key(file_bytes: bytes, scope: str, target_id: str, file_type: int) -> str:
+        digest = hashlib.md5(file_bytes).hexdigest()
+        return f"{digest}:{scope}:{target_id}:{file_type}"
+
+    def _get_cached_file_info(self, cache_key: str) -> Optional[str]:
+        cached = self._upload_cache.get(cache_key)
+        if not cached:
+            return None
+        if time.time() >= cached["expires_at"]:
+            self._upload_cache.pop(cache_key, None)
+            return None
+        return cached["file_info"]
+
+    def _set_cached_file_info(self, cache_key: str, file_info: str, ttl: int) -> None:
+        now = time.time()
+        self._upload_cache = OrderedDict(
+            (k, v) for k, v in self._upload_cache.items() if now < v["expires_at"]
+        )
+        if len(self._upload_cache) >= _UPLOAD_CACHE_LIMIT:
+            while len(self._upload_cache) >= _UPLOAD_CACHE_LIMIT:
+                self._upload_cache.popitem(last=False)
+        effective_ttl = max(int(ttl) - 60, 10)
+        self._upload_cache[cache_key] = {
+            "file_info": file_info,
+            "expires_at": now + effective_ttl,
+        }
+
+    def _next_msg_seq(self) -> int:
+        self._msg_seq = (self._msg_seq % 65535) + 1
+        return self._msg_seq
+
+    async def _get_access_token(self) -> Optional[str]:
+        """获取 QQ Bot access token。"""
+        if self._access_token and time.time() < self._token_expiry:
+            return self._access_token
+        if not self._http:
+            return None
+
+        try:
+            resp = await self._http.post(
+                _QQ_TOKEN_URL,
+                json={
+                    "appId": str(self.config.app_id).strip(),
+                    "clientSecret": str(self.config.secret).strip(),
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            token = data.get("access_token")
+            if not token:
+                logger.error(f"Failed to get QQ access token: {data}")
+                return None
+            self._access_token = token
+            self._token_expiry = time.time() + int(data.get("expires_in", 7200)) - 300
+            return self._access_token
+        except Exception as e:
+            logger.error(f"Failed to get QQ access token: {e}")
+            return None
+
+    async def _upload_media(
+        self,
+        chat_id: str,
+        media_path: str,
+        is_group: bool,
+        file_type: int,
+    ) -> Optional[str]:
+        """上传媒体到 QQ 官方接口，返回 file_info。"""
+        if not self._http:
+            return None
+
+        access_token = await self._get_access_token()
+        if not access_token:
+            return None
+
+        file_name: Optional[str] = None
+        body: Dict[str, Any] = {
+            "file_type": file_type,
+            "srv_send_msg": False,
+        }
+        cache_key: Optional[str] = None
+
+        if self._is_remote_media(media_path):
+            body["url"] = media_path
+            if file_type == _QQMediaType.FILE:
+                file_name = Path(media_path.split("?", 1)[0]).name or "attachment"
+        else:
+            file = Path(media_path).expanduser()
+            if not file.exists() or not file.is_file():
+                logger.error(f"File not found: {media_path}")
+                return None
+            file_bytes = file.read_bytes()
+            body["file_data"] = base64.b64encode(file_bytes).decode("utf-8")
+            file_name = file.name
+            cache_key = self._build_upload_cache_key(
+                file_bytes,
+                "group" if is_group else "c2c",
+                chat_id,
+                file_type,
+            )
+            cached_info = self._get_cached_file_info(cache_key)
+            if cached_info:
+                return cached_info
+
+        if file_type == _QQMediaType.FILE and file_name:
+            body["file_name"] = file_name
+
+        endpoint = f"/v2/groups/{chat_id}/files" if is_group else f"/v2/users/{chat_id}/files"
+        headers = {
+            "Authorization": f"QQBot {access_token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            resp = await self._http.post(
+                f"{_QQ_API_BASE}{endpoint}",
+                json=body,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            file_info = data.get("file_info")
+            if not file_info:
+                logger.error(f"QQ media upload missing file_info: {data}")
+                return None
+
+            ttl = data.get("ttl")
+            if cache_key and ttl:
+                self._set_cached_file_info(cache_key, file_info, int(ttl))
+            return file_info
+        except Exception as e:
+            logger.error(f"Failed to upload QQ media {media_path}: {e}")
+            return None
+
+    async def _send_rich_media(
+        self,
+        chat_id: str,
+        media_path: str,
+        is_group: bool,
+        ctx: Optional[dict],
+        msg_seq: int,
+        file_type: int,
+    ) -> None:
+        """发送上传后的 QQ 富媒体消息。"""
+        if not self._http:
+            return
+
+        access_token = await self._get_access_token()
+        if not access_token:
+            return
+
+        file_info = await self._upload_media(chat_id, media_path, is_group, file_type)
+        if not file_info:
+            return
+
+        body: Dict[str, Any] = {
+            "msg_type": 7,
+            "media": {"file_info": file_info},
+            "msg_seq": (
+                self._next_reply_seq(ctx["msg_id"], msg_seq)
+                if ctx and ctx.get("msg_id")
+                else self._next_msg_seq()
+            ),
+        }
+        if ctx and ctx.get("msg_id"):
+            body["msg_id"] = ctx["msg_id"]
+        if ctx and ctx.get("event_id"):
+            body["event_id"] = ctx["event_id"]
+
+        endpoint = f"/v2/groups/{chat_id}/messages" if is_group else f"/v2/users/{chat_id}/messages"
+        headers = {
+            "Authorization": f"QQBot {access_token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            resp = await self._http.post(
+                f"{_QQ_API_BASE}{endpoint}",
+                json=body,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            logger.info(f"QQ media sent: {media_path}")
+        except Exception as e:
+            logger.error(f"Failed to send QQ media {media_path}: {e}")
 
     # ------------------------------------------------------------------
     # 错误提示

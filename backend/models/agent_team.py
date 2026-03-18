@@ -46,6 +46,10 @@ class AgentTeam(Base):
     # Whether to inject skills system into subagents
     enable_skills: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Team-level model configuration (optional)
+    team_model_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    use_custom_model: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -61,6 +65,7 @@ class AgentTeam(Base):
             "is_active": self.is_active,
             "cross_review": self.cross_review,
             "enable_skills": self.enable_skills,
+            "use_custom_model": self.use_custom_model,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

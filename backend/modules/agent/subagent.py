@@ -41,6 +41,8 @@ class SubagentTask:
         self.event_callback = event_callback  # async callable(event, tool_name, data)
         self.notification_handler = None  # TaskNotificationHandler (set by SpawnTool)
         self.enable_skills = enable_skills  # 是否启用技能系统
+        self.model_override: Optional[Dict[str, Any]] = None  # 模型配置覆盖
+        self.cancel_token = None  # 任务级别的取消令牌
         self.status = TaskStatus.PENDING
         self.progress = 0
         self.result: Optional[str] = None
@@ -88,6 +90,7 @@ class SubagentManager:
         self.skills = skills  # 技能系统实例
         self.tasks: Dict[str, SubagentTask] = {}
         self.running_tasks: Dict[str, asyncio.Task] = {}
+        self.cancel_token = None  # 全局取消令牌
         
         logger.debug("SubagentManager initialized")
 
@@ -120,6 +123,8 @@ class SubagentManager:
         system_prompt: Optional[str] = None,
         event_callback=None,
         enable_skills: bool = False,
+        model_override: Optional[Dict[str, Any]] = None,
+        cancel_token=None,
     ) -> str:
         """
         创建新的后台任务
@@ -130,6 +135,7 @@ class SubagentManager:
             session_id: 关联的会话 ID (可选)
             system_prompt: 自定义系统提示词；若提供则完全替换默认 wrapper
             enable_skills: 是否启用技能系统
+            model_override: 模型配置覆盖（用于团队自定义模型）
 
         Returns:
             str: 任务 ID
@@ -145,6 +151,12 @@ class SubagentManager:
             event_callback=event_callback,
             enable_skills=enable_skills,
         )
+        
+        # 保存模型覆盖配置
+        task.model_override = model_override
+        
+        # 保存取消令牌
+        task.cancel_token = cancel_token
         
         self.tasks[task_id] = task
         logger.info(f"Created task {task_id}: {label}")
@@ -174,13 +186,13 @@ class SubagentManager:
         handler = task.notification_handler
         
         # 从配置获取超时时间
-        timeout_seconds = 600
+        timeout_seconds = 1200
         if self.config_loader:
             try:
                 timeout_seconds = self.config_loader.config.security.subagent_timeout
                 logger.debug(f"Using subagent_timeout from config: {timeout_seconds}s")
             except Exception as e:
-                logger.warning(f"Failed to get subagent_timeout from config: {e}, using default: 600s")
+                logger.warning(f"Failed to get subagent_timeout from config: {e}, using default: 1200s")
         
         try:
             await asyncio.wait_for(
@@ -234,13 +246,13 @@ class SubagentManager:
             from backend.modules.tools.shell import ExecTool
 
             # 从配置获取工具超时时间
-            tool_timeout = 300
+            tool_timeout = 360
             if self.config_loader:
                 try:
                     tool_timeout = self.config_loader.config.security.command_timeout
                     logger.debug(f"Using command_timeout from config: {tool_timeout}s")
                 except Exception as e:
-                    logger.warning(f"Failed to get command_timeout from config: {e}, using default: 300s")
+                    logger.warning(f"Failed to get command_timeout from config: {e}, using default: 360s")
 
             tools = ToolRegistry()
             tools.register(ReadFileTool(self.workspace))
@@ -277,15 +289,70 @@ class SubagentManager:
             while iteration < max_iterations:
                 iteration += 1
 
+                # 检查取消令牌
+                if task.cancel_token and task.cancel_token.is_cancelled:
+                    logger.info(f"Task {task.task_id} cancelled by user at iteration {iteration}")
+                    raise asyncio.CancelledError("Task cancelled by user")
+
                 tool_definitions = tools.get_definitions()
 
                 content_buffer = ""
                 tool_calls_buffer = []
-                runtime_model, runtime_temperature, runtime_max_tokens = (
-                    self._resolve_runtime_model_settings()
-                )
                 
-                async for chunk in self.provider.chat_stream(
+                # 确定使用的 provider 和模型参数
+                active_provider = self.provider
+                runtime_model = self.model
+                runtime_temperature = self.temperature
+                runtime_max_tokens = self.max_tokens
+                
+                # 优先使用任务的模型覆盖配置（团队自定义模型）
+                if task.model_override:
+                    override_provider = task.model_override.get("provider")
+                    override_api_key = task.model_override.get("api_key")
+                    override_api_base = task.model_override.get("api_base")
+                    
+                    # 如果指定了不同的 provider 或 API 配置，创建新的 provider 实例
+                    if override_provider or override_api_key or override_api_base:
+                        try:
+                            from backend.modules.providers.factory import create_provider
+                            from backend.modules.config.loader import config_loader
+                            
+                            provider_name = override_provider or self.config_loader.config.model.provider
+                            api_key = override_api_key if override_api_key else None
+                            api_base = override_api_base if override_api_base else None
+                            
+                            # 如果没有提供 api_key/api_base（None 或空字符串），从全局配置获取
+                            if not api_key:
+                                provider_config = config_loader.config.providers.get(provider_name)
+                                if provider_config:
+                                    api_key = provider_config.api_key
+                            
+                            if not api_base:
+                                provider_config = config_loader.config.providers.get(provider_name)
+                                if provider_config:
+                                    api_base = provider_config.api_base
+                            
+                            active_provider = create_provider(
+                                provider_id=provider_name,
+                                api_key=api_key,
+                                api_base=api_base,
+                            )
+                            logger.info(f"Created custom provider for team: {provider_name}, api_base: {api_base}")
+                        except Exception as e:
+                            logger.warning(f"Failed to create custom provider, using default: {e}")
+                    
+                    # 应用模型参数覆盖
+                    runtime_model = task.model_override.get("model", runtime_model)
+                    runtime_temperature = task.model_override.get("temperature", runtime_temperature)
+                    runtime_max_tokens = task.model_override.get("max_tokens", runtime_max_tokens)
+                    logger.info(f"Using team model override: model={runtime_model}, temp={runtime_temperature}, max_tokens={runtime_max_tokens}")
+                else:
+                    # 使用全局配置
+                    runtime_model, runtime_temperature, runtime_max_tokens = (
+                        self._resolve_runtime_model_settings()
+                    )
+                
+                async for chunk in active_provider.chat_stream(
                     messages=messages,
                     tools=tool_definitions,
                     model=runtime_model,
@@ -333,6 +400,11 @@ class SubagentManager:
                     })
 
                     for tool_call in tool_calls_buffer:
+                        # 检查取消令牌
+                        if task.cancel_token and task.cancel_token.is_cancelled:
+                            logger.info(f"Task {task.task_id} cancelled by user during tool execution")
+                            raise asyncio.CancelledError("Task cancelled by user")
+                        
                         import time as _time
                         _tc_start = _time.time()
 
@@ -617,18 +689,42 @@ class SubagentManager:
             logger.warning(f"Cannot cancel task {task_id}: not found")
             return False
         
-        if task.status != TaskStatus.RUNNING:
-            logger.warning(f"Cannot cancel task {task_id}: not running")
+        if task.status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+            logger.warning(f"Cannot cancel task {task_id}: status is {task.status}")
             return False
+        
+        # 设置任务的取消令牌
+        if task.cancel_token:
+            task.cancel_token.cancel()
+            logger.info(f"Set cancel token for task {task_id}")
         
         # 取消异步任务
         async_task = self.running_tasks.get(task_id)
         if async_task:
             async_task.cancel()
-            logger.info(f"Cancelled task {task_id}")
+            logger.info(f"Cancelled async task {task_id}")
             return True
         
         return False
+
+    async def cancel_all_tasks(self) -> int:
+        """
+        取消所有运行中的任务
+        
+        Returns:
+            int: 取消的任务数量
+        """
+        cancelled_count = 0
+        running_task_ids = list(self.running_tasks.keys())
+        
+        for task_id in running_task_ids:
+            if await self.cancel_task(task_id):
+                cancelled_count += 1
+        
+        if cancelled_count > 0:
+            logger.info(f"Cancelled {cancelled_count} running tasks")
+        
+        return cancelled_count
 
     def get_task(self, task_id: str) -> Optional[SubagentTask]:
         """

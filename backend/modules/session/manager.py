@@ -91,7 +91,8 @@ class SessionManager:
         self,
         session_id: str,
         role: str,
-        content: str
+        content: str,
+        message_context: Optional[str] = None,
     ) -> Optional[Message]:
         """添加消息到会话"""
         session = await self.get_session(session_id)
@@ -105,6 +106,7 @@ class SessionManager:
             session_id=session_id,
             role=role,
             content=content,
+            message_context=message_context,
             created_at=datetime.now(timezone.utc)
         )
         self.db.add(message)
@@ -387,4 +389,3 @@ class SessionManager:
         except Exception as e:
             from loguru import logger
             logger.error(f"Overflow summarize failed for session {session_id}: {e}")
-

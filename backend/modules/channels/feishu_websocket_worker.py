@@ -108,6 +108,10 @@ class FeishuWebSocketWorker:
                 "type": "message",
                 "message_id": message.message_id,
                 "sender_id": sender.sender_id.open_id if sender.sender_id else "unknown",
+                "sender_name": (
+                    getattr(getattr(sender, "sender_id", None), "open_id", None)
+                    or "unknown"
+                ),
                 "chat_id": message.chat_id,
                 "chat_type": message.chat_type,
                 "msg_type": msg_type,

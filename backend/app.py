@@ -170,6 +170,7 @@ async def lifespan(app: FastAPI):
         enable_dedup=True, 
         dedup_window=10
     )
+    app.state.message_queue = message_queue
     rate_limiter = RateLimiter(rate=10, per=60)
     logger.info("Message queue and rate limiter created")
 
@@ -196,6 +197,7 @@ async def lifespan(app: FastAPI):
     # 创建渠道管理器
     logger.info("Creating channel manager...")
     channel_manager = ChannelManager(config, message_queue)
+    app.state.channel_manager = channel_manager
     set_channel_manager(channel_manager)
     message_handler.set_channel_manager(channel_manager)
     logger.info("Channel manager created")
@@ -214,8 +216,10 @@ async def lifespan(app: FastAPI):
 
     # 启动后台任务（不等待完成）
     app.state.background_tasks = []
+    app.state.channel_manager_task = None
     if channel_manager.enabled_channels:
         task = asyncio.create_task(channel_manager.start_all())
+        app.state.channel_manager_task = task
         app.state.background_tasks.append(task)
         logger.info(f"Started {len(channel_manager.enabled_channels)} channel(s) in background")
     
@@ -339,7 +343,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CountBot Desktop API",
     description="CountBot backend API",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -506,7 +510,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "version": "0.4.0"}
+    return {"status": "ok", "version": "0.5.0"}
 
 
 # 挂载前端静态文件

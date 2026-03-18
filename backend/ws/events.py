@@ -18,8 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.config.loader import config_loader
-from backend.modules.providers import create_provider
-from backend.modules.session import resolve_session_runtime_config
+from backend.modules.session import (
+    build_session_model_override,
+    resolve_session_runtime_config,
+)
 from backend.modules.session.manager import SessionManager
 from backend.ws.connection import (
     ClientMessage,
@@ -93,63 +95,23 @@ async def handle_message_event(
 
         logger.info(f"会话验证通过: {session_id}")
 
-        original_provider = None
-        original_model = None
-        original_temperature = None
-        original_max_tokens = None
-        original_max_iterations = None
-        original_persona = None
-        
+        runtime_config = resolve_session_runtime_config(config_loader.config, session)
+        model_override = build_session_model_override(runtime_config, force=True)
+        persona_override = runtime_config.persona_config
+
         if session.use_custom_config:
-            try:
-                runtime_config = resolve_session_runtime_config(config_loader.config, session)
-
-                if runtime_config.has_custom_model_config:
-                    provider_config = config_loader.config.providers.get(runtime_config.provider_name)
-                    if provider_config and provider_config.enabled:
-                        temp_provider = create_provider(
-                            api_key=runtime_config.api_key,
-                            api_base=runtime_config.api_base,
-                            default_model=runtime_config.model_name,
-                            timeout=120.0,
-                            max_retries=3,
-                            provider_id=runtime_config.provider_name,
-                        )
-
-                        original_provider = agent_loop.provider
-                        original_model = agent_loop.model
-                        original_temperature = agent_loop.temperature
-                        original_max_tokens = agent_loop.max_tokens
-                        original_max_iterations = agent_loop.max_iterations
-
-                        agent_loop.provider = temp_provider
-                        agent_loop.model = runtime_config.model_name
-                        agent_loop.temperature = runtime_config.temperature
-                        agent_loop.max_tokens = runtime_config.max_tokens
-                        agent_loop.max_iterations = runtime_config.max_iterations
-
-                        logger.info(
-                            "✓ 使用会话级模型配置: "
-                            f"{runtime_config.provider_name}/{runtime_config.model_name}"
-                        )
-                    else:
-                        logger.warning(
-                            f"会话请求了不可用 provider：{session_id} / "
-                            f"{runtime_config.provider_name}"
-                        )
-
-                if runtime_config.has_custom_persona_config and agent_loop.context_builder:
-                    original_persona = agent_loop.context_builder.persona_config
-                    agent_loop.context_builder.persona_config = runtime_config.persona_config
-
-                    personality = runtime_config.persona_config.personality
-                    logger.info(f"✓ 使用自定义性格: {personality}")
-                    
-            except Exception as e:
-                logger.error(f"应用自定义配置失败: {e}")
-        
-        if not original_provider and not original_persona:
-            logger.info(f"使用全局配置")
+            if runtime_config.has_custom_model_config:
+                logger.info(
+                    "✓ 使用会话级模型配置: "
+                    f"{runtime_config.provider_name}/{runtime_config.model_name}"
+                )
+            if runtime_config.has_custom_persona_config:
+                logger.info(f"✓ 使用自定义性格: {runtime_config.persona_config.personality}")
+        else:
+            logger.info(
+                "使用全局配置: "
+                f"{runtime_config.provider_name}/{runtime_config.model_name}"
+            )
 
         # 保存用户消息到数据库
         user_message = await session_manager.add_message(
@@ -203,6 +165,13 @@ async def handle_message_event(
             buffer_size=10,  # 减小缓冲区，更快输出
             flush_interval_ms=10,  # 减小刷新间隔，更实时
         )
+        prefer_direct_workflow_result = False
+        team_finder = getattr(agent_loop.context_builder, "_find_mentioned_team", None)
+        if callable(team_finder):
+            try:
+                prefer_direct_workflow_result = bool(team_finder(content))
+            except Exception as exc:
+                logger.warning(f"Failed to detect mentioned team for websocket chat: {exc}")
 
         chunk_count = 0
         async for chunk in agent_loop.process_message(
@@ -210,6 +179,9 @@ async def handle_message_event(
             session_id=session_id,
             context=context,
             cancel_token=cancel_token,
+            model_override=model_override,
+            persona_override=persona_override,
+            prefer_direct_workflow_result=prefer_direct_workflow_result,
         ):
             # 检查是否被取消
             if cancel_token.is_cancelled:
@@ -264,17 +236,6 @@ async def handle_message_event(
             await send_message_complete(session_id, "")
 
         logger.info(f"消息处理完成 (会话 {session_id})")
-        
-        if original_provider is not None:
-            agent_loop.provider = original_provider
-            agent_loop.model = original_model
-            agent_loop.temperature = original_temperature
-            agent_loop.max_tokens = original_max_tokens
-            agent_loop.max_iterations = original_max_iterations
-        
-        if original_persona is not None and agent_loop.context_builder:
-            agent_loop.context_builder.persona_config = original_persona
-        
         cleanup_cancel_token(session_id)
 
     except Exception as e:
@@ -285,17 +246,6 @@ async def handle_message_event(
             friendly,
             "PROCESSING_ERROR",
         )
-        
-        if 'original_provider' in locals() and original_provider is not None:
-            agent_loop.provider = original_provider
-            agent_loop.model = original_model
-            agent_loop.temperature = original_temperature
-            agent_loop.max_tokens = original_max_tokens
-            agent_loop.max_iterations = original_max_iterations
-        
-        if 'original_persona' in locals() and original_persona is not None and agent_loop.context_builder:
-            agent_loop.context_builder.persona_config = original_persona
-        
         from backend.ws.connection import cleanup_cancel_token
         cleanup_cancel_token(session_id)
 

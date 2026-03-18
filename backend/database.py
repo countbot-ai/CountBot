@@ -56,6 +56,32 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="use_custom_config",
                 ddl="use_custom_config BOOLEAN DEFAULT 0",
             ),
+            CompatibilityColumnMigration(
+                name="channel_context",
+                ddl="channel_context TEXT",
+            ),
+        ),
+    ),
+    CompatibilityTableMigration(
+        table_name="agent_teams",
+        columns=(
+            CompatibilityColumnMigration(
+                name="team_model_config",
+                ddl="team_model_config TEXT",
+            ),
+            CompatibilityColumnMigration(
+                name="use_custom_model",
+                ddl="use_custom_model BOOLEAN DEFAULT 0",
+            ),
+        ),
+    ),
+    CompatibilityTableMigration(
+        table_name="messages",
+        columns=(
+            CompatibilityColumnMigration(
+                name="message_context",
+                ddl="message_context TEXT",
+            ),
         ),
     ),
 )
@@ -213,6 +239,4 @@ async def init_personalities() -> None:
             await session.rollback()
             # 静默失败，不影响数据库初始化
             pass
-
-
 

@@ -173,7 +173,7 @@ class ReadFileTool(Tool):
             if not file_path.is_file():
                 return f"Error: Not a file: {path_str}"
 
-            content = file_path.read_text(encoding="utf-8")
+            content = self._read_text_content(file_path, path_str)
             lines = content.splitlines()
             total = len(lines)
 
@@ -246,7 +246,7 @@ class ReadFileTool(Tool):
                     error_count += 1
                     continue
 
-                content = file_path.read_text(encoding="utf-8")
+                content = self._read_text_content(file_path, path_str)
                 lines = content.splitlines()
                 total = len(lines)
 
@@ -277,6 +277,22 @@ class ReadFileTool(Tool):
         logger.info(f"Batch read completed: {success_count} succeeded, {error_count} failed out of {len(paths_list)} files")
         
         return "\n\n".join(results) + summary
+
+    @staticmethod
+    def _read_text_content(file_path: Path, path_str: str) -> str:
+        """读取 UTF-8 文本文件，遇到二进制内容时返回更明确的错误。"""
+        data = file_path.read_bytes()
+        if b"\x00" in data:
+            raise ValueError(
+                f"File appears to be binary and cannot be read as UTF-8 text: {path_str}"
+            )
+
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError(
+                f"File appears to be binary or uses a non-UTF-8 encoding and cannot be read as text: {path_str}"
+            ) from None
 
 
 class WriteFileTool(Tool):

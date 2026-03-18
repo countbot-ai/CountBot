@@ -9,12 +9,13 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
+from backend.modules.channels.media_utils import download_to_temp, format_inbound_media_text
 
 try:
     from dingtalk_stream import (
@@ -42,6 +43,46 @@ _MSG_TYPE_MAP = {
 }
 
 
+class _SafeDingTalkLogger:
+    """兼容 dingtalk-stream 非标准 logging 调用方式的适配器。"""
+
+    def __init__(self, channel_name: str = "dingtalk") -> None:
+        self._name = f"{channel_name}.stream"
+
+    @staticmethod
+    def _render(message: Any, args: tuple[Any, ...]) -> str:
+        text = str(message)
+        if not args:
+            return text
+        try:
+            return text % args
+        except Exception:
+            extra = " ".join(str(arg) for arg in args)
+            return f"{text} {extra}".strip()
+
+    def debug(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        logger.debug(f"[{self._name}] {self._render(message, args)}")
+
+    def info(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        logger.info(f"[{self._name}] {self._render(message, args)}")
+
+    def warning(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        logger.warning(f"[{self._name}] {self._render(message, args)}")
+
+    warn = warning
+
+    def error(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        logger.error(f"[{self._name}] {self._render(message, args)}")
+
+    def exception(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        exc_info = kwargs.get("exc_info")
+        if exc_info is None:
+            exc_info = True
+        logger.opt(exception=exc_info).error(
+            f"[{self._name}] {self._render(message, args)}"
+        )
+
+
 # ------------------------------------------------------------------
 # Stream 回调处理器
 # ------------------------------------------------------------------
@@ -62,9 +103,9 @@ class DingTalkStreamHandler(CallbackHandler if DINGTALK_AVAILABLE else object):
             if isinstance(data, str):
                 data = json.loads(data)
             chatbot_msg = ChatbotMessage.from_dict(data)
-            content = self._extract_content(chatbot_msg, data)
+            content, media_files = await self._extract_content_and_media(chatbot_msg, data)
 
-            if not content:
+            if not content and not media_files:
                 logger.warning(f"Unsupported message type: {chatbot_msg.message_type}")
                 return AckMessage.STATUS_OK, "OK"
 
@@ -95,6 +136,7 @@ class DingTalkStreamHandler(CallbackHandler if DINGTALK_AVAILABLE else object):
                     is_group=is_group,
                     session_webhook=session_webhook,
                     session_webhook_expired_time=session_webhook_expired_time,
+                    media_files=media_files,
                 )
             )
             self.channel._background_tasks.add(task)
@@ -115,13 +157,15 @@ class DingTalkStreamHandler(CallbackHandler if DINGTALK_AVAILABLE else object):
     # 内容提取
     # ------------------------------------------------------------------
 
-    def _extract_content(self, chatbot_msg, raw_data: dict) -> str:
-        """从 ChatbotMessage 中提取文本内容。"""
+    async def _extract_content_and_media(
+        self, chatbot_msg, raw_data: dict
+    ) -> Tuple[str, List[str]]:
+        """提取消息文本和媒体文件。"""
         if chatbot_msg.message_type == "text":
-            return self._extract_text(chatbot_msg, raw_data)
-        if chatbot_msg.message_type == "picture":
-            return self._extract_image(chatbot_msg, raw_data)
-        return _MSG_TYPE_MAP.get(chatbot_msg.message_type, "")
+            return self._extract_text(chatbot_msg, raw_data), []
+        if chatbot_msg.message_type in {"picture", "audio", "file"}:
+            return await self.channel._resolve_inbound_media(chatbot_msg, raw_data)
+        return _MSG_TYPE_MAP.get(chatbot_msg.message_type, ""), []
 
     @staticmethod
     def _extract_text(chatbot_msg, raw_data: dict) -> str:
@@ -133,26 +177,6 @@ class DingTalkStreamHandler(CallbackHandler if DINGTALK_AVAILABLE else object):
         if isinstance(raw_text, dict):
             return raw_text.get("content", "").strip()
         return ""
-
-    @staticmethod
-    def _extract_image(chatbot_msg, raw_data: dict) -> str:
-        """提取图片消息的 downloadCode。"""
-        download_code = None
-        if hasattr(chatbot_msg, "image_content") and chatbot_msg.image_content:
-            download_code = getattr(chatbot_msg.image_content, "download_code", None)
-        if not download_code:
-            raw_content = raw_data.get("content", {})
-            if isinstance(raw_content, str):
-                try:
-                    raw_content = json.loads(raw_content)
-                except json.JSONDecodeError:
-                    raw_content = {}
-            if isinstance(raw_content, dict):
-                download_code = raw_content.get("downloadCode") or raw_content.get(
-                    "pictureDownloadCode"
-                )
-        return f"[图片:{download_code}]" if download_code else "[图片]"
-
 
 # ------------------------------------------------------------------
 # 钉钉频道
@@ -200,7 +224,10 @@ class DingTalkChannel(BaseChannel):
 
         try:
             credential = Credential(self.config.client_id, self.config.client_secret)
-            self._client = DingTalkStreamClient(credential)
+            self._client = DingTalkStreamClient(
+                credential,
+                logger=_SafeDingTalkLogger(self.name),
+            )
             handler = DingTalkStreamHandler(self)
             self._client.register_callback_handler(ChatbotMessage.TOPIC, handler)
             logger.info("DingTalk bot connecting (Stream Mode WebSocket)...")
@@ -280,8 +307,8 @@ class DingTalkChannel(BaseChannel):
     # 图片 URL 获取
     # ------------------------------------------------------------------
 
-    async def _get_image_url(self, download_code: str) -> Optional[str]:
-        """通过下载码获取图片 OSS URL。"""
+    async def _get_download_url(self, download_code: str) -> Optional[str]:
+        """通过下载码获取钉钉媒体下载 URL。"""
         try:
             token = await self._get_access_token()
             if not token:
@@ -296,15 +323,15 @@ class DingTalkChannel(BaseChannel):
                 },
             )
             if resp.status_code != 200:
-                logger.error(f"Failed to get image URL: {resp.status_code}")
+                logger.error(f"Failed to get DingTalk download URL: {resp.status_code}")
                 return None
 
             download_url = resp.json().get("downloadUrl")
             if download_url:
-                logger.info("Got image URL successfully")
+                logger.info("Got DingTalk media URL successfully")
             return download_url
         except Exception as e:
-            logger.error(f"Error getting image URL: {e}")
+            logger.error(f"Error getting DingTalk media URL: {e}")
             return None
 
     # ------------------------------------------------------------------
@@ -342,19 +369,12 @@ class DingTalkChannel(BaseChannel):
             return False
 
         url = webhook_info["url"]
-        sender_staff_id = webhook_info.get("sender_staff_id")
 
         try:
-            text = msg.content
-            if sender_staff_id:
-                text = f"@{sender_staff_id}\n\n{text}"
-
             data = {
                 "msgtype": "markdown",
-                "markdown": {"title": "CountBot Reply", "text": text},
+                "markdown": {"title": "CountBot Reply", "text": msg.content},
             }
-            if sender_staff_id:
-                data["at"] = {"atUserIds": [sender_staff_id]}
 
             resp = await self._http.post(url, json=data)
             if resp.status_code == 200:
@@ -568,6 +588,7 @@ class DingTalkChannel(BaseChannel):
         is_group: bool,
         session_webhook: Optional[str] = None,
         session_webhook_expired_time: Optional[int] = None,
+        media_files: Optional[List[str]] = None,
     ) -> None:
         """处理入站消息，缓存 webhook 后转发到消息回调。"""
         try:
@@ -589,6 +610,7 @@ class DingTalkChannel(BaseChannel):
                 sender_id=sender_id,
                 chat_id=chat_id,
                 content=str(content),
+                media=media_files or None,
                 metadata={
                     "sender_name": sender_name,
                     "platform": "dingtalk",
@@ -598,6 +620,67 @@ class DingTalkChannel(BaseChannel):
             )
         except Exception as e:
             logger.exception(f"Error handling message from {sender_name}: {e}")
+
+    async def _resolve_inbound_media(
+        self, chatbot_msg: Any, raw_data: dict
+    ) -> Tuple[str, List[str]]:
+        """下载钉钉入站附件并返回描述文本。"""
+        media_files: List[str] = []
+        msg_type = getattr(chatbot_msg, "message_type", "") or raw_data.get("msgtype", "")
+        placeholder = _MSG_TYPE_MAP.get(msg_type, f"[{msg_type}]")
+        media_info = self._extract_media_info(chatbot_msg, raw_data)
+        download_code = media_info.get("download_code")
+        if not download_code or not self._http:
+            return placeholder, media_files
+
+        try:
+            download_url = await self._get_download_url(download_code)
+            if not download_url:
+                return f"{placeholder}下载失败", media_files
+
+            local_path = await download_to_temp(
+                self.name,
+                download_url,
+                client=self._http,
+                message_id=raw_data.get("msgId") or raw_data.get("messageId"),
+                filename=media_info.get("file_name"),
+                prefix="dingtalk_attachment",
+            )
+            media_files.append(local_path)
+            return format_inbound_media_text(media_files), media_files
+        except Exception as e:
+            logger.error(f"Failed to download DingTalk inbound media: {e}")
+            return f"{placeholder}处理失败", media_files
+
+    @staticmethod
+    def _extract_media_info(chatbot_msg: Any, raw_data: dict) -> Dict[str, Optional[str]]:
+        """从钉钉消息中提取下载码和文件名。"""
+        download_code = None
+        file_name = None
+
+        if getattr(chatbot_msg, "message_type", "") == "picture":
+            image_content = getattr(chatbot_msg, "image_content", None)
+            if image_content:
+                download_code = getattr(image_content, "download_code", None)
+
+        raw_content = raw_data.get("content", {})
+        if isinstance(raw_content, str):
+            try:
+                raw_content = json.loads(raw_content)
+            except json.JSONDecodeError:
+                raw_content = {}
+
+        if isinstance(raw_content, dict):
+            download_code = download_code or raw_content.get("downloadCode") or raw_content.get(
+                "pictureDownloadCode"
+            ) or raw_content.get("fileDownloadCode")
+            file_name = raw_content.get("fileName") or raw_content.get("filename") or raw_content.get(
+                "name"
+            )
+
+        download_code = download_code or raw_data.get("downloadCode")
+        file_name = file_name or raw_data.get("fileName") or raw_data.get("file_name")
+        return {"download_code": download_code, "file_name": file_name}
 
     # ------------------------------------------------------------------
     # 连接测试

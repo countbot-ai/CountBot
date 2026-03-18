@@ -62,6 +62,8 @@ class BaseChannel(ABC):
         self.config = config
         self._running = False
         self._message_callback = None
+        self._account_id = str(getattr(config, "account_id", "default") or "default")
+        self._instance_key = f"{self.name}:{self._account_id}"
 
     # ------------------------------------------------------------------
     # 抽象方法 - 子类必须实现
@@ -97,7 +99,12 @@ class BaseChannel(ABC):
 
     def is_allowed(self, sender_id: str) -> bool:
         """检查发送者是否在白名单中。空白名单表示允许所有人。"""
-        allow_list = getattr(self.config, "allow_from", [])
+        raw_allow_list = getattr(self.config, "allow_from", [])
+        allow_list = [
+            str(item).strip()
+            for item in (raw_allow_list or [])
+            if str(item).strip()
+        ]
         if not allow_list:
             return True
 
@@ -139,7 +146,11 @@ class BaseChannel(ABC):
             chat_id=str(chat_id),
             content=content,
             media=media or [],
-            metadata=metadata or {},
+            metadata={
+                **(metadata or {}),
+                "account_id": str((metadata or {}).get("account_id") or self._account_id),
+                "instance_key": str((metadata or {}).get("instance_key") or self._instance_key),
+            },
         )
 
         if self._message_callback:
@@ -157,4 +168,17 @@ class BaseChannel(ABC):
 
     @property
     def display_name(self) -> str:
-        return self.name.capitalize()
+        configured_name = str(getattr(self.config, "display_name", "") or "").strip()
+        if configured_name:
+            return configured_name
+        if self._account_id == "default":
+            return self.name.capitalize()
+        return f"{self.name.capitalize()} [{self._account_id}]"
+
+    @property
+    def account_id(self) -> str:
+        return self._account_id
+
+    @property
+    def instance_key(self) -> str:
+        return self._instance_key

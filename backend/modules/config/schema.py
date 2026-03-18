@@ -103,8 +103,8 @@ class SecurityConfig(BaseModel):
     audit_log_enabled: bool = Field(default=True, description="是否启用审计日志")
     
     # 超时配置
-    command_timeout: int = Field(default=300, ge=10, le=1800, description="工具调用超时时间（秒）")
-    subagent_timeout: int = Field(default=600, ge=60, le=3600, description="子代理超时时间（秒）")
+    command_timeout: int = Field(default=180, ge=10, le=1800, description="工具调用超时时间（秒）")
+    subagent_timeout: int = Field(default=1200, ge=60, le=3600, description="子代理超时时间（秒）")
     
     # 输出限制
     max_output_length: int = Field(default=10000, ge=100, le=1000000, description="最大输出长度（字符）")
@@ -113,87 +113,122 @@ class SecurityConfig(BaseModel):
     restrict_to_workspace: bool = Field(default=False, description="是否限制命令在工作空间内执行")
 
 
-class TelegramConfig(BaseModel):
-    """Telegram 渠道配置"""
+class ChannelAccountConfig(BaseModel):
+    """支持多机器人实例的基础渠道配置。"""
+
     enabled: bool = False
+    display_name: str = Field(default="", description="机器人名称")
+    account_id: str = Field(default="default", description="机器人账号 ID")
+    allow_from: List[str] = Field(default_factory=list)
+
+
+class TelegramAccountConfig(ChannelAccountConfig):
+    """Telegram 机器人配置"""
+
     token: str = ""
     proxy: Optional[str] = None
-    allow_from: List[str] = Field(default_factory=list)
 
 
-class DiscordConfig(BaseModel):
-    """Discord 渠道配置"""
-    enabled: bool = False
+class TelegramConfig(TelegramAccountConfig):
+    """Telegram 渠道配置"""
+
+    accounts: Dict[str, TelegramAccountConfig] = Field(default_factory=dict)
+
+
+class DiscordAccountConfig(ChannelAccountConfig):
+    """Discord 机器人配置"""
+
     token: str = ""
-    allow_from: List[str] = Field(default_factory=list)
 
 
-class TencentOSSConfig(BaseModel):
-    """腾讯云 OSS 配置（可选）"""
-    secret_id: str = ""
-    secret_key: str = ""
-    bucket: str = ""
-    region: str = "ap-guangzhou"
+class DiscordConfig(DiscordAccountConfig):
+    """Discord 渠道配置"""
+
+    accounts: Dict[str, DiscordAccountConfig] = Field(default_factory=dict)
 
 
-class QQConfig(BaseModel):
-    """QQ 渠道配置"""
-    enabled: bool = False
+class QQAccountConfig(ChannelAccountConfig):
+    """QQ 机器人配置"""
+
     app_id: str = ""
     secret: str = ""
-    allow_from: List[str] = Field(default_factory=list)
     markdown_enabled: bool = True
     group_markdown_enabled: bool = True
-    oss: Optional[TencentOSSConfig] = Field(default_factory=TencentOSSConfig)
 
 
+class QQConfig(QQAccountConfig):
+    """QQ 渠道配置"""
+
+    accounts: Dict[str, QQAccountConfig] = Field(default_factory=dict)
 
 
+class DingTalkAccountConfig(ChannelAccountConfig):
+    """钉钉机器人配置"""
 
-class DingTalkConfig(BaseModel):
-    """钉钉渠道配置"""
-    enabled: bool = False
     client_id: str = ""
     client_secret: str = ""
-    allow_from: List[str] = Field(default_factory=list)
 
 
-class FeishuConfig(BaseModel):
-    """飞书渠道配置"""
-    enabled: bool = False
+class DingTalkConfig(DingTalkAccountConfig):
+    """钉钉渠道配置"""
+
+    accounts: Dict[str, DingTalkAccountConfig] = Field(default_factory=dict)
+
+
+class FeishuAccountConfig(ChannelAccountConfig):
+    """飞书机器人配置"""
+
     app_id: str = ""
     app_secret: str = ""
-    encrypt_key: str = ""
-    verification_token: str = ""
-    allow_from: List[str] = Field(default_factory=list)
 
 
-class WeiboConfig(BaseModel):
-    """微博渠道配置"""
-    enabled: bool = False
+class FeishuConfig(FeishuAccountConfig):
+    """飞书渠道配置"""
+
+    accounts: Dict[str, FeishuAccountConfig] = Field(default_factory=dict)
+
+
+class WeiboAccountConfig(ChannelAccountConfig):
+    """微博机器人配置"""
+
     app_id: str = ""
     app_secret: str = ""
     account_id: str = Field(default="default", description="账号 ID，用于多账号支持")
     token_endpoint: str = Field(default="http://open-im.api.weibo.com/open/auth/ws_token")
     ws_endpoint: str = Field(default="ws://open-im.api.weibo.com/ws/stream")
-    allow_from: List[str] = Field(default_factory=list)
 
 
-class WeComConfig(BaseModel):
-    """企业微信渠道配置"""
-    enabled: bool = False
+class WeiboConfig(WeiboAccountConfig):
+    """微博渠道配置"""
+
+    accounts: Dict[str, WeiboAccountConfig] = Field(default_factory=dict)
+
+
+class WeComAccountConfig(ChannelAccountConfig):
+    """企业微信机器人配置"""
+
     bot_id: str = ""
     secret: str = ""
     websocket_url: str = Field(default="wss://openws.work.weixin.qq.com", description="WebSocket 连接地址")
-    allow_from: List[str] = Field(default_factory=list)
 
 
-class XiaozhiConfig(BaseModel):
-    """小智AI渠道配置（MCP Client 模式）"""
-    enabled: bool = False
+class WeComConfig(WeComAccountConfig):
+    """企业微信渠道配置"""
+
+    accounts: Dict[str, WeComAccountConfig] = Field(default_factory=dict)
+
+
+class XiaozhiAccountConfig(ChannelAccountConfig):
+    """小智AI 机器人配置（MCP Client 模式）"""
+
     endpoint: str = Field(default="", description="小智AI MCP WebSocket 接入点，如 ws://192.168.1.x:8765")
     enable_conversation: bool = Field(default=False, description="启用对话模式（通过 send_message 工具接收用户消息）")
-    allow_from: List[str] = Field(default_factory=list)
+
+
+class XiaozhiConfig(XiaozhiAccountConfig):
+    """小智AI渠道配置（MCP Client 模式）"""
+
+    accounts: Dict[str, XiaozhiAccountConfig] = Field(default_factory=dict)
 
 
 class ChannelsConfig(BaseModel):

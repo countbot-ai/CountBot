@@ -1,6 +1,7 @@
 """Agent Loop - 核心 Agent 循环处理逻辑"""
 
 import asyncio
+import inspect
 import json
 import time
 from pathlib import Path
@@ -45,6 +46,72 @@ class AgentLoop:
             f"AgentLoop initialized: max_iterations={max_iterations}, max_retries={max_retries}"
         )
 
+    def _resolve_execution_runtime(
+        self,
+        model_override: Optional[Dict[str, Any]] = None,
+    ) -> tuple[Any, Optional[str], float, int, int]:
+        """解析当前消息执行应使用的 provider 和模型参数。"""
+        base_provider = self.provider
+        base_model = self.model
+        base_temperature = self.temperature
+        base_max_tokens = self.max_tokens
+        base_max_iterations = self.max_iterations
+
+        if not model_override:
+            return (
+                base_provider,
+                base_model,
+                base_temperature,
+                base_max_tokens,
+                base_max_iterations,
+            )
+
+        candidate_provider = base_provider
+        candidate_model = model_override.get("model", base_model)
+        candidate_temperature = model_override.get("temperature", base_temperature)
+        candidate_max_tokens = model_override.get("max_tokens", base_max_tokens)
+        candidate_max_iterations = model_override.get(
+            "max_iterations",
+            base_max_iterations,
+        )
+
+        override_provider = model_override.get("provider")
+        override_api_key = model_override.get("api_key") or None
+        override_api_base = model_override.get("api_base") or None
+
+        if override_provider or override_api_key or override_api_base:
+            try:
+                from backend.modules.providers import create_provider
+
+                candidate_provider = create_provider(
+                    api_key=override_api_key,
+                    api_base=override_api_base,
+                    default_model=candidate_model,
+                    timeout=getattr(self.provider, "timeout", 120.0),
+                    max_retries=getattr(self.provider, "max_retries", self.max_retries),
+                    provider_id=override_provider,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create runtime provider override, falling back to base runtime config: "
+                    f"{exc}"
+                )
+                return (
+                    base_provider,
+                    base_model,
+                    base_temperature,
+                    base_max_tokens,
+                    base_max_iterations,
+                )
+
+        return (
+            candidate_provider,
+            candidate_model,
+            candidate_temperature,
+            candidate_max_tokens,
+            candidate_max_iterations,
+        )
+
     async def process_message(
         self,
         message: str,
@@ -55,6 +122,10 @@ class AgentLoop:
         chat_id: Optional[str] = None,
         cancel_token=None,
         yield_intermediate: bool = True,
+        model_override: Optional[Dict[str, Any]] = None,
+        persona_override=None,
+        tool_event_handler=None,
+        prefer_direct_workflow_result: bool = False,
     ) -> AsyncIterator[str]:
         """处理用户消息并生成流式响应"""
         logger.debug(f"Processing message for session {session_id}")
@@ -78,6 +149,7 @@ class AgentLoop:
                 media=media,
                 channel=channel,
                 chat_id=chat_id,
+                persona_config=persona_override,
             )
         else:
             if context is None:
@@ -88,13 +160,22 @@ class AgentLoop:
                 "role": "user",
                 "content": message,
             })
+
+        (
+            active_provider,
+            runtime_model,
+            runtime_temperature,
+            runtime_max_tokens,
+            runtime_max_iterations,
+        ) = self._resolve_execution_runtime(model_override)
         
         iteration = 0
         total_tool_calls = 0
         final_content = ""
+        direct_result_selected = False
 
         try:
-            while iteration < self.max_iterations:
+            while iteration < runtime_max_iterations:
                 iteration += 1
                 
                 if cancel_token and cancel_token.is_cancelled:
@@ -110,12 +191,12 @@ class AgentLoop:
                 finish_reason = None
                 reasoning_buffer = ""
                 
-                async for chunk in self.provider.chat_stream(
+                async for chunk in active_provider.chat_stream(
                     messages=messages,
                     tools=tool_definitions,
-                    model=self.model,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
+                    model=runtime_model,
+                    temperature=runtime_temperature,
+                    max_tokens=runtime_max_tokens,
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
@@ -170,9 +251,9 @@ class AgentLoop:
                         messages.append(msg)
                     
                     for tool_call in tool_calls_buffer:
-                        if total_tool_calls >= self.max_iterations:
+                        if total_tool_calls >= runtime_max_iterations:
                             logger.warning(
-                                f"Reached max tool calls limit ({self.max_iterations}), "
+                                f"Reached max tool calls limit ({runtime_max_iterations}), "
                                 f"skipping remaining tool calls in this iteration"
                             )
                             break
@@ -187,6 +268,21 @@ class AgentLoop:
                         tool_id = tool_call.id
 
                         logger.debug(f"Executing tool {total_tool_calls}: {tool_name}")
+
+                        if tool_event_handler:
+                            try:
+                                maybe_result = tool_event_handler(
+                                    "tool_call",
+                                    {
+                                        "tool_name": tool_name,
+                                        "arguments": tool_args,
+                                        "session_id": session_id,
+                                    },
+                                )
+                                if inspect.isawaitable(maybe_result):
+                                    await maybe_result
+                            except Exception as e:
+                                logger.warning(f"Tool event handler failed before execution: {e}")
                         
                         try:
                             from backend.ws.tool_notifications import notify_tool_execution
@@ -241,6 +337,30 @@ class AgentLoop:
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to send tool result notification: {e}")
+
+                            if tool_event_handler:
+                                try:
+                                    maybe_result = tool_event_handler(
+                                        "tool_result",
+                                        {
+                                            "tool_name": tool_name,
+                                            "arguments": tool_args,
+                                            "result": result,
+                                            "session_id": session_id,
+                                            "duration_ms": duration_ms,
+                                        },
+                                    )
+                                    if inspect.isawaitable(maybe_result):
+                                        await maybe_result
+                                except Exception as e:
+                                    logger.warning(f"Tool event handler failed after execution: {e}")
+
+                            if tool_name == "workflow_run" and prefer_direct_workflow_result:
+                                final_content = result
+                                direct_result_selected = True
+                                if result:
+                                    yield result
+                                break
                             
                             if self.context_builder:
                                 messages = self.context_builder.add_tool_result(
@@ -283,6 +403,23 @@ class AgentLoop:
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to send tool error notification: {e}")
+
+                            if tool_event_handler:
+                                try:
+                                    maybe_result = tool_event_handler(
+                                        "tool_error",
+                                        {
+                                            "tool_name": tool_name,
+                                            "arguments": tool_args,
+                                            "error": error_msg,
+                                            "session_id": session_id,
+                                            "duration_ms": duration_ms,
+                                        },
+                                    )
+                                    if inspect.isawaitable(maybe_result):
+                                        await maybe_result
+                                except Exception as e:
+                                    logger.warning(f"Tool event handler failed on error: {e}")
                             
                             if self.context_builder:
                                 messages = self.context_builder.add_tool_result(
@@ -298,19 +435,24 @@ class AgentLoop:
                                     "name": tool_name,
                                     "content": error_msg,
                                 })
+                    if direct_result_selected:
+                        break
                 else:
                     if not yield_intermediate and content_buffer:
                         yield content_buffer
                     break
+
+                if direct_result_selected:
+                    break
             
             # 检查是否达到限制
-            if iteration >= self.max_iterations or total_tool_calls >= self.max_iterations:
-                if total_tool_calls >= self.max_iterations:
-                    logger.warning(f"Max tool calls ({self.max_iterations}) reached")
-                    warning_msg = f"\n\n[达到最大工具调用次数 {self.max_iterations}]"
+            if iteration >= runtime_max_iterations or total_tool_calls >= runtime_max_iterations:
+                if total_tool_calls >= runtime_max_iterations:
+                    logger.warning(f"Max tool calls ({runtime_max_iterations}) reached")
+                    warning_msg = f"\n\n[达到最大工具调用次数 {runtime_max_iterations}]"
                 else:
-                    logger.warning(f"Max iterations ({self.max_iterations}) reached")
-                    warning_msg = f"\n\n[达到最大迭代次数 {self.max_iterations}]"
+                    logger.warning(f"Max iterations ({runtime_max_iterations}) reached")
+                    warning_msg = f"\n\n[达到最大迭代次数 {runtime_max_iterations}]"
                 yield warning_msg
                 final_content += warning_msg
             

@@ -61,7 +61,7 @@ class ExecTool(Tool):
     def __init__(
         self,
         workspace: Path,
-        timeout: int = 30,
+        timeout: int = 180,
         max_output_length: int = 10000,
         allow_dangerous: bool = False,
         deny_patterns: Optional[List[str]] = None,
@@ -72,7 +72,7 @@ class ExecTool(Tool):
         
         Args:
             workspace: 工作空间根目录
-            timeout: 超时时间（秒），默认 30
+            timeout: 超时时间（秒），默认 180
             max_output_length: 最大输出长度（字符），默认 10000
             allow_dangerous: 是否允许危险命令，默认 False
             deny_patterns: 自定义拒绝模式，默认使用 DANGEROUS_PATTERNS

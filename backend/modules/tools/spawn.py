@@ -3,6 +3,15 @@
 import asyncio
 from typing import Any, Dict, Optional
 
+from loguru import logger
+
+from backend.database import SessionLocal
+from backend.models.session import Session
+from backend.modules.config.loader import config_loader
+from backend.modules.session.runtime_config import (
+    build_session_model_override,
+    resolve_session_runtime_config,
+)
 from backend.modules.tools.base import Tool
 
 
@@ -13,9 +22,14 @@ class SpawnTool(Tool):
         self._manager = manager
         self._session_id = None
         self._config_loader = config_loader
+        self._cancel_token = None
 
     def set_context(self, session_id: str) -> None:
         self._session_id = session_id
+
+    def set_cancel_token(self, cancel_token) -> None:
+        """设置取消令牌"""
+        self._cancel_token = cancel_token
 
     @property
     def name(self) -> str:
@@ -53,16 +67,46 @@ class SpawnTool(Tool):
                 return config.security.subagent_timeout
             except Exception:
                 pass
-        # 默认 600 秒（10 分钟）
-        return 600
+        # 默认 1200 秒（20 分钟）
+        return 1200
+
+    def _load_session_model_override(self) -> Optional[Dict[str, Any]]:
+        """为当前会话加载模型覆盖，用于让子代理继承会话级自定义模型。"""
+        if not self._session_id:
+            return None
+
+        try:
+            with SessionLocal() as session:
+                db_session = session.get(Session, self._session_id)
+                if not db_session or not db_session.use_custom_config:
+                    return None
+
+                runtime_config = resolve_session_runtime_config(config_loader.config, db_session)
+                model_override = build_session_model_override(runtime_config)
+                if model_override:
+                    logger.info(
+                        "Spawn tool inherited session model config: {}/{} (session={})",
+                        runtime_config.provider_name,
+                        runtime_config.model_name,
+                        self._session_id,
+                    )
+                return model_override
+        except Exception as exc:
+            logger.warning(
+                f"Failed to load session model override for spawn tool: {exc}"
+            )
+            return None
 
     async def execute(self, task: str, label: Optional[str] = None, **kwargs: Any) -> str:
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
+        model_override = self._load_session_model_override()
 
         task_id = self._manager.create_task(
             label=display_label,
             message=task,
             session_id=self._session_id,
+            model_override=model_override,
+            cancel_token=self._cancel_token,
         )
 
         try:

@@ -32,6 +32,27 @@ class SessionRuntimeConfig:
     persona_response: Dict[str, Any]
 
 
+def build_session_model_override(
+    runtime_config: "SessionRuntimeConfig",
+    *,
+    force: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """将会话运行时配置转换为执行器可消费的模型覆盖参数。"""
+
+    if not force and not runtime_config.has_custom_model_config:
+        return None
+
+    return {
+        "provider": runtime_config.provider_name,
+        "model": runtime_config.model_name,
+        "temperature": runtime_config.temperature,
+        "max_tokens": runtime_config.max_tokens,
+        "max_iterations": runtime_config.max_iterations,
+        "api_key": runtime_config.api_key,
+        "api_base": runtime_config.api_base or "",
+    }
+
+
 def _parse_session_json(raw: Optional[str], *, session_id: Optional[str], field_name: str) -> Dict[str, Any]:
     if not raw:
         return {}

@@ -28,6 +28,7 @@ class Message(Base):
     session_id: Mapped[str] = mapped_column(String, ForeignKey("sessions.id"), nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     session: Mapped["Session"] = relationship("Session", back_populates="messages")

@@ -23,6 +23,7 @@ from backend.modules.providers import create_provider
 from backend.modules.session import resolve_session_runtime_config
 from backend.modules.session.manager import SessionManager
 from backend.modules.tools.registry import ToolRegistry
+from backend.utils.datetime_utils import to_utc_iso
 from backend.utils.paths import WORKSPACE_DIR
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -470,12 +471,21 @@ async def send_message(
                     
                     # 临时替换方法
                     agent_loop.context_builder.build_messages = build_messages_with_summary
+
+                prefer_direct_workflow_result = False
+                team_finder = getattr(agent_loop.context_builder, "_find_mentioned_team", None)
+                if callable(team_finder):
+                    try:
+                        prefer_direct_workflow_result = bool(team_finder(request.message))
+                    except Exception as exc:
+                        logger.warning(f"Failed to detect mentioned team for SSE chat: {exc}")
                 
                 async for chunk in agent_loop.process_message(
                     message=request.message,
                     session_id=request.session_id,
                     context=context,
                     media=request.attachments,
+                    prefer_direct_workflow_result=prefer_direct_workflow_result,
                 ):
                     assistant_content += chunk
                     
@@ -569,10 +579,10 @@ async def list_sessions(
             SessionResponse(
                 id=session.id,
                 name=session.name,
-                created_at=session.created_at.isoformat(),
-                updated_at=session.updated_at.isoformat(),
+                created_at=to_utc_iso(session.created_at),
+                updated_at=to_utc_iso(session.updated_at),
                 summary=session.summary,
-                summary_updated_at=session.summary_updated_at.isoformat() if session.summary_updated_at else None,
+                summary_updated_at=to_utc_iso(session.summary_updated_at),
             )
             for session in sessions
         ]
@@ -607,8 +617,8 @@ async def create_session(
         return SessionResponse(
             id=session.id,
             name=session.name,
-            created_at=session.created_at.isoformat(),
-            updated_at=session.updated_at.isoformat(),
+            created_at=to_utc_iso(session.created_at),
+            updated_at=to_utc_iso(session.updated_at),
         )
         
     except Exception as e:
@@ -697,8 +707,8 @@ async def update_session(
         return SessionResponse(
             id=session.id,
             name=session.name,
-            created_at=session.created_at.isoformat(),
-            updated_at=session.updated_at.isoformat(),
+            created_at=to_utc_iso(session.created_at),
+            updated_at=to_utc_iso(session.updated_at),
         )
         
     except HTTPException:
@@ -855,9 +865,9 @@ async def get_session_messages(
                                         "progress": db_task.progress,
                                         "result": db_task.result,
                                         "error": db_task.error,
-                                        "created_at": db_task.created_at.isoformat(),
-                                        "started_at": db_task.started_at.isoformat() if db_task.started_at else None,
-                                        "completed_at": db_task.completed_at.isoformat() if db_task.completed_at else None,
+                                        "created_at": to_utc_iso(db_task.created_at),
+                                        "started_at": to_utc_iso(db_task.started_at),
+                                        "completed_at": to_utc_iso(db_task.completed_at),
                                         "tool_call_records": tool_call_records,
                                     }
                                 else:
@@ -884,7 +894,7 @@ async def get_session_messages(
                     session_id=msg.session_id,
                     role=msg.role,
                     content=msg.content,
-                    created_at=msg.created_at.isoformat(),
+                    created_at=to_utc_iso(msg.created_at),
                     tool_calls=tool_call_responses,
                 )
             )
@@ -1080,7 +1090,7 @@ async def export_session_context(
                 "id": msg.id,
                 "role": msg.role,
                 "content": msg.content,
-                "created_at": msg.created_at.isoformat(),
+                "created_at": to_utc_iso(msg.created_at),
             })
         
         # 获取工具执行历史（从工具注册表）
@@ -1097,7 +1107,7 @@ async def export_session_context(
                     "error": record.get("error"),
                     "success": record.get("success"),
                     "duration": record.get("duration"),
-                    "timestamp": record.get("timestamp").isoformat() if record.get("timestamp") else None,
+                    "timestamp": to_utc_iso(record.get("timestamp")),
                 })
         
         return {
@@ -1107,7 +1117,7 @@ async def export_session_context(
             "tool_definitions": tool_definitions,
             "messages": message_history,
             "tool_history": tool_history,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": to_utc_iso(datetime.now(timezone.utc)),
             "note": "此导出包含完整的系统提示词和工具定义。工具调用历史为全局记录，可能包含其他会话的工具调用。"
         }
         
@@ -1157,10 +1167,10 @@ async def get_session(
         return SessionResponse(
             id=session.id,
             name=session.name,
-            created_at=session.created_at.isoformat(),
-            updated_at=session.updated_at.isoformat(),
+            created_at=to_utc_iso(session.created_at),
+            updated_at=to_utc_iso(session.updated_at),
             summary=session.summary,
-            summary_updated_at=session.summary_updated_at.isoformat() if session.summary_updated_at else None,
+            summary_updated_at=to_utc_iso(session.summary_updated_at),
         )
         
     except HTTPException:
@@ -1221,7 +1231,7 @@ async def update_session_summary(
             "success": True,
             "session_id": session_id,
             "summary": session.summary,
-            "updated_at": session.summary_updated_at.isoformat(),
+            "updated_at": to_utc_iso(session.summary_updated_at),
         }
         
     except HTTPException:

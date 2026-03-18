@@ -563,14 +563,14 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                 timeout = request.security["command_timeout"]
                 # 处理空字符串或无效值
                 if timeout == "" or timeout is None:
-                    timeout = 60  # 默认值
+                    timeout = 180
                 elif isinstance(timeout, str):
                     try:
                         timeout = int(timeout)
                     except ValueError:
-                        timeout = 60
+                        timeout = 180
                 # 确保在有效范围内
-                timeout = max(1, min(300, int(timeout)))
+                timeout = max(10, min(1800, int(timeout)))
                 config.security.command_timeout = timeout
             
             if "subagent_timeout" in request.security:
@@ -802,56 +802,6 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
         )
 
 
-@router.post("/reload-oss")
-async def reload_oss_config():
-    """
-    重新加载 OSS 配置（热重载，无需重启应用）
-    
-    Returns:
-        dict: 重载结果
-    """
-    try:
-        from backend.modules.tools.image_uploader import init_oss_uploader, get_upload_manager
-        
-        # 重新加载配置
-        await config_loader.load()
-        
-        # 获取 OSS 配置
-        oss_config = None
-        if hasattr(config_loader.config.channels, 'qq') and hasattr(config_loader.config.channels.qq, 'oss'):
-            oss_config = config_loader.config.channels.qq.oss.model_dump()
-        
-        # 重新初始化 OSS 上传器
-        init_oss_uploader(oss_config)
-        
-        manager = get_upload_manager()
-        if manager.uploader:
-            logger.info(f"OSS 配置已重新加载: {manager.uploader.bucket} ({manager.uploader.region})")
-            return {
-                "success": True,
-                "message": "OSS 配置已重新加载",
-                "config": {
-                    "bucket": manager.uploader.bucket,
-                    "region": manager.uploader.region,
-                    "endpoint": manager.uploader.endpoint
-                }
-            }
-        else:
-            logger.info("OSS 配置已清除（未配置）")
-            return {
-                "success": True,
-                "message": "OSS 配置已清除",
-                "config": None
-            }
-    
-    except Exception as e:
-        logger.error(f"重新加载 OSS 配置失败: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"重新加载 OSS 配置失败: {str(e)}"
-        )
-
-
 # ============================================================================
 # 配置导出导入
 # ============================================================================
@@ -1065,10 +1015,6 @@ async def export_settings(
                             if key in channel_data:
                                 channel_data[key] = ""
                         
-                        # 移除 OSS 密钥
-                        if 'oss' in channel_data and isinstance(channel_data['oss'], dict):
-                            channel_data['oss']['secret_id'] = ""
-                            channel_data['oss']['secret_key'] = ""
         else:
             logger.info("保留敏感信息（包含 API 密钥）")
         
@@ -1076,7 +1022,7 @@ async def export_settings(
         export_data = {
             "version": "1.0.0",
             "exported_at": datetime.utcnow().isoformat() + "Z",
-            "app_version": "1.0.0",  # 可以从版本文件读取
+            "app_version": "0.5.0",
             "config": config_dict
         }
         

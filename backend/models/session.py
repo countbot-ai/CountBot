@@ -42,6 +42,7 @@ class Session(Base):
     session_model_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     session_persona_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     use_custom_config: Mapped[bool] = mapped_column(Boolean, default=False)
+    channel_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     messages: Mapped[List["Message"]] = relationship(
         "Message", back_populates="session", cascade="all, delete-orphan"

@@ -9,7 +9,7 @@ from backend.modules.tools.registry import ToolRegistry
 
 def register_all_tools(
     workspace: Path,
-    command_timeout: int = 30,
+    command_timeout: int = 180,
     max_output_length: int = 10000,
     allow_dangerous: bool = False,
     restrict_to_workspace: bool = True,
