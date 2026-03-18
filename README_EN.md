@@ -18,6 +18,14 @@
 
 ## What's New
 
+- **Mar 19, 2026 — v0.5.0 Released** [View Detailed Update Guide](docs/releases/v0.5.0.md)
+  - True agent-team orchestration with multi-role collaboration, context handoff, and workflow routing
+  - Configuration expanded from session-level to role-level, team-level, and multi-bot setups
+  - Custom channel architecture strengthened, with Weibo, WeCom, Xiaozhi AI, and more flexible bot routing
+  - Better support for running multiple bots across different channels and scenarios
+  - Frontend comprehensively upgraded across chat, settings, skills, team panels, and overall UX
+  - Tool calls, media delivery, channel handling, and message flow all improved for complex tasks
+
 - **Mar 14, 2026 — v0.4.0 Released** [View Detailed Update Guide](docs/releases/v0.4.0.md)
   - Session-level configuration system (independent API, model, prompts, personality per session)
   - Added Weibo, WeCom, Xiaozhi AI channels
@@ -296,7 +304,7 @@ countbot/
 - **FastAPI** — Modern web framework with native async & WebSocket support
 - **SQLAlchemy 2.0** — Async ORM with complex query support
 - **aiosqlite** — SQLite async driver, zero-config database
-- **LiteLLM** — Unified LLM interface, supports all major models
+- **Anthropic & OpenAI SDK** — Official SDKs, supports all major models
 - **Pydantic v2** — Data validation and config management
 - **Loguru** — Structured logging, easy debugging
 
@@ -331,9 +339,9 @@ countbot/
 
 ---
 
-## Supported LLMs (via LiteLLM Unified Interface)
+## Supported LLMs (via Official SDKs)
 
-CountBot uses LiteLLM as a unified interface layer, compatible with OpenAI / Anthropic / Gemini protocols, supporting all major LLMs:
+CountBot uses Anthropic and OpenAI official SDKs, compatible with OpenAI / Anthropic / Gemini protocols, supporting all major LLMs:
 
 ### Recommended Chinese LLMs
 
@@ -524,7 +532,8 @@ Thanks to the following open-source projects and communities:
 
 - [FastAPI](https://fastapi.tiangolo.com/) — Modern Python web framework
 - [Vue.js](https://vuejs.org/) — Progressive JavaScript framework
-- [LiteLLM](https://github.com/BerriAI/litellm) — Unified LLM API interface
+- [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) — Anthropic official Python SDK
+- [OpenAI SDK](https://github.com/openai/openai-python) — OpenAI official Python SDK
 - [SQLAlchemy](https://www.sqlalchemy.org/) — Python SQL toolkit and ORM
 - [Pydantic](https://docs.pydantic.dev/) — Data validation and settings management
 

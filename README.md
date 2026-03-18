@@ -18,11 +18,19 @@
 
 ## 最新动态
 
+- **2026年3月19日 - v0.5.0 发布** [查看详细更新说明](docs/releases/v0.5.0.md)
+  - 实现真正的智能体团队协作：支持多角色分工、上下文衔接、条件流转与团队级编排
+  - 会话级配置升级为角色级与团队级配置：一个工作区即可管理多个角色、多个模型、多个机器人
+  - 渠道系统全面增强：支持自定义渠道扩展，并新增微博、企业微信、小智 AI 等接入能力
+  - 多机器人运行能力进一步完善：不同渠道、不同角色、不同配置可独立服务不同场景
+  - 前端全面重构与优化：聊天、配置、技能、团队、工具面板和国际化体验整体升级
+  - 工具调用、消息流、媒体发送与渠道管理链路全面增强，复杂任务更稳定
+
 - **2026年3月14日 - v0.4.0 发布** [查看详细更新说明](docs/releases/v0.4.0.md)
-  - 会话级配置系统，轻松打造你的AI团队（每个会话独立 API、模型、提示词）
+  - 会话级配置系统，轻松打造你的 AI 团队
   - 新增微博、企业微信、小智 AI 三个 IM 渠道
   - 全面优化多智能体协作系统
-  - 新增 /help 命令（通过 IM 渠道输入即可体验）
+  - 新增 `/help` 命令（通过 IM 渠道输入即可体验）
   - 集成 Mermaid 图表渲染引擎
   - 全面兼容 OpenClaw Skills 技能生态
   - Heartbeat 主动问候系统重构
@@ -303,7 +311,7 @@ countbot/
 - **FastAPI** - 现代化 Web 框架，原生支持异步和 WebSocket
 - **SQLAlchemy 2.0** - 异步 ORM，支持复杂查询
 - **aiosqlite** - SQLite 异步驱动，零配置数据库
-- **LiteLLM** - 统一 LLM 接口，支持主流大模型
+- **Anthropic & OpenAI SDK** - 官方 SDK，支持主流大模型
 - **Pydantic v2** - 数据验证和配置管理
 - **Loguru** - 结构化日志，易于调试
 
@@ -345,14 +353,16 @@ countbot/
 
 | 版本 | 发布日期 | 文档 |
 |------|---------|------|
+| v0.5.0 | 2026-03-19 | [发布文档](docs/releases/v0.5.0.md) |
+| v0.4.0 | 2026-03-14 | [发布文档](docs/releases/v0.4.0.md) |
 | v0.3.0 | 2026-03-04 | [发布文档](docs/releases/v0.3.0/) |
 | v0.2.0 | 2026-02-25 | - |
 
 ---
 
-## 支持主流 LLM（基于 LiteLLM 统一接口）
+## 支持主流 LLM（基于官方 SDK）
 
-CountBot 使用 LiteLLM 作为统一接口层，兼容 OpenAI / Anthropic / Gemini 协议，支持所有主流大模型：
+CountBot 使用 Anthropic 和 OpenAI 官方 SDK，兼容 OpenAI / Anthropic / Gemini 协议，支持所有主流大模型：
 
 ### 国产大模型推荐
 
@@ -539,7 +549,8 @@ CountBot 的诞生离不开开源社区的启发和支持。
 
 - [FastAPI](https://fastapi.tiangolo.com/) - 现代化的 Python Web 框架
 - [Vue.js](https://vuejs.org/) - 渐进式 JavaScript 框架
-- [LiteLLM](https://github.com/BerriAI/litellm) - 统一的 LLM API 接口
+- [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) - Anthropic 官方 Python SDK
+- [OpenAI SDK](https://github.com/openai/openai-python) - OpenAI 官方 Python SDK
 - [SQLAlchemy](https://www.sqlalchemy.org/) - Python SQL 工具包和 ORM
 - [Pydantic](https://docs.pydantic.dev/) - 数据验证和设置管理
 
