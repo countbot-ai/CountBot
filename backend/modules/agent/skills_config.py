@@ -10,7 +10,7 @@ from backend.modules.agent.skills_schema import SkillConfigSchema
 from backend.utils.paths import APPLICATION_ROOT
 
 # 默认内置技能目录
-BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "skills"
+BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "workspace" / "skills"
 
 
 class SkillConfigManager:

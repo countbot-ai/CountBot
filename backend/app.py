@@ -1,6 +1,7 @@
 """FastAPI 应用入口"""
 
 import asyncio
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def _create_shared_components(config, config_loader=None):
     from backend.modules.agent.subagent import SubagentManager
     from backend.modules.tools.setup import register_all_tools
     from backend.modules.workspace import workspace_manager
+    from backend.utils.paths import APPLICATION_ROOT
 
     logger.info("Getting provider metadata...")
     provider_id = config.model.provider
@@ -66,6 +68,39 @@ def _create_shared_components(config, config_loader=None):
     # 确保用户修改 workspace 路径后，skills 也在新路径下
     skills_dir = workspace / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
+    bundled_skills_dir = APPLICATION_ROOT / "workspace" / "skills"
+    bundled_ai_quick_reference = APPLICATION_ROOT / "workspace" / "AI_QUICK_REFERENCE.md"
+    if bundled_ai_quick_reference.is_dir():
+        bundled_ai_quick_reference = (
+            bundled_ai_quick_reference / "AI_QUICK_REFERENCE.md"
+        )
+
+    bundled_skills_seed_file = workspace / ".builtin_skills_seeded"
+    if not bundled_skills_seed_file.exists() and bundled_skills_dir.exists():
+        copied_count = 0
+        for child in bundled_skills_dir.iterdir():
+            target = skills_dir / child.name
+            if target.exists():
+                continue
+            if child.is_dir():
+                shutil.copytree(child, target)
+                copied_count += 1
+            elif child.is_file():
+                shutil.copy2(child, target)
+        bundled_skills_seed_file.write_text("seeded\n", encoding="utf-8")
+        logger.info(
+            f"Seeded {copied_count} bundled skill(s) into workspace: {skills_dir}"
+        )
+
+    ai_quick_reference_path = workspace / "AI_QUICK_REFERENCE.md"
+    ai_quick_reference_seed_file = workspace / ".ai_quick_reference_seeded"
+    if not ai_quick_reference_seed_file.exists() and bundled_ai_quick_reference.exists():
+        if not ai_quick_reference_path.exists():
+            shutil.copy2(bundled_ai_quick_reference, ai_quick_reference_path)
+            logger.info(
+                f"Seeded bundled AI quick reference into workspace: {ai_quick_reference_path}"
+            )
+        ai_quick_reference_seed_file.write_text("seeded\n", encoding="utf-8")
 
     logger.info(f"Workspace: {workspace}")
     logger.info(f"Skills directory: {skills_dir}")
@@ -74,7 +109,7 @@ def _create_shared_components(config, config_loader=None):
     memory = MemoryStore(memory_dir)
     
     logger.info("Loading skills...")
-    skills = SkillsLoader(skills_dir)
+    skills = SkillsLoader(skills_dir, builtin_skills_dir=bundled_skills_dir)
 
     logger.info("Building context builder...")
     context_builder = ContextBuilder(

@@ -1,25 +1,23 @@
-name: 构建并发布桌面应用
+name: Build and Release Desktop App
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (例如: v0.1.0)'
+        description: "Version tag to publish, for example v0.1.0"
         required: true
-        default: 'v0.1.0'
-  # 注意：此工作流仅在打 tag 或手动触发时运行，不会在每次 push 时运行
+        default: "v0.5.0"
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  # 构建多平台桌面应用（直接使用 dist 静态文件）
   build-desktop:
-    name: 构建 ${{ matrix.platform }} 版本
+    name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -33,395 +31,308 @@ jobs:
           - os: macos-latest
             platform: macOS
             artifact-name: CountBot-macOS-x64
-    
+
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-    
-    - name: 验证前端静态文件
-      run: |
-        if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
-          echo "✓ 前端静态文件存在"
-          ls -la frontend/dist/
-        else
-          echo "✗ 前端静态文件不存在"
-          exit 1
-        fi
-      shell: bash
-    
-    - name: 设置 Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    
-    - name: 安装 Python 依赖
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-    
-    - name: 设置图标路径
-      id: icon
-      shell: bash
-      run: |
-        if [ "$RUNNER_OS" == "macOS" ]; then
-          echo "path=resources/countbot.icns" >> $GITHUB_OUTPUT
-        elif [ "$RUNNER_OS" == "Windows" ]; then
-          echo "path=resources/countbot.ico" >> $GITHUB_OUTPUT
-        else
-          echo "path=resources/countbot.png" >> $GITHUB_OUTPUT
-        fi
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: 构建可执行文件 (Linux/macOS)
-      if: runner.os != 'Windows'
-      run: |
-        pyinstaller --clean --noconfirm \
-          --name=CountBot \
-          --onedir  \
-          --windowed \
-          --icon="${{ steps.icon.outputs.path }}" \
-          --add-data="frontend/dist:frontend/dist" \
-          --add-data="workspace/skills:workspace/skills" \
-          --add-data="memory:memory" \
-          --add-data="resources:resources" \
-          --collect-data litellm \
-          --collect-data dateparser \
-          --collect-data tiktoken_ext \
-          --collect-data croniter \
-          --collect-data trafilatura \
-          --collect-data lxml \
-          --hidden-import=tiktoken_ext.openai_public \
-          --hidden-import=tiktoken_ext \
-          --hidden-import=greenlet \
-          --hidden-import=greenlet._greenlet \
-          --hidden-import=backend \
-          --hidden-import=backend.app \
-          --hidden-import=backend.database \
-          --hidden-import=backend.utils.paths \
-          --hidden-import=backend.utils.logger \
-          --hidden-import=backend.api.auth \
-          --hidden-import=backend.api.chat \
-          --hidden-import=backend.api.channels \
-          --hidden-import=backend.api.settings \
-          --hidden-import=backend.api.tools \
-          --hidden-import=backend.api.skills \
-          --hidden-import=backend.api.memory \
-          --hidden-import=backend.api.tasks \
-          --hidden-import=backend.api.system \
-          --hidden-import=backend.api.audio \
-          --hidden-import=backend.api.queue \
-          --hidden-import=backend.api.cron \
-          --hidden-import=backend.api.personalities \
-          --hidden-import=backend.models.message \
-          --hidden-import=backend.models.session \
-          --hidden-import=backend.models.setting \
-          --hidden-import=backend.models.task \
-          --hidden-import=backend.models.cron_job \
-          --hidden-import=backend.models.tool_conversation \
-          --hidden-import=backend.models.personality \
-          --hidden-import=uvicorn \
-          --hidden-import=uvicorn.logging \
-          --hidden-import=uvicorn.loops \
-          --hidden-import=uvicorn.loops.auto \
-          --hidden-import=uvicorn.protocols \
-          --hidden-import=uvicorn.protocols.http \
-          --hidden-import=uvicorn.protocols.http.auto \
-          --hidden-import=uvicorn.protocols.websockets \
-          --hidden-import=uvicorn.protocols.websockets.auto \
-          --hidden-import=uvicorn.lifespan \
-          --hidden-import=uvicorn.lifespan.on \
-          --hidden-import=fastapi \
-          --hidden-import=sqlalchemy.ext.asyncio \
-          --hidden-import=aiosqlite \
-          --exclude-module=playwright \
-          --exclude-module=pandas \
-          --exclude-module=numpy \
-          --exclude-module=PyQt5 \
-          --exclude-module=PyQt6 \
-          --exclude-module=PySide2 \
-          --exclude-module=PySide6 \
-          --exclude-module=tkinter \
-          --exclude-module=matplotlib \
-          --exclude-module=scipy \
-          --exclude-module=PIL.ImageQt \
-          --exclude-module=transformers \
-          --exclude-module=torch \
-          --exclude-module=tensorflow \
-          --exclude-module=psycopg2 \
-          --exclude-module=asyncpg \
-          start_desktop.py
-    
-    - name: 构建可执行文件 (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        pyinstaller --clean --noconfirm `
-          --name=CountBot `
-          --onedir `
-          --windowed `
-          --icon="${{ steps.icon.outputs.path }}" `
-          --add-data="frontend/dist;frontend/dist" `
-          --add-data="workspace/skills;workspace/skills" `
-          --add-data="memory;memory" `
-          --add-data="resources;resources" `
-          --collect-data litellm `
-          --collect-data dateparser `
-          --collect-data tiktoken_ext `
-          --collect-data croniter `
-          --collect-data trafilatura `
-          --collect-data lxml `
-          --hidden-import=tiktoken_ext.openai_public `
-          --hidden-import=tiktoken_ext `
-          --hidden-import=greenlet `
-          --hidden-import=greenlet._greenlet `
-          --hidden-import=backend `
-          --hidden-import=backend.app `
-          --hidden-import=backend.database `
-          --hidden-import=backend.utils.paths `
-          --hidden-import=backend.utils.logger `
-          --hidden-import=backend.api.auth `
-          --hidden-import=backend.api.chat `
-          --hidden-import=backend.api.channels `
-          --hidden-import=backend.api.settings `
-          --hidden-import=backend.api.tools `
-          --hidden-import=backend.api.skills `
-          --hidden-import=backend.api.memory `
-          --hidden-import=backend.api.tasks `
-          --hidden-import=backend.api.system `
-          --hidden-import=backend.api.audio `
-          --hidden-import=backend.api.queue `
-          --hidden-import=backend.api.cron `
-          --hidden-import=backend.api.personalities `
-          --hidden-import=backend.models.message `
-          --hidden-import=backend.models.session `
-          --hidden-import=backend.models.setting `
-          --hidden-import=backend.models.task `
-          --hidden-import=backend.models.cron_job `
-          --hidden-import=backend.models.tool_conversation `
-          --hidden-import=backend.models.personality `
-          --hidden-import=uvicorn `
-          --hidden-import=uvicorn.logging `
-          --hidden-import=uvicorn.loops `
-          --hidden-import=uvicorn.loops.auto `
-          --hidden-import=uvicorn.protocols `
-          --hidden-import=uvicorn.protocols.http `
-          --hidden-import=uvicorn.protocols.http.auto `
-          --hidden-import=uvicorn.protocols.websockets `
-          --hidden-import=uvicorn.protocols.websockets.auto `
-          --hidden-import=uvicorn.lifespan `
-          --hidden-import=uvicorn.lifespan.on `
-          --hidden-import=fastapi `
-          --hidden-import=sqlalchemy.ext.asyncio `
-          --hidden-import=aiosqlite `
-          --hidden-import=webview `
-          --hidden-import=webview.platforms.edgechromium `
-          --hidden-import=webview.platforms.winforms `
-          --exclude-module=playwright `
-          --exclude-module=pandas `
-          --exclude-module=numpy `
-          --exclude-module=PyQt5 `
-          --exclude-module=PyQt6 `
-          --exclude-module=PySide2 `
-          --exclude-module=PySide6 `
-          --exclude-module=tkinter `
-          --exclude-module=matplotlib `
-          --exclude-module=scipy `
-          --exclude-module=PIL.ImageQt `
-          --exclude-module=transformers `
-          --exclude-module=torch `
-          --exclude-module=tensorflow `
-          --exclude-module=psycopg2 `
-          --exclude-module=asyncpg `
-          start_desktop.py
-    
-    - name: 打包发布文件 (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        cd dist
-        tar -czf ${{ matrix.artifact-name }}.tar.gz CountBot.app/
-        ls -lh *.tar.gz
-    
-    - name: 打包发布文件 (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        cd dist
-        tar -czf ${{ matrix.artifact-name }}.tar.gz CountBot/
-        ls -lh *.tar.gz
-    
-    - name: 打包发布文件 (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        cd dist
-        Compress-Archive -Path CountBot -DestinationPath ${{ matrix.artifact-name }}.zip
-        Get-ChildItem *.zip
-    
-    - name: 上传构建产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact-name }}
-        path: |
-          dist/*.tar.gz
-          dist/*.zip
-        retention-days: 7
+      - name: Verify frontend build
+        shell: bash
+        run: |
+          if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
+            echo "frontend/dist is ready"
+            ls -la frontend/dist/
+          else
+            echo "frontend/dist is missing"
+            exit 1
+          fi
 
-  # 创建 GitHub Release
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Resolve icon path
+        id: icon
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "path=resources/countbot.icns" >> "$GITHUB_OUTPUT"
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            echo "path=resources/countbot.ico" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=resources/countbot.png" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build desktop app on Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          WEBVIEW_IMPORTS="--hidden-import=webview"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            WEBVIEW_IMPORTS="$WEBVIEW_IMPORTS --hidden-import=webview.platforms.cocoa"
+          else
+            WEBVIEW_IMPORTS="$WEBVIEW_IMPORTS --hidden-import=webview.platforms.gtk"
+          fi
+
+          pyinstaller --clean --noconfirm \
+            --name=CountBot \
+            --onedir \
+            --windowed \
+            --icon="${{ steps.icon.outputs.path }}" \
+            --add-data="frontend/dist:frontend/dist" \
+            --add-data="workspace/skills:workspace/skills" \
+            --add-data="workspace/AI_QUICK_REFERENCE.md:workspace" \
+            --add-data="memory:memory" \
+            --add-data="resources:resources" \
+            --hidden-import=greenlet \
+            --hidden-import=greenlet._greenlet \
+            --hidden-import=backend \
+            --hidden-import=backend.app \
+            --hidden-import=backend.database \
+            --hidden-import=backend.utils.paths \
+            --hidden-import=backend.utils.logger \
+            --hidden-import=backend.api.auth \
+            --hidden-import=backend.api.chat \
+            --hidden-import=backend.api.channels \
+            --hidden-import=backend.api.settings \
+            --hidden-import=backend.api.tools \
+            --hidden-import=backend.api.skills \
+            --hidden-import=backend.api.memory \
+            --hidden-import=backend.api.tasks \
+            --hidden-import=backend.api.system \
+            --hidden-import=backend.api.audio \
+            --hidden-import=backend.api.queue \
+            --hidden-import=backend.api.cron \
+            --hidden-import=backend.api.personalities \
+            --hidden-import=backend.models.message \
+            --hidden-import=backend.models.session \
+            --hidden-import=backend.models.setting \
+            --hidden-import=backend.models.task \
+            --hidden-import=backend.models.cron_job \
+            --hidden-import=backend.models.tool_conversation \
+            --hidden-import=backend.models.personality \
+            --hidden-import=uvicorn \
+            --hidden-import=uvicorn.logging \
+            --hidden-import=uvicorn.loops \
+            --hidden-import=uvicorn.loops.auto \
+            --hidden-import=uvicorn.protocols \
+            --hidden-import=uvicorn.protocols.http \
+            --hidden-import=uvicorn.protocols.http.auto \
+            --hidden-import=uvicorn.protocols.websockets \
+            --hidden-import=uvicorn.protocols.websockets.auto \
+            --hidden-import=uvicorn.lifespan \
+            --hidden-import=uvicorn.lifespan.on \
+            --hidden-import=fastapi \
+            --hidden-import=sqlalchemy.ext.asyncio \
+            --hidden-import=aiosqlite \
+            $WEBVIEW_IMPORTS \
+            --exclude-module=playwright \
+            --exclude-module=pandas \
+            --exclude-module=numpy \
+            --exclude-module=PyQt5 \
+            --exclude-module=PyQt6 \
+            --exclude-module=PySide2 \
+            --exclude-module=PySide6 \
+            --exclude-module=tkinter \
+            --exclude-module=matplotlib \
+            --exclude-module=scipy \
+            --exclude-module=PIL.ImageQt \
+            --exclude-module=transformers \
+            --exclude-module=torch \
+            --exclude-module=tensorflow \
+            --exclude-module=psycopg2 \
+            --exclude-module=asyncpg \
+            --exclude-module=litellm \
+            --exclude-module=boto3 \
+            --exclude-module=botocore \
+            --exclude-module=s3transfer \
+            --exclude-module=jmespath \
+            --exclude-module=trafilatura \
+            start_desktop.py
+
+      - name: Build desktop app on Windows
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller --clean --noconfirm `
+            --name=CountBot `
+            --onedir `
+            --windowed `
+            --icon="${{ steps.icon.outputs.path }}" `
+            --add-data="frontend/dist;frontend/dist" `
+            --add-data="workspace/skills;workspace/skills" `
+            --add-data="workspace/AI_QUICK_REFERENCE.md;workspace" `
+            --add-data="memory;memory" `
+            --add-data="resources;resources" `
+            --hidden-import=greenlet `
+            --hidden-import=greenlet._greenlet `
+            --hidden-import=backend `
+            --hidden-import=backend.app `
+            --hidden-import=backend.database `
+            --hidden-import=backend.utils.paths `
+            --hidden-import=backend.utils.logger `
+            --hidden-import=backend.api.auth `
+            --hidden-import=backend.api.chat `
+            --hidden-import=backend.api.channels `
+            --hidden-import=backend.api.settings `
+            --hidden-import=backend.api.tools `
+            --hidden-import=backend.api.skills `
+            --hidden-import=backend.api.memory `
+            --hidden-import=backend.api.tasks `
+            --hidden-import=backend.api.system `
+            --hidden-import=backend.api.audio `
+            --hidden-import=backend.api.queue `
+            --hidden-import=backend.api.cron `
+            --hidden-import=backend.api.personalities `
+            --hidden-import=backend.models.message `
+            --hidden-import=backend.models.session `
+            --hidden-import=backend.models.setting `
+            --hidden-import=backend.models.task `
+            --hidden-import=backend.models.cron_job `
+            --hidden-import=backend.models.tool_conversation `
+            --hidden-import=backend.models.personality `
+            --hidden-import=uvicorn `
+            --hidden-import=uvicorn.logging `
+            --hidden-import=uvicorn.loops `
+            --hidden-import=uvicorn.loops.auto `
+            --hidden-import=uvicorn.protocols `
+            --hidden-import=uvicorn.protocols.http `
+            --hidden-import=uvicorn.protocols.http.auto `
+            --hidden-import=uvicorn.protocols.websockets `
+            --hidden-import=uvicorn.protocols.websockets.auto `
+            --hidden-import=uvicorn.lifespan `
+            --hidden-import=uvicorn.lifespan.on `
+            --hidden-import=fastapi `
+            --hidden-import=sqlalchemy.ext.asyncio `
+            --hidden-import=aiosqlite `
+            --hidden-import=webview `
+            --hidden-import=webview.platforms.edgechromium `
+            --hidden-import=webview.platforms.winforms `
+            --exclude-module=playwright `
+            --exclude-module=pandas `
+            --exclude-module=numpy `
+            --exclude-module=PyQt5 `
+            --exclude-module=PyQt6 `
+            --exclude-module=PySide2 `
+            --exclude-module=PySide6 `
+            --exclude-module=tkinter `
+            --exclude-module=matplotlib `
+            --exclude-module=scipy `
+            --exclude-module=PIL.ImageQt `
+            --exclude-module=transformers `
+            --exclude-module=torch `
+            --exclude-module=tensorflow `
+            --exclude-module=psycopg2 `
+            --exclude-module=asyncpg `
+            --exclude-module=litellm `
+            --exclude-module=boto3 `
+            --exclude-module=botocore `
+            --exclude-module=s3transfer `
+            --exclude-module=jmespath `
+            --exclude-module=trafilatura `
+            start_desktop.py
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "${{ matrix.artifact-name }}.tar.gz" CountBot.app/
+          ls -lh *.tar.gz
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "${{ matrix.artifact-name }}.tar.gz" CountBot/
+          ls -lh *.tar.gz
+
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          Compress-Archive -Path CountBot -DestinationPath "${{ matrix.artifact-name }}.zip"
+          Get-ChildItem *.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          retention-days: 7
+
   create-release:
-    name: 创建 GitHub Release
+    name: Create GitHub Release
     needs: build-desktop
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    
+
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: 设置版本号
-      id: version
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          echo "is_manual=true" >> $GITHUB_OUTPUT
-        else
-          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "is_manual=false" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: 下载所有构建产物
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts/
-    
-    - name: 显示构建产物
-      run: |
-        echo "构建产物列表："
-        find artifacts -type f
-        echo ""
-        echo "文件详情："
-        find artifacts -type f -exec ls -lh {} \;
-    
-    - name: 创建 Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.version.outputs.version }}
-        name: CountBot ${{ steps.version.outputs.version }}
-        files: |
-          artifacts/*/*.tar.gz
-          artifacts/*/*.zip
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-        body: |
-          ## CountBot ${{ steps.version.outputs.version }}
-          
-          ### ⚠️ 重要提示
-          
-          **桌面版目前处于测试阶段，可能存在兼容性问题。**
-          
-          如果您在使用桌面版时遇到问题，我们强烈建议：
-          
-          1. **使用 Python 源码运行**（推荐）：
-             ```bash
-             git clone https://github.com/countbot-ai/CountBot.git
-             cd CountBot
-             pip install -r requirements.txt
-             python start_desktop.py
-             ```
-          
-          2. **反馈问题帮助我们改进**：
-             - 遇到错误请在 [Issues](https://github.com/countbot-ai/CountBot/issues) 反馈
-             - 提供错误信息、系统版本等详细信息
-             - 您的反馈将帮助我们完善桌面版，降低 AI Agent 的使用门槛
-          
-          ---
-          
-          
-          ### 🚀 快速开始
-          
-          #### Windows
-          ```cmd
-          # 1. 解压 zip 文件
-          # 2. 双击运行 CountBot.exe
-          # 3. 如果遇到问题，请使用 Python 源码运行
-          ```
-          
-          **常见问题：**
-          - 缺少 Edge WebView2：[下载安装](https://go.microsoft.com/fwlink/p/?LinkId=2124703)
-          - 端口被占用：修改默认的8000锻炼
-          - 防火墙拦截：允许 CountBot 访问网络
-          
-          #### macOS
-          ```bash
-          # 解压
-          tar -xzf CountBot-macOS-x64.tar.gz
-          
-          # 添加执行权限
-          chmod +x CountBot/CountBot
-          
-          # 运行
-          ./CountBot/CountBot
-          ```
-          
-          **常见问题：**
-          - "无法打开，因为无法验证开发者"：
-            ```bash
-            xattr -cr CountBot/CountBot
-            ```
-          - 系统版本要求：macOS 10.13 或更高
-          
-          #### Linux
-          ```bash
-          # 解压
-          tar -xzf CountBot-Linux-x64.tar.gz
-          
-          # 添加执行权限
-          chmod +x CountBot/CountBot
-          
-          # 运行
-          ./CountBot/CountBot
-          ```
-          
-          **常见问题：**
-          - 缺少 WebKit2GTK：
-            ```bash
-            # Ubuntu/Debian
-            sudo apt install webkit2gtk-4.0
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Show artifacts
+        shell: bash
+        run: |
+          find artifacts -type f -print
+          echo ""
+          find artifacts -type f -exec ls -lh {} \;
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: CountBot ${{ steps.version.outputs.version }}
+          files: |
+            artifacts/*/*.tar.gz
+            artifacts/*/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            ## CountBot ${{ steps.version.outputs.version }} 发布说明
+
+            ### 构建产物
+            - 已提供 Windows、macOS、Linux 桌面版打包文件。
+            - 桌面版默认将运行时数据写入程序所在目录，便于携带、迁移和排查问题。
+
+            ### 使用提示
+            - 桌面版仍建议优先在常规目录下解压运行，避免放在系统保护目录。
+            - 如桌面版启动失败，优先切换为 Python 源码运行方式排查。
+            - Skills 调用依赖 `python` 或 `python3` 命令，请确保已加入系统环境变量。
+
+            ### 已包含内容
+            - 内置前端静态资源
+            - 内置 skills 初始资源
             
-            # Fedora
-            sudo dnf install webkit2gtk3
-            ```
-          
-          ---
-          
-          ### 🐛 遇到问题？
-          
-          1. **查看日志**：`data/logs/CountBot_*.log`
-          2. **提交 Issue**：[GitHub Issues](https://github.com/countbot-ai/CountBot/issues)
-          3. **使用源码运行**：更稳定，更容易调试
-          
-          ### 💡 为什么推荐源码运行？
-          
-          - ✅ 兼容性更好，避免打包问题
-          - ✅ 错误信息更详细，便于排查
-          - ✅ 可以随时更新到最新版本
-          - ✅ 支持所有 Python 环境和依赖
-          
-          ---
-          
-          ### 📝 更新日志
-          
-          详见下方自动生成的更新说明。
-          
-          ---
-          
-          ### 🙏 感谢您的支持
-          
-          CountBot 致力于降低 AI Agent 的使用门槛。您的反馈和建议对我们至关重要！
-          
-          - ⭐ 如果觉得有用，请给我们一个 Star
-          - 🐛 遇到问题，请提交 Issue
-          - 💬 有想法，欢迎参与讨论
-          - 🤝 想贡献，查看 [CONTRIBUTING.md](https://github.com/countbot-ai/CountBot/blob/main/CONTRIBUTING.md)
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            ### 目录说明
+            - `workspace/`、`data/`、`config/` 默认位于程序运行目录
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

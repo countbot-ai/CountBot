@@ -4,7 +4,7 @@
 
 # ── 核心框架 ──────────────────────────────
 fastapi>=0.115.0
-uvicorn>=0.32.0
+uvicorn==0.32.0
 sqlalchemy>=2.0.36
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
@@ -53,4 +53,3 @@ websockets>=12.0
 
 # ── 极强反爬虫（仅在 scrapling 安装后需要）──
 # camoufox>=0.4.11
-

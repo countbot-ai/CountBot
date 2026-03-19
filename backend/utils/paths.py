@@ -1,60 +1,78 @@
-"""统一路径管理 - 跨平台兼容"""
+"""统一路径管理。"""
 
 import sys
 from pathlib import Path
 
 
-def get_application_root() -> Path:
-    """获取应用程序根目录
-    
-    编译版: 使用可执行文件所在目录
-    开发版: 使用项目根目录
+def get_runtime_root() -> Path:
+    """返回当前程序的运行目录。
+
+    编译版:
+    - Windows/Linux: 可执行文件所在目录
+    - macOS: .app 容器目录
+
+    开发版:
+    - 项目根目录
     """
     if getattr(sys, "frozen", False):
-        # 编译版: _internal 目录包含所有资源
         if sys.platform == "darwin":
-            # macOS onedir: CountBot.app/Contents/MacOS/CountBot -> 使用 _internal
-            exe_dir = Path(sys.executable).parent
-            if (exe_dir / "_internal").exists():
-                root = exe_dir / "_internal"
-            else:
-                # BUNDLE 模式: Contents/MacOS/CountBot -> Contents/Resources/
-                root = exe_dir.parent / "Resources"
+            root = Path(sys.executable).parent.parent.parent
         else:
-            # Windows/Linux onedir: CountBot.exe 旁边的 _internal
-            exe_dir = Path(sys.executable).parent
-            root = exe_dir / "_internal" if (exe_dir / "_internal").exists() else exe_dir
+            root = Path(sys.executable).parent
     else:
-        # 开发版: 项目根目录
-        root = Path(__file__).parent.parent.parent
-    
+        root = Path(__file__).resolve().parent.parent.parent
+
+    return root.resolve()
+
+
+def get_application_root() -> Path:
+    """返回应用资源根目录。
+
+    这个目录用于查找打包资源，如 frontend/dist、resources、内置 skills。
+    """
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            root = Path(sys._MEIPASS)
+        else:
+            exe_dir = Path(sys.executable).parent
+            if sys.platform == "darwin":
+                if (exe_dir / "_internal").exists():
+                    root = exe_dir / "_internal"
+                else:
+                    root = exe_dir.parent / "Resources"
+            else:
+                root = (
+                    exe_dir / "_internal" if (exe_dir / "_internal").exists() else exe_dir
+                )
+    else:
+        root = get_runtime_root()
+
     return root.resolve()
 
 
 def get_data_dir() -> Path:
-    """获取数据目录（数据库、日志）"""
-    data_dir = get_application_root() / "data"
+    """获取数据目录（数据库、日志等）。"""
+    data_dir = get_runtime_root() / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
 
 def get_workspace_dir() -> Path:
-    """获取工作区目录
-    
-    注意: 为兼容现有 skills 目录，默认返回应用根目录
-    """
-    return get_application_root()
+    """获取工作空间目录。"""
+    workspace_dir = get_runtime_root() / "workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    return workspace_dir
 
 
 def get_config_dir() -> Path:
-    """获取配置目录"""
-    config_dir = get_application_root() / "config"
+    """获取配置目录。"""
+    config_dir = get_runtime_root() / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 
 
-# 导出路径常量
 APPLICATION_ROOT = get_application_root()
+RUNTIME_ROOT = get_runtime_root()
 DATA_DIR = get_data_dir()
 WORKSPACE_DIR = get_workspace_dir()
 CONFIG_DIR = get_config_dir()
@@ -66,7 +84,8 @@ if __name__ == "__main__":
     print("=" * 70)
     print(f"运行模式: {'编译版' if getattr(sys, 'frozen', False) else '开发版'}")
     print(f"平台: {sys.platform}")
-    print(f"\n应用程序根目录: {APPLICATION_ROOT}")
+    print(f"\n资源根目录: {APPLICATION_ROOT}")
+    print(f"运行根目录: {RUNTIME_ROOT}")
     print(f"数据目录: {DATA_DIR}")
     print(f"工作区目录: {WORKSPACE_DIR}")
     print(f"配置目录: {CONFIG_DIR}")
