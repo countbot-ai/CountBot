@@ -730,8 +730,14 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
             )
         
         # 使用用户提供的配置
-        test_model = request.model or "gpt-3.5-turbo"
+        test_model = (request.model or provider_meta.default_model or "").strip()
         test_api_base = request.api_base or provider_meta.default_api_base
+
+        if not test_model:
+            return TestConnectionResponse(
+                success=False,
+                error="请先填写模型名称，再测试连接。",
+            )
         
         logger.info(f"Using {provider_meta.name}, model: {test_model}, base: {test_api_base}")
         
@@ -740,7 +746,7 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
             api_key=request.api_key,
             api_base=test_api_base,
             default_model=test_model,
-            timeout=10.0,
+            timeout=30.0,
             max_retries=1,
             provider_id=request.provider,
         )
