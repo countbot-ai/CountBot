@@ -1,22 +1,40 @@
-"""认证 API 端点"""
+"""Authentication API endpoints."""
 
-from typing import Tuple
+import json
+import threading
+import time
+from typing import Dict, Tuple
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from loguru import logger
+from pydantic import BaseModel
 
+from backend.modules.auth.middleware import AUTH_COOKIE_NAME, _is_local_request
 from backend.modules.auth.utils import (
-    validate_password,
-    hash_password,
-    verify_password,
+    TOKEN_EXPIRY,
     create_session,
+    hash_password,
+    needs_password_rehash,
+    revoke_all_sessions,
     revoke_session,
+    validate_password,
     validate_session,
+    validate_username,
+    verify_password,
 )
-from backend.modules.auth.middleware import _is_local_request
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+_AUTH_KEY_USERNAME = "auth.username"
+_AUTH_KEY_PASSWORD_HASH = "auth.password_hash"
+
+_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+_RATE_LIMIT_MAX_ATTEMPTS = 5
+_RATE_LIMIT_LOCKOUT_SECONDS = 15 * 60
+_auth_attempt_lock = threading.Lock()
+_auth_attempts: Dict[str, list[float]] = {}
+_auth_lockouts: Dict[str, float] = {}
 
 
 class LoginRequest(BaseModel):
@@ -34,16 +52,8 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-# ============================================================================
-# 密码存储（通过 settings 表）
-# ============================================================================
-
-_AUTH_KEY_USERNAME = "auth.username"
-_AUTH_KEY_PASSWORD_HASH = "auth.password_hash"
-
-
 async def get_stored_credentials() -> Tuple[str, str]:
-    """获取存储的用户名和密码哈希"""
+    """Load stored username and password hash from settings."""
     from sqlalchemy import select
     from backend.database import AsyncSessionLocal
     from backend.models.setting import Setting
@@ -54,63 +64,123 @@ async def get_stored_credentials() -> Tuple[str, str]:
                 select(Setting).where(Setting.key.in_([_AUTH_KEY_USERNAME, _AUTH_KEY_PASSWORD_HASH]))
             )
             settings = {s.key: s.value for s in result.scalars().all()}
-            import json
             username = json.loads(settings.get(_AUTH_KEY_USERNAME, '""'))
             password_hash = json.loads(settings.get(_AUTH_KEY_PASSWORD_HASH, '""'))
             return username or "", password_hash or ""
-    except Exception as e:
-        logger.warning(f"Failed to get stored credentials: {e}")
+    except Exception as exc:
+        logger.warning(f"Failed to get stored credentials: {exc}")
         return "", ""
 
 
 async def get_password_hash() -> str:
-    """获取密码哈希（供中间件使用）"""
     _, password_hash = await get_stored_credentials()
     return password_hash
 
 
 async def save_credentials(username: str, password_hash: str):
-    """保存认证凭据到 settings 表"""
-    import json
     from backend.database import AsyncSessionLocal
     from backend.models.setting import Setting
 
     async with AsyncSessionLocal() as session:
-        for key, value in [(_AUTH_KEY_USERNAME, username), (_AUTH_KEY_PASSWORD_HASH, password_hash)]:
+        for key, value in ((_AUTH_KEY_USERNAME, username), (_AUTH_KEY_PASSWORD_HASH, password_hash)):
             setting = Setting(key=key, value=json.dumps(value))
             await session.merge(setting)
         await session.commit()
 
 
-# ============================================================================
-# API 端点
-# ============================================================================
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client and request.client.host else "unknown"
+
+
+def _auth_rate_limit_key(action: str, request: Request, username: str = "") -> str:
+    normalized_username = username.strip().lower()
+    return f"{action}:{_client_ip(request)}:{normalized_username}"
+
+
+def _prune_attempts(now: float) -> None:
+    stale_before = now - _RATE_LIMIT_WINDOW_SECONDS
+
+    expired_attempt_keys = []
+    for key, attempts in _auth_attempts.items():
+        filtered = [ts for ts in attempts if ts >= stale_before]
+        if filtered:
+            _auth_attempts[key] = filtered
+        else:
+            expired_attempt_keys.append(key)
+
+    for key in expired_attempt_keys:
+        _auth_attempts.pop(key, None)
+
+    expired_lockouts = [key for key, until in _auth_lockouts.items() if until <= now]
+    for key in expired_lockouts:
+        _auth_lockouts.pop(key, None)
+
+
+def _check_rate_limit(action: str, request: Request, username: str = "") -> Tuple[bool, int]:
+    key = _auth_rate_limit_key(action, request, username)
+    now = time.time()
+
+    with _auth_attempt_lock:
+        _prune_attempts(now)
+        locked_until = _auth_lockouts.get(key)
+        if locked_until and locked_until > now:
+            return False, max(1, int(locked_until - now))
+
+    return True, 0
+
+
+def _record_auth_failure(action: str, request: Request, username: str = "") -> None:
+    key = _auth_rate_limit_key(action, request, username)
+    now = time.time()
+
+    with _auth_attempt_lock:
+        _prune_attempts(now)
+        attempts = _auth_attempts.setdefault(key, [])
+        attempts.append(now)
+        if len(attempts) >= _RATE_LIMIT_MAX_ATTEMPTS:
+            _auth_lockouts[key] = now + _RATE_LIMIT_LOCKOUT_SECONDS
+
+
+def _clear_auth_failures(action: str, request: Request, username: str = "") -> None:
+    key = _auth_rate_limit_key(action, request, username)
+    with _auth_attempt_lock:
+        _auth_attempts.pop(key, None)
+        _auth_lockouts.pop(key, None)
+
+
+def _set_auth_cookie(response: JSONResponse, token: str, request: Request) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+        max_age=TOKEN_EXPIRY,
+        path="/",
+    )
+
+
+def _auth_required_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={"detail": "请先登录", "code": "AUTH_REQUIRED"},
+    )
 
 
 @router.get("/status")
 async def auth_status(request: Request):
-    """获取认证状态
-
-    返回：
-    - is_local: 是否本地访问
-    - auth_enabled: 是否已设置密码（启用远程认证）
-    - authenticated: 当前请求是否已认证
-    - remote_access_enabled: 服务器是否开启了远程访问（绑定 0.0.0.0）
-    """
+    """Public auth bootstrap endpoint used by the login page."""
     is_local = _is_local_request(request)
     _, password_hash = await get_stored_credentials()
     auth_enabled = bool(password_hash)
 
-    # 检查当前 token
-    token = request.cookies.get("CountBot_token")
+    token = request.cookies.get(AUTH_COOKIE_NAME)
     if not token:
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
 
-    authenticated = is_local or bool(validate_session(token) if token else False)
-
-    # 检查服务器是否绑定了 0.0.0.0（开启远程访问）
+    authenticated = bool(validate_session(token) if token else False)
     bind_host = getattr(request.app.state, "bind_host", "127.0.0.1")
     remote_access_enabled = bind_host == "0.0.0.0"
 
@@ -119,136 +189,151 @@ async def auth_status(request: Request):
         "auth_enabled": auth_enabled,
         "authenticated": authenticated,
         "remote_access_enabled": remote_access_enabled,
+        "setup_allowed": is_local and not auth_enabled,
     }
 
 
 @router.post("/setup")
 async def setup_password(data: SetPasswordRequest, request: Request):
-    """首次设置密码（仅当未设置密码时可用）"""
+    """Allow first-time password bootstrap only from a direct local request."""
+    if not _is_local_request(request):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "首次初始化只能在本机完成", "code": "SETUP_LOCAL_ONLY"},
+        )
+
+    allowed, retry_after = _check_rate_limit("setup", request, data.username)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"尝试过于频繁，请 {retry_after} 秒后再试", "code": "RATE_LIMITED"},
+        )
+
     _, existing_hash = await get_stored_credentials()
     if existing_hash:
         return JSONResponse(
             status_code=400,
-            content={"detail": "密码已设置，请使用修改密码接口"},
+            content={"detail": "密码已设置，请使用登录接口", "code": "AUTH_ALREADY_INITIALIZED"},
         )
 
-    # 验证密码强度
+    valid_username, username_msg = validate_username(data.username)
+    if not valid_username:
+        _record_auth_failure("setup", request, data.username)
+        return JSONResponse(status_code=400, content={"detail": username_msg})
+
     valid, msg = validate_password(data.password)
     if not valid:
+        _record_auth_failure("setup", request, data.username)
         return JSONResponse(status_code=400, content={"detail": msg})
 
-    # 保存
     hashed = hash_password(data.password)
-    await save_credentials(data.username, hashed)
-    logger.info(f"Remote auth password set for user: {data.username}")
+    await save_credentials(data.username.strip(), hashed)
+    _clear_auth_failures("setup", request, data.username)
+    logger.info(f"Remote auth password set for user: {data.username.strip()}")
 
-    # 自动登录
-    token = create_session(data.username)
-    response = JSONResponse(content={
-        "success": True,
-        "message": "密码设置成功",
-        "token": token,
-    })
-    response.set_cookie(
-        key="CountBot_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=86400,
+    token = create_session(data.username.strip())
+    response = JSONResponse(
+        content={
+            "success": True,
+            "message": "密码设置成功",
+        }
     )
+    _set_auth_cookie(response, token, request)
     return response
 
 
 @router.post("/login")
-async def login(data: LoginRequest):
-    """登录"""
-    stored_username, stored_hash = await get_stored_credentials()
+async def login(data: LoginRequest, request: Request):
+    """Authenticate a user and issue a cookie-backed session."""
+    allowed, retry_after = _check_rate_limit("login", request, data.username)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"尝试过于频繁，请 {retry_after} 秒后再试", "code": "RATE_LIMITED"},
+        )
 
+    stored_username, stored_hash = await get_stored_credentials()
     if not stored_hash:
         return JSONResponse(
-            status_code=400,
-            content={"detail": "尚未设置密码，请先设置"},
+            status_code=403,
+            content={"detail": "管理员尚未完成初始化，请在本机设置密码", "code": "AUTH_NOT_INITIALIZED"},
         )
 
-    # 验证用户名和密码
-    if data.username != stored_username:
+    normalized_username = data.username.strip()
+    valid_username, _ = validate_username(normalized_username)
+    if not valid_username:
+        _record_auth_failure("login", request, normalized_username)
         return JSONResponse(
             status_code=401,
             content={"detail": "用户名或密码错误"},
         )
 
-    if not verify_password(data.password, stored_hash):
+    if normalized_username != stored_username or not verify_password(data.password, stored_hash):
+        _record_auth_failure("login", request, normalized_username)
         return JSONResponse(
             status_code=401,
             content={"detail": "用户名或密码错误"},
         )
 
-    # 创建 session
-    token = create_session(data.username)
-    response = JSONResponse(content={
-        "success": True,
-        "message": "登录成功",
-        "token": token,
-    })
-    response.set_cookie(
-        key="CountBot_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=86400,
+    if needs_password_rehash(stored_hash):
+        await save_credentials(stored_username, hash_password(data.password))
+
+    _clear_auth_failures("login", request, normalized_username)
+    token = create_session(stored_username)
+    response = JSONResponse(
+        content={
+            "success": True,
+            "message": "登录成功",
+        }
     )
+    _set_auth_cookie(response, token, request)
     return response
 
 
 @router.post("/logout")
 async def logout(request: Request):
-    """登出"""
-    token = request.cookies.get("CountBot_token")
+    token = request.cookies.get(AUTH_COOKIE_NAME)
     if token:
         revoke_session(token)
 
     response = JSONResponse(content={"success": True})
-    response.delete_cookie("CountBot_token")
+    response.delete_cookie(AUTH_COOKIE_NAME, path="/")
     return response
 
 
 @router.post("/change-password")
 async def change_password(data: ChangePasswordRequest, request: Request):
-    """修改密码（需要已认证或本地访问）"""
-    is_local = _is_local_request(request)
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    username = validate_session(token) if token else None
+    if not username:
+        return _auth_required_response()
 
-    # 非本地访问需要验证当前 token
-    if not is_local:
-        token = request.cookies.get("CountBot_token")
-        if not token or not validate_session(token):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "请先登录"},
-            )
-
-    stored_username, stored_hash = await get_stored_credentials()
-
-    if not stored_hash:
+    allowed, retry_after = _check_rate_limit("change-password", request, username)
+    if not allowed:
         return JSONResponse(
-            status_code=400,
-            content={"detail": "尚未设置密码"},
+            status_code=429,
+            content={"detail": f"尝试过于频繁，请 {retry_after} 秒后再试", "code": "RATE_LIMITED"},
         )
 
-    # 验证旧密码
+    stored_username, stored_hash = await get_stored_credentials()
+    if not stored_hash or username != stored_username:
+        return _auth_required_response()
+
     if not verify_password(data.old_password, stored_hash):
+        _record_auth_failure("change-password", request, username)
         return JSONResponse(
             status_code=401,
             content={"detail": "旧密码错误"},
         )
 
-    # 验证新密码强度
     valid, msg = validate_password(data.new_password)
     if not valid:
+        _record_auth_failure("change-password", request, username)
         return JSONResponse(status_code=400, content={"detail": msg})
 
-    # 保存新密码
-    new_hash = hash_password(data.new_password)
-    await save_credentials(stored_username, new_hash)
+    await save_credentials(stored_username, hash_password(data.new_password))
+    revoke_all_sessions(stored_username)
+    _clear_auth_failures("change-password", request, username)
     logger.info(f"Password changed for user: {stored_username}")
 
-    return {"success": True, "message": "密码修改成功"}
+    return {"success": True, "message": "密码修改成功，请重新登录"}

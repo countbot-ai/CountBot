@@ -380,6 +380,9 @@ app = FastAPI(
     description="CountBot backend API",
     version="0.5.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 # 保存绑定地址用于认证判断
@@ -396,10 +399,10 @@ def get_tool_registry():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # 远程访问认证中间件
@@ -453,48 +456,18 @@ async def websocket_endpoint(websocket: WebSocket):
     from backend.modules.providers.registry import get_provider_metadata
     from backend.modules.tools.setup import register_all_tools
 
-    # 远程访问认证检查
-    from backend.modules.auth.middleware import LOCAL_IPS
+    from backend.modules.auth.middleware import AUTH_COOKIE_NAME
     from backend.modules.auth.utils import validate_session as validate_ws_session
-    from backend.modules.auth.router import get_password_hash as get_ws_password_hash
 
-    # TCP 层面获取真实客户端 IP
-    client_ip = websocket.client.host if websocket.client else None
-    
-    if not client_ip:
-        logger.warning("WebSocket connection rejected: unable to determine client IP")
-        await websocket.close(code=1008, reason="Unable to determine client IP")
+    token = websocket.cookies.get(AUTH_COOKIE_NAME)
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    if not token or not validate_ws_session(token):
+        await websocket.close(code=4001, reason="Authentication required")
         return
-    
-    # 检测代理头（
-    proxy_headers = {
-        "x-forwarded-for", "x-real-ip", "x-forwarded-host", 
-        "x-forwarded-proto", "forwarded", "via", "x-forwarded-server",
-        "x-cluster-client-ip", "cf-connecting-ip", "true-client-ip"
-    }
-    request_headers = {k.lower() for k in websocket.headers.keys()}
-    has_proxy = bool(proxy_headers & request_headers)
-    
-    # TCP 层面判断是否为本地连接（无法通过 HTTP 头伪造）
-    is_local = client_ip in LOCAL_IPS and not has_proxy
-    
-    if has_proxy:
-        logger.debug(f"WebSocket proxy headers detected, treating as remote (socket IP: {client_ip})")
-    
-    logger.debug(f"WebSocket connection from {client_ip} ({'local' if is_local else 'remote'})")
-
-    if not is_local:
-        pw_hash = ""
-        try:
-            pw_hash = await get_ws_password_hash()
-        except Exception:
-            pass
-
-        if pw_hash:
-            token = websocket.query_params.get("token") or websocket.cookies.get("CountBot_token")
-            if not token or not validate_ws_session(token):
-                await websocket.close(code=4001, reason="Authentication required")
-                return
 
     shared = websocket.app.state.shared
 
