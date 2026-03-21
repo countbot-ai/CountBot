@@ -59,16 +59,25 @@ def _has_proxy_headers(request: Request) -> bool:
     return bool(PROXY_HEADERS & request_headers)
 
 
-def _is_local_request(request: Request) -> bool:
-    client_ip = _get_real_client_ip(request)
-    if client_ip is None:
-        return False
+def has_proxy_headers_from_keys(header_keys) -> bool:
+    """判断请求头中是否包含反向代理痕迹。"""
+    normalized = {str(key).lower() for key in header_keys}
+    return bool(PROXY_HEADERS & normalized)
 
-    if _has_proxy_headers(request):
+
+def is_direct_local_client(client_ip: Optional[str], header_keys) -> bool:
+    """判断是否为未经过代理的本机直连请求。"""
+    if not client_ip:
+        return False
+    if has_proxy_headers_from_keys(header_keys):
         logger.debug(f"Proxy detected (socket IP: {client_ip}), treating as remote")
         return False
-
     return client_ip in LOCAL_IPS
+
+
+def _is_local_request(request: Request) -> bool:
+    client_ip = _get_real_client_ip(request)
+    return is_direct_local_client(client_ip, request.headers.keys())
 
 
 def _get_token_from_request(request: Request) -> Optional[str]:
@@ -128,6 +137,24 @@ class RemoteAuthMiddleware(BaseHTTPMiddleware):
 
         if _is_public_auth_route(path, method, is_local, auth_enabled):
             return await call_next(request)
+
+        # 仅远程访问需要认证；本机直连请求直接放行。
+        if is_local:
+            return await call_next(request)
+
+        # 远程访问必须先由本机完成初始化。
+        if not auth_enabled:
+            if path.startswith("/api/") or path.startswith("/ws/"):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "管理员尚未在本机完成密码初始化",
+                        "code": "AUTH_SETUP_REQUIRED",
+                    },
+                )
+
+            if _is_browser_navigation(request):
+                return RedirectResponse(url="/login", status_code=307)
 
         token = _get_token_from_request(request)
         username = validate_session(token) if token else None
