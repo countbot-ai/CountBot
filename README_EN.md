@@ -18,7 +18,14 @@
 
 ## What's New
 
-- **Mar 19, 2026 — v0.5.0 Released** [View Detailed Update Guide](docs/releases/v0.5.0.md)
+- **v0.6.0 — Latest Release** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.6.0)
+  - Added WeChat ClawBot integration with support for multiple account bindings
+  - Added external coding tool integration for Claude, Codex, and OpenCode
+  - Added first-time remote initialization entry `/setup/<random>`
+  - Added `REMOTE_SETUP_SECRET_TTL_MINUTES` to control remote setup entry expiration
+  - Strengthened remote auth boundaries for `/api/*` and `/ws/chat`
+
+- **Mar 19, 2026 — v0.5.0 Released** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.5.0)
   - True agent-team orchestration with multi-role collaboration, context handoff, and workflow routing
   - Configuration expanded from session-level to role-level, team-level, and multi-bot setups
   - Custom channel architecture strengthened, with Weibo, WeCom, Xiaozhi AI, and more flexible bot routing
@@ -26,7 +33,7 @@
   - Frontend comprehensively upgraded across chat, settings, skills, team panels, and overall UX
   - Tool calls, media delivery, channel handling, and message flow all improved for complex tasks
 
-- **Mar 14, 2026 — v0.4.0 Released** [View Detailed Update Guide](docs/releases/v0.4.0.md)
+- **Mar 14, 2026 — v0.4.0 Released** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.4.0)
   - Session-level configuration system (independent API, model, prompts, personality per session)
   - Added Weibo, WeCom, Xiaozhi AI channels
   - Comprehensive multi-agent collaboration optimization
@@ -35,7 +42,7 @@
   - Full compatibility with OpenClaw Skills ecosystem
   - Heartbeat proactive greeting system refactored
 
-- **Mar 4, 2026 — v0.3.0 Released**  [View Detailed Update Guide](docs/releases/v0.3.0/)
+- **Mar 4, 2026 — v0.3.0 Released** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.3.0)
   -  Multi-Agent Collaboration System (Pipeline/Graph/Council modes)
   -  Enhanced Cron Jobs (one-time tasks, retry mechanism, batch operations)
   -  Skills System Upgrade (config management, schema validation, auto-fix)
@@ -43,8 +50,13 @@
   -  Comprehensive UI/UX optimization and stability improvements
   -  Enhanced Web Tools (Scrapling anti-scraping, JS rendering support)
   
-- Feb 25, 2026 — v0.2.0 released with bug fixes and UX improvements
-- Feb 21, 2026 — CountBot officially open-sourced with standardized codebase
+- **Feb 26, 2026 — v0.2.0 Released**
+  - Focused on bug fixes, UX improvements, and build workflow cleanup
+  - Pushed CountBot from "basically runnable" toward "stable and iteratable"
+
+- **Feb 21, 2026 — Official Open Source Release**
+  - CountBot was first open-sourced with its core framework, startup scripts, agent runtime, channel system, tool system, skill system, and frontend foundation
+  - Public iteration started from this point onward
 
 ### Upcoming Features
 
@@ -68,9 +80,15 @@ CountBot is a lightweight, extensible AI Agent framework optimized for Chinese u
 
 Core philosophy: Make AI Agents into digital companions with memory, emotion, initiative, and collaboration.
 
+CountBot was born from natural language. Our vision is not to make more people learn configuration and programming before they can use AI, but to let ordinary users directly interact with AI through natural language to retrieve information, generate content, break down tasks, call tools, orchestrate workflows, and eventually build their own personal assistants, team collaboration flows, and automation systems.
+
 ---
 
 ## Why CountBot?
+
+CountBot was born from natural language, and we believe software will continue moving back toward natural language as its most universal interface.
+
+CountBot is not trying to be just another "chat with AI" shell. It aims to be open infrastructure that lets ordinary users use natural language to drive AI, organize tools, connect channels, and land real-world tasks.
 
 ### Top 10 Highlights
 
@@ -240,6 +258,9 @@ cd countbot
 # Install dependencies
 pip install -r requirements.txt
 
+# If PyPI access is slow, you can use the Aliyun mirror
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+
 # Start (auto-opens browser)
 python start_app.py
 ```
@@ -325,17 +346,17 @@ countbot/
 
 | Document | Description |
 |----------|-------------|
-| [Quick Start Guide](docs/quick-start-guide.md) | Feature setup, API key acquisition |
-| [Deployment](docs/deployment.md) | Installation, startup, production deployment |
-| [Agent Loop](docs/agent-loop.md) | ReAct loop principles |
-| [Memory System](docs/memory.md) | Auto-summary, context compression |
-| [Cron Scheduler](docs/cron.md) | Precision wake, concurrency control |
-| [Channel System](docs/channels.md) | Multi-channel configuration |
-| [Tool System](docs/tools.md) | 13 built-in tools |
-| [Skill System](docs/skills.md) | 10 plugin development |
-| [Remote Auth](docs/auth.md) | Zero-config security model |
-| [Configuration Manual](docs/configuration-manual.md) | Complete config reference |
-| [API Reference](docs/api-reference.md) | REST API + WebSocket |
+| [Quick Start Guide](https://654321.ai/docs/getting-started/quick-start-guide) | Feature setup, API key acquisition |
+| [Deployment](https://654321.ai/docs/advanced/deployment) | Installation, startup, production deployment |
+| [Agent Loop](https://654321.ai/docs/core/agent-loop) | ReAct loop principles |
+| [Memory System](https://654321.ai/docs/core/memory) | Auto-summary, context compression |
+| [Cron Scheduler](https://654321.ai/docs/core/cron) | Precision wake, concurrency control |
+| [Channel System](https://654321.ai/docs/core/channels) | Multi-channel configuration |
+| [Tool System](https://654321.ai/docs/core/tools) | Built-in tools and runtime capabilities |
+| [Skill System](https://654321.ai/docs/core/skills) | Plugin extension and development |
+| [Remote Auth](https://654321.ai/docs/advanced/auth) | Zero-config security model |
+| [Configuration Manual](https://654321.ai/docs/getting-started/configuration-manual) | Complete config reference |
+| [API Reference](https://654321.ai/docs/api-reference) | REST API + WebSocket |
 
 ---
 
@@ -553,7 +574,7 @@ CountBot embraces the open-source spirit, committed to making AI Agent technolog
   <p>
     <a href="https://654321.ai">Website</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
-    <a href="docs/README.md">Docs</a> ·
+    <a href="https://654321.ai/docs">Docs</a> ·
     <a href="https://github.com/countbot-ai/countbot/issues">Issues</a>
   </p>
   <br>
