@@ -120,6 +120,7 @@ class AgentLoop:
         media: Optional[List[str]] = None,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
+        account_id: Optional[str] = None,
         cancel_token=None,
         yield_intermediate: bool = True,
         model_override: Optional[Dict[str, Any]] = None,
@@ -149,6 +150,7 @@ class AgentLoop:
                 media=media,
                 channel=channel,
                 chat_id=chat_id,
+                account_id=account_id,
                 persona_config=persona_override,
             )
         else:
@@ -521,6 +523,7 @@ class AgentLoop:
         session_id: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
+        account_id: Optional[str] = None,
     ) -> str:
         """
         直接处理消息（用于 CLI 或 cron 使用）
@@ -530,6 +533,7 @@ class AgentLoop:
             session_id: 会话标识符
             channel: 来源渠道（用于上下文）
             chat_id: 来源聊天 ID（用于上下文）
+            account_id: 当前机器人账号 ID（多机器人渠道）
         
         Returns:
             Agent 的响应
@@ -543,6 +547,7 @@ class AgentLoop:
             context=[],  
             channel=channel,
             chat_id=chat_id,
+            account_id=account_id,
         ):
             response_parts.append(chunk)
         

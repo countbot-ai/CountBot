@@ -254,6 +254,7 @@ class CronScheduler:
                     job.id,
                     job.message,
                     job.channel,
+                    job.account_id,
                     job.chat_id,
                     job.deliver_response
                 )

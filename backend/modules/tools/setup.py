@@ -91,6 +91,29 @@ def register_all_tools(
         f"Registered shell tools (dangerous_blocked={not allow_dangerous}, "
         f"workspace_restricted={restrict_to_workspace})"
     )
+
+    # 2b. 注册外部编程代理工具
+    try:
+        from backend.modules.tools.external_coding_agent import ExternalCodingAgentTool
+
+        external_coding_tool = ExternalCodingAgentTool(
+            workspace=workspace,
+            default_timeout=command_timeout,
+            max_output_length=max_output_length,
+        )
+        enabled_profiles = external_coding_tool.registry.enabled_profile_names()
+        if enabled_profiles:
+            if session_id:
+                external_coding_tool.set_session_id(session_id)
+            tools.register(external_coding_tool)
+            logger.debug(
+                "Registered external coding agent tool with enabled profiles: {}",
+                ", ".join(enabled_profiles),
+            )
+        else:
+            logger.info("Skipped external coding agent tool registration: no enabled profiles")
+    except Exception as e:
+        logger.error(f"Failed to register external coding agent tool: {e}")
     
     # 3. 注册 Web 工具
     try:

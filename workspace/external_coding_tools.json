@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "claude",
+      "aliases": [
+        "claude-code"
+      ],
+      "type": "cli",
+      "icon_svg": "",
+      "enabled": true,
+      "description": "",
+      "command": "claude",
+      "args": [
+        "-p",
+        "{prompt}"
+      ],
+      "working_dir": "",
+      "stdin_template": null,
+      "env": {},
+      "inherit_env": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "session_mode": "native",
+      "history_message_count": 10,
+      "timeout": 900,
+      "success_exit_codes": [
+        0
+      ]
+    },
+    {
+      "name": "codex",
+      "aliases": [
+        "openai-codex"
+      ],
+      "type": "cli",
+      "icon_svg": "",
+      "enabled": true,
+      "description": "",
+      "command": "C:\\Users\\Waner\\.vscode\\extensions\\openai.chatgpt-26.318.11754-win32-x64\\bin\\windows-x86_64\\codex.exe",
+      "args": [
+        "exec",
+        "--skip-git-repo-check",
+        "--cd",
+        "{working_dir}",
+        "-"
+      ],
+      "working_dir": "",
+      "stdin_template": "{prompt}",
+      "env": {},
+      "inherit_env": [
+        "OPENAI_API_KEY"
+      ],
+      "session_mode": "history",
+      "history_message_count": 10,
+      "timeout": 900,
+      "success_exit_codes": [
+        0
+      ]
+    },
+    {
+      "name": "opencode",
+      "aliases": [
+        "open-code"
+      ],
+      "type": "cli",
+      "icon_svg": "",
+      "enabled": false,
+      "description": "",
+      "command": "opencode",
+      "args": [
+        "run",
+        "{prompt}"
+      ],
+      "working_dir": "",
+      "stdin_template": null,
+      "env": {},
+      "inherit_env": [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENCODE_CONFIG",
+        "OPENCODE_CONFIG_CONTENT"
+      ],
+      "session_mode": "history",
+      "history_message_count": 10,
+      "timeout": 900,
+      "success_exit_codes": [
+        0
+      ]
+    }
+  ]
+}

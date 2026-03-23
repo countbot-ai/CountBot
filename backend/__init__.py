@@ -1,3 +1,5 @@
 """CountBot Desktop Backend"""
 
-__version__ = "0.5.0"
+from backend.version import APP_VERSION, VERSION, __version__
+
+__all__ = ["APP_VERSION", "VERSION", "__version__"]

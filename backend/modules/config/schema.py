@@ -69,6 +69,7 @@ class HeartbeatConfig(BaseModel):
     """主动问候配置"""
     enabled: bool = Field(default=False, description="是否启用主动问候")
     channel: str = Field(default="", description="推送渠道（feishu/telegram/dingtalk/wecom/qq）")
+    account_id: str = Field(default="default", description="推送机器人账号 ID（多机器人渠道）")
     chat_id: str = Field(default="", description="推送目标 ID（群组或用户）")
     schedule: str = Field(default="0 * * * *", description="检查频率 cron 表达式")
     idle_threshold_hours: int = Field(default=4, ge=1, le=24, description="用户空闲多少小时后触发")
@@ -120,6 +121,14 @@ class ChannelAccountConfig(BaseModel):
     display_name: str = Field(default="", description="机器人名称")
     account_id: str = Field(default="default", description="机器人账号 ID")
     allow_from: List[str] = Field(default_factory=list)
+    routing_mode: str = Field(
+        default="ai",
+        description="默认路由模式：ai=通过 CountBot 主 AI，direct=直接转发给外部编程代理",
+    )
+    external_coding_profile: str = Field(
+        default="",
+        description="默认外部编程代理 profile 名称，如 codex、claude",
+    )
 
 
 class TelegramAccountConfig(ChannelAccountConfig):
@@ -218,6 +227,22 @@ class WeComConfig(WeComAccountConfig):
     accounts: Dict[str, WeComAccountConfig] = Field(default_factory=dict)
 
 
+class WeChatAccountConfig(ChannelAccountConfig):
+    """微信机器人配置"""
+
+    base_url: str = Field(default="https://ilinkai.weixin.qq.com", description="微信 iLink API 地址")
+    cdn_base_url: str = Field(default="https://novac2c.cdn.weixin.qq.com/c2c", description="微信 CDN 地址")
+    token: str = ""
+    login_bot_id: str = Field(default="", description="扫码登录返回的 bot 标识")
+    login_user_id: str = Field(default="", description="扫码登录返回的微信用户标识")
+
+
+class WeChatConfig(WeChatAccountConfig):
+    """微信渠道配置"""
+
+    accounts: Dict[str, WeChatAccountConfig] = Field(default_factory=dict)
+
+
 class XiaozhiAccountConfig(ChannelAccountConfig):
     """小智AI 机器人配置（MCP Client 模式）"""
 
@@ -236,6 +261,7 @@ class ChannelsConfig(BaseModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     qq: QQConfig = Field(default_factory=QQConfig)
+    wechat: WeChatConfig = Field(default_factory=WeChatConfig)
     dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
     weibo: WeiboConfig = Field(default_factory=WeiboConfig)

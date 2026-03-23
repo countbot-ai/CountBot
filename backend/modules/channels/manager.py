@@ -16,6 +16,7 @@ from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 _CHANNEL_REGISTRY: Dict[str, Tuple[str, str]] = {
     "telegram": ("backend.modules.channels.telegram", "TelegramChannel"),
     "qq": ("backend.modules.channels.qq", "QQChannel"),
+    "wechat": ("backend.modules.channels.wechat", "WeChatChannel"),
     "dingtalk": ("backend.modules.channels.dingtalk", "DingTalkChannel"),
     "feishu": ("backend.modules.channels.feishu", "FeishuChannel"),
     "weibo": ("backend.modules.channels.weibo", "WeiboChannel"),
@@ -97,6 +98,7 @@ class ChannelManager:
         unique_field_map = {
             "telegram": ("token",),
             "qq": ("app_id",),
+            "wechat": ("login_bot_id",),
             "dingtalk": ("client_id",),
             "feishu": ("app_id",),
             "weibo": ("app_id",),
@@ -377,13 +379,24 @@ class ChannelManager:
             for instance_key in instance_keys:
                 channel = self.channels[instance_key]
                 account_id = getattr(channel, "account_id", "default")
+                runtime_status = {}
+                if hasattr(channel, "get_runtime_status"):
+                    try:
+                        runtime_status = channel.get_runtime_status() or {}
+                    except Exception as e:
+                        logger.debug(f"Failed to get runtime status for {instance_key}: {e}")
+                        runtime_status = {}
+                effective_running = bool(
+                    runtime_status.get("healthy_running", channel.is_running)
+                )
                 instances[account_id] = {
                     "enabled": True,
-                    "running": channel.is_running,
+                    "running": effective_running,
                     "display_name": channel.display_name,
                     "instance_key": instance_key,
+                    "runtime_status": runtime_status,
                 }
-                running = running or channel.is_running
+                running = running or effective_running
 
             grouped[channel_type] = {
                 "enabled": bool(instances),

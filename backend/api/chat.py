@@ -18,7 +18,20 @@ from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.agent.skills import SkillsLoader
+from backend.modules.agent.team_commands import (
+    build_team_command_overview,
+    build_team_goal_usage,
+    resolve_explicit_team_command,
+)
 from backend.modules.config.loader import config_loader
+from backend.modules.external_agents.conversation import (
+    build_history_prompt,
+    resolve_effective_session_mode,
+)
+from backend.modules.external_agents.routing import (
+    build_explicit_external_agent_system_message,
+    extract_explicit_external_agent_request,
+)
 from backend.modules.providers import create_provider
 from backend.modules.session import resolve_session_runtime_config
 from backend.modules.session.manager import SessionManager
@@ -182,8 +195,12 @@ async def get_agent_loop(
         memory = MemoryStore(memory_dir)
         
         # 优先使用全局 skills 实例（性能优化）
+        shared = getattr(request.app.state, 'shared', None)
         if hasattr(request.app.state, 'skills'):
             skills = request.app.state.skills
+            logger.debug("Using global skills instance from app.state")
+        elif shared and shared.get('skills') is not None:
+            skills = shared['skills']
             logger.debug("Using global skills instance from app.state")
         else:
             # 回退：创建临时实例
@@ -274,6 +291,84 @@ _auto_summarized_sessions: Dict[str, int] = {}
 # 自动总结阈值
 _AUTO_SUMMARIZE_MESSAGE_THRESHOLD = 30
 _AUTO_SUMMARIZE_CHAR_THRESHOLD = 15000
+
+
+def _resolve_explicit_external_tool_request(
+    agent_loop: AgentLoop,
+    message: str,
+) -> Optional[tuple[str, str]]:
+    """Resolve natural-language routing like '用 claude 帮我写个爬虫'."""
+    parsed = extract_explicit_external_agent_request(message)
+    if not parsed or not agent_loop.tools:
+        return None
+
+    requested_profile, task = parsed
+    external_tool = agent_loop.tools.get_tool("external_coding_agent")
+    registry = getattr(external_tool, "registry", None)
+    if registry is None:
+        return None
+
+    try:
+        canonical_name = registry.resolve_profile_name(requested_profile)
+        registry.resolve_profile(canonical_name)
+    except Exception:
+        return None
+
+    return canonical_name, task
+
+
+def _resolve_explicit_team_workflow_request(
+    agent_loop: AgentLoop,
+    message: str,
+) -> Optional[tuple[str, str]]:
+    """Resolve explicit deterministic workflow command: /team <team_name> <goal>."""
+    context_builder = getattr(agent_loop, "context_builder", None)
+    return resolve_explicit_team_command(
+        context_builder,
+        message,
+        log_scope="web chat explicit team command",
+    )
+
+
+def _prepare_external_task(profile, task: str, history: list[dict]) -> str:
+    """根据 profile 会话模式构造实际任务。"""
+    session_mode = resolve_effective_session_mode(profile)
+    if session_mode in {"stateless", "native"}:
+        return task
+    return build_history_prompt(
+        task=task,
+        history_messages=history,
+        history_message_count=profile.history_message_count,
+    )
+
+
+def _inject_explicit_external_request_context(
+    agent_loop: AgentLoop,
+    context: list[dict],
+    explicit_external_request: Optional[tuple[str, str]],
+) -> list[dict]:
+    """Force WebUI explicit external-agent requests through the normal tool-call loop."""
+    if not explicit_external_request:
+        return list(context)
+
+    external_tool = agent_loop.tools.get_tool("external_coding_agent") if agent_loop.tools else None
+    registry = getattr(external_tool, "registry", None)
+    if registry is None:
+        return list(context)
+
+    profile_name, task = explicit_external_request
+    profile = registry.resolve_profile(profile_name)
+    prepared_task = _prepare_external_task(profile, task, context)
+    system_message = build_explicit_external_agent_system_message(
+        profile.name,
+        prepared_task,
+    )
+    if not system_message:
+        return list(context)
+
+    augmented_context = list(context)
+    augmented_context.append({"role": "system", "content": system_message})
+    return augmented_context
 
 
 async def _maybe_auto_summarize(
@@ -408,9 +503,17 @@ async def send_message(
             f"Processing message for session {request.session_id}: "
             f"{request.message[:50]}..."
         )
-        
+
         # 创建会话专属的 AgentLoop（支持会话级配置）
         agent_loop = await get_agent_loop(req, db, session_id=request.session_id)
+        explicit_external_request = _resolve_explicit_external_tool_request(
+            agent_loop,
+            request.message,
+        )
+        explicit_team_request = _resolve_explicit_team_workflow_request(
+            agent_loop,
+            request.message,
+        )
         
         # 从配置中获取最大历史消息条数
         from backend.modules.config.loader import config_loader
@@ -445,60 +548,106 @@ async def send_message(
         # 排除刚添加的用户消息(因为 process_message 会添加)
         if context and context[-1].get("role") == "user":
             context = context[:-1]
+
+        from backend.modules.agent.task_manager import CancellationToken
+        cancel_token = CancellationToken()
         
         # 创建流式响应生成器
         async def event_stream() -> AsyncIterator[str]:
             """SSE 事件流生成器"""
             assistant_content = ""
+            original_build_messages = None
             
             try:
                 # 发送开始事件
                 yield f"event: start\ndata: {json.dumps({'message_id': str(user_message.id)})}\n\n"
-                
-                # 处理消息并流式输出（传入会话总结）
-                # 注意：我们需要修改 process_message 来接受 session_summary
-                # 但为了保持向后兼容，我们在 context_builder.build_messages 中处理
-                
-                # 临时方案：将 session_summary 添加到 context_builder
-                if session_summary and agent_loop.context_builder:
-                    # 保存原始的 build_messages 方法
-                    original_build_messages = agent_loop.context_builder.build_messages
-                    
-                    # 创建包装方法来注入 session_summary
-                    def build_messages_with_summary(*args, **kwargs):
-                        kwargs['session_summary'] = session_summary
-                        return original_build_messages(*args, **kwargs)
-                    
-                    # 临时替换方法
-                    agent_loop.context_builder.build_messages = build_messages_with_summary
 
-                prefer_direct_workflow_result = False
-                team_finder = getattr(agent_loop.context_builder, "_find_mentioned_team", None)
-                if callable(team_finder):
-                    try:
-                        prefer_direct_workflow_result = bool(team_finder(request.message))
-                    except Exception as exc:
-                        logger.warning(f"Failed to detect mentioned team for SSE chat: {exc}")
-                
-                async for chunk in agent_loop.process_message(
-                    message=request.message,
-                    session_id=request.session_id,
-                    context=context,
-                    media=request.attachments,
-                    prefer_direct_workflow_result=prefer_direct_workflow_result,
-                ):
-                    assistant_content += chunk
-                    
-                    # 发送内容块
-                    yield f"event: message\ndata: {json.dumps({'content': chunk})}\n\n"
-                    
-                    # 确保立即发送
+                if explicit_external_request:
+                    profile_name, _task = explicit_external_request
+                    logger.info(
+                        "Routing web chat explicit external-agent request through agent loop: "
+                        f"profile={profile_name}, session={request.session_id}"
+                    )
+                    context_for_processing = _inject_explicit_external_request_context(
+                        agent_loop,
+                        context,
+                        explicit_external_request,
+                    )
+                else:
+                    context_for_processing = context
+
+                if explicit_team_request is not None:
+                    team_name, goal = explicit_team_request
+                    agent_loop.tools.set_session_id(request.session_id)
+                    agent_loop.tools.set_channel("web-chat")
+                    agent_loop.tools.set_cancel_token(cancel_token)
+
+                    if request.message.strip() == "/team":
+                        assistant_content = build_team_command_overview(
+                            getattr(agent_loop, "context_builder", None),
+                            log_scope="web chat explicit team command",
+                        )
+                    elif not team_name:
+                        assistant_content = build_team_command_overview(
+                            getattr(agent_loop, "context_builder", None),
+                            log_scope="web chat explicit team command",
+                        )
+                    elif not goal:
+                        assistant_content = build_team_goal_usage(team_name)
+                    else:
+                        logger.info(
+                            "Routing web chat directly to workflow_run: "
+                            f"team={team_name}, session={request.session_id}"
+                        )
+                        assistant_content = await agent_loop.tools.execute(
+                            tool_name="workflow_run",
+                            arguments={
+                                "team_name": team_name,
+                                "goal": goal,
+                            },
+                        )
+
+                    yield f"event: message\ndata: {json.dumps({'content': assistant_content})}\n\n"
                     await asyncio.sleep(0)
-                
-                # 恢复原始方法
-                if session_summary and agent_loop.context_builder:
-                    agent_loop.context_builder.build_messages = original_build_messages
-                
+                else:
+                    # 处理消息并流式输出（传入会话总结）
+                    if session_summary and agent_loop.context_builder:
+                        # 保存原始的 build_messages 方法
+                        original_build_messages = agent_loop.context_builder.build_messages
+
+                        # 创建包装方法来注入 session_summary
+                        def build_messages_with_summary(*args, **kwargs):
+                            kwargs['session_summary'] = session_summary
+                            return original_build_messages(*args, **kwargs)
+
+                        # 临时替换方法
+                        agent_loop.context_builder.build_messages = build_messages_with_summary
+
+                    prefer_direct_workflow_result = False
+                    team_finder = getattr(agent_loop.context_builder, "_find_mentioned_team", None)
+                    if callable(team_finder):
+                        try:
+                            prefer_direct_workflow_result = bool(team_finder(request.message))
+                        except Exception as exc:
+                            logger.warning(f"Failed to detect mentioned team for SSE chat: {exc}")
+
+                    async for chunk in agent_loop.process_message(
+                        message=request.message,
+                        session_id=request.session_id,
+                        context=context_for_processing,
+                        media=request.attachments,
+                        channel="web-chat",
+                        cancel_token=cancel_token,
+                        prefer_direct_workflow_result=prefer_direct_workflow_result,
+                    ):
+                        assistant_content += chunk
+
+                        # 发送内容块
+                        yield f"event: message\ndata: {json.dumps({'content': chunk})}\n\n"
+
+                        # 确保立即发送
+                        await asyncio.sleep(0)
+
                 # 保存助手响应到数据库
                 if assistant_content:
                     assistant_message = await session_manager.add_message(
@@ -506,6 +655,16 @@ async def send_message(
                         role="assistant",
                         content=assistant_content,
                     )
+
+                    try:
+                        from backend.modules.tools.conversation_history import get_conversation_history
+                        conversation_history = get_conversation_history()
+                        await conversation_history.backfill_message_id(
+                            session_id=request.session_id,
+                            message_id=assistant_message.id,
+                        )
+                    except Exception as backfill_err:
+                        logger.warning(f"Failed to backfill tool conversations for session {request.session_id}: {backfill_err}")
                     
                     # 发送完成事件
                     yield f"event: done\ndata: {json.dumps({'message_id': str(assistant_message.id)})}\n\n"
@@ -523,6 +682,9 @@ async def send_message(
                     # 没有内容，发送空完成事件
                     yield f"event: done\ndata: {json.dumps({'message_id': None})}\n\n"
                 
+            except asyncio.CancelledError:
+                cancel_token.cancel()
+                raise
             except Exception as e:
                 logger.exception(f"Error in event stream: {e}")
                 
@@ -532,6 +694,11 @@ async def send_message(
                     "type": type(e).__name__,
                 }
                 yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+            finally:
+                if original_build_messages is not None and agent_loop.context_builder:
+                    agent_loop.context_builder.build_messages = original_build_messages
+                if agent_loop.tools:
+                    agent_loop.tools.set_cancel_token(None)
         
         # 返回 SSE 流式响应
         return StreamingResponse(

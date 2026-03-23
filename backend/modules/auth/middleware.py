@@ -1,195 +1,179 @@
 """Remote access authentication middleware."""
 
-from typing import Optional
+from __future__ import annotations
 
-from fastapi.responses import RedirectResponse
+import os
+import secrets
+import string
+import time
+from collections.abc import Awaitable, Callable, Iterable
+
+from fastapi import Request
+from fastapi.responses import JSONResponse, Response
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 
 from backend.modules.auth.utils import validate_session
 
+
 AUTH_COOKIE_NAME = "CountBot_token"
+SETUP_SECRET_HEADER_NAME = "x-setup-secret"
+SETUP_SECRET_LENGTH = 8
+SETUP_SECRET_ALPHABET = string.ascii_letters
+SETUP_SECRET_TTL_MINUTES_ENV = "REMOTE_SETUP_SECRET_TTL_MINUTES"
+SETUP_SECRET_TTL_MINUTES_MIN = 10
+SETUP_SECRET_TTL_MINUTES_MAX = 120
+SETUP_SECRET_TTL_MINUTES_DEFAULT = 30
 
-PUBLIC_FRONTEND_PREFIXES = (
-    "/login",
-    "/assets/",
-    "/favicon.ico",
-)
-
-PUBLIC_AUTH_ROUTES = {
-    ("GET", "/api/auth/status"),
-    ("POST", "/api/auth/login"),
-}
-
-SETUP_ROUTE = ("POST", "/api/auth/setup")
-
-LOCAL_IPS = {"127.0.0.1", "::1"}
-
-PROXY_HEADERS = {
+_FORWARDED_HEADER_NAMES = {
     "x-forwarded-for",
     "x-real-ip",
-    "x-forwarded-host",
-    "x-forwarded-proto",
     "forwarded",
-    "via",
-    "x-forwarded-server",
-    "x-cluster-client-ip",
-    "cf-connecting-ip",
-    "true-client-ip",
 }
 
+_PUBLIC_PATH_PREFIXES = (
+    "/api/auth/",
+    "/api/health",
+    "/api/system/health",
+)
 
-def _get_real_client_ip(request: Request) -> Optional[str]:
-    if request.client is None:
-        logger.warning("Unable to get client IP: request.client is None")
-        return None
+_PROTECTED_PATH_PREFIXES = (
+    "/api/",
+)
 
-    client_ip = request.client.host
-    if not client_ip:
-        logger.warning("Unable to get client IP: client.host is empty")
-        return None
-
-    return client_ip
-
-
-def _has_proxy_headers(request: Request) -> bool:
-    request_headers = {k.lower() for k in request.headers.keys()}
-    return bool(PROXY_HEADERS & request_headers)
+_LOCAL_ONLY_SETUP_PATHS = (
+    "/api/auth/setup",
+)
 
 
-def has_proxy_headers_from_keys(header_keys) -> bool:
-    """判断请求头中是否包含反向代理痕迹。"""
-    normalized = {str(key).lower() for key in header_keys}
-    return bool(PROXY_HEADERS & normalized)
+def get_remote_setup_secret(app) -> str:
+    return getattr(app.state, "remote_setup_secret", "")
 
 
-def is_direct_local_client(client_ip: Optional[str], header_keys) -> bool:
-    """判断是否为未经过代理的本机直连请求。"""
-    if not client_ip:
+def get_remote_setup_secret_expires_at(app) -> float:
+    return float(getattr(app.state, "remote_setup_secret_expires_at", 0.0) or 0.0)
+
+
+def get_remote_setup_secret_ttl_minutes() -> int:
+    raw_value = os.getenv(SETUP_SECRET_TTL_MINUTES_ENV, str(SETUP_SECRET_TTL_MINUTES_DEFAULT)).strip()
+    try:
+        ttl_minutes = int(raw_value)
+    except ValueError:
+        ttl_minutes = SETUP_SECRET_TTL_MINUTES_DEFAULT
+    return max(SETUP_SECRET_TTL_MINUTES_MIN, min(SETUP_SECRET_TTL_MINUTES_MAX, ttl_minutes))
+
+
+def is_remote_setup_secret_expired(app) -> bool:
+    expires_at = get_remote_setup_secret_expires_at(app)
+    return expires_at > 0 and time.time() >= expires_at
+
+
+def ensure_remote_setup_secret(app) -> str:
+    secret = get_remote_setup_secret(app)
+    had_secret = bool(secret)
+    expired = had_secret and is_remote_setup_secret_expired(app)
+    if not secret or expired:
+        secret = "".join(secrets.choice(SETUP_SECRET_ALPHABET) for _ in range(SETUP_SECRET_LENGTH))
+        app.state.remote_setup_secret = secret
+        app.state.remote_setup_secret_expires_at = time.time() + get_remote_setup_secret_ttl_minutes() * 60
+        if expired:
+            logger.info(
+                f"Remote setup secret expired and was refreshed for another {get_remote_setup_secret_ttl_minutes()} minute(s): /setup/{secret}"
+            )
+    return secret
+
+
+def clear_remote_setup_secret(app) -> None:
+    app.state.remote_setup_secret = ""
+    app.state.remote_setup_secret_expires_at = 0.0
+
+
+def has_valid_remote_setup_secret(app, candidate: str | None) -> bool:
+    if is_remote_setup_secret_expired(app):
+        ensure_remote_setup_secret(app)
         return False
-    if has_proxy_headers_from_keys(header_keys):
-        logger.debug(f"Proxy detected (socket IP: {client_ip}), treating as remote")
+    secret = get_remote_setup_secret(app)
+    provided = (candidate or "").strip()
+    return bool(secret and provided and secrets.compare_digest(secret, provided))
+
+
+def request_has_valid_remote_setup_secret(request: Request) -> bool:
+    return has_valid_remote_setup_secret(
+        request.app,
+        request.headers.get(SETUP_SECRET_HEADER_NAME, ""),
+    )
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
         return False
-    return client_ip in LOCAL_IPS
+    normalized = host.strip().lower()
+    return normalized in {"127.0.0.1", "::1", "localhost"}
+
+
+def is_direct_local_client(client_ip: str | None, header_keys: Iterable[str]) -> bool:
+    """Return True only for direct loopback requests without proxy headers."""
+    if not _is_loopback_host(client_ip):
+        return False
+
+    normalized_headers = {key.lower() for key in header_keys}
+    return not any(header in normalized_headers for header in _FORWARDED_HEADER_NAMES)
 
 
 def _is_local_request(request: Request) -> bool:
-    client_ip = _get_real_client_ip(request)
+    client_ip = request.client.host if request.client and request.client.host else None
     return is_direct_local_client(client_ip, request.headers.keys())
 
 
-def _get_token_from_request(request: Request) -> Optional[str]:
-    token = request.cookies.get(AUTH_COOKIE_NAME)
-    if token:
-        return token
-
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
-
-    return None
-
-
-def _is_public_frontend_path(path: str) -> bool:
-    if path in ("/login", "/login/"):
-        return True
-
-    return any(path.startswith(prefix) for prefix in PUBLIC_FRONTEND_PREFIXES if prefix != "/login")
-
-
-def _is_public_auth_route(path: str, method: str, is_local: bool, auth_enabled: bool) -> bool:
-    route_key = (method.upper(), path)
-    if route_key in PUBLIC_AUTH_ROUTES:
-        return True
-
-    # First-time bootstrap is allowed only from a direct local request.
-    if route_key == SETUP_ROUTE and is_local and not auth_enabled:
-        return True
-
-    return False
-
-
-def _is_browser_navigation(request: Request) -> bool:
-    accept = request.headers.get("accept", "")
-    return request.method.upper() == "GET" and "text/html" in accept
-
-
 class RemoteAuthMiddleware(BaseHTTPMiddleware):
-    """Block every unauthenticated entrypoint except the login flow."""
+    """Protect non-local HTTP requests with cookie or bearer-token auth."""
 
-    def __init__(self, app, get_password_hash_fn=None):
+    def __init__(
+        self,
+        app,
+        get_password_hash_fn: Callable[[], Awaitable[str]],
+    ) -> None:
         super().__init__(app)
         self._get_password_hash = get_password_hash_fn
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
-        method = request.method.upper()
-        client_ip = _get_real_client_ip(request)
-        is_local = _is_local_request(request)
 
-        password_hash = await self._get_password_hash_safe()
-        auth_enabled = bool(password_hash)
-
-        if _is_public_frontend_path(path):
+        if _is_local_request(request):
             return await call_next(request)
 
-        if _is_public_auth_route(path, method, is_local, auth_enabled):
+        if not any(path.startswith(prefix) for prefix in _PROTECTED_PATH_PREFIXES):
             return await call_next(request)
 
-        # 仅远程访问需要认证；本机直连请求直接放行。
-        if is_local:
-            return await call_next(request)
-
-        # 远程访问必须先由本机完成初始化。
-        if not auth_enabled:
-            if path.startswith("/api/") or path.startswith("/ws/"):
+        if any(path.startswith(prefix) for prefix in _PUBLIC_PATH_PREFIXES):
+            if (
+                path in _LOCAL_ONLY_SETUP_PATHS
+                and not _is_local_request(request)
+                and not request_has_valid_remote_setup_secret(request)
+            ):
                 return JSONResponse(
                     status_code=403,
-                    content={
-                        "detail": "管理员尚未在本机完成密码初始化",
-                        "code": "AUTH_SETUP_REQUIRED",
-                    },
+                    content={"detail": "首次初始化只能在本机完成", "code": "SETUP_LOCAL_ONLY"},
                 )
-
-            if _is_browser_navigation(request):
-                return RedirectResponse(url="/login", status_code=307)
-
-        token = _get_token_from_request(request)
-        username = validate_session(token) if token else None
-        if username:
-            logger.debug(f"Authenticated access: {client_ip} ({username}) -> {path}")
             return await call_next(request)
 
-        if path.startswith("/api/"):
-            logger.warning(f"Unauthorized API access attempt: {client_ip} -> {path}")
+        password_hash = await self._get_password_hash()
+        if not password_hash:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication setup required", "code": "AUTH_SETUP_REQUIRED"},
+            )
+
+        token = request.cookies.get(AUTH_COOKIE_NAME)
+        if not token:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+
+        if not token or not validate_session(token):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Authentication required", "code": "AUTH_REQUIRED"},
             )
 
-        if path.startswith("/ws/"):
-            logger.warning(f"Unauthorized WebSocket access attempt: {client_ip} -> {path}")
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Authentication required", "code": "AUTH_REQUIRED"},
-            )
-
-        if _is_browser_navigation(request):
-            return RedirectResponse(url="/login", status_code=307)
-
-        logger.warning(f"Unauthorized frontend access attempt: {client_ip} -> {path}")
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Authentication required", "code": "AUTH_REQUIRED"},
-        )
-
-    async def _get_password_hash_safe(self) -> str:
-        try:
-            if self._get_password_hash:
-                return await self._get_password_hash()
-        except Exception:
-            logger.exception("Failed to load auth password hash")
-
-        return ""
+        return await call_next(request)

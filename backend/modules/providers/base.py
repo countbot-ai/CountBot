@@ -78,13 +78,3 @@ class LLMProvider(ABC):
     def get_default_model(self) -> str:
         """获取默认模型"""
         pass
-
-    async def transcribe(
-        self,
-        audio_file: bytes,
-        model: str = "whisper-1",
-        language: Optional[str] = None,
-        **kwargs: Any,
-    ) -> str:
-        """音频转文本（可选能力）"""
-        raise NotImplementedError(f"{self.__class__.__name__} 不支持语音转录")

@@ -190,10 +190,14 @@ class FeishuWebSocketWorker:
             logger.info("Stopping WebSocket worker...")
             self._running = False
             if self.ws_client:
-                try:
-                    self.ws_client.stop()
-                except Exception as e:
-                    logger.error(f"Error stopping WebSocket: {e}")
+                stop_method = getattr(self.ws_client, "stop", None)
+                if callable(stop_method):
+                    try:
+                        stop_method()
+                    except Exception as e:
+                        logger.error(f"Error stopping WebSocket: {e}")
+                else:
+                    logger.debug("Feishu WebSocket client has no stop() method; relying on process exit")
             logger.info("WebSocket worker stopped")
 
 

@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, asdict
 import json
+import asyncio
 from loguru import logger
 
 
@@ -57,6 +58,7 @@ class ToolConversationHistory:
         self.use_db = use_db
         self._history: deque[ToolConversation] = deque(maxlen=max_size)
         self._counter = 0  # 用于生成唯一 ID
+        self._pending_db_tasks: set[asyncio.Task] = set()
         
         if use_db:
             logger.debug("工具对话历史使用数据库模式")
@@ -111,8 +113,9 @@ class ToolConversationHistory:
         # 数据库存储（异步）
         if self.use_db:
             try:
-                import asyncio
-                asyncio.create_task(self._save_to_db(conversation))
+                task = asyncio.create_task(self._save_to_db(conversation))
+                self._pending_db_tasks.add(task)
+                task.add_done_callback(self._pending_db_tasks.discard)
             except Exception as e:
                 logger.warning(f"Failed to save conversation to database: {e}")
         
@@ -379,7 +382,15 @@ class ToolConversationHistory:
             if conv.session_id == session_id and conv.message_id is None:
                 conv.message_id = message_id
                 updated += 1
-        
+
+        # 等待待写入数据库的任务先完成，避免新记录在回填后仍以 NULL message_id 落库。
+        if self._pending_db_tasks:
+            pending = list(self._pending_db_tasks)
+            try:
+                await asyncio.gather(*pending, return_exceptions=True)
+            except Exception as e:
+                logger.error(f"Failed to await pending tool conversation writes: {e}")
+
         # 更新数据库中的记录
         if self.use_db:
             try:

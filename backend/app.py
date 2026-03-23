@@ -1,17 +1,17 @@
 """FastAPI 应用入口"""
 
 import asyncio
-import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from backend.utils.logger import setup_logger
 from backend.database import get_db_session_factory
+from backend.version import APP_VERSION
 
 setup_logger()
 
@@ -26,8 +26,10 @@ def _create_shared_components(config, config_loader=None):
     from backend.modules.agent.skills import SkillsLoader
     from backend.modules.agent.subagent import SubagentManager
     from backend.modules.tools.setup import register_all_tools
-    from backend.modules.workspace import workspace_manager
-    from backend.utils.paths import APPLICATION_ROOT
+    from backend.modules.workspace import (
+        seed_bundled_workspace_resources,
+        workspace_manager,
+    )
 
     logger.info("Getting provider metadata...")
     provider_id = config.model.provider
@@ -64,43 +66,12 @@ def _create_shared_components(config, config_loader=None):
     memory_dir = workspace / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
 
+    seed_bundled_workspace_resources(workspace)
+
     # Skills 目录始终从 workspace/skills 加载
     # 确保用户修改 workspace 路径后，skills 也在新路径下
     skills_dir = workspace / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
-    bundled_skills_dir = APPLICATION_ROOT / "workspace" / "skills"
-    bundled_ai_quick_reference = APPLICATION_ROOT / "workspace" / "AI_QUICK_REFERENCE.md"
-    if bundled_ai_quick_reference.is_dir():
-        bundled_ai_quick_reference = (
-            bundled_ai_quick_reference / "AI_QUICK_REFERENCE.md"
-        )
-
-    bundled_skills_seed_file = workspace / ".builtin_skills_seeded"
-    if not bundled_skills_seed_file.exists() and bundled_skills_dir.exists():
-        copied_count = 0
-        for child in bundled_skills_dir.iterdir():
-            target = skills_dir / child.name
-            if target.exists():
-                continue
-            if child.is_dir():
-                shutil.copytree(child, target)
-                copied_count += 1
-            elif child.is_file():
-                shutil.copy2(child, target)
-        bundled_skills_seed_file.write_text("seeded\n", encoding="utf-8")
-        logger.info(
-            f"Seeded {copied_count} bundled skill(s) into workspace: {skills_dir}"
-        )
-
-    ai_quick_reference_path = workspace / "AI_QUICK_REFERENCE.md"
-    ai_quick_reference_seed_file = workspace / ".ai_quick_reference_seeded"
-    if not ai_quick_reference_seed_file.exists() and bundled_ai_quick_reference.exists():
-        if not ai_quick_reference_path.exists():
-            shutil.copy2(bundled_ai_quick_reference, ai_quick_reference_path)
-            logger.info(
-                f"Seeded bundled AI quick reference into workspace: {ai_quick_reference_path}"
-            )
-        ai_quick_reference_seed_file.write_text("seeded\n", encoding="utf-8")
 
     logger.info(f"Workspace: {workspace}")
     logger.info(f"Skills directory: {skills_dir}")
@@ -109,7 +80,7 @@ def _create_shared_components(config, config_loader=None):
     memory = MemoryStore(memory_dir)
     
     logger.info("Loading skills...")
-    skills = SkillsLoader(skills_dir, builtin_skills_dir=bundled_skills_dir)
+    skills = SkillsLoader(skills_dir)
 
     logger.info("Building context builder...")
     context_builder = ContextBuilder(
@@ -181,6 +152,12 @@ async def lifespan(app: FastAPI):
     from backend.modules.session.manager import SessionManager
     from backend.modules.tools.setup import register_all_tools
     from backend.api.channels import set_channel_manager
+    from backend.modules.auth.middleware import (
+        clear_remote_setup_secret,
+        ensure_remote_setup_secret,
+        get_remote_setup_secret_ttl_minutes,
+    )
+    from backend.modules.auth.router import get_password_hash as get_auth_password_hash
 
     # 初始化数据库和配置
     logger.info("Starting CountBot backend...")
@@ -190,10 +167,24 @@ async def lifespan(app: FastAPI):
     logger.info("Configuration loaded")
     config = config_loader.config
 
+    if await get_auth_password_hash():
+        clear_remote_setup_secret(app)
+    else:
+        setup_secret = ensure_remote_setup_secret(app)
+        setup_secret_ttl_minutes = get_remote_setup_secret_ttl_minutes()
+        logger.info(
+            f"远程首次初始化入口：将此路径拼接到上方 Network 地址后访问（有效期 {setup_secret_ttl_minutes} 分钟，初始化成功后立即失效） -> /setup/{setup_secret}"
+        )
+        logger.info(
+            f"Remote first-time setup entry: append this path to the Network URL above (valid for {setup_secret_ttl_minutes} minutes and expires immediately after setup succeeds) -> /setup/{setup_secret}"
+        )
+
     # 创建共享组件
     logger.info("Creating shared components...")
     shared = _create_shared_components(config, config_loader)
     app.state.shared = shared
+    app.state.skills = shared["skills"]
+    app.state.memory = shared["memory"]
     logger.info("Shared components created")
     
     # 设置全局 SubagentManager
@@ -315,10 +306,15 @@ async def lifespan(app: FastAPI):
     logger.info("Cron executor created")
 
     async def on_cron_execute(
-        job_id: str, message: str, channel: str, chat_id: str, deliver_response: bool
+        job_id: str,
+        message: str,
+        channel: str,
+        account_id: str,
+        chat_id: str,
+        deliver_response: bool,
     ) -> str:
         return await cron_executor.execute(
-            job_id, message, channel, chat_id, deliver_response
+            job_id, message, channel, account_id, chat_id, deliver_response
         )
 
     logger.info("Creating cron scheduler...")
@@ -378,7 +374,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CountBot Desktop API",
     description="CountBot backend API",
-    version="0.5.0",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
@@ -406,7 +402,10 @@ app.add_middleware(
 )
 
 # 远程访问认证中间件
-from backend.modules.auth.middleware import RemoteAuthMiddleware
+from backend.modules.auth.middleware import (
+    RemoteAuthMiddleware,
+    has_valid_remote_setup_secret,
+)
 from backend.modules.auth.router import get_password_hash
 
 app.add_middleware(RemoteAuthMiddleware, get_password_hash_fn=get_password_hash)
@@ -419,7 +418,6 @@ from backend.api.memory import router as memory_router
 from backend.api.skills import router as skills_router
 from backend.api.cron import router as cron_router
 from backend.api.tasks import router as tasks_router
-from backend.api.audio import router as audio_router
 from backend.api.system import router as system_router
 from backend.api.channels import router as channels_router
 from backend.api.queue import router as queue_router
@@ -435,7 +433,6 @@ app.include_router(memory_router)
 app.include_router(skills_router)
 app.include_router(cron_router)
 app.include_router(tasks_router)
-app.include_router(audio_router)
 app.include_router(system_router)
 app.include_router(channels_router)
 app.include_router(queue_router)
@@ -456,18 +453,28 @@ async def websocket_endpoint(websocket: WebSocket):
     from backend.modules.providers.registry import get_provider_metadata
     from backend.modules.tools.setup import register_all_tools
 
-    from backend.modules.auth.middleware import AUTH_COOKIE_NAME
+    from backend.modules.auth.middleware import AUTH_COOKIE_NAME, is_direct_local_client
     from backend.modules.auth.utils import validate_session as validate_ws_session
+    from backend.modules.auth.router import get_password_hash as get_ws_password_hash
 
-    token = websocket.cookies.get(AUTH_COOKIE_NAME)
-    if not token:
-        auth_header = websocket.headers.get("authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+    client_ip = websocket.client.host if websocket.client and websocket.client.host else None
+    is_local = is_direct_local_client(client_ip, websocket.headers.keys())
 
-    if not token or not validate_ws_session(token):
-        await websocket.close(code=4001, reason="Authentication required")
-        return
+    if not is_local:
+        auth_enabled = bool(await get_ws_password_hash())
+        if not auth_enabled:
+            await websocket.close(code=4003, reason="Authentication setup required")
+            return
+
+        token = websocket.cookies.get(AUTH_COOKIE_NAME)
+        if not token:
+            auth_header = websocket.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+
+        if not token or not validate_ws_session(token):
+            await websocket.close(code=4001, reason="Authentication required")
+            return
 
     shared = websocket.app.state.shared
 
@@ -518,7 +525,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "version": "0.5.0"}
+    return {"status": "ok", "version": APP_VERSION}
 
 
 # 挂载前端静态文件
@@ -537,6 +544,14 @@ if frontend_dist.exists():
     # SPA 路由回退（必须在 StaticFiles 之前注册）
     @app.get("/login")
     async def spa_login():
+        return FileResponse(str(frontend_dist / "index.html"))
+
+    @app.get("/setup/{setup_secret}")
+    async def spa_setup(setup_secret: str):
+        if await get_password_hash():
+            raise HTTPException(status_code=404)
+        if not has_valid_remote_setup_secret(app, setup_secret):
+            raise HTTPException(status_code=404)
         return FileResponse(str(frontend_dist / "index.html"))
 
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")

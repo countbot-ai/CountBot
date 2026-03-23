@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from loguru import logger
 from typing import Optional
 
+from backend.version import APP_VERSION
+
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 # 全局引用（由 main.py 设置）
@@ -38,7 +40,7 @@ async def system_info():
 
     return {
         "api_url": api_url,
-        "version": "0.5.0",
+        "version": APP_VERSION,
         "python_version": platform.python_version(),
         "os": f"{platform.system()} {platform.release()}",
         "arch": platform.machine(),
