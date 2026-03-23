@@ -1,6 +1,9 @@
 """Settings API 端点"""
 
-from typing import Dict, List, Optional
+import json
+import os
+import shutil
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -11,8 +14,119 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.modules.config.loader import config_loader
 from backend.modules.config.schema import AppConfig, ModelConfig, ProviderConfig, WorkspaceConfig
+from backend.modules.external_agents.conversation import profile_supports_native_session
+from backend.modules.external_agents.registry import ExternalAgentRegistry
+from backend.modules.workspace import seed_bundled_workspace_resources, workspace_manager
+from backend.version import APP_VERSION
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+class ExternalCodingProfilePayload(BaseModel):
+    """外部编码工具 profile 配置。"""
+
+    name: str = Field(..., min_length=1)
+    aliases: List[str] = Field(default_factory=list)
+    type: str = "cli"
+    icon_svg: str = ""
+    enabled: bool = False
+    description: str = ""
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    working_dir: str = ""
+    stdin_template: Optional[str] = None
+    env: Dict[str, str] = Field(default_factory=dict)
+    inherit_env: List[str] = Field(default_factory=list)
+    session_mode: str = "history"
+    history_message_count: int = Field(default=10, ge=1, le=50)
+    timeout: Optional[int] = None
+    success_exit_codes: List[int] = Field(default_factory=lambda: [0])
+
+
+class ExternalCodingToolsConfigPayload(BaseModel):
+    """外部编码工具完整配置。"""
+
+    version: int = 1
+    profiles: List[ExternalCodingProfilePayload] = Field(default_factory=list)
+
+
+class ExternalCodingToolsConfigResponse(ExternalCodingToolsConfigPayload):
+    """外部编码工具配置响应。"""
+
+    config_path: str
+
+
+class ExternalCodingProfileCheckRequest(BaseModel):
+    """外部编码工具 profile 检查请求。"""
+
+    profile: ExternalCodingProfilePayload
+
+
+class ExternalCodingProfileCheckResponse(BaseModel):
+    """外部编码工具 profile 检查结果。"""
+
+    success: bool
+    message: str
+    resolved_command: Optional[str] = None
+    missing_env: List[str] = Field(default_factory=list)
+
+
+def _get_external_coding_registry() -> ExternalAgentRegistry:
+    """基于当前工作空间创建外部编码工具注册表。"""
+    workspace = Path(config_loader.config.workspace.path).resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    return ExternalAgentRegistry(workspace=workspace)
+
+
+def _load_external_coding_tools_config() -> tuple[ExternalAgentRegistry, Dict[str, Any]]:
+    """加载外部编码工具配置原始 JSON。"""
+    registry = _get_external_coding_registry()
+    try:
+        raw = json.loads(registry.config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        registry._ensure_default_config()
+        raw = json.loads(registry.config_path.read_text(encoding="utf-8"))
+
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="外部编码工具配置文件格式无效",
+        )
+    return registry, raw
+
+
+def _validate_external_coding_tools_payload(
+    payload: ExternalCodingToolsConfigPayload,
+    registry: ExternalAgentRegistry,
+) -> Dict[str, Any]:
+    """复用 registry 校验待保存的外部编码工具配置。"""
+    raw = payload.model_dump()
+    profiles = raw.get("profiles", [])
+
+    parsed_profiles = []
+    for index, item in enumerate(profiles):
+        parsed_profiles.append(registry._parse_profile(item, index))
+
+        command = str(item.get("command", "")).strip()
+        if not command:
+            raise HTTPException(status_code=400, detail=f"profile '{item.get('name')}' 缺少 command")
+
+    try:
+        registry._validate_profile_collisions(parsed_profiles)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return raw
+
+
+def _resolve_profile_command(command: str) -> Optional[str]:
+    """解析 profile command 到实际可执行路径。"""
+    normalized = str(command or "").strip()
+    if not normalized:
+        return None
+    if os.path.isabs(normalized):
+        return normalized if os.path.isfile(normalized) and os.access(normalized, os.X_OK) else None
+    return shutil.which(normalized)
 
 
 def _validate_workspace_path_or_raise(path: str) -> Path:
@@ -38,6 +152,9 @@ def _validate_workspace_path_or_raise(path: str) -> Path:
 
 def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> None:
     """将新的工作空间路径热更新到当前运行态。"""
+    workspace_path = workspace_manager.activate_workspace_path(workspace_path)
+    seed_bundled_workspace_resources(workspace_path)
+
     message_handler = getattr(request.app.state, 'message_handler', None)
     if message_handler:
         try:
@@ -50,6 +167,9 @@ def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> Non
     if shared:
         try:
             shared['workspace'] = workspace_path
+            tool_params = shared.get('tool_params')
+            if isinstance(tool_params, dict):
+                tool_params['workspace'] = workspace_path
 
             context_builder = shared.get('context_builder')
             if context_builder:
@@ -62,7 +182,7 @@ def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> Non
             if subagent_manager:
                 subagent_manager.workspace = workspace_path
 
-            skills_loader = shared.get('skills_loader')
+            skills_loader = shared.get('skills')
             if skills_loader:
                 try:
                     skills_dir = workspace_path / 'skills'
@@ -71,11 +191,14 @@ def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> Non
                         skills_loader.workspace_skills = skills_dir
                     if hasattr(skills_loader, 'config_file'):
                         skills_loader.config_file = workspace_path / '.skills_config.json'
-                    if hasattr(skills_loader, 'reload_skills'):
-                        skills_loader.reload_skills()
+                    if hasattr(skills_loader, 'reload'):
+                        skills_loader.reload()
                     logger.info(f"Skills loader workspace reloaded: {skills_dir}")
                 except Exception as e:
                     logger.warning(f"Failed to reload skills after workspace change: {e}")
+
+            request.app.state.skills = shared.get('skills')
+            request.app.state.memory = shared.get('memory')
 
             logger.info(f"Shared components workspace reloaded: {workspace_path}")
         except Exception as e:
@@ -87,6 +210,7 @@ def _prepare_message_handler_reload_params(
     *,
     reload_provider_model: bool = False,
     reload_persona: bool = False,
+    reload_security: bool = False,
 ) -> Dict[str, object]:
     """根据最新配置构建渠道消息处理器的热重载参数。"""
     reload_params: Dict[str, object] = {}
@@ -133,7 +257,115 @@ def _prepare_message_handler_reload_params(
             f"{getattr(config.persona, 'user_address', '')}"
         )
 
+    if reload_security:
+        reload_params['tool_params_updates'] = {
+            "command_timeout": config.security.command_timeout,
+            "max_output_length": config.security.max_output_length,
+            "allow_dangerous": not config.security.dangerous_commands_blocked,
+            "restrict_to_workspace": config.security.restrict_to_workspace,
+            "custom_deny_patterns": config.security.custom_deny_patterns,
+            "custom_allow_patterns": (
+                config.security.custom_allow_patterns
+                if config.security.command_whitelist_enabled
+                else None
+            ),
+            "audit_log_enabled": config.security.audit_log_enabled,
+        }
+        logger.info("Prepared tool security config for hot reload")
+
     return reload_params
+
+
+def _reload_cron_runtime(
+    request: Request,
+    config: AppConfig,
+    reload_params: Dict[str, object],
+    *,
+    workspace_path: Optional[Path] = None,
+    reload_provider_model: bool = False,
+    reload_persona: bool = False,
+    reload_security: bool = False,
+) -> None:
+    """将最新配置同步到 cron agent / heartbeat 运行态。"""
+    cron_executor = getattr(request.app.state, 'cron_executor', None)
+    if not cron_executor:
+        return
+
+    shared = getattr(request.app.state, 'shared', None) or {}
+    provider = reload_params.get('provider') if reload_provider_model else None
+    tool_updates = reload_params.get('tool_params_updates')
+
+    if provider is not None:
+        shared['provider'] = provider
+        subagent_manager = shared.get('subagent_manager')
+        if subagent_manager is not None:
+            subagent_manager.provider = provider
+    else:
+        subagent_manager = shared.get('subagent_manager')
+
+    if subagent_manager is not None and reload_provider_model:
+        subagent_manager.model = config.model.model
+        subagent_manager.temperature = config.model.temperature
+        subagent_manager.max_tokens = config.model.max_tokens
+
+    tool_params = shared.get('tool_params')
+    if isinstance(tool_params, dict):
+        if workspace_path is not None:
+            tool_params['workspace'] = workspace_path
+        if isinstance(tool_updates, dict):
+            tool_params.update(tool_updates)
+
+    cron_agent = getattr(cron_executor, 'agent', None)
+    if cron_agent is not None:
+        if provider is not None:
+            cron_agent.provider = provider
+        if reload_provider_model:
+            cron_agent.model = config.model.model
+            cron_agent.temperature = config.model.temperature
+            cron_agent.max_tokens = config.model.max_tokens
+            cron_agent.max_iterations = config.model.max_iterations
+        if workspace_path is not None:
+            cron_agent.workspace = workspace_path
+
+        if isinstance(tool_params, dict) and (workspace_path is not None or reload_security):
+            try:
+                from backend.modules.tools.setup import register_all_tools
+
+                cron_agent.tools = register_all_tools(**tool_params)
+                logger.info("Cron agent tool registry reloaded")
+            except Exception as e:
+                logger.warning(f"Failed to reload cron agent tools: {e}")
+
+    heartbeat_service = getattr(cron_executor, 'heartbeat_service', None)
+    if heartbeat_service is not None:
+        if provider is not None:
+            heartbeat_service.provider = provider
+        if reload_provider_model:
+            heartbeat_service.model = config.model.model
+        if workspace_path is not None:
+            heartbeat_service.workspace = workspace_path
+            heartbeat_service._state_file = workspace_path / "memory" / "heartbeat_state.json"
+
+        if reload_persona or reload_provider_model or workspace_path is not None:
+            heartbeat_cfg = config.persona.heartbeat
+            heartbeat_service.ai_name = config.persona.ai_name or "小C"
+            heartbeat_service.user_name = config.persona.user_name or "主人"
+            heartbeat_service.user_address = config.persona.user_address or ""
+            heartbeat_service.personality = config.persona.personality or "professional"
+            heartbeat_service.custom_personality = config.persona.custom_personality or ""
+            heartbeat_service.idle_threshold_hours = heartbeat_cfg.idle_threshold_hours
+            heartbeat_service.quiet_start = heartbeat_cfg.quiet_start
+            heartbeat_service.quiet_end = heartbeat_cfg.quiet_end
+            heartbeat_service.max_greets_per_day = heartbeat_cfg.max_greets_per_day
+
+    if (
+        provider is not None
+        or workspace_path is not None
+        or reload_persona
+        or reload_provider_model
+        or reload_security
+    ):
+        logger.info("Cron runtime reloaded successfully")
 
 
 async def _apply_saved_config_runtime(
@@ -143,6 +375,7 @@ async def _apply_saved_config_runtime(
     workspace_path: Optional[Path] = None,
     reload_persona: bool = False,
     reload_provider_model: bool = False,
+    reload_security: bool = False,
     sync_heartbeat: bool = False,
 ) -> None:
     """将已保存的配置同步到当前运行态。"""
@@ -169,6 +402,7 @@ async def _apply_saved_config_runtime(
             config,
             reload_provider_model=reload_provider_model,
             reload_persona=reload_persona,
+            reload_security=reload_security,
         )
         if reload_params:
             try:
@@ -176,6 +410,26 @@ async def _apply_saved_config_runtime(
                 logger.info("Channel message handler reloaded successfully")
             except Exception as e:
                 logger.warning(f"Failed to reload channel handler config: {e}")
+    else:
+        reload_params = _prepare_message_handler_reload_params(
+            config,
+            reload_provider_model=reload_provider_model,
+            reload_persona=reload_persona,
+            reload_security=reload_security,
+        )
+
+    try:
+        _reload_cron_runtime(
+            req,
+            config,
+            reload_params,
+            workspace_path=workspace_path,
+            reload_provider_model=reload_provider_model,
+            reload_persona=reload_persona,
+            reload_security=reload_security,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to reload cron runtime: {e}")
 
     if sync_heartbeat:
         try:
@@ -321,6 +575,7 @@ class HeartbeatConfigResponse(BaseModel):
     """主动问候配置响应"""
     enabled: bool = Field(..., description="是否启用")
     channel: str = Field(..., description="推送渠道")
+    account_id: str = Field(default="default", description="推送机器人账号 ID")
     chat_id: str = Field(..., description="推送目标 ID")
     schedule: str = Field(..., description="检查频率 cron 表达式")
     idle_threshold_hours: int = Field(..., description="空闲阈值（小时）")
@@ -462,6 +717,7 @@ async def get_settings() -> SettingsResponse:
                 heartbeat=HeartbeatConfigResponse(
                     enabled=config.persona.heartbeat.enabled,
                     channel=config.persona.heartbeat.channel,
+                    account_id=config.persona.heartbeat.account_id,
                     chat_id=config.persona.heartbeat.chat_id,
                     schedule=config.persona.heartbeat.schedule,
                     idle_threshold_hours=config.persona.heartbeat.idle_threshold_hours,
@@ -577,12 +833,12 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                 timeout = request.security["subagent_timeout"]
                 # 处理空字符串或无效值
                 if timeout == "" or timeout is None:
-                    timeout = 600  # 默认值
+                    timeout = 1200  # 默认值
                 elif isinstance(timeout, str):
                     try:
                         timeout = int(timeout)
                     except ValueError:
-                        timeout = 600
+                        timeout = 1200
                 # 确保在有效范围内
                 timeout = max(60, min(3600, int(timeout)))
                 config.security.subagent_timeout = timeout
@@ -633,6 +889,8 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                         config.persona.heartbeat.enabled = hb["enabled"]
                     if "channel" in hb:
                         config.persona.heartbeat.channel = hb["channel"]
+                    if "account_id" in hb:
+                        config.persona.heartbeat.account_id = hb["account_id"] or "default"
                     if "chat_id" in hb:
                         config.persona.heartbeat.chat_id = hb["chat_id"]
                     if "schedule" in hb:
@@ -680,6 +938,7 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             workspace_path=runtime_workspace,
             reload_persona=bool(request.persona),
             reload_provider_model=bool(request.providers or request.model),
+            reload_security=bool(request.security),
             sync_heartbeat=bool(request.persona and "heartbeat" in request.persona),
         )
         
@@ -701,6 +960,104 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update settings: {str(e)}"
+        )
+
+
+@router.get("/external-coding-tools", response_model=ExternalCodingToolsConfigResponse)
+async def get_external_coding_tools_config() -> ExternalCodingToolsConfigResponse:
+    """读取工作空间中的外部编码工具配置。"""
+    try:
+        registry, raw = _load_external_coding_tools_config()
+        payload = ExternalCodingToolsConfigPayload(**raw)
+        return ExternalCodingToolsConfigResponse(
+            config_path=str(registry.config_path),
+            **payload.model_dump(),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to load external coding tools config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load external coding tools config: {str(e)}",
+        )
+
+
+@router.put("/external-coding-tools", response_model=ExternalCodingToolsConfigResponse)
+async def update_external_coding_tools_config(
+    request: ExternalCodingToolsConfigPayload,
+) -> ExternalCodingToolsConfigResponse:
+    """保存工作空间中的外部编码工具配置。"""
+    try:
+        registry = _get_external_coding_registry()
+        raw = _validate_external_coding_tools_payload(request, registry)
+        registry.config_path.parent.mkdir(parents=True, exist_ok=True)
+        registry.config_path.write_text(
+            json.dumps(raw, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        logger.info(f"Updated external coding tools config: {registry.config_path}")
+        return ExternalCodingToolsConfigResponse(
+            config_path=str(registry.config_path),
+            **request.model_dump(),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to save external coding tools config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save external coding tools config: {str(e)}",
+        )
+
+
+@router.post("/external-coding-tools/check", response_model=ExternalCodingProfileCheckResponse)
+async def check_external_coding_tool_profile(
+    request: ExternalCodingProfileCheckRequest,
+) -> ExternalCodingProfileCheckResponse:
+    """检查单个外部编码工具 profile 的命令解析和环境变量情况。"""
+    try:
+        registry = _get_external_coding_registry()
+        payload = request.profile.model_dump()
+        parsed_profile = registry._parse_profile(payload, 0)
+
+        command = str(payload.get("command", "")).strip()
+        resolved_command = _resolve_profile_command(command)
+        missing_env = [
+            env_name
+            for env_name in (payload.get("inherit_env", []) or [])
+            if str(env_name).strip() and not os.getenv(str(env_name).strip())
+        ]
+
+        if resolved_command:
+            message = f"命令可用: {resolved_command}"
+            if missing_env:
+                message += f"；缺少环境变量: {', '.join(missing_env)}"
+            if (
+                parsed_profile.session_mode == "native"
+                and not profile_supports_native_session(parsed_profile)
+            ):
+                message += "；当前原生会话模式会自动回退为最近历史模式"
+            return ExternalCodingProfileCheckResponse(
+                success=True,
+                message=message,
+                resolved_command=resolved_command,
+                missing_env=missing_env,
+            )
+
+        return ExternalCodingProfileCheckResponse(
+            success=False,
+            message=f"未找到可执行命令: {command}",
+            resolved_command=None,
+            missing_env=missing_env,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to check external coding tool profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check external coding tool profile: {str(e)}",
         )
 
 
@@ -1028,7 +1385,7 @@ async def export_settings(
         export_data = {
             "version": "1.0.0",
             "exported_at": datetime.utcnow().isoformat() + "Z",
-            "app_version": "0.5.0",
+            "app_version": APP_VERSION,
             "config": config_dict
         }
         

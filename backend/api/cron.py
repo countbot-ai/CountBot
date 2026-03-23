@@ -53,6 +53,7 @@ class CronJobInfo(BaseModel):
     message: str = Field(..., description="要执行的消息")
     enabled: bool = Field(..., description="是否启用")
     channel: Optional[str] = Field(None, description="渠道名称")
+    account_id: Optional[str] = Field(None, description="机器人账号 ID")
     chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
     last_run: Optional[str] = Field(None, description="上次运行时间")
@@ -81,6 +82,7 @@ class CreateCronJobRequest(BaseModel):
     message: str = Field(..., description="要执行的消息")
     enabled: bool = Field(True, description="是否启用")
     channel: Optional[str] = Field(None, description="渠道名称")
+    account_id: Optional[str] = Field(None, description="机器人账号 ID")
     chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
     max_retries: int = Field(0, description="最大重试次数（0=不重试）")
@@ -96,6 +98,7 @@ class UpdateCronJobRequest(BaseModel):
     message: Optional[str] = Field(None, description="要执行的消息")
     enabled: Optional[bool] = Field(None, description="是否启用")
     channel: Optional[str] = Field(None, description="渠道名称")
+    account_id: Optional[str] = Field(None, description="机器人账号 ID")
     chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: Optional[bool] = Field(None, description="是否发送响应到渠道")
     max_retries: Optional[int] = Field(None, description="最大重试次数")
@@ -174,6 +177,100 @@ class CronJobDetailResponse(BaseModel):
     last_error: Optional[str] = Field(None, description="完整的上次错误")
 
 
+class CronSessionMessage(BaseModel):
+    """Cron 任务关联会话的消息"""
+
+    role: str = Field(..., description="消息角色")
+    content: str = Field(..., description="消息内容")
+    created_at: str = Field(..., description="消息创建时间")
+
+
+class CronJobMessagesResponse(BaseModel):
+    """Cron 任务关联会话消息响应"""
+
+    job_id: str = Field(..., description="任务 ID")
+    job_name: str = Field(..., description="任务名称")
+    session_id: Optional[str] = Field(None, description="会话 ID")
+    session_name: Optional[str] = Field(None, description="会话名称")
+    messages: List[CronSessionMessage] = Field(default_factory=list, description="消息列表")
+
+
+class CleanupCronSessionRequest(BaseModel):
+    """清理 Cron 任务会话请求"""
+
+    keep: int = Field(10, description="保留最近消息条数", ge=0)
+
+
+class CleanupCronSessionResponse(BaseModel):
+    """清理 Cron 任务会话响应"""
+
+    success: bool = Field(..., description="是否成功")
+    job_id: str = Field(..., description="任务 ID")
+    job_name: str = Field(..., description="任务名称")
+    session_id: Optional[str] = Field(None, description="会话 ID")
+    session_name: Optional[str] = Field(None, description="会话名称")
+    deleted_count: int = Field(0, description="删除消息数")
+    kept_count: int = Field(0, description="保留消息数")
+
+
+class ResetCronSessionResponse(BaseModel):
+    """重置 Cron 任务会话响应"""
+
+    success: bool = Field(..., description="是否成功")
+    job_id: str = Field(..., description="任务 ID")
+    job_name: str = Field(..., description="任务名称")
+    session_id: Optional[str] = Field(None, description="会话 ID")
+    session_name: Optional[str] = Field(None, description="会话名称")
+    deleted_message_count: int = Field(0, description="删除消息数")
+
+
+async def _get_cron_job_or_404(db: AsyncSession, job_id: str):
+    cron_service = CronService(db)
+    job = await cron_service.get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cron job '{job_id}' not found"
+        )
+    return job
+
+
+async def _find_cron_session(db: AsyncSession, job):
+    from sqlalchemy import select
+    from backend.models.session import Session
+
+    if job.channel and job.chat_id:
+        account_id = str(job.account_id or "default").strip() or "default"
+        prefix = f"{job.channel}:{account_id}:{job.chat_id}:"
+        result = await db.execute(
+            select(Session)
+            .where(Session.name.like(f"{prefix}%"))
+            .order_by(Session.created_at.desc())
+            .limit(1)
+        )
+        session = result.scalar_one_or_none()
+
+        if not session and account_id == "default":
+            legacy_prefix = f"{job.channel}:{job.chat_id}"
+            result = await db.execute(
+                select(Session)
+                .where(Session.name.like(f"{legacy_prefix}%"))
+                .order_by(Session.created_at.desc())
+                .limit(1)
+            )
+            session = result.scalar_one_or_none()
+
+        return session
+
+    result = await db.execute(
+        select(Session)
+        .where(Session.name == f"cron:{job.id}")
+        .order_by(Session.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 # ============================================================================
 # Cron Endpoints
 # ============================================================================
@@ -203,6 +300,7 @@ async def list_cron_jobs(db: AsyncSession = Depends(get_db)) -> ListCronJobsResp
                 message=job.message,
                 enabled=job.enabled,
                 channel=job.channel,
+                account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
                 last_run=_to_shanghai_iso(job.last_run),
@@ -256,6 +354,7 @@ async def batch_create_cron_jobs(
                     message=job_req.message,
                     enabled=job_req.enabled,
                     channel=job_req.channel,
+                    account_id=job_req.account_id,
                     chat_id=job_req.chat_id,
                     deliver_response=job_req.deliver_response,
                     max_retries=job_req.max_retries,
@@ -280,6 +379,7 @@ async def batch_create_cron_jobs(
                 message=job.message,
                 enabled=job.enabled,
                 channel=job.channel,
+                account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
                 last_run=_to_shanghai_iso(job.last_run),
@@ -408,6 +508,7 @@ async def get_cron_job_detail(
                 message=job.message,
                 enabled=job.enabled,
                 channel=job.channel,
+                account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
                 last_run=_to_shanghai_iso(job.last_run),
@@ -435,6 +536,188 @@ async def get_cron_job_detail(
         )
 
 
+@router.get("/jobs/{job_id}/messages", response_model=CronJobMessagesResponse)
+async def get_cron_job_messages(
+    job_id: str,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+) -> CronJobMessagesResponse:
+    """获取 Cron 任务关联会话的消息。"""
+    try:
+        from backend.modules.session.manager import SessionManager
+
+        job = await _get_cron_job_or_404(db, job_id)
+        session = await _find_cron_session(db, job)
+
+        if not session:
+            return CronJobMessagesResponse(
+                job_id=job.id,
+                job_name=job.name,
+                session_id=None,
+                session_name=None,
+                messages=[],
+            )
+
+        session_manager = SessionManager(db)
+        safe_limit = max(1, min(int(limit), 200))
+        messages = await session_manager.get_messages(session.id, limit=safe_limit)
+
+        return CronJobMessagesResponse(
+            job_id=job.id,
+            job_name=job.name,
+            session_id=session.id,
+            session_name=session.name,
+            messages=[
+                CronSessionMessage(
+                    role=msg.role,
+                    content=msg.content,
+                    created_at=_to_shanghai_iso(msg.created_at),
+                )
+                for msg in messages
+            ],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get cron job messages: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cron job messages: {str(e)}"
+        )
+
+
+@router.post("/jobs/{job_id}/session/cleanup", response_model=CleanupCronSessionResponse)
+async def cleanup_cron_job_session(
+    job_id: str,
+    request: CleanupCronSessionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> CleanupCronSessionResponse:
+    """清理 Cron 任务关联会话，保留最近 N 条消息。"""
+    try:
+        from backend.modules.session.manager import SessionManager
+
+        job = await _get_cron_job_or_404(db, job_id)
+        session = await _find_cron_session(db, job)
+
+        if not session:
+            return CleanupCronSessionResponse(
+                success=True,
+                job_id=job.id,
+                job_name=job.name,
+                session_id=None,
+                session_name=None,
+                deleted_count=0,
+                kept_count=0,
+            )
+
+        session_manager = SessionManager(db)
+        keep = max(0, int(request.keep))
+        messages = await session_manager.get_messages(session.id)
+        total = len(messages)
+
+        if total == 0:
+            return CleanupCronSessionResponse(
+                success=True,
+                job_id=job.id,
+                job_name=job.name,
+                session_id=session.id,
+                session_name=session.name,
+                deleted_count=0,
+                kept_count=0,
+            )
+
+        if keep >= total:
+            return CleanupCronSessionResponse(
+                success=True,
+                job_id=job.id,
+                job_name=job.name,
+                session_id=session.id,
+                session_name=session.name,
+                deleted_count=0,
+                kept_count=total,
+            )
+
+        if keep == 0:
+            await session_manager.clear_messages(session.id)
+            return CleanupCronSessionResponse(
+                success=True,
+                job_id=job.id,
+                job_name=job.name,
+                session_id=session.id,
+                session_name=session.name,
+                deleted_count=total,
+                kept_count=0,
+            )
+
+        to_delete = messages[:-keep]
+        deleted_count = 0
+        for message in to_delete:
+            if await session_manager.delete_message(message.id):
+                deleted_count += 1
+
+        return CleanupCronSessionResponse(
+            success=True,
+            job_id=job.id,
+            job_name=job.name,
+            session_id=session.id,
+            session_name=session.name,
+            deleted_count=deleted_count,
+            kept_count=keep,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to cleanup cron job session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cleanup cron job session: {str(e)}"
+        )
+
+
+@router.post("/jobs/{job_id}/session/reset", response_model=ResetCronSessionResponse)
+async def reset_cron_job_session(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResetCronSessionResponse:
+    """重置 Cron 任务关联会话。"""
+    try:
+        from backend.modules.session.manager import SessionManager
+
+        job = await _get_cron_job_or_404(db, job_id)
+        session = await _find_cron_session(db, job)
+
+        if not session:
+            return ResetCronSessionResponse(
+                success=True,
+                job_id=job.id,
+                job_name=job.name,
+                session_id=None,
+                session_name=None,
+                deleted_message_count=0,
+            )
+
+        session_manager = SessionManager(db)
+        deleted_message_count = await session_manager.get_message_count(session.id)
+        await session_manager.delete_session(session.id)
+
+        return ResetCronSessionResponse(
+            success=True,
+            job_id=job.id,
+            job_name=job.name,
+            session_id=session.id,
+            session_name=session.name,
+            deleted_message_count=deleted_message_count,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to reset cron job session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset cron job session: {str(e)}"
+        )
+
+
 @router.post("/jobs", response_model=CronJobResponse)
 async def create_cron_job(
     request: CreateCronJobRequest,
@@ -457,6 +740,7 @@ async def create_cron_job(
             message=request.message,
             enabled=request.enabled,
             channel=request.channel,
+            account_id=request.account_id,
             chat_id=request.chat_id,
             deliver_response=request.deliver_response,
             max_retries=request.max_retries,
@@ -472,6 +756,7 @@ async def create_cron_job(
                 message=job.message,
                 enabled=job.enabled,
                 channel=job.channel,
+                account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
                 last_run=_to_shanghai_iso(job.last_run),
@@ -520,7 +805,7 @@ async def update_cron_job(
         CronJobResponse: 更新后的任务
     """
     try:
-        # 内置任务只允许修改 enabled/channel/chat_id/deliver_response/schedule
+        # 内置任务只允许修改 enabled/channel/account_id/chat_id/deliver_response/schedule
         if job_id.startswith(BUILTIN_PREFIX):
             if request.name is not None or request.message is not None:
                 raise HTTPException(
@@ -535,6 +820,7 @@ async def update_cron_job(
             message=request.message,
             enabled=request.enabled,
             channel=request.channel,
+            account_id=request.account_id,
             chat_id=request.chat_id,
             deliver_response=request.deliver_response,
             max_retries=request.max_retries,
@@ -556,6 +842,7 @@ async def update_cron_job(
                 message=job.message,
                 enabled=job.enabled,
                 channel=job.channel,
+                account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
                 last_run=_to_shanghai_iso(job.last_run),
@@ -682,6 +969,7 @@ async def trigger_cron_job(
         job_name = job.name
         job_message = job.message
         job_channel = job.channel
+        job_account_id = job.account_id
         job_chat_id = job.chat_id
         job_deliver_response = job.deliver_response
         job_schedule = job.schedule
@@ -695,6 +983,7 @@ async def trigger_cron_job(
                     job_id=job_id,
                     message=job_message,
                     channel=job_channel,
+                    account_id=job_account_id,
                     chat_id=job_chat_id,
                     deliver_response=job_deliver_response
                 )

@@ -18,6 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.config.loader import config_loader
+from backend.modules.external_agents.conversation import (
+    build_history_prompt,
+    resolve_effective_session_mode,
+)
+from backend.modules.external_agents.routing import (
+    build_explicit_external_agent_system_message,
+    extract_explicit_external_agent_request,
+)
 from backend.modules.session import (
     build_session_model_override,
     resolve_session_runtime_config,
@@ -44,6 +52,71 @@ def _friendly_processing_error(raw: str) -> str:
     if any(k in lower for k in ("timeout", "connection", "network")):
         return "网络连接异常，请稍后重试。"
     return f"消息处理出错，请稍后重试。"
+
+
+def _resolve_explicit_external_tool_request(
+    agent_loop: AgentLoop,
+    message: str,
+) -> tuple[str, str] | None:
+    """Resolve natural-language routing like '用 claude 帮我写个爬虫'."""
+    parsed = extract_explicit_external_agent_request(message)
+    if not parsed or not agent_loop.tools:
+        return None
+
+    requested_profile, task = parsed
+    external_tool = agent_loop.tools.get_tool("external_coding_agent")
+    registry = getattr(external_tool, "registry", None)
+    if registry is None:
+        return None
+
+    try:
+        canonical_name = registry.resolve_profile_name(requested_profile)
+        registry.resolve_profile(canonical_name)
+    except Exception:
+        return None
+
+    return canonical_name, task
+
+
+def _prepare_external_task(profile, task: str, history: list[dict]) -> str:
+    """根据 profile 会话模式构造实际任务。"""
+    session_mode = resolve_effective_session_mode(profile)
+    if session_mode in {"stateless", "native"}:
+        return task
+    return build_history_prompt(
+        task=task,
+        history_messages=history,
+        history_message_count=profile.history_message_count,
+    )
+
+
+def _inject_explicit_external_request_context(
+    agent_loop: AgentLoop,
+    context: list[dict],
+    explicit_external_request: tuple[str, str] | None,
+) -> list[dict]:
+    """Keep WebSocket web chat on the normal tool-call path for explicit external-agent requests."""
+    if not explicit_external_request:
+        return list(context)
+
+    external_tool = agent_loop.tools.get_tool("external_coding_agent") if agent_loop.tools else None
+    registry = getattr(external_tool, "registry", None)
+    if registry is None:
+        return list(context)
+
+    profile_name, task = explicit_external_request
+    profile = registry.resolve_profile(profile_name)
+    prepared_task = _prepare_external_task(profile, task, context)
+    system_message = build_explicit_external_agent_system_message(
+        profile.name,
+        prepared_task,
+    )
+    if not system_message:
+        return list(context)
+
+    augmented_context = list(context)
+    augmented_context.append({"role": "system", "content": system_message})
+    return augmented_context
 
 
 # ============================================================================
@@ -152,7 +225,12 @@ async def handle_message_event(
         # 将当前 session_id 注入到所有支持会话感知的工具（如 workflow_run）
         if agent_loop.tools:
             agent_loop.tools.set_session_id(session_id)
+            agent_loop.tools.set_cancel_token(cancel_token)
             logger.debug(f"Propagated session_id={session_id} to tool registry")
+        explicit_external_request = _resolve_explicit_external_tool_request(
+            agent_loop,
+            content,
+        )
 
         # 处理消息并流式输出
         assistant_content = ""
@@ -174,10 +252,23 @@ async def handle_message_event(
                 logger.warning(f"Failed to detect mentioned team for websocket chat: {exc}")
 
         chunk_count = 0
+        if explicit_external_request:
+            profile_name, _task = explicit_external_request
+            logger.info(
+                "Routing websocket chat explicit external-agent request through agent loop: "
+                f"profile={profile_name}, session={session_id}"
+            )
+            context = _inject_explicit_external_request_context(
+                agent_loop,
+                context,
+                explicit_external_request,
+            )
+
         async for chunk in agent_loop.process_message(
             message=content,
             session_id=session_id,
             context=context,
+            channel="web-chat",
             cancel_token=cancel_token,
             model_override=model_override,
             persona_override=persona_override,
@@ -189,11 +280,11 @@ async def handle_message_event(
                 await streaming_handler.write("\n\n[已停止生成]")
                 await streaming_handler.flush()
                 break
-            
+
             assistant_content += chunk
             await streaming_handler.write(chunk)
             chunk_count += 1
-            
+
             # 每100个chunk记录一次
             if chunk_count % 100 == 0:
                 logger.debug(f"已发送 {chunk_count} 个chunk")
@@ -248,6 +339,9 @@ async def handle_message_event(
         )
         from backend.ws.connection import cleanup_cancel_token
         cleanup_cancel_token(session_id)
+    finally:
+        if agent_loop.tools:
+            agent_loop.tools.set_cancel_token(None)
 
 
 async def handle_tool_execution(

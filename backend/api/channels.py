@@ -1,6 +1,7 @@
 """渠道管理 API 端点"""
 
 import asyncio
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
@@ -8,6 +9,7 @@ from loguru import logger
 
 from backend.modules.config.loader import config_loader
 from backend.modules.channels.manager import ChannelManager
+from backend.modules.external_agents.registry import ExternalAgentRegistry
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
@@ -39,6 +41,19 @@ class ChannelTestRequest(BaseModel):
     channel: str
     config: Optional[Dict[str, Any]] = None  # 可选的临时配置
     account_id: Optional[str] = None
+
+
+class WeChatLoginStartRequest(BaseModel):
+    """微信扫码登录启动请求。"""
+
+    config: Optional[Dict[str, Any]] = None
+    account_id: Optional[str] = None
+
+
+class WeChatLoginPollRequest(BaseModel):
+    """微信扫码登录轮询请求。"""
+
+    session_key: str
 
 
 def _mask_channel_secret(key: str, value: Any) -> Any:
@@ -135,6 +150,7 @@ def _select_account_config(channel_config: Any, account_id: Optional[str]) -> An
 _CHANNEL_UNIQUE_ID_FIELDS: Dict[str, tuple[str, ...]] = {
     "telegram": ("token",),
     "qq": ("app_id",),
+    "wechat": ("login_bot_id",),
     "dingtalk": ("client_id",),
     "feishu": ("app_id",),
     "weibo": ("app_id",),
@@ -180,6 +196,43 @@ def _validate_duplicate_accounts(channel_name: str, channel_config: Any) -> None
                 "同一个物理机器人不能重复配置为多个账号。"
             )
         seen[signature] = account_id
+
+
+def _validate_external_coding_route_config(channel_name: str, channel_config: Any) -> None:
+    """校验渠道账号的外部编程工具路由配置。"""
+    workspace = Path(config_loader.config.workspace.path).resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    registry = ExternalAgentRegistry(workspace=workspace)
+
+    config_dict = _normalize_accounts_payload(channel_config.model_dump())
+    accounts_to_check = [
+        (str(config_dict.get("account_id") or "default"), config_dict),
+        *[
+            (str(account_id), dict(account_cfg))
+            for account_id, account_cfg in (config_dict.get("accounts", {}) or {}).items()
+        ],
+    ]
+
+    for account_id, account_cfg in accounts_to_check:
+        route_mode = str(account_cfg.get("routing_mode", "ai") or "ai").strip().lower()
+        if route_mode not in {"ai", "direct"}:
+            raise ValueError(
+                f"{channel_name} 渠道账号 '{account_id}' 的路由模式无效: {route_mode}"
+            )
+
+        profile_name = str(account_cfg.get("external_coding_profile", "") or "").strip()
+        if route_mode == "direct" and not profile_name:
+            raise ValueError(
+                f"{channel_name} 渠道账号 '{account_id}' 处于直通模式时，必须设置默认外部编程工具。"
+            )
+
+        if profile_name:
+            try:
+                registry.resolve_profile(profile_name)
+            except Exception as exc:
+                raise ValueError(
+                    f"{channel_name} 渠道账号 '{account_id}' 的外部编程工具不可用: {exc}"
+                ) from exc
 
 
 async def _restart_channel_manager(fastapi_request: Request) -> Optional[ChannelManager]:
@@ -247,6 +300,7 @@ async def list_channels():
         telegram_data = _serialize_channel_for_list(channels_config.telegram)
         discord_data = _serialize_channel_for_list(channels_config.discord)
         qq_data = _serialize_channel_for_list(channels_config.qq)
+        wechat_data = _serialize_channel_for_list(channels_config.wechat)
         dingtalk_data = _serialize_channel_for_list(channels_config.dingtalk)
         feishu_data = _serialize_channel_for_list(channels_config.feishu)
         weibo_data = _serialize_channel_for_list(channels_config.weibo)
@@ -271,6 +325,12 @@ async def list_channels():
                 "description": "QQ messaging platform",
                 "icon": "qq",
                 **qq_data,
+            },
+            "wechat": {
+                "name": "微信",
+                "description": "WeChat messaging platform",
+                "icon": "wechat",
+                **wechat_data,
             },
             "dingtalk": {
                 "name": "钉钉",
@@ -353,7 +413,7 @@ async def test_channel(request: ChannelTestRequest):
             # 创建临时配置对象
             from backend.modules.config.schema import (
                 QQConfig, FeishuConfig, DingTalkConfig,
-                TelegramConfig, DiscordConfig, WeiboConfig, WeComConfig,
+                TelegramConfig, DiscordConfig, WeChatConfig, WeiboConfig, WeComConfig,
                 XiaozhiConfig,
             )
             config_classes = {
@@ -362,6 +422,7 @@ async def test_channel(request: ChannelTestRequest):
                 "dingtalk": DingTalkConfig,
                 "telegram": TelegramConfig,
                 "discord": DiscordConfig,
+                "wechat": WeChatConfig,
                 "weibo": WeiboConfig,
                 "wecom": WeComConfig,
                 "xiaozhi": XiaozhiConfig,
@@ -383,6 +444,7 @@ async def test_channel(request: ChannelTestRequest):
             from backend.modules.channels.feishu import FeishuChannel
             from backend.modules.channels.dingtalk import DingTalkChannel
             from backend.modules.channels.telegram import TelegramChannel
+            from backend.modules.channels.wechat import WeChatChannel
             from backend.modules.channels.weibo import WeiboChannel
             from backend.modules.channels.wecom import WeComChannel
             from backend.modules.channels.xiaozhi import XiaozhiChannel
@@ -392,6 +454,7 @@ async def test_channel(request: ChannelTestRequest):
                 "feishu": FeishuChannel,
                 "dingtalk": DingTalkChannel,
                 "telegram": TelegramChannel,
+                "wechat": WeChatChannel,
                 "weibo": WeiboChannel,
                 "wecom": WeComChannel,
                 "xiaozhi": XiaozhiChannel,
@@ -538,6 +601,91 @@ async def test_channel(request: ChannelTestRequest):
         }
 
 
+@router.post("/wechat/login/start")
+async def start_wechat_login(request: WeChatLoginStartRequest):
+    """启动微信扫码登录。"""
+    try:
+        from backend.modules.channels.wechat import start_wechat_qr_login
+        from backend.modules.config.schema import WeChatConfig
+
+        channel_config = WeChatConfig(
+            **_normalize_accounts_payload(
+                request.config or config_loader.config.channels.wechat.model_dump()
+            )
+        )
+        account_id = str(request.account_id or "default").strip() or "default"
+        resolved_config = _select_account_config(channel_config, account_id)
+
+        result = await start_wechat_qr_login(
+            account_id=account_id,
+            base_url=str(getattr(resolved_config, "base_url", "") or ""),
+            config_snapshot=channel_config.model_dump(),
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"Failed to start wechat login: {e}")
+        return {"success": False, "message": f"启动微信扫码登录失败: {e}"}
+
+
+@router.post("/wechat/login/poll")
+async def poll_wechat_login(request: WeChatLoginPollRequest, fastapi_request: Request):
+    """轮询微信扫码登录状态。"""
+    try:
+        from backend.modules.channels.wechat import (
+            clear_wechat_session_pause,
+            poll_wechat_qr_login,
+        )
+        from backend.modules.config.schema import WeChatConfig
+
+        result = await poll_wechat_qr_login(request.session_key)
+        if not result.get("success") or result.get("status") != "confirmed":
+            return result
+
+        config_snapshot = result.get("config_snapshot") or config_loader.config.channels.wechat.model_dump()
+        channel_config = WeChatConfig(**_normalize_accounts_payload(config_snapshot))
+        account_id = str(result.get("account_id") or "default").strip() or "default"
+
+        login_data = dict(result.get("result") or {})
+        merged_channel_config = _normalize_accounts_payload(channel_config.model_dump())
+        merged_channel_config["enabled"] = True
+        accounts = merged_channel_config.get("accounts", {}) or {}
+        top_level_account_id = str(merged_channel_config.get("account_id") or "default")
+
+        if account_id == top_level_account_id:
+            merged_channel_config["enabled"] = True
+            merged_channel_config.update(login_data)
+        else:
+            account_payload = dict(accounts.get(account_id) or {})
+            account_payload.update(login_data)
+            account_payload["account_id"] = account_id
+            account_payload["enabled"] = True
+            accounts[account_id] = account_payload
+            merged_channel_config["accounts"] = accounts
+
+        clear_wechat_session_pause(account_id)
+        config_loader.config.channels.wechat = WeChatConfig(**merged_channel_config)
+        _validate_duplicate_accounts("wechat", config_loader.config.channels.wechat)
+        _validate_external_coding_route_config("wechat", config_loader.config.channels.wechat)
+        await config_loader.save()
+
+        message_handler = getattr(fastapi_request.app.state, "message_handler", None)
+        channel_manager = await _restart_channel_manager(fastapi_request)
+        if message_handler is not None and channel_manager is not None:
+            message_handler.set_channel_manager(channel_manager)
+
+        return {
+            "success": True,
+            "status": "confirmed",
+            "message": "微信连接成功",
+            "account_id": account_id,
+            "result": login_data,
+            "config": _normalize_accounts_payload(config_loader.config.channels.wechat.model_dump()),
+        }
+    except Exception as e:
+        logger.error(f"Failed to poll wechat login: {e}")
+        return {"success": False, "message": f"轮询微信登录状态失败: {e}"}
+
+
 
 @router.post("/update")
 async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: Request):
@@ -546,7 +694,7 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
+        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
         
         if request.channel not in supported_channels:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {request.channel}")
@@ -557,13 +705,14 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
 
         from backend.modules.config.schema import (
             TelegramConfig, DiscordConfig, QQConfig,
-            DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig,
+            WeChatConfig, DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig,
         )
 
         config_classes = {
             "telegram": TelegramConfig,
             "discord": DiscordConfig,
             "qq": QQConfig,
+            "wechat": WeChatConfig,
             "dingtalk": DingTalkConfig,
             "feishu": FeishuConfig,
             "weibo": WeiboConfig,
@@ -579,7 +728,9 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
             request.channel,
             config_classes[request.channel](**merged_config),
         )
-        _validate_duplicate_accounts(request.channel, getattr(config.channels, request.channel))
+        updated_channel_config = getattr(config.channels, request.channel)
+        _validate_duplicate_accounts(request.channel, updated_channel_config)
+        _validate_external_coding_route_config(request.channel, updated_channel_config)
         
         # 保存配置
         await config_loader.save()
@@ -619,7 +770,7 @@ async def get_channel_config(channel: str):
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
+        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
 
         if channel not in supported_channels:
             raise HTTPException(status_code=404, detail=f"Channel not found: {channel}")
@@ -629,12 +780,12 @@ async def get_channel_config(channel: str):
         if not channel_config:
             logger.warning(f"Channel configuration not found for {channel}, creating default")
             from backend.modules.config.schema import (
-                TelegramConfig, DiscordConfig, QQConfig,
+                TelegramConfig, DiscordConfig, QQConfig, WeChatConfig,
                 DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig
             )
             config_classes = {
                 "telegram": TelegramConfig, "discord": DiscordConfig,
-                "qq": QQConfig, "dingtalk": DingTalkConfig,
+                "qq": QQConfig, "wechat": WeChatConfig, "dingtalk": DingTalkConfig,
                 "feishu": FeishuConfig, "weibo": WeiboConfig,
                 "wecom": WeComConfig, "xiaozhi": XiaozhiConfig,
             }

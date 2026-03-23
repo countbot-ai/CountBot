@@ -376,6 +376,11 @@ async def ensure_heartbeat_job(db_session_factory, heartbeat_config=None):
             # 从配置中读取参数
             enabled = heartbeat_config.enabled if heartbeat_config else False
             channel = heartbeat_config.channel if heartbeat_config and heartbeat_config.channel else None
+            account_id = (
+                str(getattr(heartbeat_config, "account_id", "default") or "default")
+                if heartbeat_config
+                else "default"
+            )
             chat_id = heartbeat_config.chat_id if heartbeat_config and heartbeat_config.chat_id else None
             schedule = heartbeat_config.schedule if heartbeat_config and heartbeat_config.schedule else HEARTBEAT_SCHEDULE
 
@@ -387,6 +392,9 @@ async def ensure_heartbeat_job(db_session_factory, heartbeat_config=None):
                     changed = True
                 if existing.channel != channel:
                     existing.channel = channel
+                    changed = True
+                if existing.account_id != account_id:
+                    existing.account_id = account_id
                     changed = True
                 if existing.chat_id != chat_id:
                     existing.chat_id = chat_id
@@ -419,6 +427,7 @@ async def ensure_heartbeat_job(db_session_factory, heartbeat_config=None):
                 message=HEARTBEAT_MESSAGE,
                 enabled=enabled,
                 channel=channel,
+                account_id=account_id,
                 chat_id=chat_id,
                 deliver_response=True,
                 created_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None),

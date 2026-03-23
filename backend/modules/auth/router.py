@@ -10,7 +10,12 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
-from backend.modules.auth.middleware import AUTH_COOKIE_NAME, _is_local_request
+from backend.modules.auth.middleware import (
+    AUTH_COOKIE_NAME,
+    _is_local_request,
+    clear_remote_setup_secret,
+    request_has_valid_remote_setup_secret,
+)
 from backend.modules.auth.utils import (
     TOKEN_EXPIRY,
     create_session,
@@ -189,14 +194,14 @@ async def auth_status(request: Request):
         "auth_enabled": auth_enabled,
         "authenticated": authenticated,
         "remote_access_enabled": remote_access_enabled,
-        "setup_allowed": is_local and not auth_enabled,
+        "setup_allowed": not auth_enabled and (is_local or request_has_valid_remote_setup_secret(request)),
     }
 
 
 @router.post("/setup")
 async def setup_password(data: SetPasswordRequest, request: Request):
-    """Allow first-time password bootstrap only from a direct local request."""
-    if not _is_local_request(request):
+    """Allow first-time password bootstrap from local requests or a valid remote setup entry."""
+    if not _is_local_request(request) and not request_has_valid_remote_setup_secret(request):
         return JSONResponse(
             status_code=403,
             content={"detail": "首次初始化只能在本机完成", "code": "SETUP_LOCAL_ONLY"},
@@ -228,6 +233,7 @@ async def setup_password(data: SetPasswordRequest, request: Request):
 
     hashed = hash_password(data.password)
     await save_credentials(data.username.strip(), hashed)
+    clear_remote_setup_secret(request.app)
     _clear_auth_failures("setup", request, data.username)
     logger.info(f"Remote auth password set for user: {data.username.strip()}")
 
@@ -256,7 +262,7 @@ async def login(data: LoginRequest, request: Request):
     if not stored_hash:
         return JSONResponse(
             status_code=403,
-            content={"detail": "管理员尚未完成初始化，请在本机设置密码", "code": "AUTH_NOT_INITIALIZED"},
+            content={"detail": "管理员尚未完成初始化，请先设置账号和密码", "code": "AUTH_NOT_INITIALIZED"},
         )
 
     normalized_username = data.username.strip()

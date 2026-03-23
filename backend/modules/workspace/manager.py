@@ -52,24 +52,25 @@ class WorkspaceManager:
         old_skills_dir = old_workspace / "skills"
         new_skills_dir = new_workspace / "skills"
         
-        old_skills_count = 0
-        new_skills_count = 0
-        
-        # 统计旧工作空间的技能文件
-        if old_skills_dir.exists() and old_skills_dir.is_dir():
+        def count_skills(skills_dir: Path) -> int:
+            """统计包含 SKILL.md 的技能目录数量。"""
+            if not skills_dir.exists() or not skills_dir.is_dir():
+                return 0
+
             try:
-                old_skills_count = len([f for f in old_skills_dir.iterdir() 
-                                       if f.is_file() and f.suffix in {'.py', '.json'}])
+                return len(
+                    [
+                        item
+                        for item in skills_dir.iterdir()
+                        if item.is_dir() and (item / "SKILL.md").is_file()
+                    ]
+                )
             except Exception as e:
-                logger.warning(f"无法读取旧工作空间技能目录: {e}")
-        
-        # 统计新工作空间的技能文件
-        if new_skills_dir.exists() and new_skills_dir.is_dir():
-            try:
-                new_skills_count = len([f for f in new_skills_dir.iterdir() 
-                                       if f.is_file() and f.suffix in {'.py', '.json'}])
-            except Exception as e:
-                logger.warning(f"无法读取新工作空间技能目录: {e}")
+                logger.warning(f"无法读取技能目录 {skills_dir}: {e}")
+                return 0
+
+        old_skills_count = count_skills(old_skills_dir)
+        new_skills_count = count_skills(new_skills_dir)
         
         # 如果旧工作空间有技能，但新工作空间技能较少，则需要迁移
         migration_needed = old_skills_count > 0 and new_skills_count < old_skills_count

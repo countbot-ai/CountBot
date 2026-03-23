@@ -6,6 +6,7 @@
 - 跨平台字符编码自动检测
 """
 
+import json
 import asyncio
 import locale
 import os
@@ -92,6 +93,7 @@ class ExecTool(Tool):
             f"timeout={timeout}s, max_output={max_output_length}, "
             f"allow_dangerous={allow_dangerous}, restrict_to_workspace={restrict_to_workspace}"
         )
+        self._message_context: Optional[Dict[str, Any]] = None
 
     @property
     def name(self) -> str:
@@ -118,6 +120,65 @@ class ExecTool(Tool):
             "required": ["command"],
             "additionalProperties": False,
         }
+
+    def set_message_context(self, message_context: Optional[Dict[str, Any]]) -> None:
+        """保存当前消息上下文，供技能脚本读取渠道环境变量。"""
+        self._message_context = message_context or None
+
+    def _json_safe_metadata(self, value: Any) -> Any:
+        """将 metadata 递归裁剪为可 JSON 序列化的结构。"""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            result: Dict[str, Any] = {}
+            for key, item in value.items():
+                if callable(item):
+                    continue
+                safe_item = self._json_safe_metadata(item)
+                if safe_item is not None:
+                    result[str(key)] = safe_item
+            return result
+        if isinstance(value, (list, tuple, set)):
+            result = []
+            for item in value:
+                if callable(item):
+                    continue
+                safe_item = self._json_safe_metadata(item)
+                if safe_item is not None:
+                    result.append(safe_item)
+            return result
+        return str(value)
+
+    def _build_subprocess_env(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        context = self._message_context or {}
+        metadata = context.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+
+        def set_env(name: str, value: Any) -> None:
+            text = str(value or "").strip()
+            if text:
+                env[name] = text
+
+        set_env("COUNTBOT_CHANNEL", context.get("channel"))
+        set_env("COUNTBOT_CHAT_ID", context.get("chat_id"))
+        set_env("COUNTBOT_SENDER_ID", context.get("sender_id"))
+        set_env(
+            "COUNTBOT_ACCOUNT_ID",
+            metadata.get("account_id")
+            or metadata.get("reply_account_id")
+            or metadata.get("context_owner_account_id"),
+        )
+        set_env("COUNTBOT_SOURCE_ACCOUNT_ID", metadata.get("source_account_id"))
+        set_env("COUNTBOT_REPLY_ACCOUNT_ID", metadata.get("reply_account_id"))
+        set_env("COUNTBOT_CONTEXT_OWNER_ACCOUNT_ID", metadata.get("context_owner_account_id"))
+        set_env("COUNTBOT_SESSION_SCOPE", metadata.get("session_scope"))
+        if metadata:
+            env["COUNTBOT_MESSAGE_METADATA"] = json.dumps(
+                self._json_safe_metadata(metadata),
+                ensure_ascii=False,
+            )
+        return env
 
     async def execute(self, **kwargs: Any) -> str:
         """执行 Shell 命令
@@ -164,6 +225,7 @@ class ExecTool(Tool):
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=str(cwd),
+                    env=self._build_subprocess_env(),
                 )
             except NotImplementedError as e:
                 error_msg = f"Error: Subprocess not supported on this platform: {str(e)}"

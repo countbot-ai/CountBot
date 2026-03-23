@@ -1,6 +1,8 @@
 """Cron 任务执行器"""
 
-from typing import Optional
+import json
+from datetime import datetime
+from typing import Any, Optional
 
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT
@@ -11,6 +13,8 @@ from backend.utils.logger import logger
 
 # Heartbeat 特殊消息标记
 HEARTBEAT_MESSAGE_MARKER = "__heartbeat__"
+PRIMARY_ACCOUNT_ID = "default"
+PRIMARY_GROUP_SHARED_CHANNELS = {"wecom", "feishu", "dingtalk", "qq"}
 
 
 
@@ -36,6 +40,7 @@ class CronExecutor:
         job_id: str,
         message: str,
         channel: Optional[str] = None,
+        account_id: Optional[str] = None,
         chat_id: Optional[str] = None,
         deliver_response: bool = False
     ) -> str:
@@ -44,12 +49,18 @@ class CronExecutor:
 
         # 识别 heartbeat 特殊任务
         if message == HEARTBEAT_MESSAGE_MARKER:
-            return await self._execute_heartbeat(job_id, channel, chat_id, deliver_response)
+            return await self._execute_heartbeat(
+                job_id,
+                channel,
+                account_id,
+                chat_id,
+                deliver_response,
+            )
 
         try:
             # 如果有 channel 和 chat_id，查找或创建对应的会话
             if channel and chat_id:
-                session_id = await self._get_or_create_session(channel, chat_id)
+                session_id = await self._get_or_create_session(channel, account_id, chat_id)
             else:
                 session_id = f"cron:{job_id}"
 
@@ -60,7 +71,8 @@ class CronExecutor:
                 content=cron_message,
                 session_id=session_id,
                 channel=channel or "cron",
-                chat_id=chat_id or job_id
+                chat_id=chat_id or job_id,
+                account_id=account_id,
             )
 
             logger.info(f"Job {job_id} completed")
@@ -72,6 +84,7 @@ class CronExecutor:
             if deliver_response and response and channel and chat_id:
                 await self._deliver_to_channel(
                     channel=channel,
+                    account_id=account_id,
                     chat_id=chat_id,
                     message=response,
                     job_id=job_id
@@ -87,6 +100,7 @@ class CronExecutor:
         self,
         job_id: str,
         channel: Optional[str] = None,
+        account_id: Optional[str] = None,
         chat_id: Optional[str] = None,
         deliver_response: bool = False,
     ) -> str:
@@ -104,6 +118,7 @@ class CronExecutor:
             if channel and chat_id:
                 await self._deliver_to_channel(
                     channel=channel,
+                    account_id=account_id,
                     chat_id=chat_id,
                     message=greeting,
                     job_id=job_id,
@@ -112,6 +127,7 @@ class CronExecutor:
                 # 将问候语保存到会话历史中，以便用户回复时 AI 能看到上下文
                 await self._save_greeting_to_session(
                     channel=channel,
+                    account_id=account_id,
                     chat_id=chat_id,
                     greeting=greeting,
                 )
@@ -130,6 +146,7 @@ class CronExecutor:
     async def _deliver_to_channel(
         self,
         channel: str,
+        account_id: Optional[str],
         chat_id: str,
         message: str,
         job_id: str
@@ -140,23 +157,28 @@ class CronExecutor:
                 logger.warning(f"Channel manager unavailable")
                 return
 
-            channel_instance = self.channel_manager.get_channel(channel)
+            normalized_account_id = self._normalize_account_id(account_id)
+            channel_instance = self.channel_manager.get_channel(
+                channel,
+                account_id=normalized_account_id,
+            )
             if not channel_instance:
-                logger.warning(f"Channel {channel} not found")
+                logger.warning(f"Channel {channel}:{normalized_account_id} not found")
                 return
 
-            logger.info(f"Delivering to {channel}:{chat_id}")
+            logger.info(f"Delivering to {channel}:{normalized_account_id}:{chat_id}")
 
             from backend.modules.channels.base import OutboundMessage
             await channel_instance.send(
                 OutboundMessage(
                     channel=channel,
                     chat_id=chat_id,
-                    content=message
+                    content=message,
+                    metadata={"account_id": normalized_account_id},
                 )
             )
 
-            logger.info(f"Delivered to {channel}:{chat_id}")
+            logger.info(f"Delivered to {channel}:{normalized_account_id}:{chat_id}")
 
         except Exception as e:
             logger.error(f"Failed to deliver: {e}")
@@ -164,6 +186,7 @@ class CronExecutor:
     async def _save_greeting_to_session(
         self,
         channel: str,
+        account_id: Optional[str],
         chat_id: str,
         greeting: str,
     ):
@@ -173,7 +196,7 @@ class CronExecutor:
             from backend.models.message import Message
             
             # 获取或创建会话
-            session_id = await self._get_or_create_session(channel, chat_id)
+            session_id = await self._get_or_create_session(channel, account_id, chat_id)
             
             # 保存 AI 的问候消息到数据库
             db_factory = get_db_session_factory()
@@ -192,31 +215,108 @@ class CronExecutor:
         except Exception as e:
             logger.error(f"Failed to save greeting to session: {e}")
 
-    async def _get_or_create_session(self, channel: str, chat_id: str) -> str:
+    @staticmethod
+    def _normalize_account_id(account_id: Optional[str]) -> str:
+        return str(account_id or PRIMARY_ACCOUNT_ID).strip() or PRIMARY_ACCOUNT_ID
+
+    @staticmethod
+    def _is_group_chat(channel: str, chat_id: str) -> bool:
+        if channel == "feishu":
+            return str(chat_id).startswith("oc_")
+        return False
+
+    def _build_channel_context(
+        self,
+        channel: str,
+        account_id: Optional[str],
+        chat_id: str,
+    ) -> dict[str, Any]:
+        normalized_account_id = self._normalize_account_id(account_id)
+        is_group = self._is_group_chat(channel, chat_id)
+        supports_primary_group_shared = channel in PRIMARY_GROUP_SHARED_CHANNELS
+        session_scope = (
+            "group_shared_primary"
+            if is_group and supports_primary_group_shared and normalized_account_id == PRIMARY_ACCOUNT_ID
+            else ("group_independent" if is_group else "private_independent")
+        )
+
+        return {
+            "channel": channel,
+            "account_id": normalized_account_id,
+            "sender_id": "",
+            "chat_id": str(chat_id),
+            "source_account_id": normalized_account_id,
+            "reply_account_id": normalized_account_id,
+            "context_owner_account_id": normalized_account_id,
+            "primary_account_id": PRIMARY_ACCOUNT_ID,
+            "session_scope": session_scope,
+            "supports_primary_group_shared": supports_primary_group_shared,
+            "is_group": is_group,
+            "delivery_mode": "chat" if is_group else "user",
+            "to_user": None if is_group else str(chat_id),
+            "group_chat_id": str(chat_id) if is_group else None,
+        }
+
+    async def _get_or_create_session(
+        self,
+        channel: str,
+        account_id: Optional[str],
+        chat_id: str,
+    ) -> str:
         """获取或创建频道会话（与 handler 逻辑一致）"""
         from backend.database import get_db_session_factory
         from backend.models.session import Session
         from sqlalchemy import select
         import uuid
-        
-        session_name = f"{channel}:{chat_id}"
+
+        normalized_account_id = self._normalize_account_id(account_id)
+        prefix = f"{channel}:{normalized_account_id}:{chat_id}"
+        legacy_prefix = f"{channel}:{chat_id}"
+        channel_context = self._build_channel_context(channel, normalized_account_id, chat_id)
         db_factory = get_db_session_factory()
         
         async with db_factory() as db:
             # 查找已有会话
             result = await db.execute(
                 select(Session)
-                .where(Session.name == session_name)
+                .where(Session.name.like(f"{prefix}%"))
                 .order_by(Session.created_at.desc())
                 .limit(1)
             )
             session = result.scalar_one_or_none()
-            
+
+            if not session and normalized_account_id == PRIMARY_ACCOUNT_ID:
+                result = await db.execute(
+                    select(Session)
+                    .where(Session.name.like(f"{legacy_prefix}%"))
+                    .order_by(Session.created_at.desc())
+                    .limit(1)
+                )
+                session = result.scalar_one_or_none()
+
             if session:
+                existing_context = {}
+                try:
+                    raw_context = getattr(session, "channel_context", None)
+                    if raw_context:
+                        existing_context = json.loads(raw_context)
+                except Exception:
+                    existing_context = {}
+                if channel_context != existing_context:
+                    session.channel_context = json.dumps(channel_context, ensure_ascii=False)
+                    await db.commit()
                 return session.id
             
             # 创建新会话
-            session = Session(id=str(uuid.uuid4()), name=session_name)
+            session_name = (
+                f"{channel}:{normalized_account_id}:{chat_id}:"
+                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            session = Session(
+                id=str(uuid.uuid4()),
+                name=session_name,
+                channel_context=json.dumps(channel_context, ensure_ascii=False),
+            )
             db.add(session)
             await db.commit()
             await db.refresh(session)

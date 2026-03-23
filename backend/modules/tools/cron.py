@@ -82,6 +82,7 @@ Examples:
         self.cron_service = cron_service
         self.channel: str = "web"
         self.chat_id: str = "system"
+        self.account_id: str = "default"
     
     def set_context(self, channel: str, chat_id: str):
         """设置会话上下文
@@ -93,6 +94,20 @@ Examples:
         self.channel = channel
         self.chat_id = chat_id
         logger.debug(f"CronTool context set: channel={channel}, chat_id={chat_id}")
+
+    def set_message_context(self, message_context: dict | None):
+        """从当前入站消息继承渠道上下文与机器人账号。"""
+        if not message_context:
+            return
+
+        metadata = message_context.get("metadata") or {}
+        self.channel = str(message_context.get("channel") or self.channel)
+        self.chat_id = str(message_context.get("chat_id") or self.chat_id)
+        self.account_id = str(metadata.get("account_id") or self.account_id or "default")
+        logger.debug(
+            f"CronTool message context set: channel={self.channel}, "
+            f"account_id={self.account_id}, chat_id={self.chat_id}"
+        )
     
     async def execute(self, **kwargs: Any) -> str:
         """执行工具"""
@@ -135,6 +150,7 @@ Examples:
                 message=message,
                 enabled=True,
                 channel=self.channel if deliver_to_channel else None,
+                account_id=self.account_id if deliver_to_channel else None,
                 chat_id=self.chat_id if deliver_to_channel else None,
                 deliver_response=deliver_to_channel
             )
@@ -147,7 +163,7 @@ Examples:
             response += f"Next run: {job.next_run.strftime('%Y-%m-%d %H:%M:%S UTC') if job.next_run else 'N/A'}\n"
             
             if deliver_to_channel:
-                response += f"Will deliver to: {self.channel}:{self.chat_id}"
+                response += f"Will deliver to: {self.channel}:{self.account_id}:{self.chat_id}"
             
             return response
             
@@ -186,7 +202,10 @@ Examples:
                     lines.append(f"   Runs: {job.run_count} (Errors: {job.error_count or 0})")
                 
                 if job.channel:
-                    lines.append(f"   Channel: {job.channel}:{job.chat_id}")
+                    if getattr(job, "account_id", None):
+                        lines.append(f"   Channel: {job.channel}:{job.account_id}:{job.chat_id}")
+                    else:
+                        lines.append(f"   Channel: {job.channel}:{job.chat_id}")
                 
                 lines.append("")  # 空行分隔
             

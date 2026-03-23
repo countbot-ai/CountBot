@@ -4,7 +4,6 @@ from .base import LLMProvider, StreamChunk, ToolCall
 from .anthropic_provider import AnthropicProvider
 from .openai_provider import OpenAIProvider
 from .factory import create_provider
-from .transcription import TranscriptionProvider
 
 __all__ = [
     "LLMProvider",
@@ -13,5 +12,4 @@ __all__ = [
     "AnthropicProvider",
     "OpenAIProvider",
     "create_provider",
-    "TranscriptionProvider",
 ]

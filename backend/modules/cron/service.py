@@ -32,6 +32,7 @@ class CronService:
         message: str,
         enabled: bool = True,
         channel: Optional[str] = None,
+        account_id: Optional[str] = None,
         chat_id: Optional[str] = None,
         deliver_response: bool = False,
         max_retries: int = 0,
@@ -54,6 +55,7 @@ class CronService:
             message=message,
             enabled=enabled,
             channel=channel,
+            account_id=account_id,
             chat_id=chat_id,
             deliver_response=deliver_response,
             max_retries=max_retries,
@@ -103,6 +105,7 @@ class CronService:
         message: Optional[str] = None,
         enabled: Optional[bool] = None,
         channel: Optional[str] = None,
+        account_id: Optional[str] = None,
         chat_id: Optional[str] = None,
         deliver_response: Optional[bool] = None,
         max_retries: Optional[int] = None,
@@ -130,7 +133,10 @@ class CronService:
         
         if channel is not None:
             job.channel = channel
-        
+
+        if account_id is not None:
+            job.account_id = account_id
+
         if chat_id is not None:
             job.chat_id = chat_id
         

@@ -20,8 +20,20 @@ from backend.models.session import Session
 from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.task_manager import CancellationToken
+from backend.modules.agent.team_commands import (
+    build_team_command_overview,
+    build_team_goal_usage,
+    resolve_explicit_team_command,
+)
 from backend.modules.channels.base import InboundMessage, OutboundMessage
 from backend.modules.config.loader import config_loader
+from backend.modules.external_agents.conversation import (
+    build_history_prompt,
+    resolve_effective_session_mode,
+)
+from backend.modules.external_agents.routing import (
+    extract_explicit_external_agent_request,
+)
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 from backend.modules.messaging.rate_limiter import RateLimiter
 from backend.modules.session import (
@@ -266,6 +278,8 @@ class ChannelMessageHandler:
         self.rate_limiter = rate_limiter
         self._active_tasks: Dict[str, CancellationToken] = {}
         self._last_session_list_scope: Dict[str, str] = {}
+        self._route_mode_overrides: Dict[str, str] = {}
+        self._coder_profile_overrides: Dict[str, str] = {}
         self.db_session_factory = get_db_session_factory()
         self.channel_manager = None
         self.max_history_messages = max_history_messages
@@ -291,6 +305,18 @@ class ChannelMessageHandler:
             max_tokens=max_tokens,
         )
 
+    def _rebuild_tool_registry(self) -> None:
+        """按最新参数重建工具注册表。"""
+        register_kwargs = dict(self._tool_params)
+        if self.channel_manager is not None:
+            register_kwargs["channel_manager"] = self.channel_manager
+
+        self.tool_registry = register_all_tools(
+            **register_kwargs,
+            memory_store=self._memory_store,
+        )
+        self.agent_loop.tools = self.tool_registry
+
     # ------------------------------------------------------------------
     # 配置热重载
     # ------------------------------------------------------------------
@@ -305,8 +331,11 @@ class ChannelMessageHandler:
         max_history_messages: Optional[int] = None,
         persona_config=None,
         workspace=None,
+        tool_params_updates: Optional[dict] = None,
     ) -> None:
         """热重载 AI 配置（前端修改设置后调用）。"""
+        should_rebuild_tools = False
+
         if provider is not None:
             self.agent_loop.provider = provider
         if model is not None:
@@ -328,12 +357,21 @@ class ChannelMessageHandler:
                 f"user_address={getattr(persona_config, 'user_address', '')}"
             )
 
+        if tool_params_updates:
+            self._tool_params.update(tool_params_updates)
+            should_rebuild_tools = True
+
         if workspace is not None:
+            self._tool_params["workspace"] = workspace
             self.agent_loop.workspace = workspace
             self.context_builder.workspace = workspace
             if self.agent_loop.subagent_manager:
                 self.agent_loop.subagent_manager.workspace = workspace
+            should_rebuild_tools = True
             logger.info(f"Workspace path reloaded: {workspace}")
+
+        if should_rebuild_tools:
+            self._rebuild_tool_registry()
 
         logger.info(
             f"Handler config reloaded: model={model}, temp={temperature}, "
@@ -343,12 +381,7 @@ class ChannelMessageHandler:
     def set_channel_manager(self, channel_manager) -> None:
         """设置频道管理器，重新注册工具以支持 send_media。"""
         self.channel_manager = channel_manager
-        self.tool_registry = register_all_tools(
-            **self._tool_params,
-            channel_manager=channel_manager,
-            memory_store=self._memory_store,
-        )
-        self.agent_loop.tools = self.tool_registry
+        self._rebuild_tool_registry()
 
     # ------------------------------------------------------------------
     # 消息处理循环
@@ -384,6 +417,7 @@ class ChannelMessageHandler:
         cancel_token = CancellationToken()
         session_id = None
         start_time = time.time()
+        typing_session_key = None
 
         stream_handler = msg.metadata.get('_stream_handler') if msg.metadata else None
         stream_abort_handler = msg.metadata.get('_stream_abort_handler') if msg.metadata else None
@@ -407,6 +441,7 @@ class ChannelMessageHandler:
                 except Exception as e:
                     logger.warning(f"[{msg.channel}] Failed to detect mentioned team: {e}")
             prefer_direct_workflow_result = bool(mentioned_team)
+            typing_session_key = await self._maybe_start_channel_typing(msg)
 
             # 限流检查
             if self.rate_limiter:
@@ -420,7 +455,7 @@ class ChannelMessageHandler:
                     return
 
             # 命令分发
-            cmd = content.lower()
+            cmd = content.strip().lower()
             if cmd in ("/new", "/newsession", "/new_session", "/n"):
                 await self._handle_new_session_command(msg)
                 return
@@ -442,6 +477,23 @@ class ChannelMessageHandler:
             if cmd in ("/help", "/h", "/?"):
                 await self._handle_help_command(msg)
                 return
+            if cmd.startswith(("/route", "/rt")):
+                await self._handle_route_command(msg, content)
+                return
+            if cmd.startswith(("/coder", "/cdr")):
+                await self._handle_coder_command(msg, content)
+                return
+            if cmd == "/team" or cmd.startswith("/team "):
+                await self._handle_team_command(
+                    msg,
+                    content,
+                    session_route=session_route,
+                    user_message_context=user_message_context,
+                    cancel_token=cancel_token,
+                    tool_event_handler=tool_event_handler,
+                    start_time=start_time,
+                )
+                return
             if cmd.startswith(("/provider ", "/提供商 ", "/m ")) or cmd in ("/provider", "/提供商", "/m"):
                 await self._handle_provider_command(msg, content)
                 return
@@ -453,6 +505,33 @@ class ChannelMessageHandler:
                 logger.info(
                     f"[{msg.channel}] Ignoring empty inbound content after wakeup normalization "
                     f"(chat={msg.chat_id})"
+                )
+                return
+
+            explicit_profile, explicit_task = self._resolve_explicit_external_coder(content)
+            if explicit_profile and explicit_task:
+                await self._handle_direct_coding_message(
+                    msg=msg,
+                    content=content,
+                    task_content=explicit_task,
+                    session_route=session_route,
+                    user_message_context=user_message_context,
+                    cancel_token=cancel_token,
+                    coder_profile=explicit_profile,
+                    start_time=start_time,
+                )
+                return
+
+            route_mode, coder_profile = self._get_routing_preferences(msg)
+            if route_mode == "direct":
+                await self._handle_direct_coding_message(
+                    msg=msg,
+                    content=content,
+                    session_route=session_route,
+                    user_message_context=user_message_context,
+                    cancel_token=cancel_token,
+                    coder_profile=coder_profile,
+                    start_time=start_time,
                 )
                 return
 
@@ -524,6 +603,7 @@ class ChannelMessageHandler:
                     media=msg.media,
                     channel=msg.channel,
                     chat_id=msg.chat_id,
+                    account_id=str((msg.metadata or {}).get("account_id") or "").strip() or None,
                     cancel_token=cancel_token,
                     yield_intermediate=True,
                     model_override=model_override,
@@ -545,6 +625,7 @@ class ChannelMessageHandler:
                     session_id, model_input, history, cancel_token,
                     media=msg.media,
                     channel=msg.channel, chat_id=msg.chat_id,
+                    account_id=str((msg.metadata or {}).get("account_id") or "").strip() or None,
                     runtime_config=runtime_config,
                     tool_event_handler=tool_event_handler,
                     prefer_direct_workflow_result=prefer_direct_workflow_result,
@@ -629,12 +710,57 @@ class ChannelMessageHandler:
                 await self._send_reply(msg, _friendly_channel_error(str(e)))
 
         finally:
+            await self._maybe_stop_channel_typing(msg, typing_session_key)
             workflow_tool = self.tool_registry.get_tool("workflow_run")
             if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
                 workflow_tool.set_event_callback(None)
             self.tool_registry.set_message_context(None)
             if session_id and session_id in self._active_tasks:
                 del self._active_tasks[session_id]
+
+    async def _maybe_start_channel_typing(self, msg: InboundMessage) -> Optional[str]:
+        """按渠道能力开启 typing 提示。"""
+        if msg.channel != "wechat" or self.channel_manager is None:
+            return None
+
+        metadata = msg.metadata or {}
+        account_id = str(metadata.get("account_id") or "default").strip() or "default"
+        context_token = str(metadata.get("context_token") or "").strip()
+        if not context_token:
+            return None
+
+        channel = self.channel_manager.get_channel("wechat", account_id=account_id)
+        if channel is None or not hasattr(channel, "open_typing_session"):
+            return None
+
+        try:
+            return await channel.open_typing_session(
+                chat_id=str(msg.chat_id),
+                context_token=context_token,
+            )
+        except Exception as e:
+            logger.debug(f"[wechat] Failed to start typing session: {e}")
+            return None
+
+    async def _maybe_stop_channel_typing(
+        self,
+        msg: InboundMessage,
+        typing_session_key: Optional[str],
+    ) -> None:
+        """关闭渠道 typing 提示。"""
+        if msg.channel != "wechat" or not typing_session_key or self.channel_manager is None:
+            return
+
+        metadata = msg.metadata or {}
+        account_id = str(metadata.get("account_id") or "default").strip() or "default"
+        channel = self.channel_manager.get_channel("wechat", account_id=account_id)
+        if channel is None or not hasattr(channel, "close_typing_session"):
+            return
+
+        try:
+            await channel.close_typing_session(typing_session_key)
+        except Exception as e:
+            logger.debug(f"[wechat] Failed to stop typing session: {e}")
 
     def _register_stream_abort_callback(
         self,
@@ -679,6 +805,7 @@ class ChannelMessageHandler:
         media: Optional[List[str]] = None,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
+        account_id: Optional[str] = None,
         runtime_config=None,
         tool_event_handler=None,
         prefer_direct_workflow_result: bool = False,
@@ -699,6 +826,7 @@ class ChannelMessageHandler:
                 media=media,
                 channel=channel,
                 chat_id=chat_id,
+                account_id=account_id,
                 cancel_token=cancel_token,
                 yield_intermediate=True,  # 启用流式输出
                 model_override=model_override,
@@ -804,8 +932,10 @@ class ChannelMessageHandler:
 
     async def _get_or_create_session(self, msg: InboundMessage) -> str:
         """获取已有会话或创建新会话。"""
-        if msg.metadata and "session_id" in msg.metadata:
-            return msg.metadata["session_id"]
+        if msg.metadata:
+            existing_session_id = str(msg.metadata.get("session_id") or "").strip()
+            if existing_session_id:
+                return existing_session_id
 
         if hasattr(self, "_active_sessions"):
             chat_key = self._get_chat_key(msg)
@@ -1157,6 +1287,7 @@ class ChannelMessageHandler:
     async def _handle_personality_command(self, msg: InboundMessage, content: str) -> None:
         """处理 /personality 或 /p 命令 - 为当前会话设置性格。"""
         from backend.modules.agent.personalities import PERSONALITY_PRESETS
+        from backend.modules.session.runtime_config import resolve_session_runtime_config
         from sqlalchemy import select
         import json
         
@@ -1171,13 +1302,8 @@ class ChannelMessageHandler:
                 await self._send_reply(msg, "会话不存在")
                 return
             
-            current_personality = "professional"
-            if session.use_custom_config and session.session_persona_config:
-                try:
-                    persona_config = json.loads(session.session_persona_config)
-                    current_personality = persona_config.get("personality", "professional")
-                except:
-                    pass
+            runtime_config = resolve_session_runtime_config(config_loader.config, session)
+            current_personality = runtime_config.persona_config.personality
             
             if len(parts) < 2:
                 lines = ["可用性格列表\n━━━━━━━━━━━━━━━━━━━━━━\n"]
@@ -1255,6 +1381,7 @@ class ChannelMessageHandler:
         """
         from backend.modules.providers.registry import get_provider_metadata
         from backend.modules.config.loader import config_loader
+        from backend.modules.session.runtime_config import resolve_session_runtime_config
         from sqlalchemy import select
         import json
         
@@ -1269,24 +1396,10 @@ class ChannelMessageHandler:
                 await self._send_reply(msg, "会话不存在")
                 return
             
-            # 获取当前会话配置（自定义或全局）
-            current_provider = None
-            current_model = None
-            is_custom_config = False
-            
-            if session.use_custom_config and session.session_model_config:
-                try:
-                    model_config = json.loads(session.session_model_config)
-                    current_provider = model_config.get("provider")
-                    current_model = model_config.get("model")
-                    is_custom_config = True
-                except:
-                    pass
-            
-            # 如果没有自定义配置，使用全局配置
-            if not current_provider:
-                current_provider = config_loader.config.ai.provider
-                current_model = config_loader.config.ai.model
+            runtime_config = resolve_session_runtime_config(config_loader.config, session)
+            current_provider = runtime_config.provider_name
+            current_model = runtime_config.model_name
+            is_custom_config = runtime_config.has_custom_model_config
             
             if len(parts) < 2:
                 lines = ["已配置的模型提供商\n━━━━━━━━━━━━━━━━━━━━━━\n"]
@@ -1421,6 +1534,304 @@ class ChannelMessageHandler:
                 f"此设置仅对当前会话生效"
             )
 
+    def _get_route_preference_key(self, msg: InboundMessage) -> str:
+        return self._get_chat_key(msg)
+
+    def _resolve_channel_account_config(self, msg: InboundMessage):
+        channel_config = getattr(config_loader.config.channels, msg.channel, None)
+        if channel_config is None:
+            return None
+
+        account_id = str((msg.metadata or {}).get("account_id") or "default")
+        root_account_id = str(getattr(channel_config, "account_id", "default") or "default")
+        if account_id == root_account_id:
+            return channel_config
+
+        account_cfg = getattr(channel_config, "accounts", {}).get(account_id)
+        return account_cfg or channel_config
+
+    def _get_routing_preferences(self, msg: InboundMessage) -> tuple[str, str]:
+        key = self._get_route_preference_key(msg)
+        channel_cfg = self._resolve_channel_account_config(msg)
+        if channel_cfg is None:
+            channel_cfg = object()
+
+        route_mode = str(getattr(channel_cfg, "routing_mode", "ai") or "ai").strip().lower()
+        if route_mode not in {"ai", "direct"}:
+            route_mode = "ai"
+
+        coder_profile = str(
+            getattr(channel_cfg, "external_coding_profile", "") or ""
+        ).strip()
+
+        if key in self._route_mode_overrides:
+            route_mode = self._route_mode_overrides[key]
+        if key in self._coder_profile_overrides:
+            coder_profile = self._coder_profile_overrides[key]
+
+        return route_mode, coder_profile
+
+    def _resolve_explicit_external_coder(self, content: str) -> tuple[str, str]:
+        """Resolve explicit natural-language routing like '用 codex 帮我修一下'."""
+        parsed = extract_explicit_external_agent_request(content)
+        if not parsed:
+            return "", ""
+
+        requested_profile, task = parsed
+        external_tool = self.tool_registry.get_tool("external_coding_agent")
+        registry = getattr(external_tool, "registry", None)
+        if registry is None:
+            return "", ""
+
+        try:
+            canonical_name = registry.resolve_profile_name(requested_profile)
+            registry.resolve_profile(canonical_name)
+        except Exception:
+            return "", ""
+
+        return canonical_name, task
+
+    def _prepare_external_task(
+        self,
+        profile,
+        task: str,
+        history: List[dict],
+    ) -> str:
+        """根据 profile 会话模式构造实际下发任务。"""
+        session_mode = resolve_effective_session_mode(profile)
+        if session_mode == "stateless":
+            return task
+        if session_mode == "native":
+            return task
+        return build_history_prompt(
+            task=task,
+            history_messages=history,
+            history_message_count=profile.history_message_count,
+        )
+
+    async def _handle_route_command(self, msg: InboundMessage, content: str) -> None:
+        """处理 /route 命令。"""
+        parts = content.strip().split(maxsplit=1)
+        current_mode, current_profile = self._get_routing_preferences(msg)
+
+        if len(parts) == 1:
+            await self._send_reply(
+                msg,
+                "当前聊天路由模式:\n\n"
+                f"- 模式: {current_mode}\n"
+                f"- 外部代理: {current_profile or '未设置'}\n\n"
+                "用法:\n"
+                "- /route ai\n"
+                "- /route direct\n"
+                "- /route default",
+            )
+            return
+
+        value = parts[1].strip().lower()
+        key = self._get_route_preference_key(msg)
+
+        if value == "default":
+            self._route_mode_overrides.pop(key, None)
+            resolved_mode, resolved_profile = self._get_routing_preferences(msg)
+            await self._send_reply(
+                msg,
+                "当前聊天已恢复为渠道默认路由设置。\n\n"
+                f"- 模式: {resolved_mode}\n"
+                f"- 外部代理: {resolved_profile or '未设置'}",
+            )
+            return
+
+        if value not in {"ai", "direct"}:
+            await self._send_reply(
+                msg,
+                "无效路由模式。\n\n"
+                "可用值:\n"
+                "- /route ai\n"
+                "- /route direct\n"
+                "- /route default",
+            )
+            return
+
+        self._route_mode_overrides[key] = value
+        await self._send_reply(
+            msg,
+            "当前聊天路由模式已更新。\n\n"
+            f"- 模式: {value}\n"
+            f"- 外部代理: {current_profile or '未设置'}",
+        )
+
+    async def _handle_coder_command(self, msg: InboundMessage, content: str) -> None:
+        """处理 /coder 命令。"""
+        parts = content.strip().split(maxsplit=1)
+        current_mode, current_profile = self._get_routing_preferences(msg)
+        external_tool = self.tool_registry.get_tool("external_coding_agent")
+        registry = getattr(external_tool, "registry", None)
+        enabled_profiles = registry.enabled_profile_names() if registry else []
+        enabled_profiles_text = ", ".join(enabled_profiles) if enabled_profiles else "无"
+
+        if len(parts) == 1:
+            await self._send_reply(
+                msg,
+                "当前聊天外部编程代理设置:\n\n"
+                f"- 当前模式: {current_mode}\n"
+                f"- 当前代理: {current_profile or '未设置'}\n"
+                f"- 已启用 profile: {enabled_profiles_text}\n\n"
+                "用法:\n"
+                "- /coder codex\n"
+                "- /coder claude\n"
+                "- /coder default",
+            )
+            return
+
+        value = parts[1].strip()
+        key = self._get_route_preference_key(msg)
+
+        if value.lower() == "default":
+            self._coder_profile_overrides.pop(key, None)
+            resolved_mode, resolved_profile = self._get_routing_preferences(msg)
+            await self._send_reply(
+                msg,
+                "当前聊天已恢复为渠道默认外部代理设置。\n\n"
+                f"- 当前模式: {resolved_mode}\n"
+                f"- 当前代理: {resolved_profile or '未设置'}",
+            )
+            return
+
+        if registry is None:
+            await self._send_reply(msg, "external_coding_agent 工具当前不可用。")
+            return
+
+        try:
+            canonical_name = registry.resolve_profile_name(value)
+            registry.resolve_profile(canonical_name)
+        except Exception as e:
+            await self._send_reply(
+                msg,
+                f"无法切换外部代理: {e}\n\n已启用 profile: {enabled_profiles_text}",
+            )
+            return
+
+        self._coder_profile_overrides[key] = canonical_name
+        await self._send_reply(
+            msg,
+            "当前聊天外部编程代理已更新。\n\n"
+            f"- 当前模式: {current_mode}\n"
+            f"- 当前代理: {canonical_name}",
+        )
+
+    async def _handle_direct_coding_message(
+        self,
+        *,
+        msg: InboundMessage,
+        content: str,
+        task_content: Optional[str] = None,
+        session_route: Dict[str, object],
+        user_message_context: dict,
+        cancel_token: CancellationToken,
+        coder_profile: str,
+        start_time: float,
+    ) -> None:
+        """在 direct 路由模式下直接调用 external_coding_agent。"""
+        session_id = await self._get_or_create_session(msg)
+        self._active_tasks[session_id] = cancel_token
+
+        try:
+            stream_abort_handler = msg.metadata.get('_stream_abort_handler') if msg.metadata else None
+            if stream_abort_handler:
+                self._register_stream_abort_callback(
+                    cancel_token,
+                    stream_abort_handler,
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                )
+
+            self.tool_registry.set_message_context(
+                {
+                    "channel": msg.channel,
+                    "sender_id": msg.sender_id,
+                    "chat_id": msg.chat_id,
+                    "metadata": msg.metadata,
+                }
+            )
+            self.tool_registry.set_session_id(session_id)
+            self.tool_registry.set_channel(msg.channel)
+            self.tool_registry.set_cancel_token(cancel_token)
+
+            await self._save_message(
+                session_id,
+                "user",
+                content,
+                message_context=user_message_context,
+            )
+
+            external_tool = self.tool_registry.get_tool("external_coding_agent")
+            registry = getattr(external_tool, "registry", None)
+            if registry is None:
+                raise ValueError("external_coding_agent 工具当前不可用。")
+
+            profile = registry.resolve_profile(coder_profile.strip() or None)
+            history = await self._get_session_history(session_id)
+            if history:
+                history = history[:-1]
+            prepared_task = self._prepare_external_task(
+                profile,
+                (task_content or content).strip(),
+                history,
+            )
+
+            arguments = {
+                "task": prepared_task,
+                "mode": "run",
+                "timeout": self._tool_params.get("command_timeout", 180),
+                "profile": profile.name,
+            }
+            profile_name = profile.name
+
+            result = await self.tool_registry.execute(
+                tool_name="external_coding_agent",
+                arguments=arguments,
+            )
+
+            if cancel_token.is_cancelled:
+                logger.info(f"[{msg.channel}] Direct coding route cancelled for session {session_id}")
+                await self._send_reply(msg, "Task cancelled")
+                return
+
+            async with self.db_session_factory() as db:
+                from backend.modules.session.manager import SessionManager
+                from backend.modules.tools.conversation_history import get_conversation_history
+
+                session_manager = SessionManager(db)
+                assistant_message = await session_manager.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=result,
+                    message_context=_encode_message_context(
+                        self._build_assistant_message_context(msg, session_route)
+                    ),
+                )
+
+                conversation_history = get_conversation_history()
+                try:
+                    await conversation_history.backfill_message_id(
+                        session_id=session_id,
+                        message_id=assistant_message.id,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[{msg.channel}] Failed to backfill direct-mode tool message_id: {e}"
+                    )
+
+            await self._send_reply(msg, result)
+            duration = time.time() - start_time
+            logger.info(
+                f"[{msg.channel}] Direct coding route handled via profile={profile_name or 'auto'} "
+                f"for session {session_id} in {duration:.2f}s"
+            )
+        finally:
+            self.tool_registry.set_cancel_token(None)
+            self._active_tasks.pop(session_id, None)
+
     async def _handle_help_command(self, msg: InboundMessage) -> None:
         """处理 /help 命令。"""
         help_text = (
@@ -1435,6 +1846,12 @@ class ChannelMessageHandler:
             "个性化设置:\n"
             "  /personality (/p) [编号|ID] - 查看/切换性格\n"
             "  /provider (/m) [编号|ID] [模型] - 查看/切换模型\n\n"
+            "渠道编程代理:\n"
+            "  /route (/rt) [ai|direct|default] - 切换当前聊天路由模式\n"
+            "  /coder (/cdr) [profile|default] - 切换当前聊天外部编程代理\n\n"
+            "团队协作:\n"
+            "  /team - 查看可用团队名称\n"
+            "  /team <团队名> <任务> - 直接运行指定智能体团队\n\n"
             "控制:\n"
             "  /stop - 停止当前任务\n"
             "  /help (/h) - 显示此帮助\n\n"
@@ -1444,8 +1861,135 @@ class ChannelMessageHandler:
             "- 括号内为命令简写\n"
             "- /l 查看当前聊天，/al 查看所有会话\n"
             "- 使用 /m 或 /p 查看详细用法\n"
+            "- /route direct 后，普通消息会直接转发给外部编程代理\n"
+            "- /coder codex 可把当前聊天的直通代理切到 codex\n"
+            "- 先发送 /team 可查看当前可用团队名称\n"
+            "- /team 文档深度分析 请总结这份文档，可直接执行团队工作流\n"
+            "- 也可以直接说“用 codex 帮我修这个报错”或“用 claude 写个爬虫”\n"
         )
         await self._send_reply(msg, help_text)
+
+    async def _handle_team_command(
+        self,
+        msg: InboundMessage,
+        content: str,
+        *,
+        session_route: Dict[str, object],
+        user_message_context: dict,
+        cancel_token: CancellationToken,
+        tool_event_handler=None,
+        start_time: Optional[float] = None,
+    ) -> None:
+        """处理渠道 /team 命令，直接执行指定团队工作流。"""
+        if content.strip() == "/team":
+            await self._send_reply(
+                msg,
+                build_team_command_overview(
+                    self.context_builder,
+                    log_scope="channel team command",
+                ),
+            )
+            return
+
+        resolved = resolve_explicit_team_command(
+            self.context_builder,
+            content,
+            log_scope="channel team command",
+        )
+        if resolved is None:
+            await self._send_reply(msg, "团队命令当前不可用，请稍后重试。")
+            return
+
+        team_name, goal = resolved
+        if not team_name:
+            await self._send_reply(
+                msg,
+                build_team_command_overview(
+                    self.context_builder,
+                    log_scope="channel team command",
+                ),
+            )
+            return
+        if not goal:
+            await self._send_reply(msg, build_team_goal_usage(team_name))
+            return
+
+        session_id = await self._get_or_create_session(msg)
+        self._active_tasks[session_id] = cancel_token
+        self.tool_registry.set_message_context(
+            {
+                "channel": msg.channel,
+                "sender_id": msg.sender_id,
+                "chat_id": msg.chat_id,
+                "metadata": msg.metadata,
+            }
+        )
+        self.tool_registry.set_session_id(session_id)
+        self.tool_registry.set_cancel_token(cancel_token)
+
+        workflow_tool = self.tool_registry.get_tool("workflow_run")
+        if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
+            workflow_tool.set_event_callback(tool_event_handler)
+
+        try:
+            await self._save_message(
+                session_id,
+                "user",
+                content,
+                message_context=user_message_context,
+            )
+
+            response = await self.tool_registry.execute(
+                "workflow_run",
+                {
+                    "team_name": team_name,
+                    "goal": goal,
+                },
+            )
+
+            async with self.db_session_factory() as db:
+                from backend.modules.session.manager import SessionManager
+
+                session_manager = SessionManager(db)
+                assistant_message = await session_manager.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=response,
+                    message_context=_encode_message_context(
+                        self._build_assistant_message_context(msg, session_route)
+                    ),
+                )
+
+                try:
+                    from backend.modules.tools.conversation_history import get_conversation_history
+
+                    conversation_history = get_conversation_history()
+                    updated_count = await conversation_history.backfill_message_id(
+                        session_id=session_id,
+                        message_id=assistant_message.id,
+                    )
+                    if updated_count > 0:
+                        logger.info(
+                            f"[{msg.channel}] Backfilled message_id={assistant_message.id} "
+                            f"to {updated_count} team command tool conversations"
+                        )
+                except Exception as e:
+                    logger.warning(f"[{msg.channel}] Failed to backfill team command message_id: {e}")
+
+            channel_response = _WORKFLOW_META_RE.sub("", response).strip()
+            await self._send_reply(msg, channel_response or response)
+
+            duration = time.time() - start_time if start_time is not None else 0.0
+            logger.info(
+                f"[{msg.channel}] Team command handled for session {session_id} "
+                f"(team={team_name}) in {duration:.2f}s"
+            )
+        finally:
+            if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
+                workflow_tool.set_event_callback(None)
+            self.tool_registry.set_cancel_token(None)
+            self.tool_registry.set_message_context(None)
+            self._active_tasks.pop(session_id, None)
 
     # ------------------------------------------------------------------
     # 数据库辅助

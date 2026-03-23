@@ -22,6 +22,7 @@ class CronJob(Base):
     
     # 渠道支持
     channel: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "web", "feishu", "telegram" 等
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 机器人账号 ID（多机器人渠道）
     chat_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 群组 ID 或用户 ID
     deliver_response: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否发送响应到渠道
     
@@ -50,5 +51,5 @@ class CronJob(Base):
 
     __table_args__ = (
         Index("idx_cron_next_run", "next_run", sqlite_where=enabled.is_(True)),
-        Index("idx_cron_channel", "channel", "chat_id"),
+        Index("idx_cron_channel", "channel", "account_id", "chat_id"),
     )

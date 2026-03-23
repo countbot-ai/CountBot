@@ -40,6 +40,8 @@ def main():
     """
     import uvicorn
     from loguru import logger
+
+    from backend.utils.logger import build_uvicorn_log_config
     
     # 读取配置
     host = os.getenv("HOST", "127.0.0.1")
@@ -91,7 +93,8 @@ def main():
             port=port,
             reload=True,  # 开发模式启用热重载
             reload_dirs=["backend"],  # 监控 backend 目录
-            log_level="debug"  # 开发模式使用 debug 日志级别
+            log_level="debug",  # 开发模式使用 debug 日志级别
+            log_config=build_uvicorn_log_config(),
         )
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")

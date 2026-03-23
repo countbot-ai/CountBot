@@ -2,6 +2,7 @@
 """Context Builder - 构建 Agent 上下文"""
 
 import base64
+import json
 import mimetypes
 import platform
 from datetime import datetime
@@ -45,6 +46,53 @@ class ContextBuilder:
             new_config: 新的性格配置
         """
         self.persona_config = new_config
+
+    def _get_enabled_external_coding_profiles(self) -> List[str]:
+        """读取当前工作区下已启用的外部编码 profile。"""
+        config_path = self.workspace / "external_coding_tools.json"
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return []
+        except Exception as e:
+            logger.warning(f"Failed to load external coding tool config from {config_path}: {e}")
+            return []
+
+        profiles = raw.get("profiles", [])
+        if not isinstance(profiles, list):
+            return []
+
+        enabled_profiles: List[str] = []
+        for item in profiles:
+            if not isinstance(item, dict):
+                continue
+            if not bool(item.get("enabled", False)):
+                continue
+            name = str(item.get("name", "")).strip()
+            if name:
+                enabled_profiles.append(name)
+
+        return enabled_profiles
+
+    def _build_external_coding_guidance(self) -> str:
+        """根据是否已启用 profile 决定是否展示外部编码代理规则。"""
+        enabled_profiles = self._get_enabled_external_coding_profiles()
+        if not enabled_profiles:
+            return (
+                "7. **外部编码代理**:\n"
+                "   - 当前未启用任何外部编码 profile，`external_coding_agent` 不可用\n"
+                "   - 不要调用 `external_coding_agent`，也不要假设 Claude/Codex/OpenCode 直通工具存在\n"
+                "   - 如果用户要求“用 claude/codex”，先按当前可用工具正常处理，或明确说明外部编码代理尚未启用"
+            )
+
+        profiles_text = "、".join(enabled_profiles)
+        return (
+            "7. **外部编码代理**:\n"
+            f"   - 当前已启用的外部编码 profile: {profiles_text}\n"
+            "   - 当用户明确说“用 claude ...”“用 codex ...”“use claude ...”“use codex ...”时，优先调用 `external_coding_agent`\n"
+            "   - `profile` 使用用户明确指定的值，任务内容使用去掉该前缀后的剩余正文\n"
+            "   - 除非用户明确要求你自行处理，否则不要把这类请求改写成普通文本回答"
+        )
 
     def build_system_prompt(
         self,
@@ -266,6 +314,7 @@ class ContextBuilder:
             custom_personality = getattr(active_persona_config, 'custom_personality', None) or ""
         
         personality_desc = self._get_personality_from_db(personality, custom_personality)
+        external_coding_guidance = self._build_external_coding_guidance()
         
         # 构建用户信息部分
         user_info = f"- 用户称呼: {user_name}"
@@ -329,6 +378,7 @@ class ContextBuilder:
    - 例如：查询天气后，回复应包含温度、天气状况、湿度、风速等完整信息
    - 例如：读取配置文件后，回复应包含用户可能询问的关键配置项
    - 原则：假设用户可能会在后续对话中询问这些数据的细节
+{external_coding_guidance}
 
 ## 文件操作规范（必须遵守）
 1. **大文件分段写入**: 当需要写入的内容较长（如完整 HTML 页面、大段代码等超过 2000 字符），**必须**分多次调用 write_file：
@@ -410,6 +460,7 @@ class ContextBuilder:
         media: Optional[List[str]] = None,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
+        account_id: Optional[str] = None,
         persona_config=None,
     ) -> List[Dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
@@ -425,7 +476,13 @@ class ContextBuilder:
             system_prompt += f"\n\n## Current Session Context\n{session_summary}"
         
         if channel and chat_id:
-            system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
+            session_lines = [
+                f"Channel: {channel}",
+                f"Chat ID: {chat_id}",
+            ]
+            if account_id:
+                session_lines.append(f"Account ID: {account_id}")
+            system_prompt += "\n\n## Current Session\n" + "\n".join(session_lines)
         
         messages.append({"role": "system", "content": system_prompt})
         messages.extend(history)

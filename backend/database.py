@@ -84,6 +84,15 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
             ),
         ),
     ),
+    CompatibilityTableMigration(
+        table_name="cron_jobs",
+        columns=(
+            CompatibilityColumnMigration(
+                name="account_id",
+                ddl="account_id VARCHAR",
+            ),
+        ),
+    ),
 )
 
 
@@ -239,4 +248,3 @@ async def init_personalities() -> None:
             await session.rollback()
             # 静默失败，不影响数据库初始化
             pass
-

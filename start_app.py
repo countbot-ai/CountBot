@@ -59,7 +59,7 @@ def main() -> None:
     - 支持优雅关闭
     """
     import uvicorn
-    from backend.utils.logger import setup_logger
+    from backend.utils.logger import build_uvicorn_log_config, setup_logger
     from backend.utils.process_manager import setup_graceful_shutdown
     from loguru import logger
     
@@ -117,7 +117,8 @@ def main() -> None:
             host=host,
             port=port,
             reload=False,  # 生产模式禁用热重载
-            log_level="info"
+            log_level="info",
+            log_config=build_uvicorn_log_config(),
         )
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")

@@ -113,6 +113,53 @@ def _set_windows_app_id() -> None:
         pass
 
 
+def _apply_windows_window_icon(window, icon_path: str) -> None:
+    """Apply a custom icon to the native WinForms window used by pywebview."""
+    if platform.system() != "Windows" or not icon_path:
+        return
+
+    try:
+        import ctypes
+        from System import Action
+        from System.Drawing import Icon
+
+        native_window = getattr(window, "native", None)
+        if native_window is None:
+            return
+
+        def _set_icon() -> None:
+            native_window.Icon = Icon(icon_path)
+
+            handle = native_window.Handle.ToInt32()
+            image_icon = 1
+            wm_seticon = 0x0080
+            icon_small = 0
+            icon_big = 1
+            lr_loadfromfile = 0x0010
+            lr_defaultsize = 0x0040
+
+            icon_handle = ctypes.windll.user32.LoadImageW(
+                None,
+                icon_path,
+                image_icon,
+                0,
+                0,
+                lr_loadfromfile | lr_defaultsize,
+            )
+            if icon_handle:
+                ctypes.windll.user32.SendMessageW(handle, wm_seticon, icon_small, icon_handle)
+                ctypes.windll.user32.SendMessageW(handle, wm_seticon, icon_big, icon_handle)
+
+        if native_window.InvokeRequired:
+            native_window.BeginInvoke(Action(_set_icon))
+        else:
+            _set_icon()
+    except Exception as exc:
+        from loguru import logger
+
+        logger.warning(f"应用 Windows 窗口图标失败: {exc}")
+
+
 def _start_backend(host: str, port: int) -> None:
     """在后台线程启动 FastAPI 服务。"""
     global _server, _backend_error
@@ -120,8 +167,17 @@ def _start_backend(host: str, port: int) -> None:
     import uvicorn
     from loguru import logger
 
+    from backend.utils.logger import build_uvicorn_log_config
+
     try:
-        cfg = uvicorn.Config("backend.app:app", host=host, port=port, reload=False, log_level="info")
+        cfg = uvicorn.Config(
+            "backend.app:app",
+            host=host,
+            port=port,
+            reload=False,
+            log_level="info",
+            log_config=build_uvicorn_log_config(),
+        )
         _server = uvicorn.Server(cfg)
         _server.run()
     except OSError as exc:
@@ -246,7 +302,6 @@ def main() -> None:
 
     icon_path = get_icon_path()
     if icon_path:
-        logger.info(f"图标: {icon_path}")
         if platform.system() == "Darwin":
             _set_macos_dock_icon(icon_path)
         elif platform.system() == "Windows":
@@ -264,6 +319,8 @@ def main() -> None:
             text_select=True,
         )
         window.events.closing += lambda: _shutdown()
+        if platform.system() == "Windows" and icon_path:
+            window.events.shown += lambda: _apply_windows_window_icon(window, icon_path)
 
         start_kwargs = {"debug": os.getenv("DEBUG", "").lower() in ("1", "true")}
         if icon_path:
