@@ -1,7 +1,7 @@
 # AI 快速参考手册
 
 > 用途：当用户询问“在哪里点”“怎么配置”“帮我直接创建”“为什么失败”时，优先按本手册执行。  
-> 原则：不要重复介绍 tools list 和 skills list，本手册只补充工具/技能说明之外的系统操作、图形化入口、接口格式、参数示例、排查路径。
+> 原则：本手册只补充工具/技能说明之外的系统操作、图形化入口、接口格式、参数示例、排查路径。
 
 ## 一、总原则
 
@@ -34,43 +34,39 @@
 聊天主界面顶部右侧工具栏包含这些入口：
 - `清空当前聊天`：删除当前会话消息
 - `会话管理`：打开会话侧边面板
+- `多智能体`：直接切到设置中的多智能体页
 - `工具箱`：打开工具面板
 - `记忆系统`：打开记忆面板
 - `技能库`：打开 Skills 面板
 - `定时任务`：打开 Cron 面板
-- `设置`：打开设置面板
+- `时间线`：展开或收起右侧时间线
+- `设置`：打开设置面板，默认进入 `通用`
 - `语言切换`
 - `主题切换`
 
 补充：
 - 点击左上角 `CountBot` 标题会打开左侧系统信息侧边栏
-- 部分快捷键已内置，例如 `Ctrl/Cmd + ,` 可打开设置
 
-## 2. 侧边面板有哪些
+## 2. 设置面板结构
 
-当前聊天页可以打开这些右侧面板：
-- `会话管理`
-- `工具箱`
-- `记忆系统`
-- `技能库`
-- `定时任务`
-- `设置`
-
-这几个属于现成 GUI，优先用 UI 路径解释。
-
-## 3. 设置面板结构
-
-点击顶部 `设置` 后，左侧导航包含：
+点击顶部 `设置` 后，左侧导航当前包含：
+- `通用`
 - `提供商配置`
 - `模型参数`
 - `用户信息`
+- `记忆系统`
 - `工作空间`
 - `安全设置`
 - `渠道配置`
+- `编程工具`
+- `多智能体`
+- `导入导出`
 
-其中 `用户信息` 下面还有两个子页：
-- `基础配置`
-- `性格编辑器`
+其中：
+- `用户信息` 下面有两个子页：`基础配置`、`性格编辑器`
+- `记忆系统` 既可从顶部工具栏进入，也可从设置页签进入
+- `多智能体` 也可从顶部工具栏直接打开
+- `导入导出` 支持按配置节选择导出和导入
 
 ## 三、会话列表功能
 
@@ -222,7 +218,22 @@ POST /api/skills/feishu-cron-helper/toggle
 
 ## 五、设置入口与功能
 
-## 1. 提供商配置
+## 1. 通用
+
+图形化路径：
+- 顶部 `设置`
+- 左侧选择 `通用`
+
+可配置：
+- 主题
+- 界面语言
+- 默认输出语言
+
+说明：
+- 顶部的 `语言切换`、`主题切换` 是快捷入口
+- 用户只是想改显示偏好时，优先指导走 GUI，不必先查接口
+
+## 2. 提供商配置
 
 图形化路径：
 - 顶部 `设置`
@@ -252,7 +263,7 @@ POST /api/settings/test-connection
 }
 ```
 
-## 2. 模型参数
+## 3. 模型参数
 
 图形化路径：
 - 顶部 `设置`
@@ -279,7 +290,7 @@ PUT /api/settings
 }
 ```
 
-## 3. 用户信息
+## 4. 用户信息
 
 图形化路径：
 - 顶部 `设置`
@@ -308,7 +319,35 @@ PUT /api/settings
 - 启用/禁用
 - 删除自定义性格
 
-## 4. 工作空间
+## 5. 记忆系统
+
+图形化路径：
+- 顶部 `记忆系统`
+- 或 顶部 `设置` -> 左侧 `记忆系统`
+
+当前 GUI 明确支持：
+- 查看长期记忆
+- 切换到编辑模式直接修改长期记忆
+
+需要统计、最近记录、关键词搜索时，优先直接走接口。
+
+相关接口：
+- `GET /api/memory/long-term`
+- `PUT /api/memory/long-term`
+- `GET /api/memory/stats`
+- `GET /api/memory/recent?count=10`
+- `POST /api/memory/search`
+
+搜索示例：
+```json
+POST /api/memory/search
+{
+  "keywords": "日报 飞书",
+  "max_results": 5
+}
+```
+
+## 6. 工作空间
 
 图形化路径：
 - 顶部 `设置`
@@ -325,7 +364,7 @@ PUT /api/settings
 - `POST /api/settings/workspace/clean-temp`
 - `POST /api/settings/workspace/set-path`
 
-## 5. 安全设置
+## 7. 安全设置
 
 图形化路径：
 - 顶部 `设置`
@@ -341,7 +380,7 @@ PUT /api/settings
 - 最大输出长度
 - 是否限制在工作空间内
 
-## 6. 渠道配置
+## 8. 渠道配置
 
 图形化路径：
 - 顶部 `设置`
@@ -350,7 +389,13 @@ PUT /api/settings
 当前属于重点页面，因为：
 - 定时任务投递要依赖渠道
 - 问候助手推送要依赖渠道
-- 飞书、QQ、Telegram、钉钉等配置都在这里
+- 飞书、企业微信、微信、QQ、Telegram、钉钉、微博、小智 AI 等都在这里
+- 当前前端已经支持多机器人账号配置，不再只是单账号表单
+
+渠道页重点字段：
+- `account_id`：机器人账号 ID，默认通常是 `default`
+- `routing_mode`：账号默认路由，当前主要是 `ai` 或 `direct`
+- `external_coding_profile`：当 `routing_mode=direct` 时应指定默认外部编程工具
 
 相关接口：
 - `GET /api/channels/list`
@@ -359,51 +404,188 @@ PUT /api/settings
 - `POST /api/channels/update`
 - `GET /api/channels/{channel}/config`
 
-## 六、飞书渠道配置与排查
+## 9. 编程工具
+
+图形化路径：
+- 顶部 `设置`
+- 左侧选择 `编程工具`
+
+当前 GUI 支持：
+- 新建和删除外部编程工具 profile
+- 配置 `name`、`command`、`args`、`working_dir`
+- 配置 `session_mode`、`history_message_count`
+- 配置 `env`、`inherit_env`、`timeout`
+- 对单个 profile 执行可用性检查
+
+相关接口：
+- `GET /api/settings/external-coding-tools`
+- `PUT /api/settings/external-coding-tools`
+- `POST /api/settings/external-coding-tools/check`
+
+检查示例：
+```json
+POST /api/settings/external-coding-tools/check
+{
+  "profile": {
+    "name": "codex",
+    "enabled": true,
+    "type": "cli",
+    "command": "codex",
+    "args": [],
+    "working_dir": "",
+    "env": {},
+    "inherit_env": [
+      "OPENAI_API_KEY"
+    ],
+    "session_mode": "history",
+    "history_message_count": 10,
+    "timeout": 1200,
+    "success_exit_codes": [
+      0
+    ]
+  }
+}
+```
+
+## 10. 导入导出
+
+图形化路径：
+- 顶部 `设置`
+- 左侧选择 `导入导出`
+
+当前 GUI 支持：
+- 按配置节选择导出
+- 选择是否包含 API Keys
+- 从 JSON 文件导入
+- 选择合并模式或覆盖模式
+- 前端会额外处理 `multiagent`、`codingplan` 这类复合配置节
+
+相关接口：
+- `GET /api/settings/export`
+- `POST /api/settings/import`
+
+导出示例：
+```text
+GET /api/settings/export?include_api_keys=false&sections=providers,model,persona,channels
+```
+
+导入示例：
+```json
+POST /api/settings/import
+{
+  "version": "1.0.0",
+  "merge": true,
+  "sections": [
+    "providers",
+    "model"
+  ],
+  "config": {
+    "providers": {},
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4o-mini"
+    }
+  }
+}
+```
+
+## 六、渠道配置与排查
 
 ## 1. 图形化路径
 
 - 顶部 `设置`
 - 左侧 `渠道配置`
-- 选择 `飞书`
+- 选择 `飞书 / 企业微信 / 微信 / QQ / Telegram / 钉钉 / 微博 / 小智AI / Discord`
 
-## 2. 飞书测试接口
+## 2. 多账号与默认路由
 
-示例：
+当前渠道页不是单机器人配置，而是支持：
+- 主账号 + 多个附加账号
+- 每个账号单独启用/停用
+- 每个账号单独设置 `account_id`
+- 每个账号单独设置 `routing_mode`
+- 每个账号单独设置 `external_coding_profile`
+
+关键规则：
+- `account_id` 不填时，实际通常落到 `default`
+- `routing_mode=direct` 时，必须同时配置 `external_coding_profile`
+- 测试某个账号时，应该显式传 `account_id`
+
+## 3. 飞书测试与保存
+
+测试指定机器人账号示例：
 ```json
 POST /api/channels/test
 {
   "channel": "feishu",
+  "account_id": "default",
   "config": {
     "enabled": true,
+    "account_id": "default",
     "app_id": "cli_xxxxxxxx",
-    "app_secret": "xxxxxxxx"
+    "app_secret": "xxxxxxxx",
+    "routing_mode": "ai",
+    "external_coding_profile": ""
   }
 }
 ```
 
-## 3. 保存飞书配置
-
-示例：
+保存多账号飞书配置示例：
 ```json
 POST /api/channels/update
 {
   "channel": "feishu",
   "config": {
     "enabled": true,
-    "app_id": "cli_xxxxxxxx",
-    "app_secret": "xxxxxxxx"
+    "account_id": "default",
+    "app_id": "cli_primaryxxxx",
+    "app_secret": "primary-secret",
+    "routing_mode": "ai",
+    "external_coding_profile": "",
+    "accounts": {
+      "bot-dev": {
+        "account_id": "bot-dev",
+        "enabled": true,
+        "app_id": "cli_devxxxx",
+        "app_secret": "dev-secret",
+        "routing_mode": "direct",
+        "external_coding_profile": "codex"
+      }
+    }
   }
 }
 ```
 
-## 4. 飞书常见失败原因
+## 4. 微信扫码登录流程
 
-- `app_id` 格式不对，通常应以 `cli_` 开头
-- `app_secret` 错误
-- 只做了格式校验，还没真正启用渠道
-- 定时任务里没填 `chat_id`
-- 定时任务没打开 `deliver_response`
+微信当前已有完整 GUI，不是只能手动改配置：
+- `设置` -> `渠道配置` -> `微信`
+- 进入目标机器人账号
+- 点击扫码登录，完成后自动填写数据，保存即可
+
+接口流程：
+1. `POST /api/channels/wechat/login/start`，传 `account_id` 和可选 `config`
+2. 返回 `qrcode_url`、`session_key`
+3. `POST /api/channels/wechat/login/poll` 轮询 `session_key`
+4. 当 `status=confirmed` 时，后端会把登录结果合并回渠道配置并返回最新 `config`
+
+轮询示例：
+```json
+POST /api/channels/wechat/login/poll
+{
+  "session_key": "wechat-login-session-key"
+}
+```
+
+## 5. 渠道常见失败原因
+
+- `app_id` / `client_id` / `token` / `secret` 本身错误
+- 只做了测试，没有真正保存并启用渠道
+- `account_id` 写错，导致测的是另一个机器人账号
+- 多个机器人账号用了重复配置，被后端判定为冲突
+- `routing_mode=direct` 但没填 `external_coding_profile`
+- 微信二维码已过期，或者轮询没有到 `confirmed`
+- 定时任务或问候助手只填了 `channel`，没填 `account_id` / `chat_id`
 
 ## 七、定时任务
 
@@ -419,12 +601,14 @@ POST /api/channels/update
 - 任务消息
 - 是否把结果推送到渠道
 - 推送渠道
+- `account_id`
 - chat_id
 - 是否创建后立即启用
 
 补充说明：
 - 前端当前使用的是 5 段 Cron：`分 时 日 月 周`
-- 前端表单在开启 `推送响应到渠道` 后，才会出现 `渠道` 和 `chat_id`
+- 前端表单在开启 `推送响应到渠道` 后，才会出现 `渠道`、`account_id` 和 `chat_id`
+- 如果是 IM 渠道推送，建议显式写上 `account_id`；常见值是 `default`
 
 ## 3. 核心接口
 
@@ -444,11 +628,16 @@ POST /api/channels/update
 - `message`
 - `enabled`
 - `channel`
+- `account_id`
 - `chat_id`
 - `deliver_response`
 - `max_retries`
 - `retry_delay`
 - `delete_on_success`
+
+补充说明：
+- 不推送到渠道时，`channel`、`account_id`、`chat_id` 可以为 `null`
+- 推送到 IM 渠道时，最好同时带上 `channel`、`account_id`、`chat_id`
 
 示例一：普通内部任务
 ```json
@@ -459,6 +648,7 @@ POST /api/cron/jobs
   "message": "请总结昨天的重要对话，并生成 5 条待办建议。",
   "enabled": true,
   "channel": null,
+  "account_id": null,
   "chat_id": null,
   "deliver_response": false,
   "max_retries": 1,
@@ -476,6 +666,7 @@ POST /api/cron/jobs
   "message": "生成今天的工作日报，并用简洁中文输出。",
   "enabled": true,
   "channel": "feishu",
+  "account_id": "default",
   "chat_id": "oc_xxxxxxxxxxxxx",
   "deliver_response": true,
   "max_retries": 2,
@@ -512,94 +703,30 @@ AI 在用户说“帮我设个定时任务”时，最好先 validate，再 crea
 4. `data/logs/`
 5. `data/audit_logs/`
 
-## 八、问候助手
-
-## 1. 图形化入口
-
-图形化路径：
-- 顶部 `设置`
-- 左侧 `用户信息`
-- 子页 `基础配置`
-- 找到 `问候助手`
-
-界面中通常包含：
-- 开启问候助手
-- 推送渠道
-- 目标 chat_id
-- Cron 检查频率
-- 空闲阈值
-- 每天问候次数
-- 免打扰时间
-
-## 2. 对应配置位置
-
-问候助手配置属于 `persona.heartbeat`。
-
-相关接口：
-- `GET /api/settings`
-- `PUT /api/settings`
-
-## 3. 配置参数格式
-
-关键字段：
-- `enabled`
-- `channel`
-- `chat_id`
-- `schedule`
-- `idle_threshold_hours`
-- `quiet_start`
-- `quiet_end`
-- `max_greets_per_day`
-
-示例：
-```json
-PUT /api/settings
-{
-  "persona": {
-    "heartbeat": {
-      "enabled": true,
-      "channel": "feishu",
-      "chat_id": "oc_xxxxxxxxxxxxx",
-      "schedule": "0 * * * *",
-      "idle_threshold_hours": 4,
-      "quiet_start": 21,
-      "quiet_end": 8,
-      "max_greets_per_day": 2
-    }
-  }
-}
-```
-
-## 4. 问候助手为什么不发
-
-常见原因：
-- 已启用，但没配置 `channel` 或 `chat_id`
-- 飞书渠道本身无效
-- 当前处于免打扰时间
-- 用户并没有满足空闲时长
-- 当天问候次数已达上限
-- `schedule` 设置过稀，检查频率太低
-
-## 5. 问候助手排查顺序
-
-1. `GET /api/settings` 看 heartbeat 是否开启
-2. 检查 `channel` 和 `chat_id`
-3. 测试飞书渠道
-4. 查 `heartbeat`、`cron` 日志
-5. 确认不是免打扰或空闲阈值问题
-
-## 九、会话自定义配置：模型、API、Persona
+## 八、会话自定义配置：模型、API、Persona
 
 ## 1. 现实说明
 
-当前这部分主要是接口能力，不是完整图形化表单。  
-所以当用户说“这个会话单独换模型、单独改 API Key”，AI 应优先直接走接口。
+当前这部分已经有明确的图形化入口，不再是“只有接口”：
+- 顶部 `会话管理`
+- 面板上方 `为当前会话单独设置 API / 模型 / 角色`
+- 打开后进入 `会话配置` 面板，可直接启用或关闭当前会话的独立配置
+
+所以当用户说“这个会话单独换模型、单独改 API Key”时：
+- 优先告诉用户 GUI 入口
+- 如果用户明确让 AI 直接改、或需要批量化/静默操作，再直接走接口
 
 ## 2. 接口
 
 - `GET /api/chat/sessions/{session_id}/config`
 - `PUT /api/chat/sessions/{session_id}/config`
 - `DELETE /api/chat/sessions/{session_id}/config`
+
+`GET /api/chat/sessions/{session_id}/config` 返回重点：
+- `use_custom_config`
+- `model_config`
+- `persona_config`
+- `global_defaults`
 
 ## 3. 模型配置参数格式
 
@@ -636,7 +763,7 @@ PUT /api/chat/sessions/SESSION_ID/config
 - `user_address`
 - `output_language`
 - `personality`
-- `custom_personality`
+- `custom_personality`：前端当前把它作为“自定义系统提示词/自定义角色提示”
 - `max_history_messages`
 
 示例：
@@ -704,310 +831,8 @@ DELETE /api/chat/sessions/SESSION_ID/config
 
 不要只回复一个模型名，也不要让用户自己去设置里找。
 
-## 十、自定义角色
 
-## 1. 图形化入口
-
-图形化路径：
-- 顶部 `设置`
-- 左侧 `用户信息`
-- 子页 `性格编辑器`
-
-这个页面支持：
-- 查看内置性格
-- 查看自定义性格
-- 创建性格
-- 编辑性格
-- 复制性格
-- 启用/禁用性格
-- 删除自定义性格
-
-## 2. 后端接口
-
-- `GET /api/personalities`
-- `GET /api/personalities/{personality_id}`
-- `POST /api/personalities`
-- `PUT /api/personalities/{personality_id}`
-- `DELETE /api/personalities/{personality_id}`
-- `POST /api/personalities/{personality_id}/duplicate`
-
-## 3. 创建角色参数格式
-
-关键字段：
-- `id`
-- `name`
-- `description`
-- `traits`
-- `speaking_style`
-- `icon`
-
-`id` 规则：
-- 只能包含小写字母、数字、下划线、连字符
-
-示例：
-```json
-POST /api/personalities
-{
-  "id": "pm_assistant",
-  "name": "产品助理",
-  "description": "擅长需求整理、优先级判断和任务推进。",
-  "traits": [
-    "结构化",
-    "简洁",
-    "强执行",
-    "结果导向"
-  ],
-  "speaking_style": "简明、直接、偏项目管理风格",
-  "icon": "Briefcase"
-}
-```
-
-## 4. 更新角色示例
-
-```json
-PUT /api/personalities/pm_assistant
-{
-  "name": "产品经理助理",
-  "description": "更偏向项目推进和结果交付。",
-  "traits": [
-    "结构化",
-    "务实",
-    "高执行",
-    "结果导向"
-  ],
-  "speaking_style": "短句、清晰、有主次",
-  "icon": "Briefcase",
-  "is_active": true
-}
-```
-
-## 5. 复制角色示例
-
-```json
-POST /api/personalities/grumpy/duplicate
-{
-  "new_id": "grumpy_copy",
-  "new_name": "嘴硬但负责（副本）"
-}
-```
-
-## 6. 角色问题排查
-
-常见问题：
-- `id` 重复
-- `id` 格式不合法
-- `traits` 为空
-- 试图删除 builtin 角色
-
-建议：
-- builtin 角色优先复制后再改
-- 不要直接删内置角色
-
-## 十一、多 Agent 团队
-
-## 1. 现实说明
-
-当前多 Agent 团队主要是后端接口能力，不是完整的图形化管理面板。  
-所以当用户说“帮我创建一个智能体团队”，AI 应直接按接口结构创建，而不是只给概念说明。
-
-## 2. 创建团队时必须知道的结构
-
-创建团队时关键字段：
-- `name`
-- `description`
-- `mode`
-- `agents`
-- `is_active`
-- `cross_review`
-- `enable_skills`
-
-`mode` 取值：
-- `pipeline`：顺序处理
-- `graph`：按依赖关系执行
-- `council`：多视角讨论汇总
-
-## 3. agent 列表格式
-
-`agents` 是数组，每个 agent 可包含：
-- `id`
-- `role`
-- `system_prompt`
-- `task`
-- `perspective`
-- `depends_on`
-- `condition`
-
-字段含义：
-- `id`：团队内唯一标识
-- `role`：角色名
-- `system_prompt`：这个角色长期系统提示词
-- `task`：该角色在流程中的具体任务
-- `perspective`：用于 council 模式的视角标签
-- `depends_on`：依赖哪些 agent 先完成
-- `condition`：graph 模式的条件执行规则
-
-## 4. 创建团队的完整示例
-
-### pipeline 示例
-
-```json
-POST /api/agent-teams/
-{
-  "name": "日报生成团队",
-  "description": "先收集信息，再整理，再输出日报",
-  "mode": "pipeline",
-  "is_active": true,
-  "cross_review": false,
-  "enable_skills": true,
-  "agents": [
-    {
-      "id": "collector",
-      "role": "信息收集员",
-      "system_prompt": "你负责收集输入信息并提炼关键事实。",
-      "task": "整理用户提供的工作内容、会议记录和待办事项。",
-      "perspective": null,
-      "depends_on": [],
-      "condition": null
-    },
-    {
-      "id": "writer",
-      "role": "日报撰写员",
-      "system_prompt": "你负责将整理后的信息输出成正式日报。",
-      "task": "根据上一步信息生成简洁、正式的中文日报。",
-      "perspective": null,
-      "depends_on": [],
-      "condition": null
-    }
-  ]
-}
-```
-
-### graph 示例
-
-```json
-POST /api/agent-teams/
-{
-  "name": "需求评审团队",
-  "description": "按依赖顺序做分析、测试评估和总结",
-  "mode": "graph",
-  "is_active": true,
-  "cross_review": false,
-  "enable_skills": false,
-  "agents": [
-    {
-      "id": "analyst",
-      "role": "需求分析师",
-      "system_prompt": "你负责拆解需求和风险。",
-      "task": "分析需求目标、边界和潜在风险。",
-      "perspective": null,
-      "depends_on": [],
-      "condition": null
-    },
-    {
-      "id": "tester",
-      "role": "测试设计师",
-      "system_prompt": "你负责设计测试方案。",
-      "task": "基于分析结果输出测试点和验收标准。",
-      "perspective": null,
-      "depends_on": ["analyst"],
-      "condition": null
-    },
-    {
-      "id": "summarizer",
-      "role": "总结员",
-      "system_prompt": "你负责汇总结论。",
-      "task": "综合前两个节点结果输出最终结论。",
-      "perspective": null,
-      "depends_on": ["analyst", "tester"],
-      "condition": null
-    }
-  ]
-}
-```
-
-### council 示例
-
-```json
-POST /api/agent-teams/
-{
-  "name": "多视角评审团队",
-  "description": "从产品、技术、测试三个视角给出评审意见",
-  "mode": "council",
-  "is_active": true,
-  "cross_review": true,
-  "enable_skills": false,
-  "agents": [
-    {
-      "id": "pm",
-      "role": "产品经理",
-      "system_prompt": "你从产品价值和用户体验角度评审。",
-      "task": "",
-      "perspective": "产品视角",
-      "depends_on": [],
-      "condition": null
-    },
-    {
-      "id": "dev",
-      "role": "技术负责人",
-      "system_prompt": "你从实现复杂度和架构风险角度评审。",
-      "task": "",
-      "perspective": "技术视角",
-      "depends_on": [],
-      "condition": null
-    },
-    {
-      "id": "qa",
-      "role": "测试负责人",
-      "system_prompt": "你从测试风险和验收覆盖角度评审。",
-      "task": "",
-      "perspective": "测试视角",
-      "depends_on": [],
-      "condition": null
-    }
-  ]
-}
-```
-
-## 5. 团队模型配置
-
-团队模型配置不要改全局设置，应使用团队专属配置接口。
-
-接口：
-- `GET /api/agent-teams/{team_id}/config`
-- `PUT /api/agent-teams/{team_id}/config`
-- `DELETE /api/agent-teams/{team_id}/config`
-
-可设置字段：
-- `provider`
-- `model`
-- `temperature`
-- `max_tokens`
-- `api_key`
-- `api_base`
-
-示例：
-```json
-PUT /api/agent-teams/TEAM_ID/config
-{
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "temperature": 0.4,
-  "max_tokens": 4096,
-  "api_key": "sk-xxxx",
-  "api_base": "https://api.openai.com/v1"
-}
-```
-
-## 6. 多 Agent 团队失败怎么排查
-
-1. 团队是否存在
-2. `mode` 是否和 agents 结构匹配
-3. `depends_on` 是否引用了不存在的 agent id
-4. `system_prompt`、`task` 是否过弱或为空
-5. 是否启用了自定义模型但没填全参数
-6. 是否需要技能却没开 `enable_skills`
-
-## 十二、统一排查路径
+## 十、统一排查路径
 
 ## 1. 配置问题
 
@@ -1038,14 +863,35 @@ PUT /api/agent-teams/TEAM_ID/config
 - `GET /api/skills/{name}/config/status`
 - `GET /api/skills/{name}/config/help`
 
-## 5. 日志位置
+## 5. 记忆问题
+
+先查：
+- `GET /api/memory/long-term`
+- `GET /api/memory/stats`
+- `POST /api/memory/search`
+
+## 6. 外部编程工具 / 直通路由问题
+
+先查：
+- `GET /api/settings/external-coding-tools`
+- `POST /api/settings/external-coding-tools/check`
+- `GET /api/channels/{channel}/config`
+
+## 7. 多智能体问题
+
+先查：
+- `GET /api/agent-teams/`
+- `GET /api/agent-teams/{team_id}`
+- `GET /api/agent-teams/{team_id}/config`
+
+## 8. 日志位置
 
 - `data/logs/CountBot_YYYY-MM-DD.log`
 - `data/logs/error_YYYY-MM-DD.log`
 - `data/logs/{channel}_worker_*.log`
 - `data/audit_logs/audit_YYYY-MM-DD_*.log`
 
-## 十三、最终要求
+## 十一、最终要求
 
 - 回答优先中文
 - 先告诉用户图形化入口
