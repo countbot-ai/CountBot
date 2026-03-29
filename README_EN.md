@@ -18,7 +18,15 @@
 
 ## What's New
 
-- **v0.6.0 — Latest Release** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.6.0)
+- **v0.7.0 — Latest Release** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.7.0)
+  - Fixed multiple issue reports and resolved a batch of known bugs
+  - Refined frontend flows and interaction details across daily use paths
+  - Optimized the tool call pipeline and context assembly, reducing token usage by about 70% versus the previous version
+  - Added a thinking control switch so the AI can feel faster in common scenarios
+  - Added `find-skills` with full Tencent Cloud SkillsHub integration for conversational skill management
+  - Added `ima-knowledge-base` and `ima-notes` with full IMA knowledge base and notes integration
+
+- **v0.6.0** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.6.0)
   - Added WeChat ClawBot integration with support for multiple account bindings
   - Added external coding tool integration for Claude, Codex, and OpenCode
   - Added first-time remote initialization entry `/setup/<random>`
@@ -63,6 +71,39 @@
 - Smart hardware integration (voice control, IoT device support)
 - Deep tmux integration (invoke Codex CLI, Claude Code, and other external tools)
 - Continuous performance optimization (parallel agent execution, improved caching)
+
+---
+
+## v0.7.0 Highlights
+
+### 1. Issue fixes and stability improvements
+
+This release starts with user feedback. It addresses multiple issue reports and a batch of known bugs across tool calls, configuration flows, skill integration, and general runtime behavior.
+
+### 2. Better frontend usability
+
+The frontend is refined around high-frequency paths so common operations in skills, settings, and tools feel more direct and easier to understand.
+
+### 3. Leaner tool calling
+
+The tool execution pipeline and context assembly are reorganized to reduce overhead without shrinking capability coverage. Compared with the previous version, overall tool-call token usage can be reduced by about 70%.
+
+### 4. Thinking control switch
+
+A new thinking control switch lets you adjust reasoning intensity by scenario, which improves perceived response speed in many everyday tasks.
+
+### 5. `find-skills` with SkillsHub
+
+`find-skills` is now integrated with Tencent Cloud SkillsHub, so users can search, install, enable, disable, and remove skills directly through conversation.
+
+### 6. `ima-knowledge-base` and `ima-notes`
+
+Two new skills bring IMA integration into the workflow:
+
+- `ima-knowledge-base`: search knowledge bases, inspect hits, browse items, upload files, and import web pages
+- `ima-notes`: search notes, read notes, create notes, and append content
+
+This expands CountBot from "chat and call tools" into "chat and manage knowledge assets" more naturally.
 
 ---
 
