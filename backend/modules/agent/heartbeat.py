@@ -103,49 +103,74 @@ class HeartbeatService:
             logger.error(f"Failed to save heartbeat state: {e}")
 
     def _generate_random_times(self, date: str) -> List[int]:
-        """为指定日期生成真随机的问候时间点（分钟数）
-        
-        使用日期+当天0点的时间戳作为种子，确保：
-        1. 每天的随机结果不同
-        2. 同一天多次调用结果一致（幂等性）
-        
+        """为指定日期生成随机问候时间点（分钟数），每天不同且跨进程重启稳定（幂等）。
+
+        种子：北京时间当天 0 点的 UTC 时间戳，跨平台确定性，不依赖 PYTHONHASHSEED。
+        分布：把活跃时段等分为 N 段，每段内随机取一点，保证时间点充分分散。
+
         Returns:
-            List[int]: 分钟数列表，如 [615, 780] 表示 10:15, 13:00
+            List[int]: 升序分钟数列表，如 [615, 780] 表示 10:15, 13:00
         """
-        # 使用日期字符串的哈希值作为基础种子
-        base_seed = hash(date)
-        
-        # 加上当天0点的时间戳，确保每天都不同
+        # 确定性种子：北京时间当天 0 点 → UTC 时间戳（不依赖本机时区）
         try:
             date_obj = datetime.strptime(date, "%Y-%m-%d")
-            timestamp_seed = int(date_obj.timestamp())
-        except:
-            timestamp_seed = 0
-        
-        # 组合种子
-        combined_seed = base_seed + timestamp_seed
-        rng = random.Random(combined_seed)
-        
-        # 活跃时段：quiet_end 到 quiet_start
-        # 例如 quiet_start=21, quiet_end=8，则活跃时段是 8:00-21:00
-        if self.quiet_start > self.quiet_end:
-            # 跨午夜的免打扰
-            start_hour = self.quiet_end
-            end_hour = self.quiet_start
+            beijing_midnight = date_obj.replace(tzinfo=SHANGHAI_TZ)
+            seed = int(beijing_midnight.timestamp())
+        except Exception:
+            seed = 0
+        rng = random.Random(seed)
+
+        # 计算活跃时段（分钟数区间列表，支持跨午夜和非跨午夜两种配置）
+        qs = self.quiet_start  # 免打扰开始小时
+        qe = self.quiet_end    # 免打扰结束小时
+        total = 24 * 60
+
+        if qs > qe:
+            # 跨午夜免打扰，如 quiet_start=21, quiet_end=8 → 免打扰 21:00-08:00
+            # 活跃时段：一个连续段 [qe*60, qs*60)
+            active_segments = [(qe * 60, qs * 60)]
+        elif qs < qe:
+            # 非跨午夜免打扰，如 quiet_start=1, quiet_end=6 → 免打扰 01:00-06:00
+            # 活跃时段：两段 [0, qs*60) 和 [qe*60, 24*60)
+            active_segments = []
+            if qs * 60 > 0:
+                active_segments.append((0, qs * 60))
+            if qe * 60 < total:
+                active_segments.append((qe * 60, total))
         else:
-            # 不跨午夜的免打扰
-            start_hour = self.quiet_end
-            end_hour = self.quiet_start
-        
-        start_minute = start_hour * 60
-        end_minute = end_hour * 60
-        
-        # 生成 max_greets_per_day 个随机时间点
+            # quiet_start == quiet_end：无免打扰，全天活跃
+            active_segments = [(0, total)]
+
+        # 计算总活跃分钟数
+        active_total = sum(end - start for start, end in active_segments)
+        if active_total <= 0 or self.max_greets_per_day <= 0:
+            return []
+
+        # 分段均匀随机：把虚拟连续活跃区间等分为 N 段，每段随机取一点
+        segment_size = active_total // self.max_greets_per_day
+        if segment_size < 1:
+            segment_size = 1
+
+        def virtual_to_real(v: int) -> int:
+            """将虚拟连续偏移量映射到真实分钟数"""
+            for seg_start, seg_end in active_segments:
+                seg_len = seg_end - seg_start
+                if v < seg_len:
+                    return seg_start + v
+                v -= seg_len
+            # fallback：返回最后一段末尾
+            last_start, last_end = active_segments[-1]
+            return last_end - 1
+
         times = []
-        for _ in range(self.max_greets_per_day):
-            minute = rng.randint(start_minute, end_minute - 1)
-            times.append(minute)
-        
+        for i in range(self.max_greets_per_day):
+            v_start = i * segment_size
+            v_end = v_start + segment_size
+            if v_end > active_total:
+                v_end = active_total
+            v = rng.randint(v_start, v_end - 1)
+            times.append(virtual_to_real(v))
+
         return sorted(times)
 
     def _get_today_state(self, today: str) -> dict:
@@ -165,8 +190,8 @@ class HeartbeatService:
         
         return state[today]
 
-    def _mark_greeted(self, today: str, current_minute: int):
-        """标记已在某个时间点问候过"""
+    def _mark_greeted(self, today: str, scheduled_time: int):
+        """标记某个计划时间点已问候过（记录 scheduled_time 而非 current_minute）"""
         state = self._load_state()
         
         if today not in state:
@@ -176,8 +201,8 @@ class HeartbeatService:
                 "count": 0
             }
         
-        if current_minute not in state[today]["greeted_times"]:
-            state[today]["greeted_times"].append(current_minute)
+        if scheduled_time not in state[today]["greeted_times"]:
+            state[today]["greeted_times"].append(scheduled_time)
             state[today]["count"] = len(state[today]["greeted_times"])
         
         # 清理旧数据（保留最近7天）
@@ -188,31 +213,28 @@ class HeartbeatService:
         
         self._save_state(state)
 
-    def _should_greet_now(self, today: str, current_minute: int) -> bool:
-        """判断当前时间是否应该问候
-        
-        检查当前时间是否在某个计划时间点的窗口内（±30分钟）
-        且该时间点尚未问候过
+    def _should_greet_now(self, today: str, current_minute: int) -> Optional[int]:
+        """判断当前时间是否应该问候。
+
+        返回匹配的计划时间点（分钟数），若不应问候则返回 None。
+        使用计划时间点本身作为标识，避免 current_minute 漂移导致同一槽位重复触发。
         """
         today_state = self._get_today_state(today)
         scheduled_times = today_state["scheduled_times"]
         greeted_times = today_state["greeted_times"]
-        
+
         # 检查是否已达到每日上限
         if today_state["count"] >= self.max_greets_per_day:
-            return False
-        
-        # 检查当前时间是否接近某个计划时间点
+            return None
+
+        # 找到当前时间最近且未问候过的计划时间点
         for scheduled_time in scheduled_times:
-            # 如果这个时间点已经问候过，跳过
             if scheduled_time in greeted_times:
                 continue
-            
-            # 检查是否在窗口内（±30分钟）
             if abs(current_minute - scheduled_time) <= 30:
-                return True
-        
-        return False
+                return scheduled_time
+
+        return None
 
     async def execute(self) -> str:
         """cron executor 调用入口。返回问候语或空字符串。
@@ -235,7 +257,8 @@ class HeartbeatService:
             return ""
 
         # 2. 随机时间点检查
-        if not self._should_greet_now(today, current_minute):
+        matched_time = self._should_greet_now(today, current_minute)
+        if matched_time is None:
             logger.debug(f"Heartbeat skipped: not in scheduled time window (current: {now.hour}:{now.minute:02d})")
             return ""
 
@@ -259,8 +282,8 @@ class HeartbeatService:
         if not greeting:
             return ""
 
-        # 5. 标记已问候
-        self._mark_greeted(today, current_minute)
+        # 5. 标记已问候（记录计划时间点，防止同一槽位重复触发）
+        self._mark_greeted(today, matched_time)
         
         logger.info(f"Heartbeat greeting generated (#{greet_num}/{self.max_greets_per_day}): {greeting[:60]}")
         return greeting

@@ -1,0 +1,12 @@
+{
+  "client_id": "",
+  "api_key": "",
+  "base_url": "https://ima.qq.com",
+  "request_timeout_seconds": 30,
+  "default_knowledge_base": {
+    "id": "",
+    "name": "个人知识库",
+    "folder_id": ""
+  },
+  "restrict_search_to_default_knowledge_base": false
+}

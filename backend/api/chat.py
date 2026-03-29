@@ -6,7 +6,9 @@ import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -33,13 +35,80 @@ from backend.modules.external_agents.routing import (
     extract_explicit_external_agent_request,
 )
 from backend.modules.providers import create_provider
+from backend.modules.providers.runtime import (
+    build_provider_unavailable_message,
+    get_provider_runtime_state,
+)
 from backend.modules.session import resolve_session_runtime_config
 from backend.modules.session.manager import SessionManager
+from backend.modules.session.message_context import (
+    MAX_CHAT_ATTACHMENTS,
+    build_attachment_item,
+    build_attachment_items_from_workspace,
+    build_message_context,
+    build_workspace_attachment_destination,
+    extract_attachment_items_from_message_context,
+    extract_reasoning_content_from_message_context,
+    resolve_workspace_attachments,
+)
 from backend.modules.tools.registry import ToolRegistry
 from backend.utils.datetime_utils import to_utc_iso
 from backend.utils.paths import WORKSPACE_DIR
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+MAX_CHAT_ATTACHMENT_SIZE = 25 * 1024 * 1024
+
+
+def _normalize_api_mode(value: Any) -> str:
+    return "chat_completions"
+
+
+def _extract_reasoning_content_from_message_context(raw: Optional[str]) -> Optional[str]:
+    return extract_reasoning_content_from_message_context(raw)
+
+
+def _extract_attachment_items_from_message_context(raw: Optional[str]) -> List[Dict[str, Any]]:
+    return extract_attachment_items_from_message_context(raw)
+
+
+def _resolve_active_workspace() -> Path:
+    config = config_loader.config
+    return Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+
+
+async def _require_session(db: AsyncSession, session_id: str):
+    from sqlalchemy import select
+    from backend.models.session import Session
+
+    result = await db.execute(select(Session).where(Session.id == session_id))
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found"
+        )
+    return session
+
+
+def _validate_message_or_attachments(message: str, attachments: Optional[List[str]]) -> str:
+    normalized_message = str(message or "")
+    if normalized_message.strip() or attachments:
+        return normalized_message
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Message or attachments are required"
+    )
+
+
+def _resolve_attachment_inputs(attachments: Optional[List[str]], workspace: Path) -> List[tuple[str, Path]]:
+    try:
+        return resolve_workspace_attachments(attachments, workspace=workspace, max_attachments=MAX_CHAT_ATTACHMENTS)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 # ============================================================================
@@ -51,8 +120,18 @@ class SendMessageRequest(BaseModel):
     """发送消息请求"""
 
     session_id: str = Field(..., description="会话 ID")
-    message: str = Field(..., min_length=1, description="用户消息内容")
+    message: str = Field(default="", description="用户消息内容")
     attachments: Optional[List[str]] = Field(None, description="附件路径列表（可选）")
+
+
+class AttachmentItemResponse(BaseModel):
+    """附件响应"""
+
+    path: str
+    name: str
+    size: int
+    content_type: Optional[str] = None
+    kind: str
 
 
 class UpdateSessionSummaryRequest(BaseModel):
@@ -107,6 +186,8 @@ class MessageResponse(BaseModel):
     session_id: str
     role: str
     content: str
+    reasoning_content: Optional[str] = None
+    attachment_items: List[AttachmentItemResponse] = Field(default_factory=list)
     created_at: str
     tool_calls: List[ToolCallResponse] = Field(default_factory=list, description="工具调用记录")
 
@@ -172,18 +253,24 @@ async def get_agent_loop(
         
         # 初始化 LLM Provider（使用有效配置）
         provider_name = runtime_config.provider_name
-        provider_config = config.providers.get(provider_name)
-        
-        if not provider_config or not provider_config.enabled:
+        runtime_state = get_provider_runtime_state(
+            config,
+            provider_name,
+            api_key_override=runtime_config.api_key,
+            api_base_override=runtime_config.api_base,
+        )
+
+        if not runtime_state.selectable:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Provider '{provider_name}' is not configured or disabled"
+                detail=build_provider_unavailable_message(provider_name, runtime_state.reason)
             )
         
         provider = create_provider(
-            api_key=runtime_config.api_key,
-            api_base=runtime_config.api_base,
+            api_key=runtime_state.api_key or None,
+            api_base=runtime_state.api_base,
             default_model=runtime_config.model_name,
+            api_mode=runtime_config.api_mode,
             timeout=120.0,
             max_retries=3,
             provider_id=provider_name,
@@ -267,6 +354,7 @@ async def get_agent_loop(
             retry_delay=1.0,
             temperature=runtime_config.temperature,
             max_tokens=runtime_config.max_tokens,
+            thinking_enabled=runtime_config.thinking_enabled,
         )
         
         return agent_loop
@@ -455,6 +543,89 @@ async def _maybe_auto_summarize(
 # ============================================================================
 
 
+@router.post("/sessions/{session_id}/attachments", response_model=AttachmentItemResponse)
+async def upload_chat_attachment(
+    session_id: str,
+    req: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AttachmentItemResponse:
+    """将前端拖拽/粘贴/选择的文件写入当前工作空间附件目录。"""
+    await _require_session(db, session_id)
+
+    raw_filename = req.headers.get("x-file-name", "").strip()
+    try:
+        decoded_filename = Path(unquote(raw_filename)).name if raw_filename else ""
+    except Exception:
+        decoded_filename = raw_filename or ""
+
+    content_type = req.headers.get("content-type", "").strip() or None
+    declared_size = req.headers.get("x-file-size", "").strip()
+    if declared_size:
+        try:
+            declared_size_int = int(declared_size)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-File-Size header",
+            ) from exc
+        if declared_size_int < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-File-Size header",
+            )
+        if declared_size_int > MAX_CHAT_ATTACHMENT_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Attachment exceeds max size {MAX_CHAT_ATTACHMENT_SIZE} bytes",
+            )
+
+    workspace = _resolve_active_workspace()
+    relative_path, destination = build_workspace_attachment_destination(
+        session_id=session_id,
+        filename=decoded_filename or "attachment",
+        content_type=content_type,
+        workspace=workspace,
+    )
+
+    written = 0
+    try:
+        with destination.open("wb") as output:
+            async for chunk in req.stream():
+                if not chunk:
+                    continue
+                written += len(chunk)
+                if written > MAX_CHAT_ATTACHMENT_SIZE:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"Attachment exceeds max size {MAX_CHAT_ATTACHMENT_SIZE} bytes",
+                    )
+                output.write(chunk)
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        logger.exception(f"Failed to upload attachment for session {session_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload attachment",
+        ) from exc
+
+    if written <= 0:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty attachment body",
+        )
+
+    item = build_attachment_item(
+        relative_path=relative_path,
+        absolute_path=destination,
+        content_type=content_type,
+    )
+    return AttachmentItemResponse(**item)
+
+
 @router.post("/send", response_model=SendMessageResponse)
 async def send_message(
     request: SendMessageRequest,
@@ -467,30 +638,23 @@ async def send_message(
     客户端监听 'message' 事件接收响应片段。
     """
     try:
-        # 验证会话是否存在并获取会话信息（包括总结）
-        from sqlalchemy import select
-        from backend.models.session import Session
-        
-        result = await db.execute(
-            select(Session).where(Session.id == request.session_id)
-        )
-        session = result.scalar_one_or_none()
-        
-        if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session '{request.session_id}' not found"
-            )
+        normalized_message = _validate_message_or_attachments(request.message, request.attachments)
+        session = await _require_session(db, request.session_id)
         
         # 获取会话总结
         session_summary = session.summary
+        workspace = _resolve_active_workspace()
+        resolved_attachments = _resolve_attachment_inputs(request.attachments, workspace)
+        attachment_items = build_attachment_items_from_workspace(resolved_attachments)
+        attachment_paths = [relative_path for relative_path, _ in resolved_attachments]
         
         # 保存用户消息到数据库
         session_manager = SessionManager(db)
         user_message = await session_manager.add_message(
             session_id=request.session_id,
             role="user",
-            content=request.message,
+            content=normalized_message,
+            message_context=build_message_context(attachment_items=attachment_items),
         )
         
         if user_message is None:
@@ -501,18 +665,18 @@ async def send_message(
         
         logger.info(
             f"Processing message for session {request.session_id}: "
-            f"{request.message[:50]}..."
+            f"{normalized_message[:50]}..."
         )
 
         # 创建会话专属的 AgentLoop（支持会话级配置）
         agent_loop = await get_agent_loop(req, db, session_id=request.session_id)
         explicit_external_request = _resolve_explicit_external_tool_request(
             agent_loop,
-            request.message,
+            normalized_message,
         )
         explicit_team_request = _resolve_explicit_team_workflow_request(
             agent_loop,
-            request.message,
+            normalized_message,
         )
         
         # 从配置中获取最大历史消息条数
@@ -556,6 +720,7 @@ async def send_message(
         async def event_stream() -> AsyncIterator[str]:
             """SSE 事件流生成器"""
             assistant_content = ""
+            assistant_reasoning = ""
             original_build_messages = None
             
             try:
@@ -582,7 +747,7 @@ async def send_message(
                     agent_loop.tools.set_channel("web-chat")
                     agent_loop.tools.set_cancel_token(cancel_token)
 
-                    if request.message.strip() == "/team":
+                    if normalized_message.strip() == "/team":
                         assistant_content = build_team_command_overview(
                             getattr(agent_loop, "context_builder", None),
                             log_scope="web chat explicit team command",
@@ -627,19 +792,35 @@ async def send_message(
                     team_finder = getattr(agent_loop.context_builder, "_find_mentioned_team", None)
                     if callable(team_finder):
                         try:
-                            prefer_direct_workflow_result = bool(team_finder(request.message))
+                            prefer_direct_workflow_result = bool(team_finder(normalized_message))
                         except Exception as exc:
                             logger.warning(f"Failed to detect mentioned team for SSE chat: {exc}")
 
+                    pending_reasoning_chunks: List[str] = []
+
+                    async def reasoning_event_handler(reasoning_chunk: str) -> None:
+                        nonlocal assistant_reasoning
+                        assistant_reasoning += reasoning_chunk or ""
+                        if reasoning_chunk:
+                            pending_reasoning_chunks.append(reasoning_chunk)
+
                     async for chunk in agent_loop.process_message(
-                        message=request.message,
+                        message=normalized_message,
                         session_id=request.session_id,
                         context=context_for_processing,
-                        media=request.attachments,
+                        media=attachment_paths,
                         channel="web-chat",
                         cancel_token=cancel_token,
+                        reasoning_event_handler=reasoning_event_handler,
                         prefer_direct_workflow_result=prefer_direct_workflow_result,
                     ):
+                        while pending_reasoning_chunks:
+                            reasoning_chunk = pending_reasoning_chunks.pop(0)
+                            yield (
+                                "event: reasoning\n"
+                                f"data: {json.dumps({'content': reasoning_chunk}, ensure_ascii=False)}\n\n"
+                            )
+
                         assistant_content += chunk
 
                         # 发送内容块
@@ -648,12 +829,25 @@ async def send_message(
                         # 确保立即发送
                         await asyncio.sleep(0)
 
+                    while pending_reasoning_chunks:
+                        reasoning_chunk = pending_reasoning_chunks.pop(0)
+                        yield (
+                            "event: reasoning\n"
+                            f"data: {json.dumps({'content': reasoning_chunk}, ensure_ascii=False)}\n\n"
+                        )
+
                 # 保存助手响应到数据库
-                if assistant_content:
+                persisted_content = assistant_content or assistant_reasoning
+                assistant_message_context = (
+                    build_message_context(reasoning_content=assistant_reasoning)
+                )
+
+                if persisted_content:
                     assistant_message = await session_manager.add_message(
                         session_id=request.session_id,
                         role="assistant",
-                        content=assistant_content,
+                        content=persisted_content,
+                        message_context=assistant_message_context,
                     )
 
                     try:
@@ -1061,6 +1255,15 @@ async def get_session_messages(
                     session_id=msg.session_id,
                     role=msg.role,
                     content=msg.content,
+                    reasoning_content=_extract_reasoning_content_from_message_context(
+                        getattr(msg, "message_context", None)
+                    ),
+                    attachment_items=[
+                        AttachmentItemResponse(**item)
+                        for item in _extract_attachment_items_from_message_context(
+                            getattr(msg, "message_context", None)
+                        )
+                    ],
                     created_at=to_utc_iso(msg.created_at),
                     tool_calls=tool_call_responses,
                 )
@@ -1694,7 +1897,12 @@ async def update_session_config(
         
         # 更新配置
         if request.model is not None:
-            session.session_model_config = json.dumps(request.model)
+            normalized_model = dict(request.model)
+            if "api_mode" in normalized_model:
+                normalized_model["api_mode"] = _normalize_api_mode(
+                    normalized_model.get("api_mode")
+                )
+            session.session_model_config = json.dumps(normalized_model)
         
         if request.persona is not None:
             session.session_persona_config = json.dumps(request.persona)

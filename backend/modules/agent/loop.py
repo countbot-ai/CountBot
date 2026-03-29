@@ -28,6 +28,7 @@ class AgentLoop:
         retry_delay: float = 1.0,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        thinking_enabled: bool = True,
     ):
         self.provider = provider
         self.workspace = workspace
@@ -41,6 +42,7 @@ class AgentLoop:
         self.retry_delay = retry_delay
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.thinking_enabled = thinking_enabled
         
         logger.debug(
             f"AgentLoop initialized: max_iterations={max_iterations}, max_retries={max_retries}"
@@ -49,13 +51,15 @@ class AgentLoop:
     def _resolve_execution_runtime(
         self,
         model_override: Optional[Dict[str, Any]] = None,
-    ) -> tuple[Any, Optional[str], float, int, int]:
+    ) -> tuple[Any, Optional[str], float, int, int, bool]:
         """解析当前消息执行应使用的 provider 和模型参数。"""
         base_provider = self.provider
         base_model = self.model
         base_temperature = self.temperature
         base_max_tokens = self.max_tokens
         base_max_iterations = self.max_iterations
+        base_thinking_enabled = self.thinking_enabled
+        base_api_mode = getattr(base_provider, "api_mode", "chat_completions")
 
         if not model_override:
             return (
@@ -64,6 +68,7 @@ class AgentLoop:
                 base_temperature,
                 base_max_tokens,
                 base_max_iterations,
+                base_thinking_enabled,
             )
 
         candidate_provider = base_provider
@@ -74,6 +79,11 @@ class AgentLoop:
             "max_iterations",
             base_max_iterations,
         )
+        candidate_api_mode = model_override.get("api_mode", base_api_mode)
+        candidate_thinking_enabled = model_override.get(
+            "thinking_enabled",
+            base_thinking_enabled,
+        )
 
         override_provider = model_override.get("provider")
         override_api_key = model_override.get("api_key") or None
@@ -82,14 +92,29 @@ class AgentLoop:
         if override_provider or override_api_key or override_api_base:
             try:
                 from backend.modules.providers import create_provider
+                from backend.modules.config.loader import config_loader
+                from backend.modules.providers.runtime import get_provider_runtime_state
+
+                provider_id = override_provider or config_loader.config.model.provider
+                runtime_state = get_provider_runtime_state(
+                    config_loader.config,
+                    provider_id,
+                    api_key_override=override_api_key,
+                    api_base_override=override_api_base,
+                )
+                if not runtime_state.selectable:
+                    raise ValueError(
+                        f"Provider '{provider_id}' is unavailable: {runtime_state.reason}"
+                    )
 
                 candidate_provider = create_provider(
-                    api_key=override_api_key,
-                    api_base=override_api_base,
+                    api_key=runtime_state.api_key or None,
+                    api_base=runtime_state.api_base,
                     default_model=candidate_model,
+                    api_mode=candidate_api_mode,
                     timeout=getattr(self.provider, "timeout", 120.0),
                     max_retries=getattr(self.provider, "max_retries", self.max_retries),
-                    provider_id=override_provider,
+                    provider_id=provider_id,
                 )
             except Exception as exc:
                 logger.warning(
@@ -102,6 +127,7 @@ class AgentLoop:
                     base_temperature,
                     base_max_tokens,
                     base_max_iterations,
+                    base_thinking_enabled,
                 )
 
         return (
@@ -110,6 +136,7 @@ class AgentLoop:
             candidate_temperature,
             candidate_max_tokens,
             candidate_max_iterations,
+            candidate_thinking_enabled,
         )
 
     async def process_message(
@@ -126,6 +153,7 @@ class AgentLoop:
         model_override: Optional[Dict[str, Any]] = None,
         persona_override=None,
         tool_event_handler=None,
+        reasoning_event_handler=None,
         prefer_direct_workflow_result: bool = False,
     ) -> AsyncIterator[str]:
         """处理用户消息并生成流式响应"""
@@ -169,6 +197,7 @@ class AgentLoop:
             runtime_temperature,
             runtime_max_tokens,
             runtime_max_iterations,
+            runtime_thinking_enabled,
         ) = self._resolve_execution_runtime(model_override)
         
         iteration = 0
@@ -192,6 +221,7 @@ class AgentLoop:
                 tool_calls_buffer = []
                 finish_reason = None
                 reasoning_buffer = ""
+                provider_payload = None
                 
                 async for chunk in active_provider.chat_stream(
                     messages=messages,
@@ -199,6 +229,7 @@ class AgentLoop:
                     model=runtime_model,
                     temperature=runtime_temperature,
                     max_tokens=runtime_max_tokens,
+                    thinking_enabled=runtime_thinking_enabled,
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
@@ -210,7 +241,21 @@ class AgentLoop:
                     
                     if chunk.is_reasoning and chunk.reasoning_content:
                         reasoning_buffer += chunk.reasoning_content
+                        if reasoning_event_handler:
+                            try:
+                                maybe_result = reasoning_event_handler(
+                                    chunk.reasoning_content
+                                )
+                                if inspect.isawaitable(maybe_result):
+                                    await maybe_result
+                            except Exception as exc:
+                                logger.warning(
+                                    f"Failed to emit reasoning chunk for session {session_id}: {exc}"
+                                )
                     
+                    if chunk.has_provider_payload and chunk.provider_payload:
+                        provider_payload = chunk.provider_payload
+
                     if chunk.is_done and chunk.finish_reason:
                         finish_reason = chunk.finish_reason
                     
@@ -221,6 +266,8 @@ class AgentLoop:
                 
                 if content_buffer:
                     final_content = content_buffer
+                elif reasoning_buffer and not tool_calls_buffer:
+                    final_content = reasoning_buffer
                 
                 if tool_calls_buffer:
                     tool_call_dicts = [
@@ -241,6 +288,7 @@ class AgentLoop:
                             content_buffer or None,
                             tool_call_dicts,
                             reasoning_content=reasoning_buffer or None,
+                            provider_payload=provider_payload,
                         )
                     else:
                         msg = {
@@ -250,6 +298,8 @@ class AgentLoop:
                         }
                         if reasoning_buffer:
                             msg["reasoning_content"] = reasoning_buffer
+                        if provider_payload:
+                            msg.update(provider_payload)
                         messages.append(msg)
                     
                     for tool_call in tool_calls_buffer:
@@ -300,18 +350,24 @@ class AgentLoop:
                         result = None
                         last_error = None
                         
-                        for attempt in range(self.max_retries):
-                            try:
-                                result = await self.execute_tool(tool_name, tool_args)
-                                logger.debug(f"Tool {tool_name} succeeded")
-                                break
-                            except Exception as e:
-                                last_error = e
-                                logger.warning(
-                                    f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
-                                )
-                                if attempt < self.max_retries - 1:
-                                    await asyncio.sleep(self.retry_delay)
+                        if self.tools:
+                            self.tools.set_tool_event_handler(tool_event_handler)
+                        try:
+                            for attempt in range(self.max_retries):
+                                try:
+                                    result = await self.execute_tool(tool_name, tool_args)
+                                    logger.debug(f"Tool {tool_name} succeeded")
+                                    break
+                                except Exception as e:
+                                    last_error = e
+                                    logger.warning(
+                                        f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
+                                    )
+                                    if attempt < self.max_retries - 1:
+                                        await asyncio.sleep(self.retry_delay)
+                        finally:
+                            if self.tools:
+                                self.tools.set_tool_event_handler(None)
                         
                         duration_ms = int((time.time() - start_time) * 1000)
                         

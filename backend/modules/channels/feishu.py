@@ -309,6 +309,7 @@ class FeishuChannel(BaseChannel):
 
             progressive_stream = {
                 "parts": [],
+                "reasoning_parts": [],
                 "sent": False,
                 "aborted": False,
                 "state": None,
@@ -365,13 +366,18 @@ class FeishuChannel(BaseChannel):
                 if progressive_stream["sent"] or progressive_stream["aborted"]:
                     return
 
-                if not is_reasoning and text_chunk:
+                if is_reasoning and text_chunk:
+                    progressive_stream["reasoning_parts"].append(text_chunk)
+                elif text_chunk:
                     progressive_stream["parts"].append(text_chunk)
 
                 if not is_final:
                     return
 
-                final_text = "".join(progressive_stream["parts"]).strip()
+                final_text = self._compose_reasoning_markdown(
+                    "".join(progressive_stream["reasoning_parts"]),
+                    "".join(progressive_stream["parts"]),
+                )
                 if not final_text:
                     final_text = "抱歉，未能生成回复，请稍后重试。"
 
@@ -455,6 +461,10 @@ class FeishuChannel(BaseChannel):
         if event_type == "tool_error":
             tool_name = self._truncate_progress_text(payload.get("tool_name") or "unknown")
             return f"工具失败：`{tool_name}`"
+        if event_type == "tool_progress":
+            tool_name = self._truncate_progress_text(payload.get("tool_name") or "unknown")
+            message = self._truncate_progress_text(payload.get("message") or "仍在运行")
+            return f"`{tool_name}` {message}"
         if event_type == "workflow_agent_start":
             label = self._truncate_progress_text(
                 payload.get("agent_label") or payload.get("agent_id") or "阶段"
@@ -477,6 +487,20 @@ class FeishuChannel(BaseChannel):
     def _render_progress_text(lines: List[str]) -> str:
         body = "\n".join(f"- {line}" for line in lines[-8:])
         return f"⏳ 正在处理中\n\n{body}" if body else "⏳ 正在处理中..."
+
+    @staticmethod
+    def _compose_reasoning_markdown(reasoning_text: str, visible_text: str) -> str:
+        """将 reasoning 和正文拼成飞书可渲染的 markdown。"""
+        normalized_reasoning = str(reasoning_text or "").strip()
+        normalized_visible = str(visible_text or "").strip()
+
+        if not normalized_reasoning:
+            return normalized_visible
+
+        sections = [f"**思考过程**\n\n```text\n{normalized_reasoning}\n```"]
+        if normalized_visible:
+            sections.append(normalized_visible)
+        return "\n\n---\n\n".join(sections)
 
     def _transition_stream_state(
         self,

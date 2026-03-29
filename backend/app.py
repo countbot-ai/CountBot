@@ -20,7 +20,10 @@ def _create_shared_components(config, config_loader=None):
     """创建共享组件（WebSocket 和渠道处理器共用）"""
     from loguru import logger
     from backend.modules.providers import create_provider
-    from backend.modules.providers.registry import get_provider_metadata
+    from backend.modules.providers.runtime import (
+        find_first_selectable_provider,
+        get_provider_runtime_state,
+    )
     from backend.modules.agent.context import ContextBuilder
     from backend.modules.agent.memory import MemoryStore
     from backend.modules.agent.skills import SkillsLoader
@@ -33,15 +36,21 @@ def _create_shared_components(config, config_loader=None):
 
     logger.info("Getting provider metadata...")
     provider_id = config.model.provider
-    provider_config = config.providers.get(provider_id)
-    provider_meta = get_provider_metadata(provider_id)
-
-    api_key = provider_config.api_key if provider_config else None
-    api_base = (
-        provider_config.api_base
-        if provider_config and provider_config.api_base
-        else (provider_meta.default_api_base if provider_meta else None)
-    )
+    runtime_state = get_provider_runtime_state(config, provider_id)
+    if not runtime_state.selectable:
+        fallback_state = find_first_selectable_provider(config)
+        if fallback_state and fallback_state.provider_id != provider_id:
+            logger.warning(
+                f"共享组件默认 provider '{provider_id}' 不可用（{runtime_state.reason}），"
+                f"已回退到 '{fallback_state.provider_id}'"
+            )
+            runtime_state = fallback_state
+            provider_id = fallback_state.provider_id
+        else:
+            logger.warning(
+                f"共享组件默认 provider '{provider_id}' 当前不可用（{runtime_state.reason}），"
+                "将继续使用现有配置完成启动，实际请求阶段会再校验"
+            )
 
     logger.info("Setting up workspace...")
     workspace, used_fallback = workspace_manager.resolve_workspace_path_or_default(
@@ -54,9 +63,10 @@ def _create_shared_components(config, config_loader=None):
 
     logger.info("Creating LLM provider...")
     provider = create_provider(
-        api_key=api_key,
-        api_base=api_base,
+        api_key=runtime_state.api_key or None,
+        api_base=runtime_state.api_base,
         default_model=config.model.model,
+        api_mode=config.model.api_mode,
         timeout=120.0,
         max_retries=3,
         provider_id=provider_id,
@@ -214,6 +224,7 @@ async def lifespan(app: FastAPI):
         rate_limiter=rate_limiter,
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
+        thinking_enabled=config.model.thinking_enabled,
         max_history_messages=config.persona.max_history_messages,
         memory_store=shared["memory"],
     )
@@ -268,6 +279,7 @@ async def lifespan(app: FastAPI):
         max_iterations=config.model.max_iterations,
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
+        thinking_enabled=config.model.thinking_enabled,
     )
     session_manager = SessionManager(shared["workspace"])
     logger.info("Cron agent and session manager created")
@@ -333,12 +345,6 @@ async def lifespan(app: FastAPI):
 
     app.state.cron_scheduler = scheduler
     app.state.cron_executor = cron_executor
-
-    async def get_cron_service_for_tool():
-        async with db_session_factory() as db:
-            return CronService(db, scheduler=scheduler)
-
-    app.state.get_cron_service = get_cron_service_for_tool
 
     # 注册进程退出清理处理器（备用机制）
     import atexit
@@ -487,22 +493,36 @@ async def websocket_endpoint(websocket: WebSocket):
     from backend.modules.config.loader import config_loader
     config = config_loader.config
 
-    # 根据当前配置创建 provider（支持动态切换）
-    provider_id = config.model.provider
-    provider_config = config.providers.get(provider_id)
-    provider_meta = get_provider_metadata(provider_id)
-
-    api_key = provider_config.api_key if provider_config else None
-    api_base = (
-        provider_config.api_base
-        if provider_config and provider_config.api_base
-        else (provider_meta.default_api_base if provider_meta else None)
+    from backend.modules.providers.runtime import (
+        build_provider_unavailable_message,
+        find_first_selectable_provider,
+        get_provider_runtime_state,
     )
 
+    # 根据当前配置创建 provider（支持动态切换）
+    provider_id = config.model.provider
+    runtime_state = get_provider_runtime_state(config, provider_id)
+    if not runtime_state.selectable:
+        fallback_state = find_first_selectable_provider(config)
+        if fallback_state:
+            logger.warning(
+                f"WebSocket 默认 provider '{provider_id}' 不可用（{runtime_state.reason}），"
+                f"已回退到 '{fallback_state.provider_id}'"
+            )
+            runtime_state = fallback_state
+            provider_id = fallback_state.provider_id
+        else:
+            await websocket.close(
+                code=1011,
+                reason=build_provider_unavailable_message(provider_id, runtime_state.reason),
+            )
+            return
+
     provider = create_provider(
-        api_key=api_key,
-        api_base=api_base,
+        api_key=runtime_state.api_key or None,
+        api_base=runtime_state.api_base,
         default_model=config.model.model,
+        api_mode=config.model.api_mode,
         timeout=120.0,
         max_retries=3,
         provider_id=provider_id,
@@ -518,6 +538,7 @@ async def websocket_endpoint(websocket: WebSocket):
         max_iterations=config.model.max_iterations,
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
+        thinking_enabled=config.model.thinking_enabled,
     )
 
     await handle_websocket(websocket, agent_loop=agent_loop)

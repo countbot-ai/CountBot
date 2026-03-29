@@ -9,6 +9,12 @@ from typing import Any, Dict, List, Optional
 from backend.modules.external_agents.base import ExternalAgentRequest
 from backend.modules.external_agents.registry import ExternalAgentRegistry
 from backend.modules.tools.base import Tool
+from backend.modules.tools.monitoring import (
+    MONITOR_PARAMETER_SCHEMA,
+    build_default_monitor_config,
+    parse_monitor_config,
+    run_with_monitoring,
+)
 
 
 class ExternalCodingAgentTool(Tool):
@@ -50,17 +56,14 @@ class ExternalCodingAgentTool(Tool):
         try:
             enabled, disabled = self.registry.describe_profiles()
             enabled_text = ", ".join(enabled) if enabled else "none"
-            disabled_text = ", ".join(disabled) if disabled else "none"
         except Exception as exc:
             enabled_text = "unavailable"
-            disabled_text = f"config error: {exc}"
+            _ = exc
 
         return (
-            "Run a configured external coding agent such as Claude Code, Codex, OpenCode, "
-            "or another local CLI profile. Use this when a task benefits from handing "
-            "off work to an external programming assistant. "
-            f"Enabled profiles: {enabled_text}. Disabled profiles: {disabled_text}. "
-            f"Profile config file: {self.registry.config_path}."
+            "Run a configured external coding agent. For long-running coding tasks, "
+            "prefer providing `monitor` so the UI can show periodic progress updates. "
+            f"Enabled profiles: {enabled_text}."
         )
 
     @property
@@ -70,46 +73,38 @@ class ExternalCodingAgentTool(Tool):
             "properties": {
                 "task": {
                     "type": "string",
-                    "description": "Required. The coding task to give the external agent.",
+                    "description": "Agent task.",
                     "minLength": 1,
                 },
                 "profile": {
                     "type": "string",
-                    "description": (
-                        "Optional profile name from external_coding_tools.json. "
-                        "Required when multiple profiles are enabled."
-                    ),
+                    "description": "Profile name.",
                 },
                 "mode": {
                     "type": "string",
-                    "description": "Optional task mode hint for the external agent.",
+                    "description": "Mode hint.",
                     "enum": ["run", "analyze", "edit", "review", "debug"],
                 },
                 "working_dir": {
                     "type": "string",
-                    "description": (
-                        "Optional working directory relative to the current workspace. "
-                        "Defaults to workspace root."
-                    ),
+                    "description": "Working directory.",
                 },
                 "context_files": {
                     "type": "array",
-                    "description": (
-                        "Optional list of relevant workspace-relative file paths to mention "
-                        "in the prompt sent to the external agent."
-                    ),
+                    "description": "Relevant files.",
                     "items": {"type": "string"},
                 },
                 "extra_instructions": {
                     "type": "string",
-                    "description": "Optional extra constraints or formatting instructions.",
+                    "description": "Extra instructions.",
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Optional per-call timeout in seconds.",
+                    "description": "Timeout in seconds.",
                     "minimum": 10,
                     "maximum": 3600,
                 },
+                "monitor": MONITOR_PARAMETER_SCHEMA,
             },
             "required": ["task"],
             "additionalProperties": False,
@@ -128,6 +123,11 @@ class ExternalCodingAgentTool(Tool):
             return "Error: 'task' is required."
 
         try:
+            monitor = parse_monitor_config(kwargs.get("monitor"))
+        except ValueError as exc:
+            return f"Error: {exc}"
+
+        try:
             cancel_token = self._cancel_token_context.get()
             if cancel_token is not None and getattr(cancel_token, "is_cancelled", False):
                 return "Error: external coding task cancelled."
@@ -135,6 +135,16 @@ class ExternalCodingAgentTool(Tool):
             profile = self.registry.resolve_profile(
                 str(profile_name).strip() if profile_name else None
             )
+            effective_timeout = (
+                int(timeout)
+                if timeout is not None
+                else int(profile.timeout or self.default_timeout)
+            )
+            if monitor is None:
+                monitor = build_default_monitor_config(
+                    tool_name=self.name,
+                    timeout_sec=effective_timeout,
+                )
             resolved_working_dir = self._resolve_working_dir(
                 working_dir,
                 profile.working_dir,
@@ -157,9 +167,12 @@ class ExternalCodingAgentTool(Tool):
                 session_id=self._session_id_context.get(),
                 cancel_token=cancel_token,
             )
-            result = await self.registry.execute(
-                request=request,
-                profile_name=profile.name,
+            result = await run_with_monitoring(
+                self.registry.execute(
+                    request=request,
+                    profile_name=profile.name,
+                ),
+                monitor,
             )
             if cancel_token is not None and getattr(cancel_token, "is_cancelled", False):
                 return "Error: external coding task cancelled."

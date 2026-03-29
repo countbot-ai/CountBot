@@ -12,6 +12,10 @@ from backend.modules.config.schema import AppConfig, ModelConfig, PersonaConfig
 from backend.modules.providers.registry import get_provider_metadata
 
 
+def _normalize_api_mode(value: Any) -> str:
+    return "chat_completions"
+
+
 @dataclass
 class SessionRuntimeConfig:
     """单个会话的最终运行时配置。"""
@@ -21,9 +25,11 @@ class SessionRuntimeConfig:
     has_custom_persona_config: bool
     provider_name: str
     model_name: str
+    api_mode: str
     temperature: float
     max_tokens: int
     max_iterations: int
+    thinking_enabled: bool
     api_key: str
     api_base: Optional[str]
     model_config: ModelConfig
@@ -45,9 +51,11 @@ def build_session_model_override(
     return {
         "provider": runtime_config.provider_name,
         "model": runtime_config.model_name,
+        "api_mode": runtime_config.api_mode,
         "temperature": runtime_config.temperature,
         "max_tokens": runtime_config.max_tokens,
         "max_iterations": runtime_config.max_iterations,
+        "thinking_enabled": runtime_config.thinking_enabled,
         "api_key": runtime_config.api_key,
         "api_base": runtime_config.api_base or "",
     }
@@ -112,9 +120,13 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         normalized = _normalized_text(raw_model_overrides.get(key))
         if normalized is not None:
             effective_model_data[key] = normalized
-    for key in ("temperature", "max_tokens", "max_iterations"):
+    for key in ("temperature", "max_tokens", "max_iterations", "thinking_enabled", "api_mode"):
         if raw_model_overrides.get(key) is not None:
-            effective_model_data[key] = raw_model_overrides[key]
+            effective_model_data[key] = (
+                _normalize_api_mode(raw_model_overrides[key])
+                if key == "api_mode"
+                else raw_model_overrides[key]
+            )
 
     effective_persona_data = app_config.persona.model_dump()
     for key, value in raw_persona_overrides.items():
@@ -149,9 +161,17 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         if isinstance(value, str):
             normalized = _normalized_text(value)
             if normalized is not None:
-                model_response[key] = normalized
+                model_response[key] = (
+                    _normalize_api_mode(normalized)
+                    if key == "api_mode"
+                    else normalized
+                )
         elif value is not None:
-            model_response[key] = value
+            model_response[key] = (
+                _normalize_api_mode(value)
+                if key == "api_mode"
+                else value
+            )
     model_response["api_key"] = raw_model_overrides.get("api_key", "") or ""
     model_response["api_base"] = raw_model_overrides.get("api_base", "") or ""
 
@@ -164,9 +184,11 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         has_custom_persona_config=bool(raw_persona_overrides),
         provider_name=provider_name,
         model_name=effective_model_config.model,
+        api_mode=effective_model_config.api_mode,
         temperature=effective_model_config.temperature,
         max_tokens=effective_model_config.max_tokens,
         max_iterations=effective_model_config.max_iterations,
+        thinking_enabled=effective_model_config.thinking_enabled,
         api_key=api_key,
         api_base=api_base,
         model_config=effective_model_config,

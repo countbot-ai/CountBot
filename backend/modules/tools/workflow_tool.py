@@ -96,15 +96,7 @@ class WorkflowTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Run a structured multi-agent workflow and return the compiled results. "
-            "Use 'pipeline' for sequential stages where each agent builds on previous outputs. "
-            "Use 'graph' for dependency-based parallel execution across independent workstreams. "
-            "Use 'council' for multi-perspective analysis: "
-            "  - cross_review=True (default): members analyse independently, then cross-review each other's positions. "
-            "  - cross_review=False: members analyse independently without cross-review. "
-            "Each agent is a fully autonomous sub-agent with access to all standard tools."
-        )
+        return "Run a multi-agent workflow. Modes: `pipeline`, `graph`, `council`."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -114,70 +106,50 @@ class WorkflowTool(Tool):
                 "mode": {
                     "type": "string",
                     "enum": ["pipeline", "graph", "council"],
-                    "description": (
-                        "Execution mode: "
-                        "'pipeline' (sequential), "
-                        "'graph' (dependency DAG with parallel dispatch), "
-                        "'council' (multi-perspective deliberation)."
-                    ),
+                    "description": "Workflow mode.",
                 },
                 "goal": {
                     "type": "string",
-                    "description": (
-                        "Overall goal or question driving the workflow. "
-                        "For council mode this is the question put to all members."
-                    ),
+                    "description": "Workflow goal.",
                 },
                 "agents": {
                     "type": "array",
-                    "description": (
-                        "Agent definitions. "
-                        "Pipeline/Graph: [{\"id\": str, \"role\": str, \"task\": str, \"depends_on\": [str]}]. "
-                        "Council: [{\"id\": str, \"perspective\": str}]."
-                    ),
+                    "description": "Agent definitions.",
                     "items": {
                         "type": "object",
                         "properties": {
                             "id": {
                                 "type": "string",
-                                "description": "Unique identifier for this agent slot.",
+                                "description": "Agent ID.",
                             },
                             "role": {
                                 "type": "string",
-                                "description": "Agent role label (pipeline / graph modes).",
+                                "description": "Agent role.",
                             },
                             "task": {
                                 "type": "string",
-                                "description": "Specific task assigned to this agent (pipeline / graph).",
+                                "description": "Agent task.",
                             },
                             "depends_on": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "IDs of slots that must complete before this one (graph only). Also accepts 'depends' for backward compatibility.",
+                                "description": "Dependencies.",
                             },
                             "perspective": {
                                 "type": "string",
-                                "description": "Analytical perspective / role for council members.",
+                                "description": "Council perspective.",
                             },
                         },
                     },
                 },
                 "cross_review": {
                     "type": "boolean",
-                    "description": (
-                        "Council mode only: enable cross-review between members. "
-                        "True (default) = members review each other's positions in round 2. "
-                        "False = members work independently without cross-review."
-                    ),
+                    "description": "Enable council cross-review.",
                     "default": True,
                 },
                 "team_name": {
                     "type": "string",
-                    "description": (
-                        "Optional: name of a predefined team to use. "
-                        "If provided, the system will load the complete team configuration "
-                        "(mode, agents, cross_review, enable_skills) from the database."
-                    ),
+                    "description": "Predefined team name.",
                 },
             },
             "required": ["goal"],

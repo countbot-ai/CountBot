@@ -100,45 +100,81 @@ class Tool(ABC):
             List[str]: 错误列表
         """
         t, label = schema.get("type"), path or "parameter"
-        
+
         # Type check
         if t in self._TYPE_MAP and not isinstance(val, self._TYPE_MAP[t]):
             return [f"{label} should be {t}"]
-        
+
         errors = []
-        
+
         # Enum check
         if "enum" in schema and val not in schema["enum"]:
             errors.append(f"{label} must be one of {schema['enum']}")
-        
+
         # Number constraints
         if t in ("integer", "number"):
             if "minimum" in schema and val < schema["minimum"]:
                 errors.append(f"{label} must be >= {schema['minimum']}")
             if "maximum" in schema and val > schema["maximum"]:
                 errors.append(f"{label} must be <= {schema['maximum']}")
-        
+
         # String constraints
         if t == "string":
             if "minLength" in schema and len(val) < schema["minLength"]:
                 errors.append(f"{label} must be at least {schema['minLength']} chars")
             if "maxLength" in schema and len(val) > schema["maxLength"]:
                 errors.append(f"{label} must be at most {schema['maxLength']} chars")
-        
+
         # Object validation
         if t == "object":
             props = schema.get("properties", {})
+            additional_properties = schema.get("additionalProperties", True)
+
             # Check required fields
             for k in schema.get("required", []):
                 if k not in val:
                     errors.append(f"missing required {path + '.' + k if path else k}")
+
+            # Check unknown fields when additionalProperties is disabled
+            if additional_properties is False:
+                for k in val:
+                    if k not in props:
+                        errors.append(
+                            f"unknown parameter {path + '.' + k if path else k}"
+                        )
+
             # Validate each property
             for k, v in val.items():
                 if k in props:
                     errors.extend(
                         self._validate(v, props[k], path + "." + k if path else k)
                     )
-        
+
+            # Support simple JSON Schema oneOf usage for object params
+            if "oneOf" in schema:
+                match_count = 0
+                child_errors: List[List[str]] = []
+                base_schema = dict(schema)
+                base_schema.pop("oneOf", None)
+                base_required = list(base_schema.get("required", []))
+
+                for option in schema["oneOf"]:
+                    merged_schema = dict(base_schema)
+                    merged_required = base_required + list(option.get("required", []))
+                    if merged_required:
+                        merged_schema["required"] = list(dict.fromkeys(merged_required))
+                    option_errors = self._validate(val, merged_schema, path)
+                    if not option_errors:
+                        match_count += 1
+                    else:
+                        child_errors.append(option_errors)
+
+                if match_count != 1:
+                    if match_count == 0:
+                        errors.append(f"{label} must match exactly one schema option")
+                    else:
+                        errors.append(f"{label} matches multiple schema options")
+
         # Array validation
         if t == "array" and "items" in schema:
             for i, item in enumerate(val):
@@ -147,7 +183,7 @@ class Tool(ABC):
                         item, schema["items"], f"{path}[{i}]" if path else f"[{i}]"
                     )
                 )
-        
+
         return errors
 
     def get_definition(self) -> Dict[str, Any]:

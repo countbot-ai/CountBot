@@ -31,29 +31,7 @@ class SendMediaTool(Tool):
     """发送媒体文件到频道工具"""
     
     name = "send_media"
-    description = """发送文件或图片到当前聊天频道。
-
-重要：当用户要求发送、分享、传送文件或图片时，必须使用此工具！
-
-用法:
-- send_media(file_paths=["report.pdf"], message="报告文档")
-- send_media(file_paths=["chart.png"], message="数据图表")
-- send_media(file_paths=["file1.pdf", "file2.png"])
-
-支持格式:
-- 图片: PNG, JPG, JPEG, GIF, BMP, WEBP
-- 文档: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT
-- 压缩: ZIP, RAR, 7Z
-- 媒体: MP3, MP4, AVI, MOV
-- 数据: JSON, XML, CSV, MD
-
-限制:
-- 仅支持频道会话
-- 企业微信长连接仅支持在当前回复中发送图片，不支持回传文件
-- 单个文件最大 20MB
-
-注意：不要只是说"文件已发送"，必须实际调用此工具！
-"""
+    description = "Send local files or images to the current channel chat."
     
     parameters = {
         "type": "object",
@@ -61,11 +39,11 @@ class SendMediaTool(Tool):
             "file_paths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "文件路径列表"
+                "description": "Local file paths."
             },
             "message": {
                 "type": "string",
-                "description": "可选的文本说明",
+                "description": "Optional caption.",
                 "default": ""
             }
         },

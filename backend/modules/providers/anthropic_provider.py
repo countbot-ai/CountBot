@@ -90,6 +90,7 @@ class AnthropicProvider(LLMProvider):
         temperature: float,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        thinking_enabled = kwargs.pop("thinking_enabled", None)
         system_content, filtered_messages = self._normalize_messages(messages)
 
         request_params: Dict[str, Any] = {
@@ -107,6 +108,7 @@ class AnthropicProvider(LLMProvider):
         if anthropic_tools:
             request_params["tools"] = anthropic_tools
 
+        self._apply_thinking_config(request_params, thinking_enabled)
         request_params.update(kwargs)
 
         logger.debug(
@@ -148,6 +150,15 @@ class AnthropicProvider(LLMProvider):
                                 "content": msg.get("content", ""),
                             }
                         ],
+                    }
+                )
+                continue
+
+            if role == "assistant" and msg.get("anthropic_content_blocks"):
+                filtered_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.get("anthropic_content_blocks"),
                     }
                 )
                 continue
@@ -214,6 +225,177 @@ class AnthropicProvider(LLMProvider):
 
         return anthropic_tools or None
 
+    @staticmethod
+    def _ensure_content_block(
+        content_block_buffer: Dict[str, Dict[str, Any]],
+        index: int,
+        block_type: str,
+    ) -> Dict[str, Any]:
+        key = f"index_{index}"
+        block = content_block_buffer.get(key)
+        if block is None:
+            block = {"type": block_type}
+            if block_type == "text":
+                block["text"] = ""
+            elif block_type == "thinking":
+                block["thinking"] = ""
+                block["signature"] = ""
+            elif block_type == "tool_use":
+                block["id"] = f"call_{index}"
+                block["name"] = ""
+                block["input_json"] = ""
+                block["input"] = {}
+                block["saw_json_delta"] = False
+            content_block_buffer[key] = block
+        return block
+
+    def _register_content_block_start(
+        self,
+        content_block_buffer: Dict[str, Dict[str, Any]],
+        index: int,
+        block: Dict[str, Any],
+    ) -> None:
+        block_type = block.get("type")
+        if not block_type:
+            return
+
+        key = f"index_{index}"
+
+        if block_type == "text":
+            content_block_buffer[key] = {
+                "type": "text",
+                "text": block.get("text", "") or "",
+            }
+            return
+
+        if block_type == "thinking":
+            content_block_buffer[key] = {
+                "type": "thinking",
+                "thinking": block.get("thinking", "") or "",
+                "signature": block.get("signature", "") or "",
+            }
+            return
+
+        if block_type == "redacted_thinking":
+            redacted = {"type": "redacted_thinking"}
+            for field in ("data", "thinking", "signature"):
+                if block.get(field):
+                    redacted[field] = block[field]
+            content_block_buffer[key] = redacted
+            return
+
+        if block_type == "tool_use":
+            initial_input = block.get("input")
+            content_block_buffer[key] = {
+                "type": "tool_use",
+                "id": block.get("id") or f"call_{index}",
+                "name": block.get("name", ""),
+                "input_json": self._serialize_tool_input(initial_input),
+                "input": initial_input if isinstance(initial_input, dict) else {},
+                "saw_json_delta": False,
+            }
+            return
+
+        content_block_buffer[key] = dict(block)
+
+    def _finalize_content_blocks(
+        self,
+        content_block_buffer: Dict[str, Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        blocks: List[Dict[str, Any]] = []
+        for key in sorted(
+            content_block_buffer.keys(),
+            key=lambda item: int(item.split("_", 1)[1]),
+        ):
+            block = content_block_buffer[key]
+            block_type = block.get("type")
+
+            if block_type == "text":
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": block.get("text", "") or "",
+                    }
+                )
+                continue
+
+            if block_type == "thinking":
+                thinking_block = {
+                    "type": "thinking",
+                    "thinking": block.get("thinking", "") or "",
+                }
+                if block.get("signature"):
+                    thinking_block["signature"] = block["signature"]
+                blocks.append(thinking_block)
+                continue
+
+            if block_type == "redacted_thinking":
+                redacted_block = {"type": "redacted_thinking"}
+                for field in ("data", "thinking", "signature"):
+                    if block.get(field):
+                        redacted_block[field] = block[field]
+                blocks.append(redacted_block)
+                continue
+
+            if block_type == "tool_use":
+                input_value = block.get("input")
+                input_json = (block.get("input_json") or "").strip()
+                if input_json:
+                    try:
+                        input_value = json.loads(input_json)
+                    except json.JSONDecodeError:
+                        input_value = {"raw": input_json}
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": block.get("id") or "call_unknown",
+                        "name": block.get("name") or "",
+                        "input": input_value if isinstance(input_value, dict) else {"value": input_value},
+                    }
+                )
+                continue
+
+            blocks.append(dict(block))
+
+        return blocks
+
+    def _apply_thinking_config(
+        self,
+        request_params: Dict[str, Any],
+        thinking_enabled: Optional[bool],
+    ) -> None:
+        """Inject Anthropic extended thinking config when enabled."""
+        if thinking_enabled is None:
+            request_params.pop("thinking", None)
+            return
+
+        if not thinking_enabled:
+            request_params.pop("thinking", None)
+            return
+
+        try:
+            max_tokens = int(request_params.get("max_tokens") or 0)
+        except (TypeError, ValueError):
+            max_tokens = 0
+
+        if max_tokens <= 1024:
+            logger.warning(
+                "Anthropic thinking requested but max_tokens <= 1024; "
+                "skipping thinking config because budget_tokens must be >= 1024 and < max_tokens."
+            )
+            request_params.pop("thinking", None)
+            return
+
+        budget_tokens = min(max_tokens - 1, 1024)
+        if budget_tokens < 1024:
+            request_params.pop("thinking", None)
+            return
+
+        request_params["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": budget_tokens,
+        }
+
     async def _chat_stream_via_sdk(
         self,
         *,
@@ -248,6 +430,7 @@ class AnthropicProvider(LLMProvider):
                     raise
 
         tool_call_buffer: Dict[str, Dict[str, Any]] = {}
+        content_block_buffer: Dict[str, Dict[str, Any]] = {}
         chunk_count = 0
         content_yielded = False
         stream_done = False
@@ -271,14 +454,25 @@ class AnthropicProvider(LLMProvider):
 
                     elif event.type == "content_block_start":
                         block = getattr(event, "content_block", None)
-                        if block and getattr(block, "type", None) == "tool_use":
-                            key = f"index_{event.index}"
-                            tool_call_buffer[key] = {
-                                "id": getattr(block, "id", None) or f"call_{event.index}",
-                                "name": getattr(block, "name", ""),
-                                "arguments": "",
-                                "saw_json_delta": False,
+                        if block:
+                            block_dict = {
+                                field: getattr(block, field)
+                                for field in ("type", "id", "name", "input", "text", "thinking", "signature", "data")
+                                if hasattr(block, field)
                             }
+                            self._register_content_block_start(
+                                content_block_buffer,
+                                event.index,
+                                block_dict,
+                            )
+                            if getattr(block, "type", None) == "tool_use":
+                                key = f"index_{event.index}"
+                                tool_call_buffer[key] = {
+                                    "id": getattr(block, "id", None) or f"call_{event.index}",
+                                    "name": getattr(block, "name", ""),
+                                    "arguments": self._serialize_tool_input(getattr(block, "input", None)),
+                                    "saw_json_delta": False,
+                                }
 
                     elif event.type == "content_block_delta":
                         content_yielded = True
@@ -286,7 +480,31 @@ class AnthropicProvider(LLMProvider):
 
                         if delta.type == "text_delta":
                             if delta.text:
+                                block = self._ensure_content_block(
+                                    content_block_buffer,
+                                    event.index,
+                                    "text",
+                                )
+                                block["text"] = f"{block.get('text', '')}{delta.text}"
                                 yield StreamChunk(content=delta.text)
+                        elif delta.type == "thinking_delta":
+                            thinking = getattr(delta, "thinking", "")
+                            if thinking:
+                                block = self._ensure_content_block(
+                                    content_block_buffer,
+                                    event.index,
+                                    "thinking",
+                                )
+                                block["thinking"] = f"{block.get('thinking', '')}{thinking}"
+                                yield StreamChunk(reasoning_content=thinking)
+                        elif delta.type == "signature_delta":
+                            signature = getattr(delta, "signature", "")
+                            block = self._ensure_content_block(
+                                content_block_buffer,
+                                event.index,
+                                "thinking",
+                            )
+                            block["signature"] = signature
                         elif delta.type == "input_json_delta":
                             key = f"index_{event.index}"
                             tool_call_buffer.setdefault(
@@ -298,10 +516,18 @@ class AnthropicProvider(LLMProvider):
                                     "saw_json_delta": False,
                                 },
                             )
+                            block = self._ensure_content_block(
+                                content_block_buffer,
+                                event.index,
+                                "tool_use",
+                            )
                             if not tool_call_buffer[key]["saw_json_delta"]:
                                 tool_call_buffer[key]["arguments"] = ""
                                 tool_call_buffer[key]["saw_json_delta"] = True
+                                block["input_json"] = ""
+                                block["saw_json_delta"] = True
                             tool_call_buffer[key]["arguments"] += delta.partial_json
+                            block["input_json"] = f"{block.get('input_json', '')}{delta.partial_json}"
 
                     elif event.type == "message_delta":
                         if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
@@ -310,6 +536,13 @@ class AnthropicProvider(LLMProvider):
                             output_tokens = getattr(event.usage, "output_tokens", 0)
 
                     elif event.type == "message_stop":
+                        finalized_blocks = self._finalize_content_blocks(content_block_buffer)
+                        if finalized_blocks:
+                            yield StreamChunk(
+                                provider_payload={
+                                    "anthropic_content_blocks": finalized_blocks,
+                                }
+                            )
                         for chunk in self._flush_tool_calls(tool_call_buffer):
                             yield chunk
                         yield StreamChunk(
@@ -334,6 +567,7 @@ class AnthropicProvider(LLMProvider):
                         await asyncio.sleep(wait)
                         stream = await client.messages.create(**request_params)
                         tool_call_buffer = {}
+                        content_block_buffer = {}
                         chunk_count = 0
                         continue
 
@@ -357,6 +591,7 @@ class AnthropicProvider(LLMProvider):
 
         for attempt in range(1, self.max_retries + 1):
             tool_call_buffer: Dict[str, Dict[str, Any]] = {}
+            content_block_buffer: Dict[str, Dict[str, Any]] = {}
             chunk_count = 0
             content_yielded = False
             input_tokens = 0
@@ -390,6 +625,11 @@ class AnthropicProvider(LLMProvider):
 
                             elif event_type == "content_block_start":
                                 block = event.get("content_block") or {}
+                                self._register_content_block_start(
+                                    content_block_buffer,
+                                    event.get("index", 0),
+                                    block,
+                                )
                                 if block.get("type") == "tool_use":
                                     index = event.get("index", 0)
                                     initial_input = block.get("input")
@@ -408,7 +648,30 @@ class AnthropicProvider(LLMProvider):
                                 if delta_type == "text_delta":
                                     text = delta.get("text", "")
                                     if text:
+                                        block = self._ensure_content_block(
+                                            content_block_buffer,
+                                            event.get("index", 0),
+                                            "text",
+                                        )
+                                        block["text"] = f"{block.get('text', '')}{text}"
                                         yield StreamChunk(content=text)
+                                elif delta_type == "thinking_delta":
+                                    thinking = delta.get("thinking", "")
+                                    if thinking:
+                                        block = self._ensure_content_block(
+                                            content_block_buffer,
+                                            event.get("index", 0),
+                                            "thinking",
+                                        )
+                                        block["thinking"] = f"{block.get('thinking', '')}{thinking}"
+                                        yield StreamChunk(reasoning_content=thinking)
+                                elif delta_type == "signature_delta":
+                                    block = self._ensure_content_block(
+                                        content_block_buffer,
+                                        event.get("index", 0),
+                                        "thinking",
+                                    )
+                                    block["signature"] = delta.get("signature", "")
                                 elif delta_type == "input_json_delta":
                                     index = event.get("index", 0)
                                     key = f"index_{index}"
@@ -421,11 +684,21 @@ class AnthropicProvider(LLMProvider):
                                             "saw_json_delta": False,
                                         },
                                     )
+                                    block = self._ensure_content_block(
+                                        content_block_buffer,
+                                        index,
+                                        "tool_use",
+                                    )
                                     if not tool_call_buffer[key]["saw_json_delta"]:
                                         tool_call_buffer[key]["arguments"] = ""
                                         tool_call_buffer[key]["saw_json_delta"] = True
+                                        block["input_json"] = ""
+                                        block["saw_json_delta"] = True
                                     tool_call_buffer[key]["arguments"] += delta.get(
                                         "partial_json", ""
+                                    )
+                                    block["input_json"] = (
+                                        f"{block.get('input_json', '')}{delta.get('partial_json', '')}"
                                     )
 
                             elif event_type == "message_delta":
@@ -435,6 +708,13 @@ class AnthropicProvider(LLMProvider):
                                 output_tokens = usage.get("output_tokens", output_tokens)
 
                             elif event_type == "message_stop":
+                                finalized_blocks = self._finalize_content_blocks(content_block_buffer)
+                                if finalized_blocks:
+                                    yield StreamChunk(
+                                        provider_payload={
+                                            "anthropic_content_blocks": finalized_blocks,
+                                        }
+                                    )
                                 for chunk in self._flush_tool_calls(tool_call_buffer):
                                     yield chunk
                                 yield StreamChunk(

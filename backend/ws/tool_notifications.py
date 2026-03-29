@@ -43,6 +43,8 @@ class ToolProgressMessage(ServerMessage):
     tool: str
     progress: int  # 0-100
     message: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    timestamp: float
 
 
 class ToolCompleteMessage(ServerMessage):
@@ -106,7 +108,10 @@ class ToolNotificationHandler:
         await connection_manager.send_to_session(self.session_id, message)
 
     async def notify_progress(
-        self, progress: int, message: Optional[str] = None
+        self,
+        progress: int,
+        message: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
     ) -> None:
         """通知工具执行进度
 
@@ -122,6 +127,8 @@ class ToolNotificationHandler:
             tool=self.tool_name,
             progress=self.progress,
             message=message,
+            details=details,
+            timestamp=time.time(),
         )
 
         await connection_manager.send_to_session(self.session_id, notification)
@@ -318,3 +325,22 @@ async def notify_tool_execution(
     else:
         # 工具开始执行：发送调用通知
         await send_tool_call(session_id, tool_name, arguments)
+
+
+async def notify_tool_progress(
+    session_id: str,
+    tool_name: str,
+    progress: int,
+    message: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    """发送工具执行进度通知（便捷函数）。"""
+
+    notification = ToolProgressMessage(
+        tool=tool_name,
+        progress=max(0, min(100, int(progress))),
+        message=message,
+        details=details,
+        timestamp=time.time(),
+    )
+    await connection_manager.send_to_session(session_id, notification)

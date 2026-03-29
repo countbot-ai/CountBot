@@ -28,11 +28,7 @@ class MemoryWriteTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "写入长期记忆。仅记录: 用户要求记住的、明确偏好习惯、重要决策、长期配置。"
-            "禁止记录闲聊、测试、一次性查询结果、临时数据。"
-            "多事项用；分隔，静默调用不要在回复中提及。"
-        )
+        return "Write durable memory only."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -41,7 +37,7 @@ class MemoryWriteTool(Tool):
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "记忆内容。多个事项用；分隔。例如: 用户偏好Python开发；项目使用Vue3前端；API限流100req/min",
+                    "description": "Memory text.",
                 },
             },
             "required": ["content"],
@@ -70,12 +66,7 @@ class MemorySearchTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "搜索长期记忆。支持单个或多个关键词。"
-            "默认OR逻辑（匹配任意关键词），可选AND逻辑（全部匹配）。"
-            "返回匹配的行号和内容。不区分大小写。"
-            "用于查找历史信息、用户偏好、过往决策等。"
-        )
+        return "Search long-term memory."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -84,16 +75,16 @@ class MemorySearchTool(Tool):
             "properties": {
                 "keywords": {
                     "type": "string",
-                    "description": "搜索关键词，多个关键词用空格分隔。例如: '天气 API' 或 '用户 偏好'",
+                    "description": "Search keywords.",
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "最大返回条数，默认15",
+                    "description": "Max results.",
                     "default": 15,
                 },
                 "match_mode": {
                     "type": "string",
-                    "description": "匹配模式：'or'（任意关键词匹配，默认）或 'and'（所有关键词都匹配）",
+                    "description": "Match mode.",
                     "enum": ["or", "and"],
                     "default": "or",
                 },
@@ -124,11 +115,7 @@ class MemoryReadTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "按行号读取长期记忆。支持读取单行或连续多行。"
-            "也可以读取最近N条记忆（不指定行号时）。"
-            "行号从搜索结果中获取。"
-        )
+        return "Read memory lines or recent entries."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -137,15 +124,15 @@ class MemoryReadTool(Tool):
             "properties": {
                 "start_line": {
                     "type": "integer",
-                    "description": "起始行号（从1开始）。不指定则返回最近记忆。",
+                    "description": "1-based start line.",
                 },
                 "end_line": {
                     "type": "integer",
-                    "description": "结束行号（包含）。不指定则只读start_line那一行。",
+                    "description": "1-based end line.",
                 },
                 "recent_count": {
                     "type": "integer",
-                    "description": "读取最近N条记忆（当不指定start_line时使用）",
+                    "description": "Recent entry count.",
                     "default": 10,
                 },
             },
@@ -201,11 +188,7 @@ class MemoryTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "长期记忆管理。action=write 写入记忆（仅记录用户明确要求记住的、偏好习惯、重要决策）；"
-            "action=search 关键词搜索记忆；action=read 按行号或读取最近N条记忆。"
-            "禁止记录闲聊、测试、一次性查询结果。多事项 write 时用；分隔。静默调用不要提及。"
-        )
+        return "Long-term memory: `write`, `search`, or `read`."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -214,39 +197,39 @@ class MemoryTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "操作类型: write（写入）/ search（搜索）/ read（读取）",
+                    "description": "Memory action.",
                     "enum": ["write", "search", "read"],
                 },
                 "content": {
                     "type": "string",
-                    "description": "[write] 记忆内容。多个事项用；分隔。",
+                    "description": "Memory text.",
                 },
                 "keywords": {
                     "type": "string",
-                    "description": "[search] 搜索关键词，多个关键词用空格分隔。",
+                    "description": "Search keywords.",
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "[search] 最大返回条数，默认15。",
+                    "description": "Max results.",
                     "default": 15,
                 },
                 "match_mode": {
                     "type": "string",
-                    "description": "[search] 匹配模式: or（任意，默认）/ and（全部匹配）",
+                    "description": "Match mode.",
                     "enum": ["or", "and"],
                     "default": "or",
                 },
                 "start_line": {
                     "type": "integer",
-                    "description": "[read] 起始行号（从1开始）。不指定则返回最近记忆。",
+                    "description": "1-based start line.",
                 },
                 "end_line": {
                     "type": "integer",
-                    "description": "[read] 结束行号（包含）。不指定则只读 start_line 那一行。",
+                    "description": "1-based end line.",
                 },
                 "recent_count": {
                     "type": "integer",
-                    "description": "[read] 读取最近N条记忆（不指定 start_line 时使用），默认10。",
+                    "description": "Recent entry count.",
                     "default": 10,
                 },
             },

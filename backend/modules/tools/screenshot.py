@@ -53,7 +53,7 @@ class ScreenshotTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Capture desktop or webpage screenshots"
+        return "Capture a desktop or webpage screenshot."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -63,46 +63,46 @@ class ScreenshotTool(Tool):
                 "mode": {
                     "type": "string",
                     "enum": ["desktop", "webpage"],
-                    "description": "Mode (desktop/webpage)",
+                    "description": "Capture mode.",
                 },
                 "url": {
                     "type": "string",
-                    "description": "URL (webpage mode)",
+                    "description": "Web page URL.",
                 },
                 "output_path": {
                     "type": "string",
-                    "description": "Output path (optional)",
+                    "description": "Output path.",
                 },
                 "monitor": {
                     "type": "integer",
-                    "description": "Monitor number (desktop)",
+                    "description": "Monitor index.",
                     "minimum": 0,
                 },
                 "full_page": {
                     "type": "boolean",
-                    "description": "Full page (webpage)",
+                    "description": "Capture full page.",
                 },
                 "viewport_width": {
                     "type": "integer",
-                    "description": "Viewport width",
+                    "description": "Viewport width.",
                     "minimum": 320,
                     "maximum": 3840,
                 },
                 "viewport_height": {
                     "type": "integer",
-                    "description": "Viewport height",
+                    "description": "Viewport height.",
                     "minimum": 240,
                     "maximum": 2160,
                 },
                 "wait_time": {
                     "type": "integer",
-                    "description": "Wait time (ms)",
+                    "description": "Wait ms.",
                     "minimum": 0,
                     "maximum": 30000,
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Timeout (ms)",
+                    "description": "Timeout ms.",
                     "minimum": 5000,
                     "maximum": 120000,
                 },

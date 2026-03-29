@@ -50,7 +50,6 @@ class SearchResponse(BaseModel):
     total: int
 
 
-from backend.modules.config.loader import config_loader
 from backend.utils.paths import WORKSPACE_DIR
 
 

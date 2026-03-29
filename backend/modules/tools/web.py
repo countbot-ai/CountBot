@@ -198,7 +198,7 @@ class WebFetchTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Fetch and extract web page content. Returns clean text by default (best for AI). Supports outputFormat: text/html/json. Supports mode: basic/stealth/max-stealth for anti-bot protection."
+        return "Fetch a web page. Returns text by default. Modes: basic, stealth, max-stealth."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -207,22 +207,22 @@ class WebFetchTool(Tool):
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "URL to fetch",
+                    "description": "URL.",
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["basic", "stealth", "max-stealth"],
-                    "description": "Anti-bot mode (default: basic)",
+                    "description": "Fetch mode.",
                 },
                 "outputFormat": {
                     "type": "string",
                     "enum": ["text", "html", "json"],
-                    "description": "Output format (default: text)",
+                    "description": "Output format.",
                 },
                 "maxChars": {
                     "type": "integer",
                     "minimum": 100,
-                    "description": "Max characters to return",
+                    "description": "Max chars.",
                 },
             },
             "required": ["url"],

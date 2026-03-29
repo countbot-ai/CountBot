@@ -252,6 +252,24 @@ class WorkflowEngine:
         except Exception:
             return ""
 
+    @staticmethod
+    def _looks_like_embedded_system_prompt(text: str) -> bool:
+        """Detect legacy teams that stored persona-like prompt blocks in task."""
+        normalized = (text or "").strip()
+        if len(normalized) < 80:
+            return False
+
+        prompt_markers = (
+            normalized.startswith("你是"),
+            normalized.startswith("# 角色"),
+            "输出要求" in normalized,
+            "工作流程" in normalized,
+            "记住：" in normalized,
+            "记住:" in normalized,
+            normalized.count("\n") >= 3,
+        )
+        return any(prompt_markers)
+
     # ------------------------------------------------------------------
     # Pipeline 模式
     # ------------------------------------------------------------------
@@ -271,6 +289,13 @@ class WorkflowEngine:
             role = stage.get("role", f"Stage-{idx + 1}")
             task_desc = stage.get("task", "")
             custom_sp = stage.get("system_prompt") or None
+            effective_task_desc = task_desc
+            if not custom_sp and self._looks_like_embedded_system_prompt(task_desc):
+                custom_sp = task_desc
+                effective_task_desc = (
+                    f"围绕工作流目标完成“{role}”阶段，"
+                    "给出清晰、可执行、便于下游继续处理的结果。"
+                )
 
             prior_ctx = (
                 f"\n\n## Outputs from previous stages:\n{accumulated}"
@@ -279,7 +304,7 @@ class WorkflowEngine:
             )
             prompt = (
                 f"# Workflow Goal\n{goal}\n\n"
-                f"# Your Task\n{task_desc}"
+                f"# Your Task\n{effective_task_desc}"
                 f"{prior_ctx}\n\n"
                 "Complete your task thoroughly and provide a clear, detailed output."
             )
@@ -327,6 +352,14 @@ class WorkflowEngine:
             task_desc = s.get("task", "")
             custom_sp = s.get("system_prompt") or None
             condition = s.get("condition")
+            prompt_template = task_desc
+
+            if not custom_sp and self._looks_like_embedded_system_prompt(task_desc):
+                custom_sp = task_desc
+                prompt_template = (
+                    f"围绕工作流目标完成“{role}”节点，"
+                    "输出清晰、准确、便于依赖节点继续使用的结果。"
+                )
             
             slot_system_prompts[sid] = custom_sp or (
                 f"You are {role}. "
@@ -337,7 +370,7 @@ class WorkflowEngine:
             slot_map[sid] = AgentSlot(
                 slot_id=sid,
                 label=role,
-                prompt_template=task_desc,
+                prompt_template=prompt_template,
                 depends_on=list(deps),
                 condition=condition,
             )

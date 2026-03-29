@@ -225,6 +225,7 @@ class ClientMessage(BaseModel):
     type: str = Field(..., description="消息类型")
     session_id: str = Field(..., alias="sessionId", description="会话 ID")
     content: Optional[str] = Field(None, description="消息内容（ping 消息可选）")
+    attachments: Optional[list[str]] = Field(None, description="附件路径列表")
 
 
 class ServerMessage(BaseModel):
@@ -242,6 +243,13 @@ class MessageChunk(ServerMessage):
 
     type: str = Field(default="message_chunk", description="消息类型")
     content: str = Field(..., description="消息内容")
+
+
+class ReasoningChunk(ServerMessage):
+    """推理消息块（流式思考内容）"""
+
+    type: str = Field(default="reasoning_chunk", description="消息类型")
+    content: str = Field(..., description="推理内容")
 
 
 class ToolCall(ServerMessage):
@@ -588,6 +596,13 @@ async def send_message_chunk(session_id: str, content: str) -> int:
     """
     return await connection_manager.send_to_session(
         session_id, MessageChunk(content=content)
+    )
+
+
+async def send_reasoning_chunk(session_id: str, content: str) -> int:
+    """发送推理消息块到会话。"""
+    return await connection_manager.send_to_session(
+        session_id, ReasoningChunk(content=content)
     )
 
 

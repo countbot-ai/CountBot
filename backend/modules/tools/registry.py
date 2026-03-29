@@ -8,6 +8,11 @@ from datetime import datetime
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution_context import (
+    ToolExecutionContext,
+    push_tool_execution_context,
+    reset_tool_execution_context,
+)
 from backend.modules.tools.file_audit_logger import file_audit_logger
 
 # 使用 contextvars 实现异步安全的 session_id 存储
@@ -35,6 +40,9 @@ _workflow_id_context: contextvars.ContextVar[Optional[str]] = contextvars.Contex
 _parent_tool_call_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'parent_tool_call_id', default=None
 )
+_tool_event_handler_context: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
+    'tool_event_handler', default=None
+)
 
 
 class ToolRegistry:
@@ -44,6 +52,7 @@ class ToolRegistry:
         """初始化工具注册表"""
         self._tools: Dict[str, Tool] = {}
         self._audit_enabled: bool = True
+        self._definitions_cache: Optional[List[Dict[str, Any]]] = None
         # 注意：不再使用实例变量存储 session_id，改用 contextvars
         logger.debug("ToolRegistry initialized (using contextvars for session isolation)")
     
@@ -117,6 +126,10 @@ class ToolRegistry:
             if hasattr(tool, 'set_message_context'):
                 tool.set_message_context(message_context)
 
+    def set_tool_event_handler(self, handler: Optional[Any]) -> None:
+        """设置当前工具执行的事件回调（异步安全）。"""
+        _tool_event_handler_context.set(handler)
+
     @property
     def channel(self) -> Optional[str]:
         """获取当前上下文的渠道（异步安全）"""
@@ -141,6 +154,7 @@ class ToolRegistry:
             raise ValueError(f"Tool '{tool.name}' is already registered")
         
         self._tools[tool.name] = tool
+        self._definitions_cache = None
         logger.debug(f"Registered tool: {tool.name}")
 
     def unregister(self, tool_name: str) -> bool:
@@ -155,6 +169,7 @@ class ToolRegistry:
         """
         if tool_name in self._tools:
             del self._tools[tool_name]
+            self._definitions_cache = None
             logger.debug(f"Unregistered tool: {tool_name}")
             return True
         else:
@@ -203,9 +218,12 @@ class ToolRegistry:
         Returns:
             List[dict]: 工具定义列表
         """
-        definitions = [tool.get_definition() for tool in self._tools.values()]
-        logger.debug(f"Generated {len(definitions)} tool definitions")
-        return definitions
+        if self._definitions_cache is None:
+            self._definitions_cache = [
+                tool.get_definition() for tool in self._tools.values()
+            ]
+            logger.debug(f"Generated {len(self._definitions_cache)} tool definitions")
+        return self._definitions_cache
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any], auto_record: bool = True) -> str:
         """
@@ -267,7 +285,17 @@ class ToolRegistry:
                 return error_msg
             
             logger.info(f"Executing tool: {tool_name} with arguments: {arguments}")
-            result = await tool.execute(**arguments)
+            context_token = push_tool_execution_context(
+                ToolExecutionContext(
+                    session_id=self._session_id,
+                    tool_name=tool_name,
+                    event_handler=_tool_event_handler_context.get(),
+                )
+            )
+            try:
+                result = await tool.execute(**arguments)
+            finally:
+                reset_tool_execution_context(context_token)
             
             # 计算执行时间
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)

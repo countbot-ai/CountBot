@@ -126,7 +126,7 @@ async def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
     """
     try:
         # 隐藏的工具列表（禁止前端直接调用）
-        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell'}
+        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec'}
         
         # 安全检查：禁止调用隐藏的工具
         if request.tool in hidden_tools:
@@ -184,7 +184,7 @@ async def list_tools() -> ListToolsResponse:
         definitions = tools.get_definitions()
         
         # 隐藏的工具列表（不在前端显示）
-        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell'}
+        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec'}
         
         # 转换为响应格式，过滤隐藏的工具
         tool_list = [

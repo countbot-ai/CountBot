@@ -179,7 +179,11 @@ def register_all_tools(
     try:
         from backend.modules.tools.file_search import FileSearchTool
         
-        file_search_tool = FileSearchTool(default_max_results=20)
+        file_search_tool = FileSearchTool(
+            workspace=workspace,
+            default_max_results=20,
+            restrict_to_workspace=restrict_to_workspace,
+        )
         tools.register(file_search_tool)
         logger.debug("Registered file search tool")
     except Exception as e:

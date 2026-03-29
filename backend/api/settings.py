@@ -16,10 +16,15 @@ from backend.modules.config.loader import config_loader
 from backend.modules.config.schema import AppConfig, ModelConfig, ProviderConfig, WorkspaceConfig
 from backend.modules.external_agents.conversation import profile_supports_native_session
 from backend.modules.external_agents.registry import ExternalAgentRegistry
+from backend.modules.providers.runtime import get_provider_runtime_state
 from backend.modules.workspace import seed_bundled_workspace_resources, workspace_manager
 from backend.version import APP_VERSION
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+def _normalize_api_mode_value(value: Any) -> str:
+    return "chat_completions"
 
 
 class ExternalCodingProfilePayload(BaseModel):
@@ -218,23 +223,21 @@ def _prepare_message_handler_reload_params(
     if reload_provider_model:
         try:
             from backend.modules.providers import create_provider
-            from backend.modules.providers.registry import get_provider_metadata
+            from backend.modules.providers.runtime import find_first_selectable_provider, get_provider_runtime_state
 
             provider_id = config.model.provider
-            provider_config = config.providers.get(provider_id)
-            provider_meta = get_provider_metadata(provider_id)
-
-            api_key = provider_config.api_key if provider_config else None
-            api_base = (
-                provider_config.api_base
-                if provider_config and provider_config.api_base
-                else (provider_meta.default_api_base if provider_meta else None)
-            )
+            runtime_state = get_provider_runtime_state(config, provider_id)
+            if not runtime_state.selectable:
+                fallback_state = find_first_selectable_provider(config)
+                if fallback_state:
+                    provider_id = fallback_state.provider_id
+                    runtime_state = fallback_state
 
             reload_params['provider'] = create_provider(
-                api_key=api_key,
-                api_base=api_base,
+                api_key=runtime_state.api_key or None,
+                api_base=runtime_state.api_base,
                 default_model=config.model.model,
+                api_mode=config.model.api_mode,
                 timeout=600.0,
                 max_retries=3,
                 provider_id=provider_id,
@@ -243,6 +246,7 @@ def _prepare_message_handler_reload_params(
             reload_params['temperature'] = config.model.temperature
             reload_params['max_tokens'] = config.model.max_tokens
             reload_params['max_iterations'] = config.model.max_iterations
+            reload_params['thinking_enabled'] = config.model.thinking_enabled
             reload_params['max_history_messages'] = config.persona.max_history_messages
 
             logger.info("Prepared AI config for hot reload")
@@ -324,6 +328,7 @@ def _reload_cron_runtime(
             cron_agent.temperature = config.model.temperature
             cron_agent.max_tokens = config.model.max_tokens
             cron_agent.max_iterations = config.model.max_iterations
+            cron_agent.thinking_enabled = config.model.thinking_enabled
         if workspace_path is not None:
             cron_agent.workspace = workspace_path
 
@@ -524,6 +529,13 @@ class ProviderMetadataResponse(BaseModel):
     name: str = Field(..., description="显示名称")
     default_api_base: Optional[str] = Field(None, description="默认 API 基础 URL")
     default_model: Optional[str] = Field(None, description="默认模型名称")
+    enabled: bool = Field(False, description="是否已启用")
+    configured: bool = Field(False, description="配置是否完整")
+    selectable: bool = Field(False, description="是否可用于实际请求")
+    requires_api_key: bool = Field(True, description="是否要求 API Key")
+    requires_api_base: bool = Field(False, description="是否要求自定义 API Base")
+    status: str = Field("disabled", description="运行状态")
+    reason: str = Field("disabled", description="状态原因")
 
 
 class ProviderConfigResponse(BaseModel):
@@ -539,9 +551,11 @@ class ModelConfigResponse(BaseModel):
     
     provider: str = Field(..., description="Provider 名称")
     model: str = Field(..., description="模型名称")
+    api_mode: str = Field(..., description="OpenAI API 模式，固定为 chat.completions")
     temperature: float = Field(..., description="温度参数")
     max_tokens: int = Field(..., description="最大 token 数")
     max_iterations: int = Field(..., description="最大迭代次数")
+    thinking_enabled: bool = Field(..., description="是否启用思考模式")
 
 
 class WorkspaceConfigResponse(BaseModel):
@@ -625,6 +639,7 @@ class TestConnectionRequest(BaseModel):
     api_key: str = Field(default="", description="API 密钥")
     api_base: Optional[str] = Field(None, description="API 基础 URL")
     model: Optional[str] = Field(None, description="模型名称（可选）")
+    api_mode: Optional[str] = Field(None, description="API 模式（仅保留兼容字段）")
 
 
 class TestConnectionResponse(BaseModel):
@@ -650,16 +665,27 @@ async def get_available_providers() -> List[ProviderMetadataResponse]:
     """
     from backend.modules.providers.registry import get_all_providers
     
+    config = config_loader.config
     providers = get_all_providers()
-    return [
-        ProviderMetadataResponse(
-            id=meta.id,
-            name=meta.name,
-            default_api_base=meta.default_api_base,
-            default_model=meta.default_model,
+    response: List[ProviderMetadataResponse] = []
+    for meta in providers.values():
+        runtime_state = get_provider_runtime_state(config, meta.id)
+        response.append(
+            ProviderMetadataResponse(
+                id=meta.id,
+                name=meta.name,
+                default_api_base=meta.default_api_base,
+                default_model=meta.default_model,
+                enabled=runtime_state.enabled,
+                configured=runtime_state.configured,
+                selectable=runtime_state.selectable,
+                requires_api_key=runtime_state.requires_api_key,
+                requires_api_base=runtime_state.requires_api_base,
+                status=runtime_state.status,
+                reason=runtime_state.reason,
+            )
         )
-        for meta in providers.values()
-    ]
+    return response
 
 
 @router.get("", response_model=SettingsResponse)
@@ -688,9 +714,11 @@ async def get_settings() -> SettingsResponse:
             model=ModelConfigResponse(
                 provider=config.model.provider,
                 model=config.model.model,
+                api_mode=_normalize_api_mode_value(config.model.api_mode),
                 temperature=config.model.temperature,
                 max_tokens=config.model.max_tokens,
                 max_iterations=config.model.max_iterations,
+                thinking_enabled=config.model.thinking_enabled,
             ),
             workspace=WorkspaceConfigResponse(
                 path=config.workspace.path,
@@ -777,6 +805,9 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             
             if "model" in request.model:
                 config.model.model = request.model["model"]
+
+            if "api_mode" in request.model:
+                config.model.api_mode = _normalize_api_mode_value(request.model["api_mode"])
             
             if "temperature" in request.model:
                 config.model.temperature = request.model["temperature"]
@@ -786,13 +817,14 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             
             if "max_iterations" in request.model:
                 config.model.max_iterations = request.model["max_iterations"]
+
+            if "thinking_enabled" in request.model:
+                config.model.thinking_enabled = request.model["thinking_enabled"]
         
         if request.workspace:
             if "path" in request.workspace:
                 requested_workspace = request.workspace["path"]
                 if isinstance(requested_workspace, str) and requested_workspace.strip():
-                    from backend.modules.workspace.manager import workspace_manager
-
                     old_workspace = workspace_manager.get_workspace_path()
                     validated_workspace_path = _validate_workspace_path_or_raise(requested_workspace)
                     config.workspace.path = str(validated_workspace_path)
@@ -913,8 +945,6 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         # 工作区迁移提示（如果有变更）
         if runtime_workspace is not None:
             try:
-                from backend.modules.workspace.manager import workspace_manager
-
                 if old_workspace is not None:
                     migration_check = workspace_manager.check_skills_migration_needed(
                         old_workspace, runtime_workspace
@@ -1103,6 +1133,7 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
             api_key=request.api_key,
             api_base=test_api_base,
             default_model=test_model,
+            api_mode=_normalize_api_mode_value(request.api_mode or config_loader.config.model.api_mode),
             timeout=30.0,
             max_retries=1,
             provider_id=request.provider,

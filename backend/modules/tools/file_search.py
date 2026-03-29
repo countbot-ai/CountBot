@@ -13,6 +13,7 @@ from datetime import datetime
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.filesystem import WorkspaceValidator
 
 
 class FileSearchTool(Tool):
@@ -24,7 +25,12 @@ class FileSearchTool(Tool):
     - 递归深度控制
     """
 
-    def __init__(self, default_max_results: int = 20):
+    def __init__(
+        self,
+        workspace: Path,
+        default_max_results: int = 20,
+        restrict_to_workspace: bool = True,
+    ):
         """
         初始化文件搜索工具
         
@@ -32,6 +38,7 @@ class FileSearchTool(Tool):
             default_max_results: 默认最大返回结果数量
         """
         self.default_max_results = default_max_results
+        self.validator = WorkspaceValidator(workspace, restrict_to_workspace)
         logger.debug(f"FileSearchTool initialized (default_max_results: {default_max_results})")
 
     @property
@@ -40,7 +47,7 @@ class FileSearchTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Search files with wildcards (*.txt, *.pdf)"
+        return "Search files by wildcard pattern."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -49,27 +56,27 @@ class FileSearchTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Search directory",
+                    "description": "Search path.",
                 },
                 "pattern": {
                     "type": "string",
-                    "description": "Pattern (* = any, ? = one)",
+                    "description": "Wildcard pattern.",
                     "default": "*",
                 },
                 "type": {
                     "type": "string",
-                    "description": "Type filter",
+                    "description": "Result type.",
                     "enum": ["file", "dir", "all"],
                     "default": "all",
                 },
                 "max_depth": {
                     "type": "integer",
-                    "description": "Depth (-1 = unlimited)",
+                    "description": "Max depth.",
                     "default": -1,
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Max results (1-100)",
+                    "description": "Max results.",
                     "minimum": 1,
                     "maximum": 100,
                     "default": 20,
@@ -103,7 +110,7 @@ class FileSearchTool(Tool):
 
         try:
             # 验证搜索路径
-            search_dir = Path(search_path).resolve()
+            search_dir = self.validator.validate_path(search_path)
             if not search_dir.exists():
                 return f"Error: Path does not exist: {search_path}"
             

@@ -455,12 +455,17 @@ class SkillsLoader:
             # 获取描述
             desc = skill.metadata.get("description", "")
             title = skill.metadata.get("title", name)
+            desc = " ".join(str(desc or "").split())
             
-            # 格式：- 技能名 (标题): 简短描述
+            # 紧凑格式：优先保留技能名，标题仅在明显不同于技能名时展示
+            title_suffix = ""
+            if title and title != name:
+                title_suffix = f" | {title}"
+
             if desc:
-                lines.append(f"- {name} ({title}): {desc}")
+                lines.append(f"- {name}{title_suffix}: {desc}")
             else:
-                lines.append(f"- {name} ({title})")
+                lines.append(f"- {name}{title_suffix}")
         
         return "\n".join(lines) if lines else ""
 

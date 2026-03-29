@@ -94,26 +94,42 @@ class SubagentManager:
         
         logger.debug("SubagentManager initialized")
 
-    def _resolve_runtime_model_settings(self) -> Tuple[str, float, int]:
+    @staticmethod
+    def _compose_reasoning_sections(reasoning_text: str, visible_text: str) -> str:
+        """在不支持独立 reasoning 面板的子代理链路中保留 reasoning 内容。"""
+        normalized_reasoning = str(reasoning_text or "").strip()
+        normalized_visible = str(visible_text or "").strip()
+
+        if not normalized_reasoning:
+            return normalized_visible
+
+        sections = [f"## 思考过程\n\n{normalized_reasoning}"]
+        if normalized_visible:
+            sections.append(f"## 回复\n\n{normalized_visible}")
+        return "\n\n---\n\n".join(sections)
+
+    def _resolve_runtime_model_settings(self) -> Tuple[str, float, int, bool]:
         """获取当前执行应使用的模型参数，优先读取最新配置。"""
         model = self.model
         temperature = self.temperature
         max_tokens = self.max_tokens
+        thinking_enabled = True
 
         if not self.config_loader:
-            return model, temperature, max_tokens
+            return model, temperature, max_tokens, thinking_enabled
 
         try:
             runtime_model_config = self.config_loader.config.model
             model = getattr(runtime_model_config, "model", model) or model
             temperature = getattr(runtime_model_config, "temperature", temperature)
             max_tokens = getattr(runtime_model_config, "max_tokens", max_tokens)
+            thinking_enabled = getattr(runtime_model_config, "thinking_enabled", thinking_enabled)
         except Exception as e:
             logger.warning(
                 f"Failed to get runtime model settings from config: {e}, using manager defaults"
             )
 
-        return model, temperature, max_tokens
+        return model, temperature, max_tokens, thinking_enabled
 
     def create_task(
         self,
@@ -267,11 +283,11 @@ class SubagentManager:
             ))
 
             try:
-                from backend.modules.tools.web import WebSearchTool, WebFetchTool
-                tools.register(WebSearchTool())
+                from backend.modules.tools.web import WebFetchTool
+
                 tools.register(WebFetchTool())
             except ImportError:
-                logger.warning("Web tools not available for subagent")
+                logger.warning("Web fetch tool not available for subagent")
 
             response_chunks = []
             iteration = 0
@@ -297,6 +313,10 @@ class SubagentManager:
                 tool_definitions = tools.get_definitions()
 
                 content_buffer = ""
+                reasoning_buffer = ""
+                emitted_reasoning_header = False
+                emitted_reply_header = False
+                provider_payload = None
                 tool_calls_buffer = []
                 
                 # 确定使用的 provider 和模型参数
@@ -304,6 +324,7 @@ class SubagentManager:
                 runtime_model = self.model
                 runtime_temperature = self.temperature
                 runtime_max_tokens = self.max_tokens
+                runtime_thinking_enabled = True
                 
                 # 优先使用任务的模型覆盖配置（团队自定义模型）
                 if task.model_override:
@@ -315,29 +336,33 @@ class SubagentManager:
                     if override_provider or override_api_key or override_api_base:
                         try:
                             from backend.modules.providers.factory import create_provider
-                            from backend.modules.config.loader import config_loader
-                            
+                            from backend.modules.providers.runtime import get_provider_runtime_state
+
                             provider_name = override_provider or self.config_loader.config.model.provider
-                            api_key = override_api_key if override_api_key else None
-                            api_base = override_api_base if override_api_base else None
-                            
-                            # 如果没有提供 api_key/api_base（None 或空字符串），从全局配置获取
-                            if not api_key:
-                                provider_config = config_loader.config.providers.get(provider_name)
-                                if provider_config:
-                                    api_key = provider_config.api_key
-                            
-                            if not api_base:
-                                provider_config = config_loader.config.providers.get(provider_name)
-                                if provider_config:
-                                    api_base = provider_config.api_base
+                            runtime_state = get_provider_runtime_state(
+                                self.config_loader.config,
+                                provider_name,
+                                api_key_override=override_api_key,
+                                api_base_override=override_api_base,
+                            )
+                            if not runtime_state.selectable:
+                                raise ValueError(
+                                    f"Provider '{provider_name}' is unavailable: {runtime_state.reason}"
+                                )
                             
                             active_provider = create_provider(
                                 provider_id=provider_name,
-                                api_key=api_key,
-                                api_base=api_base,
+                                api_key=runtime_state.api_key or None,
+                                api_base=runtime_state.api_base,
+                                api_mode=task.model_override.get(
+                                    "api_mode",
+                                    getattr(self.config_loader.config.model, "api_mode", "chat_completions"),
+                                ),
                             )
-                            logger.info(f"Created custom provider for team: {provider_name}, api_base: {api_base}")
+                            logger.info(
+                                f"Created custom provider for team: {provider_name}, "
+                                f"api_base: {runtime_state.api_base}"
+                            )
                         except Exception as e:
                             logger.warning(f"Failed to create custom provider, using default: {e}")
                     
@@ -345,10 +370,14 @@ class SubagentManager:
                     runtime_model = task.model_override.get("model", runtime_model)
                     runtime_temperature = task.model_override.get("temperature", runtime_temperature)
                     runtime_max_tokens = task.model_override.get("max_tokens", runtime_max_tokens)
+                    runtime_thinking_enabled = task.model_override.get(
+                        "thinking_enabled",
+                        runtime_thinking_enabled,
+                    )
                     logger.info(f"Using team model override: model={runtime_model}, temp={runtime_temperature}, max_tokens={runtime_max_tokens}")
                 else:
                     # 使用全局配置
-                    runtime_model, runtime_temperature, runtime_max_tokens = (
+                    runtime_model, runtime_temperature, runtime_max_tokens, runtime_thinking_enabled = (
                         self._resolve_runtime_model_settings()
                     )
                 
@@ -358,14 +387,39 @@ class SubagentManager:
                     model=runtime_model,
                     temperature=runtime_temperature,
                     max_tokens=runtime_max_tokens,
+                    thinking_enabled=runtime_thinking_enabled,
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
+                        if task.event_callback:
+                            try:
+                                if emitted_reasoning_header and not emitted_reply_header:
+                                    emitted_reply_header = True
+                                    await task.event_callback("chunk", "", "\n\n## 回复\n\n")
+                                await task.event_callback("chunk", "", chunk.content)
+                            except Exception as e:
+                                logger.warning(f"Failed to call event_callback for chunk: {e}")
+                    if chunk.is_reasoning and chunk.reasoning_content:
+                        reasoning_buffer += chunk.reasoning_content
+                        if task.event_callback:
+                            try:
+                                if not emitted_reasoning_header:
+                                    emitted_reasoning_header = True
+                                    await task.event_callback("chunk", "", "\n\n## 思考过程\n\n")
+                                await task.event_callback("chunk", "", chunk.reasoning_content)
+                            except Exception as e:
+                                logger.warning(f"Failed to call event_callback for reasoning chunk: {e}")
+                    if chunk.has_provider_payload and chunk.provider_payload:
+                        provider_payload = chunk.provider_payload
                     if chunk.is_tool_call and chunk.tool_call:
                         tool_calls_buffer.append(chunk.tool_call)
 
-                if content_buffer:
-                    response_chunks.append(content_buffer)
+                formatted_content = self._compose_reasoning_sections(
+                    reasoning_buffer,
+                    content_buffer,
+                )
+                if formatted_content:
+                    response_chunks.append(formatted_content)
 
                 if tool_calls_buffer:
                     import json
@@ -393,11 +447,16 @@ class SubagentManager:
                         }
                         for tc in tool_calls_buffer
                     ]
-                    messages.append({
+                    assistant_message = {
                         "role": "assistant",
                         "content": content_buffer or "",
                         "tool_calls": tool_call_dicts,
-                    })
+                    }
+                    if reasoning_buffer:
+                        assistant_message["reasoning_content"] = reasoning_buffer
+                    if provider_payload:
+                        assistant_message.update(provider_payload)
+                    messages.append(assistant_message)
 
                     for tool_call in tool_calls_buffer:
                         # 检查取消令牌
@@ -495,7 +554,7 @@ class SubagentManager:
 
             if handler:
                 try:
-                    await handler.notify_complete(None)
+                    await handler.notify_complete(task.result)
                 except Exception:
                     pass
             
@@ -542,37 +601,24 @@ class SubagentManager:
             str: 系统提示词
         """
         workspace_path = str(self.workspace.expanduser().resolve())
-        
-        prompt = f"""# 子代理 (Subagent)
 
-你是主代理创建的子代理，专门负责完成特定任务。
+        prompt = f"""# 子代理
 
-## 你的任务
+你是主代理创建的执行子代理，只负责当前任务。
+
+## 任务
 {task}
 
-## 工作规则
-1. **专注任务**: 只完成分配的任务，不做其他事情
-2. **简洁高效**: 最终响应会报告给主代理，保持简洁但信息完整
-3. **不要闲聊**: 不要发起对话或承担额外任务
-4. **彻底完成**: 确保任务完整完成，提供清晰的结果总结
-
-## 可用能力
-- 读写工作空间文件
-- 执行 Shell 命令
-- 网络搜索和抓取网页
-- 使用所有标准工具
-
-## 限制
-- 不能直接向用户发送消息（无 message 工具）
-- 不能创建其他子代理（无 spawn 工具）
-- 无法访问主代理的对话历史
+## 规则
+- 专注分配任务，不扩展范围，不闲聊。
+- 输出给主代理看，保持简洁、准确、可执行。
+- 需要时主动用工具查证并完成验证，不要把半成品交回去。
+- 不能直接联系用户，不能再创建子代理，也拿不到主代理完整对话历史。
 
 ## 工作空间
-{workspace_path}
-
-**重要提示**：
-- 临时文件请写入 `temp/` 目录
-- 使用相对路径时，基于工作空间根目录
+- 根目录: {workspace_path}
+- 临时文件写入 `temp/`
+- 相对路径都基于工作空间根目录
 """
 
         # 如果启用技能系统，注入技能摘要
@@ -580,41 +626,26 @@ class SubagentManager:
             try:
                 skills_summary = self.skills.build_skills_summary()
                 if skills_summary:
-                    prompt += f"""
-
-## 可用技能（Skills）
-
-**重要**: 技能不是工具！技能是包含命令行调用示例的文档，需要先读取文档，再使用 exec 工具执行其中的命令。
-
-以下技能已启用，需要时使用 read_file 工具读取完整内容：
-
-{skills_summary}
-
-**正确使用流程**:
-1. 用户提到某个功能（如"生成图片"、"查天气"、"发小红书"）
-2. 使用 read_file 读取对应技能文档: read_file(path='skills/<技能名>/SKILL.md')
-3. 阅读文档中的命令行示例
-4. 使用 exec 工具执行文档中的命令
-
-**错误示例**: 
-❌ image_gen(prompt="...")  # 错误！image-gen 不是工具
-❌ weather(city="...")      # 错误！weather 不是工具
-
-**正确示例**:
-✅ read_file(path='skills/image-gen/SKILL.md')  # 先读取技能文档
-✅ exec(command='python skills/image-gen/scripts/generate.py ...')  # 再执行命令
-"""
+                    prompt += (
+                        "\n\n## 可用技能（Skills）\n"
+                        "下面展示的是技能元信息里的完整 description，不是技能全文。"
+                        "技能是文档，不是工具。需要时先用 `read_file` 读取对应 `SKILL.md`，"
+                        "默认首次整文件读取；只有文档很大且目标段落明确时才用 `start_line/end_line`。"
+                        "如果需要同时查看多个 Skills，优先一次调用 "
+                        "`read_file(paths=['skills/a/SKILL.md', 'skills/b/SKILL.md'])` 批量读取，减少工具调用次数。"
+                        "读完后再按文档说明调用 `exec`。\n\n"
+                        f"{skills_summary}"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to inject skills into subagent prompt: {e}")
 
         prompt += """
 
 ## 完成标准
-任务完成后，提供清晰的总结：
-- 完成了什么
-- 发现了什么（如果是调查任务）
-- 遇到的问题（如果有）
-- 建议的后续步骤（如果需要）"""
+- 说明完成了什么
+- 说明发现了什么（若是调查任务）
+- 说明遗留问题或风险（若有）
+- 需要时给出下一步建议"""
 
         return prompt
 

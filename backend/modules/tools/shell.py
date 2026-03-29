@@ -19,6 +19,12 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.monitoring import (
+    MONITOR_PARAMETER_SCHEMA,
+    build_default_monitor_config,
+    parse_monitor_config,
+    run_with_monitoring,
+)
 
 
 DANGEROUS_PATTERNS = [
@@ -101,7 +107,13 @@ class ExecTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Execute a shell command in the workspace. REQUIRED: 'command' parameter must be provided with the shell command to execute."
+        return (
+            "Run a shell command. For long-running foreground commands, set `timeout` "
+            "and `monitor` to emit periodic progress updates. If you need live in-chat "
+            "progress, keep the command in the foreground; detached commands launched "
+            "with `nohup`, `tmux -d`, or trailing `&` return immediately and will not "
+            "emit sustained tool progress."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -110,12 +122,19 @@ class ExecTool(Tool):
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The shell command to execute (REQUIRED)",
+                    "description": "Shell command.",
                 },
                 "working_dir": {
                     "type": "string",
-                    "description": "Optional working directory for the command (relative to workspace)",
+                    "description": "Working directory.",
                 },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Optional timeout in seconds for this command.",
+                    "minimum": 10,
+                    "maximum": 3600,
+                },
+                "monitor": MONITOR_PARAMETER_SCHEMA,
             },
             "required": ["command"],
             "additionalProperties": False,
@@ -180,6 +199,65 @@ class ExecTool(Tool):
             )
         return env
 
+    @staticmethod
+    def _normalize_output_text(text: str) -> str:
+        return text.replace('\r\n', '\n').replace('\r', '\n')
+
+    def _append_preview_lines(
+        self,
+        preview_lines: List[str],
+        output: bytes,
+        limit: int = 40,
+    ) -> None:
+        decoded = self._normalize_output_text(self._decode_output(output))
+        lines = decoded.split('\n')
+        preview_lines.extend(lines)
+        if len(preview_lines) > limit:
+            del preview_lines[:-limit]
+
+    async def _collect_process_output(
+        self,
+        process: asyncio.subprocess.Process,
+        timeout: int,
+        stdout_preview_lines: List[str],
+        stderr_preview_lines: List[str],
+    ) -> tuple[bytes, bytes]:
+        stdout_buffer = bytearray()
+        stderr_buffer = bytearray()
+
+        async def read_stream(
+            stream: Optional[asyncio.StreamReader],
+            buffer: bytearray,
+            preview_lines: List[str],
+        ) -> None:
+            if stream is None:
+                return
+
+            while True:
+                chunk = await stream.read(4096)
+                if not chunk:
+                    break
+                buffer.extend(chunk)
+                self._append_preview_lines(preview_lines, chunk)
+
+        stdout_task = asyncio.create_task(
+            read_stream(process.stdout, stdout_buffer, stdout_preview_lines)
+        )
+        stderr_task = asyncio.create_task(
+            read_stream(process.stderr, stderr_buffer, stderr_preview_lines)
+        )
+
+        try:
+            await asyncio.wait_for(process.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+            raise
+
+        await asyncio.gather(stdout_task, stderr_task)
+        return bytes(stdout_buffer), bytes(stderr_buffer)
+
     async def execute(self, **kwargs: Any) -> str:
         """执行 Shell 命令
         
@@ -193,9 +271,37 @@ class ExecTool(Tool):
         """
         command = kwargs.get("command", "")
         working_dir = kwargs.get("working_dir")
+        requested_timeout = kwargs.get("timeout")
         
         if not command:
             return "Error: Command parameter is required"
+
+        try:
+            monitor = parse_monitor_config(kwargs.get("monitor"))
+        except ValueError as e:
+            return f"Error: {e}"
+
+        timeout = self.timeout
+        if requested_timeout is not None:
+            try:
+                timeout = int(requested_timeout)
+            except (TypeError, ValueError):
+                return "Error: timeout must be an integer"
+            if timeout <= 0:
+                return "Error: timeout must be greater than 0"
+        
+        if monitor is None:
+            monitor = build_default_monitor_config(
+                tool_name=self.name,
+                timeout_sec=timeout,
+                command=command,
+            )
+            if monitor is not None:
+                logger.info(
+                    "Auto-enabled monitor for exec: expected={}s notify_every={}s",
+                    monitor.expected_duration_sec,
+                    monitor.notify_every_sec,
+                )
         
         # 解析工作目录
         if working_dir:
@@ -217,6 +323,21 @@ class ExecTool(Tool):
         
         try:
             logger.info(f"执行命令: {command} (cwd: {cwd})")
+            stdout_preview_lines: List[str] = []
+            stderr_preview_lines: List[str] = []
+
+            def build_output_progress_details() -> Optional[Dict[str, Any]]:
+                details: Dict[str, Any] = {}
+
+                latest_stdout_preview = "\n".join(stdout_preview_lines[-12:]).strip()
+                latest_stderr_preview = "\n".join(stderr_preview_lines[-12:]).strip()
+
+                if latest_stdout_preview:
+                    details["latest_output_preview"] = latest_stdout_preview
+                if latest_stderr_preview:
+                    details["latest_stderr_preview"] = latest_stderr_preview
+
+                return details or None
             
             # 创建子进程
             try:
@@ -242,14 +363,31 @@ class ExecTool(Tool):
             
             # 等待完成（带超时）
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=self.timeout,
+                stdout, stderr = await run_with_monitoring(
+                    self._collect_process_output(
+                        process=process,
+                        timeout=timeout,
+                        stdout_preview_lines=stdout_preview_lines,
+                        stderr_preview_lines=stderr_preview_lines,
+                    ),
+                    monitor,
+                    details_provider=build_output_progress_details,
                 )
             except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                error_msg = f"Error: Command timed out after {self.timeout} seconds"
+                error_msg = f"Error: Command timed out after {timeout} seconds"
+                latest_preview = build_output_progress_details() or {}
+                preview_parts: List[str] = [error_msg]
+                if latest_preview.get("latest_output_preview"):
+                    preview_parts.append(
+                        "Latest captured stdout:\n"
+                        f"{latest_preview['latest_output_preview']}"
+                    )
+                if latest_preview.get("latest_stderr_preview"):
+                    preview_parts.append(
+                        "Latest captured stderr:\n"
+                        f"{latest_preview['latest_stderr_preview']}"
+                    )
+                error_msg = "\n\n".join(preview_parts)
                 logger.error(error_msg)
                 return error_msg
             
@@ -259,12 +397,12 @@ class ExecTool(Tool):
             if stdout:
                 decoded_stdout = self._decode_output(stdout)
                 # 统一换行符格式
-                decoded_stdout = decoded_stdout.replace('\r\n', '\n').replace('\r', '\n')
+                decoded_stdout = self._normalize_output_text(decoded_stdout)
                 output_parts.append(decoded_stdout)
             
             if stderr:
                 decoded_stderr = self._decode_output(stderr)
-                decoded_stderr = decoded_stderr.replace('\r\n', '\n').replace('\r', '\n')
+                decoded_stderr = self._normalize_output_text(decoded_stderr)
                 if decoded_stderr.strip():
                     output_parts.append(f"STDERR:\n{decoded_stderr}")
             

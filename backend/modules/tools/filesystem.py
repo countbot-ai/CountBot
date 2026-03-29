@@ -66,16 +66,7 @@ class ReadFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Read file contents with line numbers. "
-            "Supports single file or batch mode (multiple files in one call). "
-            "Line ranges: start_line/end_line (1-based, inclusive). "
-            "Examples:\n"
-            "- Single: read_file(path='a.py')\n"
-            "- Range: read_file(path='a.py', start_line=10, end_line=20)\n"
-            "- Batch: read_file(paths=['a.py', 'b.py', 'skills/weather/SKILL.md'])\n"
-            "Batch mode is more efficient for multiple files (saves tool calls)."
-        )
+        return "Read one file or many files. Single-file mode supports optional 1-based line ranges."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -84,24 +75,24 @@ class ReadFileTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to a single file (relative to workspace or absolute). Use this OR 'paths', not both.",
+                    "description": "Single file path.",
                 },
                 "paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of file paths for batch reading (more efficient than multiple calls). Use this OR 'path', not both.",
+                    "description": "Multiple file paths.",
                 },
                 "start_line": {
                     "type": "integer",
-                    "description": "Start line number (1-based, inclusive). Only works in single file mode. Omit to start from beginning.",
+                    "description": "1-based start line.",
                 },
                 "end_line": {
                     "type": "integer",
-                    "description": "End line number (1-based, inclusive). Only works in single file mode. Omit to read to end.",
+                    "description": "1-based end line.",
                 },
                 "show_line_numbers": {
                     "type": "boolean",
-                    "description": "Show line numbers in output (default: true)",
+                    "description": "Show line numbers.",
                 },
             },
             "oneOf": [
@@ -308,16 +299,7 @@ class WriteFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Write content to a file. Two modes:\n"
-            "- mode='overwrite' (default): create or overwrite the file\n"
-            "- mode='append': append to end of file (creates if not exists)\n"
-            "IMPORTANT: For large content (>2000 chars), you MUST split into multiple calls:\n"
-            "  1. write_file(path='a.html', content='<first part>') → create\n"
-            "  2. write_file(path='a.html', content='<second part>', mode='append')\n"
-            "  3. write_file(path='a.html', content='<third part>', mode='append')\n"
-            "This prevents token limit truncation errors."
-        )
+        return "Write text to a file. Modes: `overwrite` or `append`."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -326,16 +308,16 @@ class WriteFileTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file (relative to workspace or absolute)",
+                    "description": "File path.",
                 },
                 "content": {
                     "type": "string",
-                    "description": "Content to write",
+                    "description": "Text to write.",
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["overwrite", "append"],
-                    "description": "Write mode: 'overwrite' (default) or 'append'",
+                    "description": "Write mode.",
                 },
             },
             "required": ["path", "content"],
@@ -390,14 +372,7 @@ class EditFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Edit a file. Two modes:\n"
-            "1. Text replace: edit_file(path, old_text='X', new_text='Y')\n"
-            "2. Line edit (use read_file to see line numbers first):\n"
-            "   - Replace lines: edit_file(path, start_line=5, end_line=8, new_text='...')\n"
-            "   - Insert before line: edit_file(path, start_line=5, new_text='...', insert=true)\n"
-            "   - Delete lines: edit_file(path, start_line=5, end_line=8, new_text='')"
-        )
+        return "Edit a file by text replace or 1-based line range."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -406,27 +381,27 @@ class EditFileTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file to edit",
+                    "description": "File path.",
                 },
                 "old_text": {
                     "type": "string",
-                    "description": "Text to find and replace (text replace mode)",
+                    "description": "Text to replace.",
                 },
                 "new_text": {
                     "type": "string",
-                    "description": "Replacement text (both modes)",
+                    "description": "New text.",
                 },
                 "start_line": {
                     "type": "integer",
-                    "description": "Start line number (1-based, line edit mode)",
+                    "description": "1-based start line.",
                 },
                 "end_line": {
                     "type": "integer",
-                    "description": "End line number (1-based, defaults to start_line)",
+                    "description": "1-based end line.",
                 },
                 "insert": {
                     "type": "boolean",
-                    "description": "Insert before start_line instead of replacing (default: false)",
+                    "description": "Insert before start_line.",
                 },
             },
             "required": ["path"],
@@ -545,7 +520,7 @@ class ListDirTool(Tool):
 
     @property
     def description(self) -> str:
-        return "List contents of a directory. Returns files and subdirectories with sizes."
+        return "List files and subdirectories in a directory."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -554,7 +529,7 @@ class ListDirTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Directory path (relative or absolute). Use '.' for workspace root.",
+                    "description": "Directory path.",
                     "default": ".",
                 },
             },

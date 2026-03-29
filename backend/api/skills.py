@@ -29,6 +29,7 @@ class SkillInfo(BaseModel):
     description: str = Field(..., description="技能描述")
     enabled: bool = Field(..., description="是否启用")
     auto_load: bool = Field(..., description="是否自动加载", alias="autoLoad")
+    has_config: bool = Field(False, description="是否支持可视化配置", alias="hasConfig")
     requirements: List[str] = Field(default_factory=list, description="依赖要求")
     source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
     
@@ -44,6 +45,7 @@ class SkillDetail(BaseModel):
     content: str = Field(..., description="技能内容")
     enabled: bool = Field(..., description="是否启用")
     auto_load: bool = Field(..., description="是否自动加载", alias="autoLoad")
+    has_config: bool = Field(False, description="是否支持可视化配置", alias="hasConfig")
     requirements: List[str] = Field(default_factory=list, description="依赖要求")
     source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
     
@@ -243,6 +245,7 @@ async def list_skills(request: Request) -> ListSkillsResponse:
     """
     try:
         skills_loader = get_skills_loader(request)
+        schema_loader = get_skill_schema_loader()
         
         # 自动重载技能（确保显示最新的技能列表）
         try:
@@ -265,6 +268,7 @@ async def list_skills(request: Request) -> ListSkillsResponse:
                     description=summary.get("description", ""),
                     enabled=skill.get("enabled", True),
                     auto_load=summary.get("auto_load", False),
+                    has_config=schema_loader.has_schema(skill["name"]),
                     requirements=summary.get("requirements", []),
                     source=skill.get("source", "workspace"),
                 )
@@ -293,6 +297,7 @@ async def get_skill(name: str, request: Request) -> SkillDetail:
     """
     try:
         skills_loader = get_skills_loader(request)
+        schema_loader = get_skill_schema_loader()
         
         # 检查技能是否存在
         skills_list = skills_loader.list_skills()
@@ -328,6 +333,7 @@ async def get_skill(name: str, request: Request) -> SkillDetail:
             content=content,
             enabled=enabled,
             auto_load=summary.get("auto_load", False),
+            has_config=schema_loader.has_schema(name),
             requirements=summary.get("requirements", []),
             source=source,
         )

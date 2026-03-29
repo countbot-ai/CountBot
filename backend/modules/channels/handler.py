@@ -36,6 +36,10 @@ from backend.modules.external_agents.routing import (
 )
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 from backend.modules.messaging.rate_limiter import RateLimiter
+from backend.modules.providers.runtime import (
+    build_provider_unavailable_message,
+    get_provider_runtime_state,
+)
 from backend.modules.session import (
     build_session_model_override,
     resolve_session_runtime_config,
@@ -73,6 +77,24 @@ def _friendly_channel_error(raw: str) -> str:
     if any(k in lower for k in ("500", "502", "503", "504", "service unavailable")):
         return "AI 服务暂时不可用，请稍后重试。"
     return "处理消息时出错，请稍后重试。"
+
+
+def _validate_runtime_provider(runtime_config) -> None:
+    """确保渠道消息不会使用禁用或未完成配置的 provider。"""
+
+    runtime_state = get_provider_runtime_state(
+        config_loader.config,
+        runtime_config.provider_name,
+        api_key_override=runtime_config.api_key,
+        api_base_override=runtime_config.api_base,
+    )
+    if not runtime_state.selectable:
+        raise RuntimeError(
+            build_provider_unavailable_message(
+                runtime_config.provider_name,
+                runtime_state.reason,
+            )
+        )
 
 
 def _normalize_channel_inbound_content(msg: InboundMessage) -> str:
@@ -271,6 +293,7 @@ class ChannelMessageHandler:
         rate_limiter: Optional[RateLimiter] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        thinking_enabled: bool = True,
         max_history_messages: int = 50,
         memory_store=None,
     ):
@@ -303,6 +326,7 @@ class ChannelMessageHandler:
             max_iterations=max_iterations,
             temperature=temperature,
             max_tokens=max_tokens,
+            thinking_enabled=thinking_enabled,
         )
 
     def _rebuild_tool_registry(self) -> None:
@@ -317,6 +341,48 @@ class ChannelMessageHandler:
         )
         self.agent_loop.tools = self.tool_registry
 
+    @staticmethod
+    def _compose_reasoning_sections(reasoning_text: str, visible_text: str) -> str:
+        """将 reasoning 和正文拼装为通用文本结构。"""
+        normalized_reasoning = str(reasoning_text or "").strip()
+        normalized_visible = str(visible_text or "").strip()
+
+        if not normalized_reasoning:
+            return normalized_visible
+
+        sections = [f"## 思考过程\n\n{normalized_reasoning}"]
+        if normalized_visible:
+            sections.append(f"## 回复\n\n{normalized_visible}")
+        return "\n\n---\n\n".join(sections)
+
+    @classmethod
+    def _format_reasoning_reply(
+        cls,
+        channel: Optional[str],
+        reasoning_text: str,
+        visible_text: str,
+    ) -> str:
+        """为不同渠道生成带 reasoning 的最终文本。"""
+        normalized_reasoning = str(reasoning_text or "").strip()
+        normalized_visible = str(visible_text or "").strip()
+
+        if not normalized_reasoning:
+            return normalized_visible
+
+        if channel == "wecom":
+            from backend.modules.channels.wecom import build_stream_content
+
+            return build_stream_content(
+                reasoning_text=normalized_reasoning,
+                visible_text=normalized_visible,
+                finish=True,
+            )
+
+        return cls._compose_reasoning_sections(
+            normalized_reasoning,
+            normalized_visible,
+        )
+
     # ------------------------------------------------------------------
     # 配置热重载
     # ------------------------------------------------------------------
@@ -328,6 +394,7 @@ class ChannelMessageHandler:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         max_iterations: Optional[int] = None,
+        thinking_enabled: Optional[bool] = None,
         max_history_messages: Optional[int] = None,
         persona_config=None,
         workspace=None,
@@ -346,6 +413,8 @@ class ChannelMessageHandler:
             self.agent_loop.max_tokens = max_tokens
         if max_iterations is not None:
             self.agent_loop.max_iterations = max_iterations
+        if thinking_enabled is not None:
+            self.agent_loop.thinking_enabled = thinking_enabled
         if max_history_messages is not None:
             self.max_history_messages = max_history_messages
 
@@ -568,13 +637,20 @@ class ChannelMessageHandler:
                 message_context=user_message_context,
             )
 
-            history = await self._get_session_history(session_id)
-            if history:
-                history = history[:-1]
-
             runtime_config = await self._resolve_runtime_config_for_session(session_id)
+            _validate_runtime_provider(runtime_config)
             model_override = build_session_model_override(runtime_config, force=True)
             persona_override = runtime_config.persona_config
+            active_provider, _, _, _, _, _ = self.agent_loop._resolve_execution_runtime(
+                model_override
+            )
+            history = await self._get_session_history(
+                session_id,
+                max_history_messages=runtime_config.persona_config.max_history_messages,
+                summary_provider=active_provider,
+            )
+            if history and history[-1].get("role") == "user":
+                history = history[:-1]
 
             if runtime_config.use_custom_config:
                 if runtime_config.has_custom_model_config:
@@ -594,8 +670,21 @@ class ChannelMessageHandler:
                 )
 
             # 流式模式：实时发送每个 chunk
+            response_reasoning = ""
             if stream_handler:
                 response_parts = []
+                reasoning_parts = []
+
+                async def reasoning_event_handler(reasoning_chunk: str) -> None:
+                    if not reasoning_chunk:
+                        return
+                    reasoning_parts.append(reasoning_chunk)
+                    await stream_handler(
+                        reasoning_chunk,
+                        is_final=False,
+                        is_reasoning=True,
+                    )
+
                 async for chunk in self.agent_loop.process_message(
                     message=model_input,
                     session_id=session_id,
@@ -609,6 +698,7 @@ class ChannelMessageHandler:
                     model_override=model_override,
                     persona_override=persona_override,
                     tool_event_handler=tool_event_handler,
+                    reasoning_event_handler=reasoning_event_handler,
                     prefer_direct_workflow_result=prefer_direct_workflow_result,
                 ):
                     if cancel_token.is_cancelled:
@@ -616,12 +706,17 @@ class ChannelMessageHandler:
                     response_parts.append(chunk)
                     await stream_handler(chunk, is_final=False)
 
-                response = "".join(response_parts)
+                response = self._format_reasoning_reply(
+                    msg.channel,
+                    "".join(reasoning_parts),
+                    "".join(response_parts),
+                )
+                response_reasoning = "".join(reasoning_parts)
                 if not cancel_token.is_cancelled:
                     await stream_handler("", is_final=True)
             else:
                 # 传统模式：收集所有响应后再发送
-                response = await self._process_with_agent(
+                response, response_reasoning = await self._process_with_agent(
                     session_id, model_input, history, cancel_token,
                     media=msg.media,
                     channel=msg.channel, chat_id=msg.chat_id,
@@ -640,6 +735,12 @@ class ChannelMessageHandler:
                 return
 
             if response:
+                assistant_message_context = _encode_message_context(
+                    {
+                        **self._build_assistant_message_context(msg, session_route),
+                        **({"reasoning_content": response_reasoning} if response_reasoning else {}),
+                    }
+                )
                 # 保存消息到数据库
                 async with self.db_session_factory() as db:
                     from backend.modules.session.manager import SessionManager
@@ -649,9 +750,7 @@ class ChannelMessageHandler:
                         session_id=session_id,
                         role="assistant",
                         content=response,
-                        message_context=_encode_message_context(
-                            self._build_assistant_message_context(msg, session_route)
-                        ),
+                        message_context=assistant_message_context,
                     )
                     
                     # 回填 message_id 到工具调用记录
@@ -809,16 +908,23 @@ class ChannelMessageHandler:
         runtime_config=None,
         tool_event_handler=None,
         prefer_direct_workflow_result: bool = False,
-    ) -> str:
+    ) -> tuple[str, str]:
         """运行 Agent 循环并收集响应。"""
         try:
             if runtime_config is None:
                 runtime_config = await self._resolve_runtime_config_for_session(session_id)
 
+            _validate_runtime_provider(runtime_config)
             model_override = build_session_model_override(runtime_config, force=True)
             persona_override = runtime_config.persona_config
 
             parts = []
+            reasoning_parts = []
+
+            async def reasoning_event_handler(reasoning_chunk: str) -> None:
+                if reasoning_chunk:
+                    reasoning_parts.append(reasoning_chunk)
+
             async for chunk in self.agent_loop.process_message(
                 message=user_message,
                 session_id=session_id,
@@ -832,16 +938,24 @@ class ChannelMessageHandler:
                 model_override=model_override,
                 persona_override=persona_override,
                 tool_event_handler=tool_event_handler,
+                reasoning_event_handler=reasoning_event_handler,
                 prefer_direct_workflow_result=prefer_direct_workflow_result,
             ):
                 if cancel_token.is_cancelled:
                     break
                 parts.append(chunk)
-            result = "".join(parts)
-            return result or "抱歉，未能生成回复，请稍后重试。"
+            result = self._format_reasoning_reply(
+                channel,
+                "".join(reasoning_parts),
+                "".join(parts),
+            )
+            return (
+                result or "抱歉，未能生成回复，请稍后重试。",
+                "".join(reasoning_parts),
+            )
         except Exception as e:
             logger.error(f"Agent processing error: {e}")
-            return _friendly_channel_error(str(e))
+            return _friendly_channel_error(str(e)), ""
 
     # ------------------------------------------------------------------
     # 回复
@@ -1348,7 +1462,6 @@ class ChannelMessageHandler:
                 )
                 return
             
-            from backend.modules.config.loader import config_loader
             persona_config = {
                 "ai_name": config_loader.config.persona.ai_name or "小C",
                 "user_name": config_loader.config.persona.user_name or "用户",
@@ -1380,6 +1493,7 @@ class ChannelMessageHandler:
         - /m openai gpt-4      使用ID切换并指定模型名称
         """
         from backend.modules.providers.registry import get_provider_metadata
+        from backend.modules.providers.runtime import get_provider_runtime_state
         from backend.modules.config.loader import config_loader
         from backend.modules.session.runtime_config import resolve_session_runtime_config
         from sqlalchemy import select
@@ -1406,10 +1520,10 @@ class ChannelMessageHandler:
                 
                 available_providers = []
                 for provider_id, provider_config in config_loader.config.providers.items():
-                    if provider_config.enabled and provider_config.api_key:
-                        metadata = get_provider_metadata(provider_id)
-                        if metadata:
-                            available_providers.append((provider_id, metadata, provider_config))
+                    metadata = get_provider_metadata(provider_id)
+                    runtime_state = get_provider_runtime_state(config_loader.config, provider_id)
+                    if metadata and runtime_state.selectable:
+                        available_providers.append((provider_id, metadata, provider_config))
                 
                 if not available_providers:
                     await self._send_reply(
@@ -1455,10 +1569,10 @@ class ChannelMessageHandler:
             
             available_providers = []
             for provider_id, provider_config in config_loader.config.providers.items():
-                if provider_config.enabled and provider_config.api_key:
-                    metadata = get_provider_metadata(provider_id)
-                    if metadata:
-                        available_providers.append((provider_id, metadata, provider_config))
+                metadata = get_provider_metadata(provider_id)
+                runtime_state = get_provider_runtime_state(config_loader.config, provider_id)
+                if metadata and runtime_state.selectable:
+                    available_providers.append((provider_id, metadata, provider_config))
             
             provider_id = None
             metadata = None
@@ -1480,7 +1594,7 @@ class ChannelMessageHandler:
                 metadata = get_provider_metadata(identifier)
                 if metadata:
                     provider_config = config_loader.config.providers.get(identifier)
-                    if provider_config and provider_config.enabled and provider_config.api_key:
+                    if provider_config and get_provider_runtime_state(config_loader.config, identifier).selectable:
                         provider_id = identifier
             
             if not provider_id or not metadata or not provider_config:
@@ -1503,8 +1617,9 @@ class ChannelMessageHandler:
                 )
                 return
             
-            api_key = provider_config.api_key
-            if not api_key:
+            runtime_state = get_provider_runtime_state(config_loader.config, provider_id)
+            api_key = runtime_state.api_key
+            if runtime_state.requires_api_key and not api_key:
                 await self._send_reply(
                     msg,
                     f"提供商 '{provider_id}' 缺少 API 密钥\n\n"
@@ -1512,7 +1627,7 @@ class ChannelMessageHandler:
                 )
                 return
             
-            api_base = provider_config.api_base or metadata.default_api_base
+            api_base = runtime_state.api_base or metadata.default_api_base
             
             model_config = {
                 "provider": provider_id,
@@ -2064,11 +2179,22 @@ class ChannelMessageHandler:
             )
             await db.commit()
 
-    async def _get_session_history(self, session_id: str) -> List[dict]:
+    async def _get_session_history(
+        self,
+        session_id: str,
+        *,
+        max_history_messages: Optional[int] = None,
+        summary_provider=None,
+    ) -> List[dict]:
         """获取会话历史消息。"""
         from sqlalchemy import select
 
-        limit = self.max_history_messages if self.max_history_messages != -1 else None
+        if max_history_messages is None:
+            max_history_messages = self.max_history_messages
+        if summary_provider is None:
+            summary_provider = self.agent_loop.provider
+
+        limit = max_history_messages if max_history_messages != -1 else None
 
         async with self.db_session_factory() as db:
             if limit is not None:
@@ -2080,7 +2206,7 @@ class ChannelMessageHandler:
                 )
                 result = await db.execute(query)
                 messages = list(result.scalars().all())
-                return [
+                message_dicts = [
                     {
                         "role": m.role,
                         "content": _format_message_for_model(
@@ -2098,7 +2224,7 @@ class ChannelMessageHandler:
                     .order_by(Message.created_at.asc())
                 )
                 result = await db.execute(query)
-                return [
+                message_dicts = [
                     {
                         "role": m.role,
                         "content": _format_message_for_model(
@@ -2109,6 +2235,34 @@ class ChannelMessageHandler:
                     }
                     for m in result.scalars().all()
                 ]
+
+        if not summary_provider or len(message_dicts) <= 15:
+            return message_dicts
+
+        try:
+            from backend.modules.agent.memory import ConversationSummarizer
+
+            summarizer = ConversationSummarizer(provider=summary_provider, char_limit=2000)
+            if not summarizer.should_summarize(message_dicts):
+                return message_dicts
+
+            to_summarize, to_keep = summarizer.get_messages_to_keep(
+                message_dicts,
+                keep_recent=10,
+            )
+            summary = await summarizer.summarize_conversation(to_summarize)
+            if not summary:
+                return message_dicts
+
+            return [
+                {
+                    "role": "system",
+                    "content": f"## Previous Conversation Summary\n\n{summary}",
+                }
+            ] + to_keep
+        except Exception as exc:
+            logger.warning(f"Failed to summarize channel history for {session_id}: {exc}")
+            return message_dicts
 
     # ------------------------------------------------------------------
     # 任务管理

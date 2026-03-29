@@ -12,6 +12,7 @@ def create_provider(
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
     default_model: Optional[str] = None,
+    api_mode: str = "chat_completions",
     timeout: float = 600.0,
     max_retries: int = 3,
     provider_id: Optional[str] = None,
@@ -25,6 +26,7 @@ def create_provider(
         api_key: API 密钥
         api_base: API 基础 URL
         default_model: 默认模型
+        api_mode: API 模式
         timeout: 超时时间
         max_retries: 最大重试次数
         provider_id: Provider ID（优先级最高）
@@ -33,6 +35,8 @@ def create_provider(
     Returns:
         LLMProvider 实例
     """
+    api_mode = "chat_completions"
+
     # 获取 provider 元数据
     metadata = get_provider_metadata(provider_id) if provider_id else None
     
@@ -60,6 +64,7 @@ def create_provider(
         api_key=api_key,
         api_base=api_base,
         default_model=default_model,
+        api_mode=api_mode,
         timeout=timeout,
         max_retries=max_retries,
         provider_id=provider_id,

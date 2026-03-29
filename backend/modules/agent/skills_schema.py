@@ -6,6 +6,94 @@ from typing import Any, List, Optional, Tuple
 
 from loguru import logger
 
+
+def _build_ima_fields(include_default_knowledge_base: bool) -> List[dict]:
+    fields = [
+        {
+            "key": "client_id",
+            "type": "string",
+            "label": "Client ID",
+            "description": "IMA OpenAPI Client ID",
+            "required": True,
+            "placeholder": "请输入 IMA Client ID",
+            "help_url": "https://ima.qq.com/agent-interface"
+        },
+        {
+            "key": "api_key",
+            "type": "password",
+            "label": "API Key",
+            "description": "IMA OpenAPI API Key",
+            "required": True,
+            "sensitive": True,
+            "placeholder": "请输入 IMA API Key",
+            "help_url": "https://ima.qq.com/agent-interface"
+        },
+        {
+            "key": "base_url",
+            "type": "string",
+            "label": "Base URL",
+            "description": "IMA OpenAPI 服务地址，默认无需修改",
+            "default": "https://ima.qq.com",
+            "placeholder": "https://ima.qq.com"
+        },
+        {
+            "key": "request_timeout_seconds",
+            "type": "number",
+            "label": "请求超时秒数",
+            "description": "调用 IMA API 时的 HTTP 超时时间",
+            "default": 30,
+            "min": 5,
+            "max": 300
+        }
+    ]
+
+    if include_default_knowledge_base:
+        fields.extend([
+            {
+                "key": "default_knowledge_base",
+                "type": "object",
+                "label": "默认知识库",
+                "description": "可选。把默认知识库 ID、名称、文件夹 ID 作为一个前端配置块统一管理",
+                "collapsible": True,
+                "fields": [
+                    {
+                        "key": "id",
+                        "type": "string",
+                        "label": "默认知识库 ID",
+                        "description": "可选。配置后可作为 list/search/upload/import 的默认知识库",
+                        "default": "",
+                        "placeholder": "例如 O2489Cx5eMgYRl0BwFeMlpIvcqbzdwn0cNwN8wZH094="
+                    },
+                    {
+                        "key": "name",
+                        "type": "string",
+                        "label": "默认知识库名称",
+                        "description": "可选。若未填写默认知识库 ID，可通过名称自动解析知识库",
+                        "default": "",
+                        "placeholder": "例如 个人知识库"
+                    },
+                    {
+                        "key": "folder_id",
+                        "type": "string",
+                        "label": "默认知识库文件夹 ID",
+                        "description": "可选。上传文件或导入网页时默认写入该文件夹；为空则写入根目录",
+                        "default": "",
+                        "placeholder": "例如 0019f4010ac04db1"
+                    }
+                ]
+            },
+            {
+                "key": "restrict_search_to_default_knowledge_base",
+                "type": "boolean",
+                "label": "默认只搜索指定知识库",
+                "description": "开启后，search-kb 在未显式指定知识库时只搜索默认知识库",
+                "default": False
+            }
+        ])
+
+    return fields
+
+
 # 固定Schema定义 - 为每个需要配置的技能预定义字段
 SKILL_SCHEMAS = {
     "baidu-search": {
@@ -47,7 +135,7 @@ SKILL_SCHEMAS = {
     },
     "email": {
         "skill_name": "email",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "description": "邮件服务配置",
         "config_file": "scripts/config.json",
         "help_file": "config.help.md",
@@ -60,8 +148,27 @@ SKILL_SCHEMAS = {
                 "default": "qq",
                 "options": [
                     {"value": "qq", "label": "QQ邮箱"},
-                    {"value": "163", "label": "163邮箱"}
+                    {"value": "163", "label": "163邮箱"},
+                    {"value": "gmail", "label": "Gmail"},
+                    {"value": "outlook", "label": "Outlook"},
+                    {"value": "custom", "label": "自定义邮箱"}
                 ]
+            },
+            {
+                "key": "allowed_read_dirs",
+                "type": "string",
+                "label": "允许读取的目录",
+                "description": "发送附件时允许读取的本地目录，多个目录请用逗号分隔",
+                "default": "",
+                "placeholder": "D:/Downloads,D:/Documents"
+            },
+            {
+                "key": "allowed_write_dirs",
+                "type": "string",
+                "label": "允许写入的目录",
+                "description": "下载附件时允许写入的本地目录，多个目录请用逗号分隔",
+                "default": "",
+                "placeholder": "D:/Downloads"
             },
             {
                 "key": "qq_email",
@@ -88,6 +195,16 @@ SKILL_SCHEMAS = {
                         "placeholder": "请输入授权码"
                     },
                     {
+                        "key": "receive_protocol",
+                        "type": "select",
+                        "label": "收件协议",
+                        "description": "推荐使用 IMAP",
+                        "default": "imap",
+                        "options": [
+                            {"value": "imap", "label": "IMAP"}
+                        ]
+                    },
+                    {
                         "key": "imap_server",
                         "type": "string",
                         "label": "IMAP服务器",
@@ -104,6 +221,13 @@ SKILL_SCHEMAS = {
                         "max": 65535
                     },
                     {
+                        "key": "imap_tls",
+                        "type": "boolean",
+                        "label": "IMAP TLS",
+                        "description": "是否启用 IMAP TLS/SSL",
+                        "default": True
+                    },
+                    {
                         "key": "smtp_server",
                         "type": "string",
                         "label": "SMTP服务器",
@@ -118,6 +242,27 @@ SKILL_SCHEMAS = {
                         "default": 465,
                         "min": 1,
                         "max": 65535
+                    },
+                    {
+                        "key": "smtp_ssl",
+                        "type": "boolean",
+                        "label": "SMTP SSL",
+                        "description": "是否使用 SMTP SSL，QQ 邮箱默认开启",
+                        "default": True
+                    },
+                    {
+                        "key": "mailbox_folder",
+                        "type": "string",
+                        "label": "默认收件文件夹",
+                        "description": "默认收件文件夹名称",
+                        "default": "INBOX"
+                    },
+                    {
+                        "key": "reject_unauthorized",
+                        "type": "boolean",
+                        "label": "校验证书",
+                        "description": "是否严格校验服务端证书",
+                        "default": True
                     }
                 ]
             },
@@ -146,17 +291,51 @@ SKILL_SCHEMAS = {
                         "placeholder": "请输入授权密码"
                     },
                     {
+                        "key": "receive_protocol",
+                        "type": "select",
+                        "label": "收件协议",
+                        "description": "推荐使用 IMAP；如需兼容旧配置也可选择 POP3",
+                        "default": "imap",
+                        "options": [
+                            {"value": "imap", "label": "IMAP"},
+                            {"value": "pop3", "label": "POP3"}
+                        ]
+                    },
+                    {
+                        "key": "imap_server",
+                        "type": "string",
+                        "label": "IMAP服务器",
+                        "description": "IMAP服务器地址",
+                        "default": "imap.163.com"
+                    },
+                    {
+                        "key": "imap_port",
+                        "type": "number",
+                        "label": "IMAP端口",
+                        "description": "IMAP服务器端口",
+                        "default": 993,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "imap_tls",
+                        "type": "boolean",
+                        "label": "IMAP TLS",
+                        "description": "是否启用 IMAP TLS/SSL",
+                        "default": True
+                    },
+                    {
                         "key": "pop_server",
                         "type": "string",
                         "label": "POP服务器",
-                        "description": "POP服务器地址",
+                        "description": "仅在 POP3 模式下使用",
                         "default": "pop.163.com"
                     },
                     {
                         "key": "pop_port",
                         "type": "number",
                         "label": "POP端口",
-                        "description": "POP服务器端口",
+                        "description": "仅在 POP3 模式下使用",
                         "default": 995,
                         "min": 1,
                         "max": 65535
@@ -176,6 +355,332 @@ SKILL_SCHEMAS = {
                         "default": 465,
                         "min": 1,
                         "max": 65535
+                    },
+                    {
+                        "key": "smtp_ssl",
+                        "type": "boolean",
+                        "label": "SMTP SSL",
+                        "description": "是否使用 SMTP SSL",
+                        "default": True
+                    },
+                    {
+                        "key": "mailbox_folder",
+                        "type": "string",
+                        "label": "默认收件文件夹",
+                        "description": "默认收件文件夹名称",
+                        "default": "INBOX"
+                    },
+                    {
+                        "key": "reject_unauthorized",
+                        "type": "boolean",
+                        "label": "校验证书",
+                        "description": "是否严格校验服务端证书",
+                        "default": True
+                    }
+                ]
+            },
+            {
+                "key": "gmail_email",
+                "type": "object",
+                "label": "Gmail 配置",
+                "description": "Gmail IMAP/SMTP 配置",
+                "collapsible": True,
+                "fields": [
+                    {
+                        "key": "email",
+                        "type": "email",
+                        "label": "邮箱地址",
+                        "description": "Gmail 地址",
+                        "required": True,
+                        "placeholder": "example@gmail.com"
+                    },
+                    {
+                        "key": "password",
+                        "type": "password",
+                        "label": "应用专用密码",
+                        "description": "建议使用 App Password",
+                        "required": True,
+                        "sensitive": True,
+                        "placeholder": "请输入应用专用密码"
+                    },
+                    {
+                        "key": "receive_protocol",
+                        "type": "select",
+                        "label": "收件协议",
+                        "description": "Gmail 推荐使用 IMAP",
+                        "default": "imap",
+                        "options": [
+                            {"value": "imap", "label": "IMAP"}
+                        ]
+                    },
+                    {
+                        "key": "imap_server",
+                        "type": "string",
+                        "label": "IMAP服务器",
+                        "description": "IMAP服务器地址",
+                        "default": "imap.gmail.com"
+                    },
+                    {
+                        "key": "imap_port",
+                        "type": "number",
+                        "label": "IMAP端口",
+                        "description": "IMAP服务器端口",
+                        "default": 993,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "imap_tls",
+                        "type": "boolean",
+                        "label": "IMAP TLS",
+                        "description": "是否启用 IMAP TLS/SSL",
+                        "default": True
+                    },
+                    {
+                        "key": "smtp_server",
+                        "type": "string",
+                        "label": "SMTP服务器",
+                        "description": "SMTP服务器地址",
+                        "default": "smtp.gmail.com"
+                    },
+                    {
+                        "key": "smtp_port",
+                        "type": "number",
+                        "label": "SMTP端口",
+                        "description": "SMTP服务器端口",
+                        "default": 587,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "smtp_ssl",
+                        "type": "boolean",
+                        "label": "SMTP SSL",
+                        "description": "587 端口通常关闭直连 SSL，由程序自动尝试 STARTTLS",
+                        "default": False
+                    },
+                    {
+                        "key": "mailbox_folder",
+                        "type": "string",
+                        "label": "默认收件文件夹",
+                        "description": "默认收件文件夹名称",
+                        "default": "INBOX"
+                    },
+                    {
+                        "key": "reject_unauthorized",
+                        "type": "boolean",
+                        "label": "校验证书",
+                        "description": "是否严格校验服务端证书",
+                        "default": True
+                    }
+                ]
+            },
+            {
+                "key": "outlook_email",
+                "type": "object",
+                "label": "Outlook 配置",
+                "description": "Outlook IMAP/SMTP 配置",
+                "collapsible": True,
+                "fields": [
+                    {
+                        "key": "email",
+                        "type": "email",
+                        "label": "邮箱地址",
+                        "description": "Outlook 邮箱地址",
+                        "required": True,
+                        "placeholder": "example@outlook.com"
+                    },
+                    {
+                        "key": "password",
+                        "type": "password",
+                        "label": "密码或应用专用密码",
+                        "description": "Outlook 登录密码或应用专用密码",
+                        "required": True,
+                        "sensitive": True,
+                        "placeholder": "请输入密码"
+                    },
+                    {
+                        "key": "receive_protocol",
+                        "type": "select",
+                        "label": "收件协议",
+                        "description": "Outlook 推荐使用 IMAP",
+                        "default": "imap",
+                        "options": [
+                            {"value": "imap", "label": "IMAP"}
+                        ]
+                    },
+                    {
+                        "key": "imap_server",
+                        "type": "string",
+                        "label": "IMAP服务器",
+                        "description": "IMAP服务器地址",
+                        "default": "outlook.office365.com"
+                    },
+                    {
+                        "key": "imap_port",
+                        "type": "number",
+                        "label": "IMAP端口",
+                        "description": "IMAP服务器端口",
+                        "default": 993,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "imap_tls",
+                        "type": "boolean",
+                        "label": "IMAP TLS",
+                        "description": "是否启用 IMAP TLS/SSL",
+                        "default": True
+                    },
+                    {
+                        "key": "smtp_server",
+                        "type": "string",
+                        "label": "SMTP服务器",
+                        "description": "SMTP服务器地址",
+                        "default": "smtp.office365.com"
+                    },
+                    {
+                        "key": "smtp_port",
+                        "type": "number",
+                        "label": "SMTP端口",
+                        "description": "SMTP服务器端口",
+                        "default": 587,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "smtp_ssl",
+                        "type": "boolean",
+                        "label": "SMTP SSL",
+                        "description": "587 端口通常关闭直连 SSL，由程序自动尝试 STARTTLS",
+                        "default": False
+                    },
+                    {
+                        "key": "mailbox_folder",
+                        "type": "string",
+                        "label": "默认收件文件夹",
+                        "description": "默认收件文件夹名称",
+                        "default": "INBOX"
+                    },
+                    {
+                        "key": "reject_unauthorized",
+                        "type": "boolean",
+                        "label": "校验证书",
+                        "description": "是否严格校验服务端证书",
+                        "default": True
+                    }
+                ]
+            },
+            {
+                "key": "custom_email",
+                "type": "object",
+                "label": "自定义邮箱配置",
+                "description": "通用 IMAP/SMTP 或 POP3/SMTP 配置",
+                "collapsible": True,
+                "fields": [
+                    {
+                        "key": "email",
+                        "type": "email",
+                        "label": "邮箱地址",
+                        "description": "自定义邮箱地址",
+                        "required": True,
+                        "placeholder": "example@company.com"
+                    },
+                    {
+                        "key": "password",
+                        "type": "password",
+                        "label": "密码或授权码",
+                        "description": "邮箱登录密码或授权码",
+                        "required": True,
+                        "sensitive": True,
+                        "placeholder": "请输入密码或授权码"
+                    },
+                    {
+                        "key": "receive_protocol",
+                        "type": "select",
+                        "label": "收件协议",
+                        "description": "推荐使用 IMAP，只有旧系统才考虑 POP3",
+                        "default": "imap",
+                        "options": [
+                            {"value": "imap", "label": "IMAP"},
+                            {"value": "pop3", "label": "POP3"}
+                        ]
+                    },
+                    {
+                        "key": "imap_server",
+                        "type": "string",
+                        "label": "IMAP服务器",
+                        "description": "IMAP服务器地址",
+                        "default": "imap.example.com"
+                    },
+                    {
+                        "key": "imap_port",
+                        "type": "number",
+                        "label": "IMAP端口",
+                        "description": "IMAP服务器端口",
+                        "default": 993,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "imap_tls",
+                        "type": "boolean",
+                        "label": "IMAP TLS",
+                        "description": "是否启用 IMAP TLS/SSL",
+                        "default": True
+                    },
+                    {
+                        "key": "pop_server",
+                        "type": "string",
+                        "label": "POP服务器",
+                        "description": "仅在 POP3 模式下使用",
+                        "default": "pop.example.com"
+                    },
+                    {
+                        "key": "pop_port",
+                        "type": "number",
+                        "label": "POP端口",
+                        "description": "仅在 POP3 模式下使用",
+                        "default": 995,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "smtp_server",
+                        "type": "string",
+                        "label": "SMTP服务器",
+                        "description": "SMTP服务器地址",
+                        "default": "smtp.example.com"
+                    },
+                    {
+                        "key": "smtp_port",
+                        "type": "number",
+                        "label": "SMTP端口",
+                        "description": "SMTP服务器端口",
+                        "default": 587,
+                        "min": 1,
+                        "max": 65535
+                    },
+                    {
+                        "key": "smtp_ssl",
+                        "type": "boolean",
+                        "label": "SMTP SSL",
+                        "description": "是否使用 SMTP SSL",
+                        "default": False
+                    },
+                    {
+                        "key": "mailbox_folder",
+                        "type": "string",
+                        "label": "默认收件文件夹",
+                        "description": "默认收件文件夹名称",
+                        "default": "INBOX"
+                    },
+                    {
+                        "key": "reject_unauthorized",
+                        "type": "boolean",
+                        "label": "校验证书",
+                        "description": "是否严格校验服务端证书",
+                        "default": True
                     }
                 ]
             },
@@ -332,6 +837,30 @@ SKILL_SCHEMAS = {
                 "placeholder": "请输入API Token"
             }
         ]
+    },
+    "ima-knowledge-base": {
+        "skill_name": "ima-knowledge-base",
+        "version": "1.0.0",
+        "description": "IMA OpenAPI 知识库工具配置",
+        "config_file": "scripts/config.json",
+        "help_file": "config.help.md",
+        "fields": _build_ima_fields(include_default_knowledge_base=True)
+    },
+    "ima-notes": {
+        "skill_name": "ima-notes",
+        "version": "1.0.0",
+        "description": "IMA OpenAPI 笔记工具配置",
+        "config_file": "scripts/config.json",
+        "help_file": "config.help.md",
+        "fields": _build_ima_fields(include_default_knowledge_base=False)
+    },
+    "ima-skill": {
+        "skill_name": "ima-skill",
+        "version": "2.1.0",
+        "description": "IMA OpenAPI 单入口工具配置",
+        "config_file": "scripts/config.json",
+        "help_file": "config.help.md",
+        "fields": _build_ima_fields(include_default_knowledge_base=True)
     }
 }
 

@@ -1,7 +1,7 @@
 """Agent Teams API — CRUD for user-defined multi-agent workflow templates."""
 
 import uuid
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
@@ -13,6 +13,10 @@ from backend.database import get_db
 from backend.models.agent_team import AgentTeam
 
 router = APIRouter(prefix="/api/agent-teams", tags=["agent-teams"])
+
+
+def _normalize_api_mode(value: Any) -> str:
+    return "chat_completions"
 
 
 # ============================================================================
@@ -82,6 +86,7 @@ class TeamModelConfigRequest(BaseModel):
     """团队模型配置请求"""
     provider: Optional[str] = None
     model: Optional[str] = None
+    api_mode: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     api_key: Optional[str] = None
@@ -273,7 +278,9 @@ async def get_team_config(
         effective_config = global_model.copy()
         for key, value in team_model_config.items():
             if value is not None and value != "":
-                effective_config[key] = value
+                effective_config[key] = (
+                    _normalize_api_mode(value) if key == "api_mode" else value
+                )
         
         # 确保 api_key 和 api_base 字段存在
         if "api_key" not in effective_config:
@@ -315,6 +322,8 @@ async def update_team_config(
             config_dict["provider"] = request.provider
         if request.model is not None and request.model != "":
             config_dict["model"] = request.model
+        if request.api_mode is not None and request.api_mode != "":
+            config_dict["api_mode"] = _normalize_api_mode(request.api_mode)
         if request.temperature is not None:
             config_dict["temperature"] = request.temperature
         if request.max_tokens is not None:
@@ -381,5 +390,3 @@ async def reset_team_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset team config: {str(e)}"
         )
-
-

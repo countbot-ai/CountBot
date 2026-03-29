@@ -9,6 +9,8 @@
 """
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import WebSocket
@@ -30,6 +32,15 @@ from backend.modules.session import (
     build_session_model_override,
     resolve_session_runtime_config,
 )
+from backend.modules.session.message_context import (
+    build_attachment_items_from_workspace,
+    build_message_context,
+    resolve_workspace_attachments,
+)
+from backend.modules.providers.runtime import (
+    build_provider_unavailable_message,
+    get_provider_runtime_state,
+)
 from backend.modules.session.manager import SessionManager
 from backend.ws.connection import (
     ClientMessage,
@@ -37,6 +48,7 @@ from backend.ws.connection import (
     send_error,
     send_message_chunk,
     send_message_complete,
+    send_reasoning_chunk,
     send_tool_call,
     send_tool_result,
 )
@@ -52,6 +64,17 @@ def _friendly_processing_error(raw: str) -> str:
     if any(k in lower for k in ("timeout", "connection", "network")):
         return "网络连接异常，请稍后重试。"
     return f"消息处理出错，请稍后重试。"
+
+
+def _validate_message_or_attachments(content: str, attachments: list[str] | None) -> str:
+    normalized_content = str(content or "")
+    if normalized_content.strip() or attachments:
+        return normalized_content
+    raise ValueError("Message or attachments are required")
+
+
+def _resolve_attachment_inputs(attachments: list[str] | None, workspace: Path) -> list[tuple[str, Path]]:
+    return resolve_workspace_attachments(attachments, workspace=workspace)
 
 
 def _resolve_explicit_external_tool_request(
@@ -139,7 +162,14 @@ async def handle_message_event(
         db: 数据库会话
     """
     session_id = message.session_id
-    content = message.content
+    try:
+        content = _validate_message_or_attachments(
+            message.content or "",
+            message.attachments,
+        )
+    except ValueError as exc:
+        await send_error(session_id, str(exc), "INVALID_MESSAGE")
+        return
 
     logger.info(
         f"收到消息 - 连接:{connection_id}, 会话:{session_id}, 内容:{content[:50]}..."
@@ -168,7 +198,36 @@ async def handle_message_event(
 
         logger.info(f"会话验证通过: {session_id}")
 
+        try:
+            resolved_attachments = _resolve_attachment_inputs(
+                message.attachments,
+                getattr(agent_loop, "workspace", config_loader.config.workspace.path or "."),
+            )
+        except ValueError as exc:
+            await send_error(session_id, str(exc), "INVALID_ATTACHMENT")
+            return
+
+        attachment_items = build_attachment_items_from_workspace(resolved_attachments)
+        attachment_paths = [relative_path for relative_path, _ in resolved_attachments]
+
         runtime_config = resolve_session_runtime_config(config_loader.config, session)
+        runtime_state = get_provider_runtime_state(
+            config_loader.config,
+            runtime_config.provider_name,
+            api_key_override=runtime_config.api_key,
+            api_base_override=runtime_config.api_base,
+        )
+        if not runtime_state.selectable:
+            await send_error(
+                session_id,
+                build_provider_unavailable_message(
+                    runtime_config.provider_name,
+                    runtime_state.reason,
+                ),
+                "PROVIDER_UNAVAILABLE",
+            )
+            return
+
         model_override = build_session_model_override(runtime_config, force=True)
         persona_override = runtime_config.persona_config
 
@@ -186,11 +245,25 @@ async def handle_message_event(
                 f"{runtime_config.provider_name}/{runtime_config.model_name}"
             )
 
+        active_provider, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
+            model_override
+        )
+        try:
+            from backend.modules.agent.memory import ConversationSummarizer
+
+            session_manager.summarizer = ConversationSummarizer(
+                provider=active_provider,
+                char_limit=2000,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to prepare websocket history summarizer: {exc}")
+
         # 保存用户消息到数据库
         user_message = await session_manager.add_message(
             session_id=session_id,
             role="user",
             content=content,
+            message_context=build_message_context(attachment_items=attachment_items),
         )
 
         if user_message is None:
@@ -204,21 +277,14 @@ async def handle_message_event(
 
         logger.info(f"用户消息已保存: ID={user_message.id}")
 
-        # 获取会话历史
-        messages = await session_manager.get_messages(
+        # 获取摘要化后的会话历史
+        history_limit = runtime_config.persona_config.max_history_messages
+        context = await session_manager.get_history_with_summary(
             session_id=session_id,
-            limit=50,  # 限制历史消息数量
+            limit=None if history_limit == -1 else history_limit,
         )
-
-        logger.info(f"加载历史消息: {len(messages)} 条")
-
-        # 构建上下文（排除刚添加的用户消息）
-        context = []
-        for msg in messages[:-1]:
-            context.append({
-                "role": msg.role,
-                "content": msg.content,
-            })
+        if context and context[-1].get("role") == "user":
+            context = context[:-1]
 
         logger.info(f"开始AI处理，上下文消息数: {len(context)}")
 
@@ -234,6 +300,7 @@ async def handle_message_event(
 
         # 处理消息并流式输出
         assistant_content = ""
+        assistant_reasoning = ""
 
         # 使用缓冲流式处理器 - 优化参数以实现实时输出
         from backend.ws.streaming import BufferedStreamingHandler
@@ -252,6 +319,11 @@ async def handle_message_event(
                 logger.warning(f"Failed to detect mentioned team for websocket chat: {exc}")
 
         chunk_count = 0
+        async def reasoning_event_handler(reasoning_chunk: str) -> None:
+            nonlocal assistant_reasoning
+            assistant_reasoning += reasoning_chunk or ""
+            await send_reasoning_chunk(session_id, reasoning_chunk)
+
         if explicit_external_request:
             profile_name, _task = explicit_external_request
             logger.info(
@@ -268,10 +340,12 @@ async def handle_message_event(
             message=content,
             session_id=session_id,
             context=context,
+            media=attachment_paths,
             channel="web-chat",
             cancel_token=cancel_token,
             model_override=model_override,
             persona_override=persona_override,
+            reasoning_event_handler=reasoning_event_handler,
             prefer_direct_workflow_result=prefer_direct_workflow_result,
         ):
             # 检查是否被取消
@@ -299,11 +373,17 @@ async def handle_message_event(
         logger.debug(f"流式响应统计: {stats}")
 
         # 保存助手响应到数据库
-        if assistant_content:
+        persisted_content = assistant_content or assistant_reasoning
+        assistant_message_context = (
+            build_message_context(reasoning_content=assistant_reasoning)
+        )
+
+        if persisted_content:
             assistant_message = await session_manager.add_message(
                 session_id=session_id,
                 role="assistant",
-                content=assistant_content,
+                content=persisted_content,
+                message_context=assistant_message_context,
             )
 
             logger.info(f"助手消息已保存到数据库: ID={assistant_message.id}")
@@ -337,7 +417,6 @@ async def handle_message_event(
             friendly,
             "PROCESSING_ERROR",
         )
-        from backend.ws.connection import cleanup_cancel_token
         cleanup_cancel_token(session_id)
     finally:
         if agent_loop.tools:
@@ -523,7 +602,6 @@ async def websocket_event_loop(
         agent_loop: Agent 循环实例
     """
     from fastapi import WebSocketDisconnect
-    import json
     from pydantic import ValidationError
 
     try:

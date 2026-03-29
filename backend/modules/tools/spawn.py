@@ -27,6 +27,10 @@ class SpawnTool(Tool):
     def set_context(self, session_id: str) -> None:
         self._session_id = session_id
 
+    def set_session_id(self, session_id: Optional[str]) -> None:
+        """兼容 ToolRegistry 的会话注入接口。"""
+        self._session_id = session_id
+
     def set_cancel_token(self, cancel_token) -> None:
         """设置取消令牌"""
         self._cancel_token = cancel_token
@@ -37,10 +41,7 @@ class SpawnTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Spawn a sub-agent to handle a complex or time-consuming task. "
-            "The sub-agent runs to completion and returns its result here."
-        )
+        return "Run a sub-agent and return its final result."
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -49,11 +50,11 @@ class SpawnTool(Tool):
             "properties": {
                 "task": {
                     "type": "string",
-                    "description": "Task description for the sub-agent",
+                    "description": "Sub-agent task.",
                 },
                 "label": {
                     "type": "string",
-                    "description": "Short display label (optional)",
+                    "description": "Optional label.",
                 },
             },
             "required": ["task"],
@@ -63,10 +64,17 @@ class SpawnTool(Tool):
         """获取子代理超时时间（秒）"""
         if self._config_loader:
             try:
-                config = self._config_loader.get_config()
-                return config.security.subagent_timeout
+                config = getattr(self._config_loader, "config", None)
+                if config is not None:
+                    return config.security.subagent_timeout
             except Exception:
                 pass
+        try:
+            config = getattr(config_loader, "config", None)
+            if config is not None:
+                return config.security.subagent_timeout
+        except Exception:
+            pass
         # 默认 1200 秒（20 分钟）
         return 1200
 

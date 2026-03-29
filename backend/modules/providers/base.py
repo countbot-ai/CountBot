@@ -22,6 +22,7 @@ class StreamChunk:
     usage: Optional[Dict[str, int]] = None
     error: Optional[str] = None
     reasoning_content: Optional[str] = None
+    provider_payload: Optional[Dict[str, Any]] = None
 
     @property
     def is_content(self) -> bool:
@@ -42,6 +43,10 @@ class StreamChunk:
     @property
     def is_reasoning(self) -> bool:
         return self.reasoning_content is not None
+
+    @property
+    def has_provider_payload(self) -> bool:
+        return self.provider_payload is not None
 
 
 class LLMProvider(ABC):
