@@ -1,623 +1,259 @@
 <div align="center">
   <img src="https://github.com/user-attachments/assets/d42ee929-a9a9-4017-a07b-9eb66670bcc3" alt="CountBot Logo" width="180">
-  <p>Lightweight, Extensible AI Agent Framework | Optimized for Chinese Users & Domestic LLMs</p>
+  <h1>CountBot</h1>
+  <p>Open-source AI agent framework and runtime hub for Chinese users</p>
+  <p>Connects LLMs, IM channels, workflows, and external tools so AI can actually execute work</p>
+
+  <p>
+    <a href="README.md">中文</a> | English
+  </p>
 
   <p>
     <a href="https://github.com/countbot-ai/countbot/stargazers"><img src="https://img.shields.io/github/stars/countbot-ai/countbot?style=social" alt="GitHub stars"></a>
     <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python"></a>
-    <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/Lines-~21K-brightgreen.svg" alt="Lines of Code"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
-  </p>
-
-  <p>
-    <a href="README.md">中文</a> | English
   </p>
 </div>
 
 ---
 
-## What's New
+## What Is CountBot
 
-- **v0.7.0 — Latest Release** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.7.0)
-  - Fixed multiple issue reports and resolved a batch of known bugs
-  - Refined frontend flows and interaction details across daily use paths
-  - Optimized the tool call pipeline and context assembly, reducing token usage by about 70% versus the previous version
-  - Added a thinking control switch so the AI can feel faster in common scenarios
-  - Added `find-skills` with full Tencent Cloud SkillsHub integration for conversational skill management
-  - Added `ima-knowledge-base` and `ima-notes` with full IMA knowledge base and notes integration
+CountBot is a lightweight AI agent framework that better fits Chinese users' habits, and also a runtime hub built for local deployment and long-running operation.
 
-- **v0.6.0** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.6.0)
-  - Added WeChat ClawBot integration with support for multiple account bindings
-  - Added external coding tool integration for Claude, Codex, and OpenCode
-  - Added first-time remote initialization entry `/setup/<random>`
-  - Added `REMOTE_SETUP_SECRET_TTL_MINUTES` to control remote setup entry expiration
-  - Strengthened remote auth boundaries for `/api/*` and `/ws/chat`
+It connects roles, teams, workflows, tool invocation, memory, LLMs, IM channels, and local workspaces so AI can run continuously, collaborate across entry points, and execute real tasks.
 
-- **Mar 19, 2026 — v0.5.0 Released** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.5.0)
-  - True agent-team orchestration with multi-role collaboration, context handoff, and workflow routing
-  - Configuration expanded from session-level to role-level, team-level, and multi-bot setups
-  - Custom channel architecture strengthened, with Weibo, WeCom, Xiaozhi AI, and more flexible bot routing
-  - Better support for running multiple bots across different channels and scenarios
-  - Frontend comprehensively upgraded across chat, settings, skills, team panels, and overall UX
-  - Tool calls, media delivery, channel handling, and message flow all improved for complex tasks
+You can think of CountBot as both a framework and a hub:
 
-- **Mar 14, 2026 — v0.4.0 Released** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.4.0)
-  - Session-level configuration system (independent API, model, prompts, personality per session)
-  - Added Weibo, WeCom, Xiaozhi AI channels
-  - Comprehensive multi-agent collaboration optimization
-  - Added /help command (accessible via IM channels)
-  - Integrated Mermaid chart rendering engine
-  - Full compatibility with OpenClaw Skills ecosystem
-  - Heartbeat proactive greeting system refactored
+- Upward, it connects to 100+ LLM providers and different model strategies
+- Outward, it connects to Web, WeChat, Lark, DingTalk, Telegram, Discord, QQ, Weibo, and more
+- Inward, it organizes roles, teams, workflows, memory, and security boundaries
+- At the execution layer, it connects files, Shell, Web, screenshots, file transfer, and external professional tools such as Claude Code, Codex, and OpenCode
 
-- **Mar 4, 2026 — v0.3.0 Released** [View Detailed Update Guide](https://654321.ai/docs/releases/v0.3.0)
-  -  Multi-Agent Collaboration System (Pipeline/Graph/Council modes)
-  -  Enhanced Cron Jobs (one-time tasks, retry mechanism, batch operations)
-  -  Skills System Upgrade (config management, schema validation, auto-fix)
-  -  Added 10+ Chinese AI vendor coding plans support
-  -  Comprehensive UI/UX optimization and stability improvements
-  -  Enhanced Web Tools (Scrapling anti-scraping, JS rendering support)
-  
-- **Feb 26, 2026 — v0.2.0 Released**
-  - Focused on bug fixes, UX improvements, and build workflow cleanup
-  - Pushed CountBot from "basically runnable" toward "stable and iteratable"
+In one sentence: **CountBot is an AI agent framework and runtime hub that connects models, channels, teams, and tools.**
 
-- **Feb 21, 2026 — Official Open Source Release**
-  - CountBot was first open-sourced with its core framework, startup scripts, agent runtime, channel system, tool system, skill system, and frontend foundation
-  - Public iteration started from this point onward
-
-### Upcoming Features
-
-- Smart hardware integration (voice control, IoT device support)
-- Deep tmux integration (invoke Codex CLI, Claude Code, and other external tools)
-- Continuous performance optimization (parallel agent execution, improved caching)
+CountBot was born from natural language. Its vision is not to require more people to learn complex configuration and programming before they can use AI, but to let ordinary users interact with AI directly through natural language to retrieve information, generate content, break down tasks, call tools, orchestrate workflows, and even build their own assistants, team collaboration flows, and automation systems.
 
 ---
 
-## v0.7.0 Highlights
+## Latest Updates
 
-### 1. Issue fixes and stability improvements
+- **v0.7.0**
+  - Addressed multiple issue reports, fixed a batch of known bugs, and improved overall stability
+  - Added file upload and processing flows to the WEBUI, improved Mermaid rendering, and made chart presentation more user-friendly
+  - Optimized frontend pages and interaction flows so everyday operations around skills, configuration, and tools feel smoother
+  - Optimized the tool invocation chain and context organization, significantly reducing token usage compared with previous versions
+  - Added a model thinking control switch so you can adjust reasoning intensity by scenario and get faster perceived responses
+  - Added `find-skills` with full Tencent Cloud SkillsHub integration, enabling conversational search, install, enable, disable, and delete for skills
+  - Added `ima-knowledge-base` and `ima-notes` with full IMA knowledge-base and note capabilities, including search, upload, web import, reading, creation, and append
+  - Release notes: [https://654321.ai/docs/releases/v0.7.0](https://654321.ai/docs/releases/v0.7.0)
 
-This release starts with user feedback. It addresses multiple issue reports and a batch of known bugs across tool calls, configuration flows, skill integration, and general runtime behavior.
+- **v0.6.0**
+  - Added WeChat ClawBot integration with support for binding multiple accounts
+  - Added external coding tool integration for Claude, Codex, and OpenCode, which can either be called by the LLM as tools or act as agents connected to IM channels
+  - Added the secure first-time remote initialization entry `/setup/<random>`
+  - Added `REMOTE_SETUP_SECRET_TTL_MINUTES` so the validity period of the remote setup entry can be controlled
+  - Strengthened remote authentication boundaries, covering `/api/*` and `/ws/chat`
+  - Release notes: [https://654321.ai/docs/releases/v0.6.0](https://654321.ai/docs/releases/v0.6.0)
 
-### 2. Better frontend usability
+- **v0.5.0**
+  - Agent Teams became a first-class capability, supporting multi-role collaboration, context handoff, and team-level orchestration
+  - The configuration system evolved from session-level configuration to role-level, team-level, and multi-bot coordination
+  - The channel system was further strengthened to support more enterprise and social entry points
+  - Frontend panels for chat, configuration, skills, teams, and tools were upgraded as a whole
+  - Release notes: [https://654321.ai/docs/releases/v0.5.0](https://654321.ai/docs/releases/v0.5.0)
 
-The frontend is refined around high-frequency paths so common operations in skills, settings, and tools feel more direct and easier to understand.
+- **v0.4.0**
+  - Introduced session-level configuration so different sessions can use different models and prompts
+  - Expanded channel support for Lark, WeCom, Weibo, Xiaozhi AI, and more
+  - Improved multi-agent collaboration and added usage entry points such as `/help`
+  - Release notes: [https://654321.ai/docs/releases/v0.4.0](https://654321.ai/docs/releases/v0.4.0)
 
-### 3. Leaner tool calling
+- **v0.3.0**
+  - Multi-agent collaboration modes (`pipeline` / `graph` / `council`) were first systematized
+  - Scheduled tasks, skill configuration, and workspace management were significantly enhanced
+  - Release notes: [https://654321.ai/docs/releases/v0.3.0](https://654321.ai/docs/releases/v0.3.0)
 
-The tool execution pipeline and context assembly are reorganized to reduce overhead without shrinking capability coverage. Compared with the previous version, overall tool-call token usage can be reduced by about 70%.
+- **v0.2.0 · 2026-02-26**
+  - Focused on bug fixes, interaction improvements, and cleanup of the build workflow
+  - Pushed CountBot from "basically runnable" toward "stable and ready to iterate"
 
-### 4. Thinking control switch
-
-A new thinking control switch lets you adjust reasoning intensity by scenario, which improves perceived response speed in many everyday tasks.
-
-### 5. `find-skills` with SkillsHub
-
-`find-skills` is now integrated with Tencent Cloud SkillsHub, so users can search, install, enable, disable, and remove skills directly through conversation.
-
-### 6. `ima-knowledge-base` and `ima-notes`
-
-Two new skills bring IMA integration into the workflow:
-
-- `ima-knowledge-base`: search knowledge bases, inspect hits, browse items, upload files, and import web pages
-- `ima-notes`: search notes, read notes, create notes, and append content
-
-This expands CountBot from "chat and call tools" into "chat and manage knowledge assets" more naturally.
-
----
-
-## What is CountBot?
-
-CountBot is a lightweight, extensible AI Agent framework optimized for Chinese users and domestic LLMs. With only ~21,000 lines of Python, it delivers production-grade intelligent assistant infrastructure featuring:
-
-- Smart Memory — Auto-summarizes conversations, never forgets important info
-- Proactive Greeting — Like a real assistant, reaches out when you're idle
-- Zero-Config Security — Frictionless local access, auto-protected remote access
-- Multi-Channel Unified — One codebase serving Web, Lark, DingTalk, QQ, Telegram, WeChat
-- Personalization — 12 personality presets + custom nicknames and location
-- Message Queue — Priority scheduling, deduplication, dead-letter handling
-- Domestic LLM Optimized — Deep support for Zhipu, Qwen, Kimi, MiniMax, DeepSeek, etc.
-
-Core philosophy: Make AI Agents into digital companions with memory, emotion, initiative, and collaboration.
-
-CountBot was born from natural language. Our vision is not to make more people learn configuration and programming before they can use AI, but to let ordinary users directly interact with AI through natural language to retrieve information, generate content, break down tasks, call tools, orchestrate workflows, and eventually build their own personal assistants, team collaboration flows, and automation systems.
+- **Official Open Source Release · 2026-02-21**
+  - CountBot was open-sourced for the first time, including the base framework, startup scripts, agent core, channel system, tool system, skill system, and foundational frontend capabilities
+  - Public iteration has continued from that day onward
 
 ---
 
-## Why CountBot?
+## Why CountBot
 
-CountBot was born from natural language, and we believe software will continue moving back toward natural language as its most universal interface.
+CountBot starts from the broader trend of software being driven by natural language, and aims to let AI truly land in real tasks and everyday work.
 
-CountBot is not trying to be just another "chat with AI" shell. It aims to be open infrastructure that lets ordinary users use natural language to drive AI, organize tools, connect channels, and land real-world tasks.
+Software development and software usage are changing:
+1. Interaction between people and software is moving from complex commands and code toward natural language.
+2. Tools and systems are moving from standardized products toward a future where more people can define and create personalized tools.
 
-### Top 10 Highlights
+The core challenge for AI agents is no longer just model capability alone. It is how to combine LLMs, tool invocation, multi-channel access, permission boundaries, and long-running operation into a system that can actually be deployed and maintained.
 
-| Highlight | Description | Advantage |
-|-----------|-------------|-----------|
-| Chinese-Friendly | 21K lines with full Chinese comments, comprehensive docs, deep domestic LLM integration | Low learning curve |
-| Dual Deployment | B/S browser + C/S desktop client, one codebase | Fits personal & team use |
-| Domestic Ecosystem | 10 built-in skill plugins: search, maps, email, file transfer, web publishing, etc. | Works out of the box |
-| GUI Configuration | Full web-based management, zero config file editing | Fewer config errors |
-| Deep Personalization | 12 personality system + custom nicknames & location | Warm interaction |
-| High Performance | Smart context compression, significantly reduced token usage | Cost-effective |
-| Progressive Security | Local access fully open, remote access auto-protected | Security meets convenience |
-| Lightweight | 21K lines vs 50K–400K in other frameworks, modular design | Easy to read & extend |
-| Smart Memory | Auto-summarize, keyword search, never forget | Long-term companion |
-| Message Queue | 4-level priority, deduplication, dead-letter handling | Production-grade reliability |
+OpenClaw has already validated a viable path for local execution and autonomous agents. On top of that, CountBot focuses on filling key gaps in **Chinese scenario adaptation, lightweight deployment, usability expansion, security control, and governance**.
+
+CountBot is not merely a conversational AI application. It is open infrastructure for real tasks: deployable, extensible, and governable, so ordinary users can use natural language to drive AI, organize tools, connect channels, and actually land business and daily workflows.
+
+---
+
+## Core Capabilities
+
+| Module | Description |
+|------|------|
+| Agent Loop | ReAct reasoning, tool invocation, result feedback, and iterative control |
+| Agent Teams | Three collaboration modes: `pipeline`, `graph`, and `council` |
+| Multi-bot channel matrix | One workspace can serve multiple channels, multiple bots, and multiple business entry points |
+| Configuration layers | Global defaults, roles, teams, and runtime session configuration working together |
+| Tools and skills | Files, Shell, Web, screenshots, memory, workflows, media delivery, and skill extensions |
+| External execution tool integration | Connect external professional tools such as Claude Code, Codex, and OpenCode into one unified runtime |
+| Memory and sessions | Long-term memory, summaries, context injection, and session isolation |
+| Cron and Heartbeat | Scheduled tasks, proactive reminders, and long-running background operation |
+| Security and workspace | Local control, path restrictions, audit logs, timeouts, and remote authentication boundaries |
+| Multi-model access | Compatible with major domestic and international models, with team-level model override support |
 
 ---
 
 ## Use Cases
 
-CountBot combines built-in tools and skill plugins to handle a variety of daily tasks:
-
-### Information Retrieval & Search
-
-"Search for today's AI news"
-- Uses Baidu Search skill to fetch and summarize the latest information
-
-"Find Western restaurants in Dongguan, I plan to leave at 6 PM"
-- Calls Amap (Gaode) skill to search restaurants and plan routes
-
-"What's the weather like today?"
-- Queries the weather skill for real-time and forecast data
-
-### Email & File Management
-
-"Check if I have any new emails today"
-- Connects to QQ/163 mailbox via email skill, auto-checks new mail
-
-"Compress the images on my desktop and send them to my email"
-- Uses file tools to package files, sends via email skill
-
-### Image Processing & Creation
-
-"Generate a picture of a cat celebrating New Year and send it to me"
-- Calls image generation skill for AI art, delivers via channel
-
-"Take a screenshot of my computer and send it to me"
-- Uses screenshot tool to capture screen, sends via Lark/DingTalk
-
-"What's in this image?"
-- Image analysis skill identifies content with detailed descriptions
-
-### Web Design & Publishing
-
-"Design a personal resume webpage and publish it online"
-- Uses web design skill to generate HTML, auto-deploys to Cloudflare Pages
-
-### Browser Automation
-
-"Open Bing in the browser, search for AI, open the third result, then screenshot it for me"
-- Browser automation skill handles complex web operation workflows
-
-### Scheduled Tasks
-
-"Check the weather for me every morning at 8 AM"
-- Sets up a Cron task that auto-executes and pushes results
-
-### Multi-Channel Collaboration
-
-CountBot runs simultaneously on Web, Lark, DingTalk, QQ, and more. All channels share the same smart memory system — no matter where you chat, the AI remembers your preferences and history.
-
----
-
-## Core Features
-
-### Smart Memory System
-
-CountBot's memory system includes:
-
-- **Auto Conversation Summary** — LLM decides when to summarize, extracting key information
-- **Rolling Context Compression** — Auto-compresses when conversation exceeds window, no info lost
-- **Keyword Search** — Fast retrieval of historical memories by keyword
-- **Line-Based Storage** — Simple, reliable file storage, easy to backup and migrate
-
-```python
-# Memory system works automatically
-User: "My name is John, I live in Beijing"
-AI: "Got it, I'll remember that"
-
-# Days later...
-User: "Where do I live again?"
-AI: "You live in Beijing"  # Auto-retrieved from memory
-```
-
-### Heartbeat Proactive Greeting
-
-CountBot has **proactive care capabilities**:
-
-- **Smart Idle Detection** — Monitors user's last active time
-- **Do Not Disturb** — Supports DND time windows (e.g., 22:00–08:00 Beijing time)
-- **Daily Limit** — Prevents over-disturbance (default: max 2 per day)
-- **Natural Randomness** — Not mechanical timed greetings, but natural care
-
-```python
-# User inactive for 4 hours, within active hours
-AI: "Long time no see! What have you been up to? Need any help?"
-```
-
-### Zero-Config Security Model
-
-An innovative **progressive security** design:
-
-- **Local Access (127.0.0.1)** → Zero friction, direct use
-- **Remote Access (192.168.x.x)** → Guided password setup on first visit
-- **Password Requirements** → Min 8 chars, upper/lowercase + digits
-- **Session Management** → 24-hour validity
-
-```bash
-# Local use — no configuration needed
-http://localhost:8000  ✅ Direct access
-
-# Remote use — auto-protected
-http://192.168.1.100:8000  🔐 First-time password setup
-```
-
-### Personalization
-
-In the Settings page under "User Management", you can configure:
-
-12 Personality Presets
-
-CountBot offers 12 distinct personality settings: Hot-Tempered Bro, Roast Master, Gentle Sister, Straight Shooter, Sharp-Tongued Boss, Chatterbox, Philosopher, Soft & Cute Assistant, Comedian, Energetic, Chuunibyou, Zen Master. You can also fully customize the personality description to match your usage habits.
-
-Custom Nicknames & Location
-
-- AI Name — Give your assistant a name (default: CountBot)
-- User Nickname — How the AI addresses you
-- User Location — Your location info (e.g., Dongguan), used for weather, maps, trip planning
-
-### Precision On-Demand Cron Scheduler
-
-Not polling, not a simple timer, but a **smart scheduling system**:
-
-- **Precision Wake** — Calculates next task time, accurate to the second
-- **Concurrency Control** — Semaphore-based max concurrency
-- **Timeout Protection** — Max execution time per task (default: 300s)
-- **Independent Sessions** — Each task uses its own database session
-- **SQLite Lock Retry** — Auto-handles concurrent write conflicts
-
-```python
-# Not polling every second, but precisely calculating next wake time
-next_wake = min([job.next_run for job in enabled_jobs])
-await asyncio.sleep((next_wake - now).total_seconds())
-```
+- Breaking down complex tasks into multiple roles that collaborate through natural-language instructions
+- Running your own AI assistant, AI team, or automation workflow locally or in a private environment
+- Serving multiple entry points at the same time, including Web, WeCom, Lark, DingTalk, Telegram, and Discord
+- Unifying tool invocation, file operations, message delivery, and scheduled tasks in one runtime
+- Bringing LLMs, message channels, tool usage, and team collaboration into a single operating hub
+- Going beyond a simple AI assistant to build a sustainable, long-running agent system
 
 ---
 
 ## Quick Start
 
-### One-Click Launch
+### Option 1: Start From Source
 
 ```bash
-# Clone the repository
-git clone https://github.com/countbot-ai/countbot.git
-cd countbot
+git clone https://github.com/countbot-ai/CountBot.git
+cd CountBot
 
-# Install dependencies
+# Default installation
 pip install -r requirements.txt
 
-# If PyPI access is slow, you can use the Aliyun mirror
+# If you are in mainland China, you can use the Aliyun mirror
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
-# Start (auto-opens browser)
 python start_app.py
 ```
 
-Visit `http://localhost:8000`, configure an LLM provider in the settings page, and you're ready to go.
+After startup, CountBot opens at `http://127.0.0.1:8000` by default.
 
-### Download Desktop Version
+If GitHub access is limited, you can switch to Gitee:
 
+```bash
+git clone https://gitee.com/countbot-ai/CountBot.git
 ```
-https://github.com/countbot-ai/CountBot/releases
-Supports Windows / macOS / Linux
-```
 
-### Recommended Configuration
+### Option 2: Use the Desktop Build
 
-Notable Chinese AI models: GLM-5, MiniMax-M2.5, Kimi K2.5, Qwen3.5-Plus, DeepSeek Chat, etc.
-
-Zero-cost start: Use Zhipu AI's free GLM-4.7-Flash model
-
-1. Visit [Zhipu AI Open Platform](https://open.bigmodel.cn/)
-2. Register and obtain an API Key
-3. Select "Zhipu AI" in CountBot settings, enter the API Key
-4. Start using!
+- Gitee Releases: https://gitee.com/countbot-ai/CountBot/releases
+- GitHub Releases: https://github.com/countbot-ai/CountBot/releases
+- Supported platforms: Windows / macOS / Linux
 
 ---
 
-## Architecture
+## Key Changes in v0.7.0
 
-### Project Structure
+### 1. Focused on bug fixes and stability improvements
 
-```
-countbot/
-├── backend/                   # Backend (~21K lines)
-│   ├── modules/
-│   │   ├── agent/             # Agent Core
-│   │   │   ├── loop.py        # ReAct Loop
-│   │   │   ├── memory.py      # Smart Memory
-│   │   │   ├── heartbeat.py   # Proactive Greeting
-│   │   │   ├── personalities.py # 12 Personalities
-│   │   │   └── context.py     # Context Builder
-│   │   ├── messaging/         # Message Queue
-│   │   │   ├── enterprise_queue.py # Message Queue
-│   │   │   └── rate_limiter.py     # Token Bucket
-│   │   ├── cron/              # Cron Scheduler
-│   │   │   └── scheduler.py   # Precision Wake
-│   │   ├── auth/              # Authentication
-│   │   │   └── middleware.py  # Zero-Config Security
-│   │   ├── channels/          # Channel Management
-│   │   ├── providers/         # LLM Providers
-│   │   └── tools/             # Tool System (13)
-├── frontend/                  # Frontend (Vue 3 + TypeScript)
-├── skills/                    # Skill Plugins (10)
-└── docs/                      # Documentation
-```
+This release first tackles known issues coming from GitHub issues and daily usage feedback, covering tool invocation, configuration flows, skill integration, and interaction details, making CountBot more stable and predictable in complex scenarios.
 
----
+### 2. Frontend interaction keeps getting tighter and faster
 
-## Tech Stack
+The frontend continues to be optimized around common operation paths, reducing the cognitive load of configuration and skill management so daily use feels more direct.
 
-### Backend
+### 3. The tool invocation chain is now leaner
 
-- **FastAPI** — Modern web framework with native async & WebSocket support
-- **SQLAlchemy 2.0** — Async ORM with complex query support
-- **aiosqlite** — SQLite async driver, zero-config database
-- **Anthropic & OpenAI SDK** — Official SDKs, supports all major models
-- **Pydantic v2** — Data validation and config management
-- **Loguru** — Structured logging, easy debugging
+The tool flow, context assembly, and execution chain were reworked again. Without sacrificing capability coverage, token usage dropped significantly. 
 
-### Frontend
+### 4. Model thinking control is more precise
 
-- **Vue 3** — Progressive framework, Composition API
-- **TypeScript** — Type safety, fewer runtime errors
-- **Pinia** — Lightweight state management
-- **Vue I18n** — Internationalization (Chinese/English)
-- **Axios** — HTTP client with auto-retry
-- **Lucide Icons** — Modern icon library
+A new thinking control switch lets you decide whether to enable or reduce reasoning intensity based on task complexity, which improves perceived response speed in many high-frequency scenarios.
 
-> **Note:** Frontend source code is currently undergoing final optimization and will be fully uploaded upon completion. The `frontend/dist/` directory contains pre-built HTML files that are fully functional.
+### 5. SkillsHub is now part of the conversational management flow
+
+The new `find-skills` skill integrates Tencent Cloud SkillsHub into the conversation flow. You can now search, install, enable, disable, and remove skills directly through natural language without manually handling underlying files.
+
+### 6. IMA knowledge base and notes are now built in
+
+CountBot adds two new skills:
+
+- `ima-knowledge-base`: search knowledge bases, inspect hit details, browse entries, upload files, and import web pages
+- `ima-notes`: search notes, read notes, create new notes, and append content
+
+This allows CountBot to write material directly into the IMA knowledge base or persist content into the IMA notes system, further strengthening the idea of "conversation as management".
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Quick Start Guide](https://654321.ai/docs/getting-started/quick-start-guide) | Feature setup, API key acquisition |
-| [Deployment](https://654321.ai/docs/advanced/deployment) | Installation, startup, production deployment |
-| [Agent Loop](https://654321.ai/docs/core/agent-loop) | ReAct loop principles |
-| [Memory System](https://654321.ai/docs/core/memory) | Auto-summary, context compression |
-| [Cron Scheduler](https://654321.ai/docs/core/cron) | Precision wake, concurrency control |
-| [Channel System](https://654321.ai/docs/core/channels) | Multi-channel configuration |
-| [Tool System](https://654321.ai/docs/core/tools) | Built-in tools and runtime capabilities |
-| [Skill System](https://654321.ai/docs/core/skills) | Plugin extension and development |
-| [Remote Auth](https://654321.ai/docs/advanced/auth) | Zero-config security model |
-| [Configuration Manual](https://654321.ai/docs/getting-started/configuration-manual) | Complete config reference |
-| [API Reference](https://654321.ai/docs/api-reference) | REST API + WebSocket |
+| Document | Description | Link |
+|------|------|------|
+| Quick Start | Installation, configuration, and startup | [https://654321.ai/docs/getting-started/quick-start-guide](https://654321.ai/docs/getting-started/quick-start-guide) |
+| Configuration Manual | Full configuration reference | [https://654321.ai/docs/getting-started/configuration-manual](https://654321.ai/docs/getting-started/configuration-manual) |
+| Deployment and Operations | Startup, deployment, and troubleshooting | [https://654321.ai/docs/advanced/deployment](https://654321.ai/docs/advanced/deployment) |
+| Remote Access Guide | Remote initialization, authentication, and troubleshooting | [https://654321.ai/docs/advanced/remote-access](https://654321.ai/docs/advanced/remote-access) |
+| Authentication | Password setup and access boundaries | [https://654321.ai/docs/advanced/auth](https://654321.ai/docs/advanced/auth) |
+| API Reference | REST API and WebSocket | [https://654321.ai/docs/api-reference](https://654321.ai/docs/api-reference) |
+| Release Notes | Version history and release changes | [https://654321.ai/docs/releases/v0.7.0](https://654321.ai/docs/releases/v0.7.0) |
+
+For the full documentation site, see: [https://654321.ai/docs](https://654321.ai/docs)
 
 ---
 
-## Supported LLMs (via Official SDKs)
+## Development and Contribution
 
-CountBot uses Anthropic and OpenAI official SDKs, compatible with OpenAI / Anthropic / Gemini protocols, supporting all major LLMs:
-
-### Recommended Chinese LLMs
-
-| Provider | Model Examples | Access |
-|----------|---------------|--------|
-| Zhipu AI | glm-4.7-flash (free), GLM-5 | [open.bigmodel.cn](https://open.bigmodel.cn) |
-| Qwen | Qwen3.5-Plus | [dashscope.aliyun.com](https://dashscope.aliyun.com) |
-| Moonshot | Kimi K2.5 | [platform.moonshot.cn](https://platform.moonshot.cn) |
-| MiniMax | MiniMax-M2.5 | [platform.minimax.io](https://platform.minimax.io) |
-| DeepSeek | DeepSeek Chat | [platform.deepseek.com](https://platform.deepseek.com) |
-| Doubao | Doubao-Pro-32K | [volcengine.com](https://volcengine.com) |
-| Baidu ERNIE | ERNIE-4.0-8K | [qianfan.baidubce.com](https://qianfan.baidubce.com) |
-| Tencent Hunyuan | Hunyuan-Lite | [hunyuan.tencentcloudapi.com](https://hunyuan.tencentcloudapi.com) |
-| Yi | Yi-Large | [platform.lingyiwanwu.com](https://platform.lingyiwanwu.com) |
-| Baichuan | Baichuan4 | [platform.baichuan-ai.com](https://platform.baichuan-ai.com) |
-
-### International LLMs
-
-| Provider | Model Examples | Access |
-|----------|---------------|--------|
-| OpenAI | gpt-5.3 | [platform.openai.com](https://platform.openai.com) |
-| Anthropic | Claude Sonnet 4 | [console.anthropic.com](https://console.anthropic.com) |
-| Gemini | Gemini 2.0 Flash | [aistudio.google.com](https://aistudio.google.com) |
-| Groq | Llama 3.3 70B | [console.groq.com](https://console.groq.com) |
-| Mistral | Mistral Large | [console.mistral.ai](https://console.mistral.ai) |
-| Cohere | Command R+ | [dashboard.cohere.com](https://dashboard.cohere.com) |
-| Together AI | Llama 3.3 70B Turbo | [api.together.xyz](https://api.together.xyz) |
-| OpenRouter | Multi-model aggregation | [openrouter.ai](https://openrouter.ai) |
-
-### Local Deployment
-
-| Method | Description |
-|--------|-------------|
-| Ollama | Local open-source model deployment |
-| vLLM | High-performance inference engine |
-| LM Studio | GUI-based local deployment |
-
-### Custom Compatible APIs
-
-| Protocol | Description |
-|----------|-------------|
-| OpenAI Compatible | Any OpenAI-protocol compatible API |
-| Anthropic Compatible | Any Anthropic-protocol compatible API |
-| Gemini Compatible | Any Gemini-protocol compatible API |
-
----
-
-## Supported Channels
-
-| Channel | Connection | Configuration |
-|---------|-----------|---------------|
-| Web UI | Built-in | No config needed |
-| Lark (Feishu) | WebSocket | App ID + App Secret |
-| DingTalk | Stream Mode | Client ID + Client Secret |
-| QQ | Official SDK | App ID + Secret |
-| Weibo | WebSocket | App ID + App Secret |
-| WeCom | WebSocket | Corp ID + Agent ID + Secret |
-| Xiaozhi AI | WebSocket | App ID + App Secret |
-| Telegram | Long Polling | Bot Token (proxy supported) |
-| WeChat (Coming Soon) | Official Account API | App ID + App Secret + Token |
-| Discord (Coming Soon) | Gateway | Bot Token |
-
-All channels support `allow_from` whitelist for access control.
-
----
-
-## Built-in Tools (13)
-
-| Tool | Function |
-|------|----------|
-| `read_file` | Read file content |
-| `write_file` | Write file content |
-| `edit_file` | Edit file (replace/insert/delete) |
-| `list_dir` | List directory contents |
-| `exec` | Execute shell commands (sandboxed) |
-| `web_fetch` | Fetch web page content |
-| `memory_read` | Read long-term memory |
-| `memory_write` | Write long-term memory |
-| `memory_search` | Search memory |
-| `screenshot` | Capture screen |
-| `file_search` | Search files |
-| `spawn` | Create sub-agent |
-| `send_media` | Send media files |
-
----
-
-## Built-in Skill Plugins (10)
-
-| Skill | Description | Config |
-|-------|-------------|--------|
-| Baidu Search | Baidu AI search with web, encyclopedia, AI generation | API Key |
-| Cron Manager | Create/manage scheduled tasks via chat | No config |
-| Email | QQ/163 mailbox send/receive with attachments | Email auth code |
-| Image Analysis | Zhipu/Qwen vision models, OCR, object recognition | API Key |
-| Image Generation | ModelScope text-to-image with LoRA style stacking | API Token |
-| Map Navigation | Amap route planning & POI search | API Key |
-| News Aggregation | Chinese news + global AI news, multi-category RSS | No config |
-| Weather | wttr.in weather service, global city support | No config |
-| Web Design | HTML generation + Cloudflare Pages one-click deploy | API Token |
-| Browser Automation | agent-browser CLI, web ops, screenshots, data extraction | Manual install |
-
----
-
-## Security Features
-
-### Progressive Security Model
-
-```
-Local Access (127.0.0.1)
-    ↓
-  Zero Friction
-    ↓
-  Direct Use
-
-Remote Access (192.168.x.x)
-    ↓
-  First Visit
-    ↓
-  Guided Password Setup
-    ↓
-  Login Required
-```
-
-### Command Sandbox
-
-- Workspace isolation (`restrict_to_workspace`)
-- Path traversal detection
-- Null byte injection blocking
-- Command whitelist/blacklist
-- Audit logging
-
-### Rate Limiting
-
-- Token bucket algorithm
-- Per-user rate limiting
-- Configurable rate and burst size
-
----
-
-## Contributing
-
-We welcome all forms of contribution!
-
-### Development Environment
+### Local Development
 
 ```bash
-# Backend development (hot reload)
 uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
-
-# Frontend development
-cd frontend
-npm install
-npm run dev
 ```
-
-### Adding New Components
-
-- New LLM Provider → `backend/modules/providers/`
-- New Channel → `backend/modules/channels/`
-- New Tool → `backend/modules/tools/`
-- New Skill → `skills/<skill-name>/`
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
----
-
-## License
-
-[MIT License](LICENSE)
-
----
-
-## Acknowledgments
-
-CountBot's creation was inspired and supported by the open-source community.
-
-### Project Inspiration
-
-- [PicoClaw](https://github.com/sipeed/picoclaw) — Thanks to the PicoClaw team for demonstrating the possibility of ultra-lightweight AI Agents. CountBot's tool system and core architecture were deeply inspired by it.
-
-- [NanoBot](https://github.com/HKUDS/nanobot) — Thanks to the NanoBot team for showcasing clean code organization and modular design.
-
-- [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) — Thanks to the ZeroClaw team for their exploration in security and performance. CountBot's security architecture references their security-first design philosophy.
-
-### Tech Stack
-
-Thanks to the following open-source projects and communities:
-
-- [FastAPI](https://fastapi.tiangolo.com/) — Modern Python web framework
-- [Vue.js](https://vuejs.org/) — Progressive JavaScript framework
-- [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) — Anthropic official Python SDK
-- [OpenAI SDK](https://github.com/openai/openai-python) — OpenAI official Python SDK
-- [SQLAlchemy](https://www.sqlalchemy.org/) — Python SQL toolkit and ORM
-- [Pydantic](https://docs.pydantic.dev/) — Data validation and settings management
 
 ### Community
 
-Special thanks to all developers and users who provided feedback, suggestions, and contributions to CountBot. You make AI technology more accessible and user-friendly.
+- QQ group: `1028356423`
+- Discussion topics: CountBot usage, issue feedback, secondary development, and scenario co-creation
 
-### Open Source Spirit
+### Issue Reporting
 
-CountBot embraces the open-source spirit, committed to making AI Agent technology more transparent, controllable, and easy to use. We believe that through open-source collaboration, more people can benefit from the advancement of AI technology.
+- GitHub Issues: https://github.com/countbot-ai/CountBot/issues
+
+---
+
+## License and Acknowledgements
+
+### License
+
+MIT License
+
+### Project Inspiration
+
+- OpenClaw
+- NanoBot
+- ZeroClaw
+- anthropics/skills
+
+### Technical Thanks
+
+Thanks to FastAPI, Vue.js, SQLAlchemy, Pydantic, LiteLLM, and other open-source projects.
 
 ---
 
 <div align="center">
-  <p>Lightweight, Extensible AI Agent Framework | Optimized for Chinese Users & Domestic LLMs</p>
-  <br>
+  <p>An AI agent runtime hub that connects models, channels, teams, and tools</p>
   <p>
-    <a href="https://654321.ai">Website</a> ·
+    <a href="https://654321.ai">Official Website</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
-    <a href="https://654321.ai/docs">Docs</a> ·
-    <a href="https://github.com/countbot-ai/countbot/issues">Issues</a>
+    <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
+    <a href="https://654321.ai/docs">Full Documentation</a>
   </p>
-  <br>
-  <p><sub>CountBot is for educational, research, and technical exchange purposes only</sub></p>
 </div>
