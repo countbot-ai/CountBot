@@ -1,7 +1,7 @@
 """Provider 注册表"""
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -13,7 +13,6 @@ class ProviderMetadata:
     default_model: Optional[str] = None
     env_key: str = ""
     env_extras: Tuple[Tuple[str, str], ...] = ()
-    model_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 PROVIDER_REGISTRY = {
@@ -52,7 +51,6 @@ PROVIDER_REGISTRY = {
         default_model="kimi-k2.5",
         env_key="MOONSHOT_API_KEY",
         env_extras=(("MOONSHOT_API_BASE", "{api_base}"),),
-        model_overrides={"kimi-k2.5": {"temperature": 1.0}},
     ),
     "zhipu": ProviderMetadata(
         id="zhipu",

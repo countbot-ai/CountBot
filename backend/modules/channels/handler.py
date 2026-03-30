@@ -291,7 +291,7 @@ class ChannelMessageHandler:
         subagent_manager=None,
         max_iterations: int = 10,
         rate_limiter: Optional[RateLimiter] = None,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         max_tokens: int = 4096,
         thinking_enabled: bool = True,
         max_history_messages: int = 50,
@@ -442,9 +442,11 @@ class ChannelMessageHandler:
         if should_rebuild_tools:
             self._rebuild_tool_registry()
 
+        temp_label = "default" if temperature is None or temperature <= 0 else temperature
+        max_tokens_label = "auto" if max_tokens is None or max_tokens <= 0 else max_tokens
         logger.info(
-            f"Handler config reloaded: model={model}, temp={temperature}, "
-            f"max_tokens={max_tokens}"
+            f"Handler config reloaded: model={model}, temp={temp_label}, "
+            f"max_tokens={max_tokens_label}"
         )
 
     def set_channel_manager(self, channel_manager) -> None:

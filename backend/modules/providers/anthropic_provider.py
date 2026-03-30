@@ -10,6 +10,9 @@ from loguru import logger
 
 from .base import LLMProvider, StreamChunk, ToolCall
 
+_TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
+_TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
+
 
 class AnthropicProvider(LLMProvider):
     """Anthropic-compatible provider."""
@@ -33,7 +36,7 @@ class AnthropicProvider(LLMProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         model: Optional[str] = None,
         max_tokens: int = 4096,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Stream chat completions."""
@@ -96,10 +99,13 @@ class AnthropicProvider(LLMProvider):
         request_params: Dict[str, Any] = {
             "model": model,
             "messages": filtered_messages,
-            "temperature": temperature,
             "stream": True,
-            "max_tokens": max_tokens if max_tokens and max_tokens > 0 else 4096,
         }
+        if temperature and temperature > 0:
+            request_params["temperature"] = temperature
+        resolved_max_tokens = self._resolve_max_tokens(max_tokens)
+        if resolved_max_tokens is not None:
+            request_params["max_tokens"] = resolved_max_tokens
 
         if system_content:
             request_params["system"] = system_content
@@ -123,6 +129,44 @@ class AnthropicProvider(LLMProvider):
             )
         )
         return request_params
+
+    def _resolve_max_tokens(self, max_tokens: int) -> Optional[int]:
+        """Resolve max_tokens for Anthropic-compatible APIs.
+
+        Official Anthropic requires max_tokens on every Messages request.
+        Compatible providers may accept omitted max_tokens, so preserve the
+        "0 means do not send" behavior there.
+        """
+        if max_tokens and max_tokens > 0:
+            return max_tokens
+
+        if self._requires_max_tokens():
+            fallback_max_tokens = 4096
+            logger.info(
+                "Anthropic Messages API requires max_tokens; "
+                f"using fallback {fallback_max_tokens} because configured value is {max_tokens!r}"
+            )
+            return fallback_max_tokens
+
+        return None
+
+    def _requires_max_tokens(self) -> bool:
+        """Whether the upstream API requires max_tokens to be present."""
+        provider_id = (self.provider_id or "").lower()
+        api_base = (self.api_base or "").lower()
+        return provider_id in ("", "anthropic") or "api.anthropic.com" in api_base
+
+    @staticmethod
+    def _is_missing_max_tokens_error(error: Exception) -> bool:
+        message = str(error).lower()
+        hints = (
+            "max_tokens must be positive",
+            "max_tokens is required",
+            "max_tokens must be",
+            "max_tokens should be",
+            "missing required parameter",
+        )
+        return "max_tokens" in message and any(hint in message for hint in hints)
 
     def _normalize_messages(
         self, messages: List[Dict[str, Any]]
@@ -378,6 +422,14 @@ class AnthropicProvider(LLMProvider):
         except (TypeError, ValueError):
             max_tokens = 0
 
+        if max_tokens <= 0:
+            logger.debug(
+                "Skipping Anthropic thinking config because max_tokens is unset; "
+                "extended thinking requires an explicit max_tokens budget."
+            )
+            request_params.pop("thinking", None)
+            return
+
         if max_tokens <= 1024:
             logger.warning(
                 "Anthropic thinking requested but max_tokens <= 1024; "
@@ -588,6 +640,8 @@ class AnthropicProvider(LLMProvider):
         """Stream using raw HTTP for Anthropic-compatible providers."""
         request_url = self._build_messages_url()
         headers = self._build_headers()
+        request_payload = dict(request_params)
+        injected_fallback_max_tokens = False
 
         for attempt in range(1, self.max_retries + 1):
             tool_call_buffer: Dict[str, Dict[str, Any]] = {}
@@ -605,7 +659,7 @@ class AnthropicProvider(LLMProvider):
                         "POST",
                         request_url,
                         headers=headers,
-                        json=request_params,
+                        json=request_payload,
                     ) as response:
                         await self._raise_for_status(response)
 
@@ -737,6 +791,20 @@ class AnthropicProvider(LLMProvider):
                 return
 
             except Exception as e:
+                if (
+                    not injected_fallback_max_tokens
+                    and not request_payload.get("max_tokens")
+                    and self._is_missing_max_tokens_error(e)
+                ):
+                    fallback_max_tokens = 4096
+                    request_payload["max_tokens"] = fallback_max_tokens
+                    injected_fallback_max_tokens = True
+                    logger.warning(
+                        "Anthropic-compatible upstream rejected missing max_tokens; "
+                        f"retrying with fallback max_tokens={fallback_max_tokens}: {e}"
+                    )
+                    continue
+
                 if self._is_timeout_error(e) and content_yielded:
                     logger.warning(
                         f"Anthropic HTTP stream timed out after {chunk_count} events: {e}"
@@ -879,7 +947,10 @@ class AnthropicProvider(LLMProvider):
                     arguments = json.loads(args_str)
                 except json.JSONDecodeError as e:
                     logger.error(f"JSON parse failed: {e}, raw: {args_str!r}")
-                    arguments = {"raw": args_str}
+                    arguments = {
+                        _TOOL_ARGUMENT_PARSE_ERROR_KEY: f"{type(e).__name__}: {e}",
+                        _TOOL_ARGUMENT_RAW_KEY: args_str,
+                    }
 
             chunks.append(
                 StreamChunk(

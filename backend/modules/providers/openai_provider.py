@@ -9,9 +9,14 @@ from loguru import logger
 
 from .base import LLMProvider, StreamChunk, ToolCall
 
+_TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
+_TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
+
 
 class OpenAIProvider(LLMProvider):
     """OpenAI Provider 实现（兼容 OpenAI API 格式的所有服务）"""
+
+    _compatibility_cache: Dict[str, Dict[str, Any]] = {}
 
     def __init__(
         self,
@@ -34,7 +39,7 @@ class OpenAIProvider(LLMProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         model: Optional[str] = None,
         max_tokens: int = 4096,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """流式聊天补全"""
@@ -96,12 +101,18 @@ class OpenAIProvider(LLMProvider):
         temperature: float,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
+        compatibility_key = self._get_compatibility_cache_key(model)
+        compatibility_hints: Dict[str, Any] = {}
+        compatibility_recorded = False
+
         request_params: Dict[str, Any] = {
             "model": model,
             "messages": self._sanitize_messages_for_chat_completions(messages),
-            "temperature": temperature,
             "stream": True,
         }
+
+        if temperature and temperature > 0:
+            request_params["temperature"] = temperature
 
         if max_tokens and max_tokens > 0:
             request_params["max_tokens"] = max_tokens
@@ -111,7 +122,19 @@ class OpenAIProvider(LLMProvider):
             request_params["tool_choice"] = "auto"
 
         request_params.update(kwargs)
-        self._apply_reasoning_config(request_params, kwargs.get("thinking_enabled"))
+        thinking_enabled = kwargs.get("thinking_enabled")
+        if self._should_disable_thinking_for_tool_calls(
+            model=model,
+            tools=tools,
+            thinking_enabled=thinking_enabled,
+        ):
+            logger.info(
+                "Disabling thinking for tool-enabled Moonshot/Kimi request "
+                "to preserve tool-call argument budget"
+            )
+            thinking_enabled = False
+        self._apply_reasoning_config(request_params, thinking_enabled)
+        self._apply_cached_compatibility(request_params, compatibility_key)
 
         logger.debug(
             "OpenAI params: "
@@ -123,11 +146,38 @@ class OpenAIProvider(LLMProvider):
 
         stream = None
         max_attempts = max(1, self.max_retries)
-        for attempt in range(1, max_attempts + 1):
+        attempt = 1
+        while attempt <= max_attempts:
             try:
                 stream = await client.chat.completions.create(**request_params)
                 break
             except Exception as e:
+                fixed_temperature = self._extract_fixed_temperature(e)
+                current_temperature = request_params.get("temperature")
+                if (
+                    fixed_temperature is not None
+                    and current_temperature != fixed_temperature
+                ):
+                    compatibility_hints["fixed_temperature"] = fixed_temperature
+                    logger.warning(
+                        f"OpenAI upstream requires fixed temperature for {model}; "
+                        f"retrying with {current_temperature} -> {fixed_temperature}"
+                    )
+                    request_params["temperature"] = fixed_temperature
+                    continue
+
+                if self._is_invalid_params_error(e):
+                    fallback_info = self._apply_invalid_params_fallback(
+                        request_params
+                    )
+                    if fallback_info:
+                        compatibility_hints.update(fallback_info.get("hints", {}))
+                        logger.warning(
+                            "OpenAI upstream rejected optional request params; "
+                            f"retrying without {fallback_info['description']}"
+                        )
+                        continue
+
                 error_summary = self._summarize_error_for_log(e)
                 if attempt < max_attempts:
                     wait = min(2 ** attempt, 30)
@@ -135,6 +185,7 @@ class OpenAIProvider(LLMProvider):
                         f"OpenAI 调用失败 (第{attempt}/{max_attempts}次)，"
                         f"{wait}s 后重试: {error_summary}"
                     )
+                    attempt += 1
                     await asyncio.sleep(wait)
                 else:
                     logger.error(
@@ -152,6 +203,13 @@ class OpenAIProvider(LLMProvider):
         while not stream_done and stream_retry <= max_stream_retries:
             try:
                 async for chunk in stream:
+                    if not compatibility_recorded and compatibility_hints:
+                        self._remember_compatibility(
+                            compatibility_key,
+                            compatibility_hints,
+                        )
+                        compatibility_recorded = True
+
                     chunk_count += 1
                     if chunk_count <= 3:
                         logger.debug(f"OpenAI chunk #{chunk_count}: {chunk}")
@@ -228,6 +286,21 @@ class OpenAIProvider(LLMProvider):
                     yield StreamChunk(finish_reason="stop")
 
             except Exception as stream_err:
+                if not content_yielded and self._is_invalid_params_error(stream_err):
+                    fallback_info = self._apply_invalid_params_fallback(
+                        request_params
+                    )
+                    if fallback_info:
+                        compatibility_hints.update(fallback_info.get("hints", {}))
+                        logger.warning(
+                            "OpenAI upstream rejected optional request params during stream setup; "
+                            f"retrying without {fallback_info['description']}"
+                        )
+                        stream = await client.chat.completions.create(**request_params)
+                        tool_call_buffer = {}
+                        chunk_count = 0
+                        continue
+
                 is_timeout = self._is_timeout_exception(stream_err)
 
                 if not content_yielded and is_timeout and stream_retry < max_stream_retries:
@@ -261,7 +334,10 @@ class OpenAIProvider(LLMProvider):
             parsed = json.loads(args_str)
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse failed: {e}, raw: {repr(args_str)}")
-            return {"raw": args_str}
+            return {
+                _TOOL_ARGUMENT_PARSE_ERROR_KEY: f"{type(e).__name__}: {e}",
+                _TOOL_ARGUMENT_RAW_KEY: args_str,
+            }
 
         if isinstance(parsed, dict):
             return parsed
@@ -347,13 +423,6 @@ class OpenAIProvider(LLMProvider):
             request_params.pop("thinking_enabled", None)
             return
 
-        provider_id = (self.provider_id or "").lower()
-        api_base = (self.api_base or "").lower()
-        is_official_openai = provider_id == "openai" or "api.openai.com" in api_base
-        if is_official_openai:
-            request_params.pop("thinking_enabled", None)
-            return
-
         extra_body = request_params.get("extra_body")
         if not isinstance(extra_body, dict):
             extra_body = {}
@@ -364,8 +433,28 @@ class OpenAIProvider(LLMProvider):
         request_params["extra_body"] = extra_body
         request_params.pop("thinking_enabled", None)
 
-    @staticmethod
+    def _should_disable_thinking_for_tool_calls(
+        self,
+        *,
+        model: str,
+        tools: Optional[List[Dict[str, Any]]],
+        thinking_enabled: Optional[bool],
+    ) -> bool:
+        """Moonshot/Kimi tool calls are more reliable without verbose reasoning output."""
+        if not tools or thinking_enabled is not True:
+            return False
+
+        provider_id = (self.provider_id or "").strip().lower()
+        normalized_model = (model or "").strip().lower()
+        api_base = (self.api_base or "").strip().lower()
+        return (
+            provider_id == "moonshot"
+            or normalized_model.startswith("kimi-")
+            or "moonshot.cn" in api_base
+        )
+
     def _sanitize_messages_for_chat_completions(
+        self,
         messages: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """Normalize internal messages to OpenAI v1 chat.completions shape."""
@@ -386,6 +475,12 @@ class OpenAIProvider(LLMProvider):
 
             if normalized_role == "tool" and message.get("tool_call_id"):
                 sanitized["tool_call_id"] = message.get("tool_call_id")
+
+            if (
+                normalized_role == "assistant"
+                and message.get("reasoning_content") is not None
+            ):
+                sanitized["reasoning_content"] = message.get("reasoning_content")
 
             # Preserve optional participant naming on roles that may legally carry it.
             if normalized_role in {"system", "user", "assistant"} and message.get("name"):
@@ -430,6 +525,22 @@ class OpenAIProvider(LLMProvider):
         return None
 
     @classmethod
+    def _extract_fixed_temperature(cls, error: Exception) -> Optional[float]:
+        raw = cls._extract_error_text(error)
+        match = re.search(
+            r"only\s+([0-9]+(?:\.[0-9]+)?)\s+is\s+allowed\s+for\s+this\s+model",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+
+    @classmethod
     def _is_expected_upstream_error(cls, error: Exception) -> bool:
         status_code = cls._extract_status_code(error)
         if status_code is not None and status_code >= 400:
@@ -440,6 +551,279 @@ class OpenAIProvider(LLMProvider):
 
         raw = cls._extract_error_text(error).lower()
         return "<html" in raw or "<!doctype html" in raw
+
+    @classmethod
+    def _is_invalid_params_error(cls, error: Exception) -> bool:
+        status_code = cls._extract_status_code(error)
+        raw = cls._extract_error_text(error).lower()
+        return (
+            status_code == 400
+            or "invalid params" in raw
+            or "invalid parameter" in raw
+            or "invalid_request_error" in raw
+            or "requestparamserror" in raw
+        )
+
+    @staticmethod
+    def _strip_reasoning_config(request_params: Dict[str, Any]) -> bool:
+        extra_body = request_params.get("extra_body")
+        if not isinstance(extra_body, dict) or "thinking" not in extra_body:
+            request_params.pop("thinking_enabled", None)
+            return False
+
+        extra_body = dict(extra_body)
+        extra_body.pop("thinking", None)
+        if extra_body:
+            request_params["extra_body"] = extra_body
+        else:
+            request_params.pop("extra_body", None)
+
+        request_params.pop("thinking_enabled", None)
+        return True
+
+    @staticmethod
+    def _strip_message_reasoning_content(request_params: Dict[str, Any]) -> bool:
+        messages = request_params.get("messages")
+        if not isinstance(messages, list):
+            return False
+
+        stripped = False
+        sanitized_messages: List[Dict[str, Any]] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                sanitized_messages.append(message)
+                continue
+
+            if "reasoning_content" not in message:
+                sanitized_messages.append(message)
+                continue
+
+            stripped = True
+            sanitized = dict(message)
+            sanitized.pop("reasoning_content", None)
+            sanitized_messages.append(sanitized)
+
+        if stripped:
+            request_params["messages"] = sanitized_messages
+
+        return stripped
+
+    @staticmethod
+    def _strip_tool_choice(request_params: Dict[str, Any]) -> bool:
+        if "tool_choice" not in request_params:
+            return False
+
+        request_params.pop("tool_choice", None)
+        return True
+
+    @classmethod
+    def _simplify_tool_schemas(cls, request_params: Dict[str, Any]) -> bool:
+        tools = request_params.get("tools")
+        if not isinstance(tools, list):
+            return False
+
+        changed = False
+        simplified_tools: List[Dict[str, Any]] = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                simplified_tools.append(tool)
+                continue
+
+            simplified_tool = dict(tool)
+            function = tool.get("function")
+            if isinstance(function, dict):
+                simplified_function = dict(function)
+                original_parameters = function.get("parameters")
+                simplified_parameters = cls._simplify_json_schema(original_parameters)
+                if simplified_parameters != original_parameters:
+                    simplified_function["parameters"] = simplified_parameters
+                    changed = True
+                simplified_tool["function"] = simplified_function
+
+            simplified_tools.append(simplified_tool)
+
+        if changed:
+            request_params["tools"] = simplified_tools
+
+        return changed
+
+    @classmethod
+    def _simplify_json_schema(cls, schema: Any) -> Any:
+        if isinstance(schema, list):
+            return [cls._simplify_json_schema(item) for item in schema]
+
+        if not isinstance(schema, dict):
+            return schema
+
+        unsupported_keywords = {
+            "oneOf",
+            "anyOf",
+            "allOf",
+            "not",
+            "$ref",
+            "$defs",
+            "definitions",
+            "patternProperties",
+            "discriminator",
+            "dependentSchemas",
+            "dependentRequired",
+            "if",
+            "then",
+            "else",
+            "unevaluatedProperties",
+            "prefixItems",
+            "contains",
+            "minContains",
+            "maxContains",
+            "nullable",
+        }
+
+        simplified: Dict[str, Any] = {}
+        for key, value in schema.items():
+            if key in unsupported_keywords:
+                continue
+            simplified[key] = cls._simplify_json_schema(value)
+
+        return simplified
+
+    @staticmethod
+    def _clamp_temperature_to_unit_interval(
+        request_params: Dict[str, Any]
+    ) -> Optional[str]:
+        raw_temperature = request_params.get("temperature")
+        try:
+            temperature = float(raw_temperature)
+        except (TypeError, ValueError):
+            return None
+
+        clamped_temperature = min(max(temperature, 0.0), 1.0)
+        if clamped_temperature == temperature:
+            return None
+
+        request_params["temperature"] = clamped_temperature
+        return f"temperature {temperature} -> {clamped_temperature}"
+
+    def _get_compatibility_cache_key(self, model: str) -> str:
+        provider_id = (self.provider_id or "").strip().lower()
+        api_base = (self.api_base or "").strip().lower().rstrip("/")
+        normalized_model = (model or "").strip().lower()
+        return f"{provider_id}|{api_base}|{normalized_model}"
+
+    @classmethod
+    def _remember_compatibility(
+        cls,
+        compatibility_key: str,
+        compatibility_hints: Dict[str, Any],
+    ) -> None:
+        if not compatibility_hints:
+            return
+
+        existing = dict(cls._compatibility_cache.get(compatibility_key, {}))
+        existing.update(compatibility_hints)
+        cls._compatibility_cache[compatibility_key] = existing
+
+    @classmethod
+    def _apply_cached_compatibility(
+        cls,
+        request_params: Dict[str, Any],
+        compatibility_key: str,
+    ) -> None:
+        profile = cls._compatibility_cache.get(compatibility_key)
+        if not profile:
+            return
+
+        applied_changes: List[str] = []
+
+        if profile.get("strip_extra_body_thinking") and cls._strip_reasoning_config(
+            request_params
+        ):
+            applied_changes.append("extra_body.thinking")
+
+        if profile.get(
+            "strip_message_reasoning_content"
+        ) and cls._strip_message_reasoning_content(request_params):
+            applied_changes.append("assistant reasoning_content")
+
+        if profile.get("strip_tool_choice") and cls._strip_tool_choice(request_params):
+            applied_changes.append("tool_choice")
+
+        if profile.get("simplify_tool_schemas") and cls._simplify_tool_schemas(
+            request_params
+        ):
+            applied_changes.append("advanced tool schema keywords")
+
+        has_explicit_temperature = "temperature" in request_params
+        fixed_temperature = profile.get("fixed_temperature")
+        if has_explicit_temperature and fixed_temperature is not None:
+            current_temperature = request_params.get("temperature")
+            if current_temperature != fixed_temperature:
+                request_params["temperature"] = fixed_temperature
+                applied_changes.append(
+                    f"temperature {current_temperature} -> {fixed_temperature}"
+                )
+        else:
+            max_temperature = profile.get("max_temperature")
+            if has_explicit_temperature and max_temperature is not None:
+                raw_temperature = request_params.get("temperature")
+                try:
+                    current_temperature = float(raw_temperature)
+                except (TypeError, ValueError):
+                    current_temperature = None
+
+                if (
+                    current_temperature is not None
+                    and current_temperature > float(max_temperature)
+                ):
+                    request_params["temperature"] = float(max_temperature)
+                    applied_changes.append(
+                        f"temperature {current_temperature} -> {float(max_temperature)}"
+                    )
+
+        if applied_changes:
+            logger.info(
+                "Applying learned compatibility profile for OpenAI-compatible upstream: "
+                + ", ".join(applied_changes)
+            )
+
+    @classmethod
+    def _apply_invalid_params_fallback(
+        cls,
+        request_params: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        fallback_steps = (
+            (
+                "extra_body.thinking",
+                cls._strip_reasoning_config,
+                {"strip_extra_body_thinking": True},
+            ),
+            (
+                "assistant reasoning_content",
+                cls._strip_message_reasoning_content,
+                {"strip_message_reasoning_content": True},
+            ),
+            ("tool_choice", cls._strip_tool_choice, {"strip_tool_choice": True}),
+            (
+                "advanced tool schema keywords",
+                cls._simplify_tool_schemas,
+                {"simplify_tool_schemas": True},
+            ),
+        )
+
+        for description, fallback, hints in fallback_steps:
+            if fallback(request_params):
+                return {
+                    "description": description,
+                    "hints": hints,
+                }
+
+        temperature_fallback = cls._clamp_temperature_to_unit_interval(request_params)
+        if temperature_fallback:
+            return {
+                "description": temperature_fallback,
+                "hints": {"max_temperature": request_params.get("temperature")},
+            }
+
+        return None
 
     @classmethod
     def _summarize_error_for_log(cls, error: Exception) -> str:

@@ -78,7 +78,7 @@ class SubagentManager:
     管理后台任务的创建、执行、取消和状态查询
     """
 
-    def __init__(self, provider, workspace, model: str, temperature: float = 0.7, max_tokens: int = 4096, db_session_factory=None, config_loader=None, skills=None):
+    def __init__(self, provider, workspace, model: str, temperature: float = 0.0, max_tokens: int = 4096, db_session_factory=None, config_loader=None, skills=None):
         """初始化 SubagentManager"""
         self.provider = provider
         self.workspace = workspace
@@ -374,7 +374,12 @@ class SubagentManager:
                         "thinking_enabled",
                         runtime_thinking_enabled,
                     )
-                    logger.info(f"Using team model override: model={runtime_model}, temp={runtime_temperature}, max_tokens={runtime_max_tokens}")
+                    temp_label = "default" if runtime_temperature <= 0 else runtime_temperature
+                    max_tokens_label = "auto" if runtime_max_tokens <= 0 else runtime_max_tokens
+                    logger.info(
+                        f"Using team model override: model={runtime_model}, "
+                        f"temp={temp_label}, max_tokens={max_tokens_label}"
+                    )
                 else:
                     # 使用全局配置
                     runtime_model, runtime_temperature, runtime_max_tokens, runtime_thinking_enabled = (

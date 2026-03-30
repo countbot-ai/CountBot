@@ -299,7 +299,11 @@ class WriteFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Write text to a file. Modes: `overwrite` or `append`."
+        return (
+            "Write text to a file. Modes: `overwrite` or `append`. "
+            "For large HTML/code/text, write in small chunks and use `append` "
+            "after the first chunk."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -312,12 +316,18 @@ class WriteFileTool(Tool):
                 },
                 "content": {
                     "type": "string",
-                    "description": "Text to write.",
+                    "description": (
+                        "Text to write. For large HTML/code/text, keep each chunk small "
+                        "(recommended <= 800 chars) and append subsequent chunks."
+                    ),
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["overwrite", "append"],
-                    "description": "Write mode.",
+                    "description": (
+                        "Write mode. Use `overwrite` for the first chunk and `append` "
+                        "for later chunks."
+                    ),
                 },
             },
             "required": ["path", "content"],

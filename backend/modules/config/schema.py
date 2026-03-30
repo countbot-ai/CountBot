@@ -1,6 +1,6 @@
 """配置数据模型"""
 
-from typing import Dict, List, Literal, Optional
+from typing import ClassVar, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -15,14 +15,21 @@ class ProviderConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     """模型配置"""
+    MAX_TOKENS_LIMIT: ClassVar[int] = 2_000_000
+
     provider: str = "zhipu"
     model: str = "glm-5"
     api_mode: Literal["chat_completions"] = Field(
         default="chat_completions",
         description="OpenAI API 模式，固定为 chat.completions",
     )
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=0, ge=0, le=100000)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="温度参数，0 表示不发送")
+    max_tokens: int = Field(
+        default=0,
+        ge=0,
+        le=MAX_TOKENS_LIMIT,
+        description="最大输出 token 数，0 表示不发送",
+    )
     max_iterations: int = Field(default=25, ge=1, le=150)
     thinking_enabled: bool = Field(default=True, description="是否启用模型思考模式")
 

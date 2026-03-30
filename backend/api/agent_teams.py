@@ -89,6 +89,8 @@ class TeamModelConfigRequest(BaseModel):
     api_mode: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    max_iterations: Optional[int] = None
+    thinking_enabled: Optional[bool] = None
     api_key: Optional[str] = None
     api_base: Optional[str] = None
 
@@ -328,6 +330,10 @@ async def update_team_config(
             config_dict["temperature"] = request.temperature
         if request.max_tokens is not None:
             config_dict["max_tokens"] = request.max_tokens
+        if request.max_iterations is not None:
+            config_dict["max_iterations"] = request.max_iterations
+        if request.thinking_enabled is not None:
+            config_dict["thinking_enabled"] = request.thinking_enabled
         if request.api_key is not None and request.api_key != "":
             config_dict["api_key"] = request.api_key
         if request.api_base is not None and request.api_base != "":

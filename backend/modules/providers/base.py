@@ -73,7 +73,7 @@ class LLMProvider(ABC):
         tools: Optional[List[Dict[str, Any]]] = None,
         model: Optional[str] = None,
         max_tokens: int = 4096,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """流式聊天补全"""

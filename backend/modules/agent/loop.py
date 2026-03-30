@@ -26,7 +26,7 @@ class AgentLoop:
         max_iterations: int = 25,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         max_tokens: int = 4096,
         thinking_enabled: bool = True,
     ):

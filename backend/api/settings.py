@@ -552,7 +552,7 @@ class ModelConfigResponse(BaseModel):
     provider: str = Field(..., description="Provider 名称")
     model: str = Field(..., description="模型名称")
     api_mode: str = Field(..., description="OpenAI API 模式，固定为 chat.completions")
-    temperature: float = Field(..., description="温度参数")
+    temperature: float = Field(..., description="温度参数，0 表示不发送")
     max_tokens: int = Field(..., description="最大 token 数")
     max_iterations: int = Field(..., description="最大迭代次数")
     thinking_enabled: bool = Field(..., description="是否启用思考模式")
@@ -640,6 +640,9 @@ class TestConnectionRequest(BaseModel):
     api_base: Optional[str] = Field(None, description="API 基础 URL")
     model: Optional[str] = Field(None, description="模型名称（可选）")
     api_mode: Optional[str] = Field(None, description="API 模式（仅保留兼容字段）")
+    temperature: Optional[float] = Field(None, description="温度参数（可选，0 表示不发送）")
+    max_tokens: Optional[int] = Field(None, description="最大 token 数（可选，0 表示不发送）")
+    thinking_enabled: Optional[bool] = Field(None, description="是否启用思考模式（可选）")
 
 
 class TestConnectionResponse(BaseModel):
@@ -1146,13 +1149,18 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
         error_message = None
         response_content = ""
         
-        async for chunk in provider.chat_stream(
-            messages=test_messages,
-            tools=None,
-            model=test_model,
-            max_tokens=10,
-            temperature=0.7,
-        ):
+        request_kwargs: Dict[str, Any] = {
+            "messages": test_messages,
+            "tools": None,
+            "model": test_model,
+            "max_tokens": request.max_tokens or 0,
+        }
+        if request.temperature is not None and request.temperature > 0:
+            request_kwargs["temperature"] = request.temperature
+        if request.thinking_enabled is not None:
+            request_kwargs["thinking_enabled"] = request.thinking_enabled
+
+        async for chunk in provider.chat_stream(**request_kwargs):
             if chunk.error:
                 error_message = chunk.error
                 logger.error(f"Provider returned error: {chunk.error}")

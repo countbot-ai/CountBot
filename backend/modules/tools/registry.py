@@ -1,6 +1,7 @@
 """Tool Registry - 工具注册表"""
 
 import contextvars
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -43,6 +44,9 @@ _parent_tool_call_id_context: contextvars.ContextVar[Optional[str]] = contextvar
 _tool_event_handler_context: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
     'tool_event_handler', default=None
 )
+
+_TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
+_TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
 
 
 class ToolRegistry:
@@ -209,6 +213,58 @@ class ToolRegistry:
         """
         return list(self._tools.keys())
 
+    @staticmethod
+    def _extract_tool_argument_parse_failure(
+        arguments: Dict[str, Any],
+    ) -> tuple[Optional[str], Optional[str]]:
+        if not isinstance(arguments, dict):
+            return None, None
+
+        parse_error = arguments.get(_TOOL_ARGUMENT_PARSE_ERROR_KEY)
+        raw_arguments = arguments.get(_TOOL_ARGUMENT_RAW_KEY)
+        if parse_error:
+            return str(parse_error), str(raw_arguments or "")
+
+        # Backward compatibility for older providers that returned {"raw": "..."}.
+        if set(arguments.keys()) == {"raw"}:
+            return "Malformed JSON tool arguments", str(arguments.get("raw") or "")
+
+        return None, None
+
+    @staticmethod
+    def _format_tool_argument_parse_error(
+        tool_name: str,
+        parse_error: str,
+        raw_arguments: Optional[str],
+    ) -> str:
+        path_hint = None
+        if raw_arguments:
+            match = re.search(r'"path"\s*:\s*"([^"]+)"', raw_arguments)
+            if match:
+                path_hint = match.group(1)
+
+        guidance = "Please regenerate the tool call with valid JSON arguments."
+        if tool_name in {"write_file", "edit_file"}:
+            guidance += (
+                " For large HTML/code/text, write in small chunks "
+                "(recommended <= 800 chars each) and use `mode=\"append\"` "
+                "after the first chunk."
+            )
+        if path_hint:
+            guidance += f" Detected path: {path_hint}."
+
+        compact_raw = ""
+        if raw_arguments:
+            compact_raw = " ".join(str(raw_arguments).split())
+            if len(compact_raw) > 200:
+                compact_raw = compact_raw[:200] + "..."
+
+        suffix = f" Raw prefix: {compact_raw}" if compact_raw else ""
+        return (
+            f"Error: Tool call arguments for '{tool_name}' were truncated or malformed "
+            f"before execution ({parse_error}). {guidance}{suffix}"
+        )
+
     def get_definitions(self) -> List[Dict[str, Any]]:
         """
         获取所有工具的定义
@@ -261,11 +317,54 @@ class ToolRegistry:
             )
         
         try:
+            parse_error, raw_arguments = self._extract_tool_argument_parse_failure(arguments)
+            if parse_error:
+                error_msg = self._format_tool_argument_parse_error(
+                    tool_name,
+                    parse_error,
+                    raw_arguments,
+                )
+                logger.error(error_msg)
+
+                if self._audit_enabled:
+                    file_audit_logger.update_result(
+                        call_id,
+                        error_msg,
+                        "error",
+                        error=error_msg,
+                        duration_ms=0,
+                    )
+
+                if auto_record and self._session_id:
+                    try:
+                        from backend.modules.tools.conversation_history import get_conversation_history
+                        conversation_history = get_conversation_history()
+                        conversation_history.add_conversation(
+                            session_id=self._session_id,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            error=error_msg,
+                            duration_ms=0,
+                        )
+                    except Exception as conv_err:
+                        logger.warning(f"Failed to record tool conversation: {conv_err}")
+
+                return error_msg
+
             # 验证参数
             errors = tool.validate_params(arguments)
             if errors:
                 error_msg = f"Error: Invalid parameters for tool '{tool_name}': " + "; ".join(errors)
                 logger.error(error_msg)
+
+                if self._audit_enabled:
+                    file_audit_logger.update_result(
+                        call_id,
+                        error_msg,
+                        "error",
+                        error=error_msg,
+                        duration_ms=0,
+                    )
                 
                 # 记录到工具对话历史（参数验证失败）
                 if auto_record and self._session_id:

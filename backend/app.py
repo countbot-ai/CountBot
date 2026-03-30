@@ -248,6 +248,11 @@ async def lifespan(app: FastAPI):
             oss_config = config.channels.qq.oss.model_dump()
         init_oss_uploader(oss_config)
         logger.info("OSS uploader initialized")
+    except ModuleNotFoundError as e:
+        if e.name == "backend.modules.tools.image_uploader":
+            logger.info("OSS uploader module not installed; skipping optional OSS uploader")
+        else:
+            logger.warning(f"OSS uploader init failed (optional): {e}")
     except Exception as e:
         logger.warning(f"OSS uploader init failed (optional): {e}")
 
