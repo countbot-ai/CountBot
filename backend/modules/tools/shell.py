@@ -174,6 +174,35 @@ class ExecTool(Tool):
         metadata = context.get("metadata")
         metadata = metadata if isinstance(metadata, dict) else {}
 
+        # 设置运行时 python 环境变量，确保执行 "python xxx" 命令时默认在运行时环境执行
+        # 获取当前运行的 python.exe 绝对路径及其所在目录
+        python_exe = Path(sys.executable).resolve()
+        python_dir = python_exe.parent
+        
+        # 初始 PATH 列表：首先包含 python.exe 所在的目录
+        new_path_entries = [str(python_dir)]
+        
+        # 针对 Windows 的特殊处理
+        if os.name == 'nt':
+            # 情况 A: 如果 python.exe 在根目录（如 Conda），则需要添加 Scripts 子目录
+            # 情况 B: 如果 python.exe 已经在 Scripts 目录（如 venv），则无需重复添加
+            if python_dir.name.lower() != "scripts":
+                scripts_dir = python_dir / "Scripts"
+                if scripts_dir.exists():
+                    new_path_entries.insert(0, str(scripts_dir))
+        else:
+            # Unix-like 系统 (Linux/macOS): 
+            # Python 和脚本通常都在 bin 目录下，python_dir 已经覆盖了
+            pass
+
+        # 获取系统现有的 PATH
+        path_key = "PATH" if "PATH" in env else "Path"
+        current_path = env.get(path_key, "")
+        
+        # 合并路径：新探测的路径置于最前面
+        new_path_entries.append(current_path)
+        env[path_key] = os.pathsep.join(filter(None, new_path_entries))
+
         def set_env(name: str, value: Any) -> None:
             text = str(value or "").strip()
             if text:
