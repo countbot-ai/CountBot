@@ -168,7 +168,8 @@ class OpenAIProvider(LLMProvider):
 
                 if self._is_invalid_params_error(e):
                     fallback_info = self._apply_invalid_params_fallback(
-                        request_params
+                        request_params,
+                        error=e,
                     )
                     if fallback_info:
                         compatibility_hints.update(fallback_info.get("hints", {}))
@@ -288,7 +289,8 @@ class OpenAIProvider(LLMProvider):
             except Exception as stream_err:
                 if not content_yielded and self._is_invalid_params_error(stream_err):
                     fallback_info = self._apply_invalid_params_fallback(
-                        request_params
+                        request_params,
+                        error=stream_err,
                     )
                     if fallback_info:
                         compatibility_hints.update(fallback_info.get("hints", {}))
@@ -744,6 +746,11 @@ class OpenAIProvider(LLMProvider):
         ) and cls._strip_message_reasoning_content(request_params):
             applied_changes.append("assistant reasoning_content")
 
+        if profile.get("strip_multimodal_image_content") and cls._strip_multimodal_image_content(
+            request_params
+        ):
+            applied_changes.append("multimodal image content")
+
         if profile.get("strip_tool_choice") and cls._strip_tool_choice(request_params):
             applied_changes.append("tool_choice")
 
@@ -789,7 +796,16 @@ class OpenAIProvider(LLMProvider):
     def _apply_invalid_params_fallback(
         cls,
         request_params: Dict[str, Any],
+        *,
+        error: Optional[Exception] = None,
     ) -> Optional[Dict[str, Any]]:
+        if error is not None and cls._is_image_content_unsupported_error(error):
+            if cls._strip_multimodal_image_content(request_params):
+                return {
+                    "description": "multimodal image content",
+                    "hints": {"strip_multimodal_image_content": True},
+                }
+
         fallback_steps = (
             (
                 "extra_body.thinking",
@@ -826,6 +842,76 @@ class OpenAIProvider(LLMProvider):
         return None
 
     @classmethod
+    def _is_image_content_unsupported_error(cls, error: Exception) -> bool:
+        raw = cls._extract_error_text(error)
+        lower = raw.lower()
+        return (
+            "image_url" in lower
+            and any(
+                token in lower
+                for token in (
+                    "unknown variant",
+                    "expected `text`",
+                    "expected text",
+                    "failed to deserialize",
+                    "deserialize the json body",
+                    "does not support image",
+                    "image input is not supported",
+                )
+            )
+        )
+
+    @staticmethod
+    def _strip_multimodal_image_content(request_params: Dict[str, Any]) -> bool:
+        messages = request_params.get("messages")
+        if not isinstance(messages, list):
+            return False
+
+        changed = False
+        sanitized_messages: List[Dict[str, Any]] = []
+
+        for message in messages:
+            if not isinstance(message, dict):
+                sanitized_messages.append(message)
+                continue
+
+            content = message.get("content")
+            if not isinstance(content, list):
+                sanitized_messages.append(message)
+                continue
+
+            saw_image = False
+            text_parts: List[str] = []
+
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+
+                item_type = str(item.get("type", "") or "").strip().lower()
+                if item_type == "image_url":
+                    saw_image = True
+                    continue
+
+                if item_type == "text":
+                    text_value = item.get("text")
+                    if text_value is not None:
+                        text_parts.append(str(text_value))
+
+            if not saw_image:
+                sanitized_messages.append(message)
+                continue
+
+            updated_message = dict(message)
+            updated_message["content"] = "\n".join(part for part in text_parts if part)
+            sanitized_messages.append(updated_message)
+            changed = True
+
+        if changed:
+            request_params["messages"] = sanitized_messages
+
+        return changed
+
+    @classmethod
     def _summarize_error_for_log(cls, error: Exception) -> str:
         status_code = cls._extract_status_code(error)
         raw = cls._extract_error_text(error)
@@ -853,6 +939,20 @@ class OpenAIProvider(LLMProvider):
     def _format_error_message(raw: str) -> str:
         """将 OpenAI 原始错误转换为用户友好提示"""
         lower = raw.lower()
+
+        if "image_url" in lower and any(
+            token in lower
+            for token in (
+                "unknown variant",
+                "expected `text`",
+                "expected text",
+                "failed to deserialize",
+                "deserialize the json body",
+                "does not support image",
+                "image input is not supported",
+            )
+        ):
+            return "当前模型或接口不支持图片输入，请切换支持视觉的模型后重试。"
 
         if any(k in lower for k in ("429", "余额不足", "quota", "rate limit", "insufficient_quota", "insufficient balance", "资源包", "balance")):
             if "余额" in raw or "资源包" in raw or "充值" in raw or "balance" in lower:

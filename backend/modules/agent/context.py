@@ -1,13 +1,11 @@
 
 """Context Builder - 构建 Agent 上下文"""
 
-import base64
 import json
-import mimetypes
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -563,8 +561,8 @@ class ContextBuilder:
         self,
         text: str,
         media: Optional[List[str]]
-    ) -> Union[str, List[Dict[str, Any]]]:
-        """构建用户消息内容, 可选 base64 编码的图片"""
+    ) -> str:
+        """构建用户消息内容，仅通过文本提示暴露工作空间附件路径。"""
         if not media:
             return text
 
@@ -582,35 +580,26 @@ class ContextBuilder:
                 for path in missing_paths:
                     attachment_lines.append(f"- {path}")
                 attachment_lines.append("这些文件已保存到工作空间，可直接读取、分析或继续处理。")
+                attachment_lines.append("不要假设你已经读取或看到这些附件的实际内容；如需使用附件信息，请先调用工具或技能读取对应文件。")
+
+                has_image_attachment = any(
+                    Path(path).suffix.lower() in {
+                        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tiff"
+                    }
+                    for path in missing_paths
+                )
+                if has_image_attachment:
+                    attachment_lines.append(
+                        "图片附件仅以工作空间路径形式提供，并未直接发送给模型；如需查看或分析图片，请优先调用文件或图像相关工具处理这些路径。"
+                    )
 
         text_content = stripped_text
         if attachment_lines:
             text_content = (
                 f"{text_content}\n\n" if text_content else ""
             ) + "\n".join(attachment_lines)
-        
-        images = []
-        for path in media:
-            p = Path(path)
-            if not p.is_absolute():
-                p = (self.workspace / p).resolve()
-            mime, _ = mimetypes.guess_type(path)
-            if not p.is_file() or not mime or not mime.startswith("image/"):
-                continue
-            try:
-                b64 = base64.b64encode(p.read_bytes()).decode()
-                images.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime};base64,{b64}"}
-                })
-            except Exception as e:
-                logger.warning(f"Failed to encode image {path}: {e}")
-        
-        if not images:
-            return text_content
-        
-        # 返回多模态内容
-        return images + [{"type": "text", "text": text_content}]
+
+        return text_content
 
     def add_tool_result(
         self,
