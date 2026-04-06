@@ -11,6 +11,12 @@ import webbrowser
 import threading
 from pathlib import Path
 from backend.utils.network import get_local_ips
+from backend.utils.runtime_env import (
+    apply_bind_env,
+    get_local_client_host,
+    is_public_bind_host,
+    resolve_bind_address,
+)
 
 # 添加项目根目录到 Python 路径
 # Windows UTF-8 编码
@@ -70,9 +76,8 @@ def main() -> None:
     process_manager = setup_graceful_shutdown(logger=logger)
     
     # 读取配置
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8000"))
-    os.environ["HOST"] = host
+    host, port = resolve_bind_address()
+    apply_bind_env(host, port)
     
     # 获取本地 IP 地址
     local_ips = get_local_ips()
@@ -92,7 +97,7 @@ def main() -> None:
         logger.info(f"Local:   http://localhost:{port}")
         
         # 显示网络访问地址（如果监听了所有接口）
-        if host in ["0.0.0.0", "::"]:
+        if is_public_bind_host(host):
             if local_ips:
                 for ip in local_ips:
                     logger.info(f"Network: http://{ip}:{port}")
@@ -101,7 +106,7 @@ def main() -> None:
                 logger.info(f"提示: 请检查网络连接或手动访问 http://<your-ip>:{port}")
         else:
             logger.info(f"Network: http://{host}:{port}")
-            logger.info("提示: 如需从其他设备访问，请设置 HOST=0.0.0.0")
+            logger.info("提示: 如需从其他设备访问，请设置 COUNTBOT_HOST=0.0.0.0")
         
         logger.info("-" * 60)
         logger.info("浏览器将在 15 秒后自动打开")
@@ -109,7 +114,7 @@ def main() -> None:
         logger.info("=" * 60)
         
         # 延迟 15 秒打开浏览器，确保服务器完全启动
-        open_browser_delayed(f"http://localhost:{port}")
+        open_browser_delayed(f"http://{get_local_client_host(host)}:{port}")
         
         # 启动服务器（生产模式）
         uvicorn.run(

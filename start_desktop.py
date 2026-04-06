@@ -9,6 +9,13 @@ import threading
 import time
 from pathlib import Path
 
+from backend.utils.runtime_env import (
+    apply_bind_env,
+    get_local_client_host,
+    is_public_bind_host,
+    resolve_bind_address,
+)
+
 
 if sys.platform == "win32":
     os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -186,7 +193,9 @@ def _start_backend(host: str, port: int) -> None:
                 f"端口 {port} 已被占用\n\n"
                 "解决方法:\n"
                 "1. 关闭其他实例\n"
-                "2. 修改端口: set PORT=8001"
+                "2. 修改环境变量 COUNTBOT_PORT\n"
+                "   PowerShell: $env:COUNTBOT_PORT='8001'\n"
+                "   CMD: set COUNTBOT_PORT=8001"
             )
         else:
             _backend_error = f"后端服务启动失败:\n{exc}"
@@ -264,15 +273,18 @@ def main() -> None:
         os.environ["PYWEBVIEW_GUI"] = "edgechromium"
         logger.info("使用 EdgeChromium 渲染引擎")
 
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8000"))
+    host, port = resolve_bind_address()
+    apply_bind_env(host, port)
+    client_host = get_local_client_host(host)
     startup_timeout = float(
         os.getenv("BACKEND_STARTUP_TIMEOUT", "30" if getattr(sys, "frozen", False) else "15")
     )
-    os.environ["HOST"] = host
     _backend_error = None
 
-    logger.info(f"CountBot Desktop 启动中: http://{host}:{port}")
+    if is_public_bind_host(host):
+        logger.info(f"CountBot Desktop 启动中: http://{client_host}:{port} (bind: {host})")
+    else:
+        logger.info(f"CountBot Desktop 启动中: http://{client_host}:{port}")
 
     frontend_ok, frontend_msg = _check_frontend()
     if not frontend_ok:
@@ -284,7 +296,7 @@ def main() -> None:
     threading.Thread(target=_start_backend, args=(host, port), daemon=True).start()
 
     logger.info("等待后端就绪...")
-    server_ready, probe_error = _wait_for_server(host, port, timeout=startup_timeout)
+    server_ready, probe_error = _wait_for_server(client_host, port, timeout=startup_timeout)
     if not server_ready:
         details = f"\n\n最后探活错误: {probe_error}" if probe_error else ""
         msg = (
@@ -311,7 +323,7 @@ def main() -> None:
         logger.info("创建应用窗口...")
         window = webview.create_window(
             title="CountBot Desktop",
-            url=f"http://{host}:{port}",
+            url=f"http://{client_host}:{port}",
             width=960,
             height=680,
             min_size=(220, 480),

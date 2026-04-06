@@ -8,6 +8,7 @@ from loguru import logger
 from typing import Optional
 
 from backend.version import APP_VERSION
+from backend.utils.runtime_env import resolve_bind_address
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -34,8 +35,7 @@ async def system_info():
     import os
     import sys
 
-    host = os.getenv("HOST", "127.0.0.1")
-    port = os.getenv("PORT", "8000")
+    host, port = resolve_bind_address()
     api_url = f"http://{host}:{port}"
 
     return {
