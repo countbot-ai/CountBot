@@ -115,14 +115,57 @@ def find_first_selectable_provider(app_config) -> Optional[ProviderRuntimeState]
     return None
 
 
-def build_provider_unavailable_message(provider_id: str, reason: str) -> str:
+def build_provider_unavailable_message(
+    provider_id: str,
+    reason: str,
+    *,
+    compact: bool = False,
+) -> str:
     """生成统一的 provider 不可用错误信息。"""
 
-    reason_messages = {
-        "disabled": "is disabled",
-        "missing_api_key": "is missing an API key",
-        "missing_api_base": "is missing an API base URL",
-        "unknown_provider": "is unknown",
+    if compact:
+        compact_messages = {
+            "disabled": f"Provider '{provider_id}' disabled / 提供商已禁用",
+            "missing_api_key": (
+                f"Provider '{provider_id}' missing API key / 缺少 API Key"
+            ),
+            "missing_api_base": (
+                f"Provider '{provider_id}' missing API base / 缺少 API Base"
+            ),
+            "unknown_provider": f"Provider '{provider_id}' unknown / 提供商未注册",
+        }
+        return compact_messages.get(
+            reason,
+            f"Provider '{provider_id}' unavailable / 提供商不可用",
+        )
+
+    full_messages = {
+        "disabled": (
+            f"提供商 '{provider_id}' 已禁用，请前往“设置 -> 模型提供商”启用后再试。 / "
+            f"Provider '{provider_id}' is disabled. "
+            "Enable it in Settings -> Providers and try again."
+        ),
+        "missing_api_key": (
+            f"提供商 '{provider_id}' 缺少 API Key，请前往“设置 -> 模型提供商”补全后再试。 / "
+            f"Provider '{provider_id}' is missing an API key. "
+            "Add it in Settings -> Providers and try again."
+        ),
+        "missing_api_base": (
+            f"提供商 '{provider_id}' 缺少 API Base URL，请前往“设置 -> 模型提供商”补全后再试。 / "
+            f"Provider '{provider_id}' is missing an API base URL. "
+            "Fill it in Settings -> Providers and try again."
+        ),
+        "unknown_provider": (
+            f"提供商 '{provider_id}' 未注册，请检查“设置 -> 模型提供商”和当前模型配置。 / "
+            f"Provider '{provider_id}' is unknown. "
+            "Check Settings -> Providers and the current model configuration."
+        ),
     }
-    suffix = reason_messages.get(reason, "is unavailable")
-    return f"Provider '{provider_id}' {suffix}"
+    return full_messages.get(
+        reason,
+        (
+            f"提供商 '{provider_id}' 当前不可用，请检查“设置 -> 模型提供商”中的配置。 / "
+            f"Provider '{provider_id}' is currently unavailable. "
+            "Check its configuration in Settings -> Providers."
+        ),
+    )

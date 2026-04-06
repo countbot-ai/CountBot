@@ -13,6 +13,8 @@ class ProviderMetadata:
     default_model: Optional[str] = None
     env_key: str = ""
     env_extras: Tuple[Tuple[str, str], ...] = ()
+    provider_group: str = "experimental"
+    thinking_control_tier: str = "unsupported"
 
 
 PROVIDER_REGISTRY = {
@@ -22,6 +24,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://openrouter.ai/api/v1",
         default_model="anthropic/claude-4.5-sonnet",
         env_key="OPENROUTER_API_KEY",
+        provider_group="recommended",
+        thinking_control_tier="experimental",
     ),
     "anthropic": ProviderMetadata(
         id="anthropic",
@@ -29,6 +33,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.anthropic.com",
         default_model="claude-sonnet-4-20250514",
         env_key="ANTHROPIC_API_KEY",
+        provider_group="recommended",
+        thinking_control_tier="native",
     ),
     "openai": ProviderMetadata(
         id="openai",
@@ -36,6 +42,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.openai.com/v1",
         default_model="gpt-5.3",
         env_key="OPENAI_API_KEY",
+        provider_group="recommended",
+        thinking_control_tier="limited",
     ),
     "deepseek": ProviderMetadata(
         id="deepseek",
@@ -43,6 +51,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.deepseek.com/v1",
         default_model="deepseek-chat",
         env_key="DEEPSEEK_API_KEY",
+        provider_group="recommended",
+        thinking_control_tier="native",
     ),
     "moonshot": ProviderMetadata(
         id="moonshot",
@@ -51,6 +61,8 @@ PROVIDER_REGISTRY = {
         default_model="kimi-k2.5",
         env_key="MOONSHOT_API_KEY",
         env_extras=(("MOONSHOT_API_BASE", "{api_base}"),),
+        provider_group="recommended",
+        thinking_control_tier="native",
     ),
     "zhipu": ProviderMetadata(
         id="zhipu",
@@ -59,6 +71,8 @@ PROVIDER_REGISTRY = {
         default_model="glm-4.7-flash",
         env_key="OPENAI_API_KEY",
         env_extras=(("ZHIPUAI_API_KEY", "{api_key}"),),
+        provider_group="recommended",
+        thinking_control_tier="native",
     ),
     "groq": ProviderMetadata(
         id="groq",
@@ -66,6 +80,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.groq.com/openai/v1",
         default_model="llama-3.3-70b-versatile",
         env_key="GROQ_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="response_only",
     ),
     "mistral": ProviderMetadata(
         id="mistral",
@@ -73,6 +89,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.mistral.ai/v1",
         default_model="mistral-large-latest",
         env_key="MISTRAL_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "cohere": ProviderMetadata(
         id="cohere",
@@ -80,6 +98,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.cohere.com/v2",
         default_model="command-r-plus",
         env_key="COHERE_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "together_ai": ProviderMetadata(
         id="together_ai",
@@ -87,6 +107,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.together.xyz/v1",
         default_model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
         env_key="TOGETHERAI_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "qwen": ProviderMetadata(
         id="qwen",
@@ -94,6 +116,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
         default_model="qwen3.5-plus",
         env_key="DASHSCOPE_API_KEY",
+        provider_group="recommended",
+        thinking_control_tier="native",
     ),
     "hunyuan": ProviderMetadata(
         id="hunyuan",
@@ -101,6 +125,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://hunyuan.tencentcloudapi.com",
         default_model="hunyuan-lite",
         env_key="HUNYUAN_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "ernie": ProviderMetadata(
         id="ernie",
@@ -108,6 +134,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://qianfan.baidubce.com/v2",
         default_model="ernie-4.0-8k",
         env_key="QIANFAN_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "doubao": ProviderMetadata(
         id="doubao",
@@ -115,6 +143,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://ark.cn-beijing.volces.com/api/v3",
         default_model="doubao-pro-32k",
         env_key="ARK_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "yi": ProviderMetadata(
         id="yi",
@@ -122,6 +152,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.lingyiwanwu.com/v1",
         default_model="yi-large",
         env_key="YI_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "baichuan": ProviderMetadata(
         id="baichuan",
@@ -129,6 +161,8 @@ PROVIDER_REGISTRY = {
         default_api_base="https://api.baichuan-ai.com/v1",
         default_model="Baichuan4",
         env_key="BAICHUAN_API_KEY",
+        provider_group="experimental",
+        thinking_control_tier="unsupported",
     ),
     "minimax": ProviderMetadata(
         id="minimax",
@@ -137,6 +171,8 @@ PROVIDER_REGISTRY = {
         default_model="MiniMax-M2.5",
         env_key="ANTHROPIC_API_KEY",
         env_extras=(("ANTHROPIC_BASE_URL", "{api_base}"),),
+        provider_group="experimental",
+        thinking_control_tier="experimental",
     ),
     "vllm": ProviderMetadata(
         id="vllm",
@@ -144,6 +180,8 @@ PROVIDER_REGISTRY = {
         default_api_base="http://localhost:8000/v1",
         default_model="your-model-name",
         env_key="OPENAI_API_KEY",
+        provider_group="local",
+        thinking_control_tier="compat",
     ),
     "ollama": ProviderMetadata(
         id="ollama",
@@ -151,6 +189,8 @@ PROVIDER_REGISTRY = {
         default_api_base="http://localhost:11434/v1",
         default_model="llama3.2",
         env_key="OLLAMA_API_KEY",
+        provider_group="local",
+        thinking_control_tier="compat",
     ),
     "lm_studio": ProviderMetadata(
         id="lm_studio",
@@ -158,6 +198,8 @@ PROVIDER_REGISTRY = {
         default_api_base="http://localhost:1234/v1",
         default_model="your-model-name",
         env_key="OPENAI_API_KEY",
+        provider_group="local",
+        thinking_control_tier="compat",
     ),
     "custom_openai": ProviderMetadata(
         id="custom_openai",
@@ -165,6 +207,8 @@ PROVIDER_REGISTRY = {
         default_api_base="",
         default_model="",
         env_key="OPENAI_API_KEY",
+        provider_group="advanced",
+        thinking_control_tier="compat",
     ),
     "custom_anthropic": ProviderMetadata(
         id="custom_anthropic",
@@ -173,6 +217,8 @@ PROVIDER_REGISTRY = {
         default_model="",
         env_key="ANTHROPIC_API_KEY",
         env_extras=(("ANTHROPIC_BASE_URL", "{api_base}"),),
+        provider_group="advanced",
+        thinking_control_tier="compat",
     ),
 }
 

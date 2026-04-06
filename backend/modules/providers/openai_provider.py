@@ -8,6 +8,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from loguru import logger
 
 from .base import LLMProvider, StreamChunk, ToolCall
+from .thinking_profiles import apply_reasoning_request_fields, clear_reasoning_request_fields
 
 _TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
 _TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
@@ -420,20 +421,24 @@ class OpenAIProvider(LLMProvider):
         request_params: Dict[str, Any],
         thinking_enabled: Optional[bool],
     ) -> None:
-        """对 OpenAI 兼容 provider 注入 thinking 开关。"""
-        if thinking_enabled is None:
-            request_params.pop("thinking_enabled", None)
-            return
+        """对 OpenAI 兼容 provider 注入 provider-aware 的思考控制参数。"""
+        applied_fields = apply_reasoning_request_fields(
+            request_params,
+            provider_id=self.provider_id,
+            model=request_params.get("model"),
+            api_base=self.api_base,
+            thinking_enabled=thinking_enabled,
+        )
+        if thinking_enabled is False:
+            self._strip_message_reasoning_content(request_params)
 
-        extra_body = request_params.get("extra_body")
-        if not isinstance(extra_body, dict):
-            extra_body = {}
-
-        extra_body["thinking"] = {
-            "type": "enabled" if thinking_enabled else "disabled"
-        }
-        request_params["extra_body"] = extra_body
         request_params.pop("thinking_enabled", None)
+
+        if applied_fields:
+            logger.debug(
+                "Applied reasoning control fields for provider "
+                f"{self.provider_id or 'openai-compatible'}: {', '.join(applied_fields)}"
+            )
 
     def _should_disable_thinking_for_tool_calls(
         self,
@@ -568,20 +573,7 @@ class OpenAIProvider(LLMProvider):
 
     @staticmethod
     def _strip_reasoning_config(request_params: Dict[str, Any]) -> bool:
-        extra_body = request_params.get("extra_body")
-        if not isinstance(extra_body, dict) or "thinking" not in extra_body:
-            request_params.pop("thinking_enabled", None)
-            return False
-
-        extra_body = dict(extra_body)
-        extra_body.pop("thinking", None)
-        if extra_body:
-            request_params["extra_body"] = extra_body
-        else:
-            request_params.pop("extra_body", None)
-
-        request_params.pop("thinking_enabled", None)
-        return True
+        return bool(clear_reasoning_request_fields(request_params))
 
     @staticmethod
     def _strip_message_reasoning_content(request_params: Dict[str, Any]) -> bool:
@@ -736,10 +728,13 @@ class OpenAIProvider(LLMProvider):
 
         applied_changes: List[str] = []
 
-        if profile.get("strip_extra_body_thinking") and cls._strip_reasoning_config(
+        if (
+            profile.get("strip_reasoning_request_fields")
+            or profile.get("strip_extra_body_thinking")
+        ) and cls._strip_reasoning_config(
             request_params
         ):
-            applied_changes.append("extra_body.thinking")
+            applied_changes.append("reasoning control params")
 
         if profile.get(
             "strip_message_reasoning_content"
@@ -808,9 +803,12 @@ class OpenAIProvider(LLMProvider):
 
         fallback_steps = (
             (
-                "extra_body.thinking",
+                "reasoning control params",
                 cls._strip_reasoning_config,
-                {"strip_extra_body_thinking": True},
+                {
+                    "strip_reasoning_request_fields": True,
+                    "strip_extra_body_thinking": True,
+                },
             ),
             (
                 "assistant reasoning_content",
