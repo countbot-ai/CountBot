@@ -17,7 +17,7 @@ from fastapi import WebSocket
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
+from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.config.loader import config_loader
 from backend.modules.external_agents.conversation import (
@@ -29,12 +29,15 @@ from backend.modules.external_agents.routing import (
     extract_explicit_external_agent_request,
 )
 from backend.modules.session import (
+    ConversationContextService,
     build_session_model_override,
     resolve_session_runtime_config,
+    schedule_context_maintenance,
 )
 from backend.modules.session.message_context import (
     build_attachment_items_from_workspace,
     build_message_context,
+    normalize_assistant_persistence_payload,
     resolve_workspace_attachments,
 )
 from backend.modules.providers.runtime import (
@@ -248,15 +251,6 @@ async def handle_message_event(
         active_provider, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
             model_override
         )
-        try:
-            from backend.modules.agent.memory import ConversationSummarizer
-
-            session_manager.summarizer = ConversationSummarizer(
-                provider=active_provider,
-                char_limit=2000,
-            )
-        except Exception as exc:
-            logger.warning(f"Failed to prepare websocket history summarizer: {exc}")
 
         # 保存用户消息到数据库
         user_message = await session_manager.add_message(
@@ -277,12 +271,14 @@ async def handle_message_event(
 
         logger.info(f"用户消息已保存: ID={user_message.id}")
 
-        # 获取摘要化后的会话历史
+        context_service = ConversationContextService(db)
         history_limit = runtime_config.persona_config.max_history_messages
-        context = await session_manager.get_history_with_summary(
+        context_payload = await context_service.build_model_context(
             session_id=session_id,
-            limit=None if history_limit == -1 else history_limit,
+            max_history_messages=history_limit,
+            enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
         )
+        context = context_payload.history
         if context and context[-1].get("role") == "user":
             context = context[:-1]
 
@@ -340,6 +336,7 @@ async def handle_message_event(
             message=content,
             session_id=session_id,
             context=context,
+            session_summary=context_payload.session_summary,
             media=attachment_paths,
             channel="web-chat",
             cancel_token=cancel_token,
@@ -373,12 +370,22 @@ async def handle_message_event(
         logger.debug(f"流式响应统计: {stats}")
 
         # 保存助手响应到数据库
-        persisted_content = assistant_content or assistant_reasoning
+        persisted_content, normalized_reasoning, used_reasoning_fallback = (
+            normalize_assistant_persistence_payload(
+                assistant_content,
+                assistant_reasoning,
+            )
+        )
         assistant_message_context = (
-            build_message_context(reasoning_content=assistant_reasoning)
+            build_message_context(reasoning_content=normalized_reasoning)
         )
 
         if persisted_content:
+            if used_reasoning_fallback:
+                assistant_content = persisted_content
+                await streaming_handler.write(persisted_content)
+                await streaming_handler.flush()
+
             assistant_message = await session_manager.add_message(
                 session_id=session_id,
                 role="assistant",
@@ -398,6 +405,17 @@ async def handle_message_event(
                 )
             except Exception as e:
                 logger.warning(f"Failed to backfill message_id: {e}")
+
+            schedule_context_maintenance(
+                db_session_factory=get_db_session_factory(),
+                session_id=session_id,
+                max_history_messages=history_limit,
+                enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
+                provider=active_provider,
+                model=runtime_config.model_name,
+                memory_store=getattr(agent_loop.context_builder, "memory", None),
+                auto_summary_source="web-chat",
+            )
 
             # 发送完成通知
             await send_message_complete(session_id, "")

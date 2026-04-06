@@ -59,6 +59,24 @@ def extract_reasoning_content_from_message_context(raw: Optional[str]) -> Option
     return reasoning_text or None
 
 
+def normalize_assistant_persistence_payload(
+    content: Optional[str],
+    reasoning_content: Optional[str] = None,
+    *,
+    fallback_message: str = "抱歉，这次没有整理出可发送的回复，请重试。",
+) -> tuple[str, Optional[str], bool]:
+    normalized_content = str(content or "").strip()
+    normalized_reasoning = str(reasoning_content or "").strip() or None
+
+    if normalized_content:
+        return normalized_content, normalized_reasoning, False
+
+    if normalized_reasoning:
+        return fallback_message, normalized_reasoning, True
+
+    return "", None, False
+
+
 def infer_attachment_kind(path_or_name: str, content_type: Optional[str] = None) -> str:
     suffix = Path(path_or_name or "").suffix.lower()
     if suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tiff"}:

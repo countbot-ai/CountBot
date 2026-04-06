@@ -37,6 +37,20 @@ class Session(Base):
     
     # 上下文滚动压缩：已总结到的消息ID（该ID及之前的消息已写入记忆）
     last_summarized_msg_id: Mapped[Optional[int]] = mapped_column(nullable=True)
+
+    # 整会话自动总结到记忆的游标，避免重启后重复总结整段会话
+    auto_memory_summary_msg_id: Mapped[Optional[int]] = mapped_column(nullable=True)
+
+    # 会话级短期上下文总结缓存
+    short_context_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    short_context_summary_msg_id: Mapped[Optional[int]] = mapped_column(nullable=True)
+    short_context_summary_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    short_context_summary_window_size: Mapped[Optional[int]] = mapped_column(
+        nullable=True,
+    )
     
     # 会话级配置（可选）
     session_model_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

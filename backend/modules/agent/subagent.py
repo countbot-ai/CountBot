@@ -336,7 +336,10 @@ class SubagentManager:
                     if override_provider or override_api_key or override_api_base:
                         try:
                             from backend.modules.providers.factory import create_provider
-                            from backend.modules.providers.runtime import get_provider_runtime_state
+                            from backend.modules.providers.runtime import (
+                                build_provider_unavailable_message,
+                                get_provider_runtime_state,
+                            )
 
                             provider_name = override_provider or self.config_loader.config.model.provider
                             runtime_state = get_provider_runtime_state(
@@ -347,7 +350,10 @@ class SubagentManager:
                             )
                             if not runtime_state.selectable:
                                 raise ValueError(
-                                    f"Provider '{provider_name}' is unavailable: {runtime_state.reason}"
+                                    build_provider_unavailable_message(
+                                        provider_name,
+                                        runtime_state.reason,
+                                    )
                                 )
                             
                             active_provider = create_provider(

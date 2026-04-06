@@ -60,6 +60,26 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="channel_context",
                 ddl="channel_context TEXT",
             ),
+            CompatibilityColumnMigration(
+                name="short_context_summary",
+                ddl="short_context_summary TEXT",
+            ),
+            CompatibilityColumnMigration(
+                name="short_context_summary_msg_id",
+                ddl="short_context_summary_msg_id INTEGER",
+            ),
+            CompatibilityColumnMigration(
+                name="short_context_summary_updated_at",
+                ddl="short_context_summary_updated_at DATETIME",
+            ),
+            CompatibilityColumnMigration(
+                name="short_context_summary_window_size",
+                ddl="short_context_summary_window_size INTEGER",
+            ),
+            CompatibilityColumnMigration(
+                name="auto_memory_summary_msg_id",
+                ddl="auto_memory_summary_msg_id INTEGER",
+            ),
         ),
     ),
     CompatibilityTableMigration(

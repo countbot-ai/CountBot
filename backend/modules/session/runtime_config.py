@@ -87,6 +87,34 @@ def _normalized_text(value: Any) -> Optional[str]:
     return value or None
 
 
+def _merge_persona_overrides(
+    base_persona_data: Dict[str, Any],
+    raw_persona_overrides: Dict[str, Any],
+) -> Dict[str, Any]:
+    """对 persona 配置做浅层覆盖，但对 heartbeat 做深合并。"""
+    merged = dict(base_persona_data)
+
+    heartbeat_override = raw_persona_overrides.get("heartbeat")
+    if isinstance(heartbeat_override, dict):
+        heartbeat_base = merged.get("heartbeat") or {}
+        if hasattr(heartbeat_base, "model_dump"):
+            heartbeat_base = heartbeat_base.model_dump()
+        merged["heartbeat"] = {
+            **heartbeat_base,
+            **{key: value for key, value in heartbeat_override.items() if value is not None},
+        }
+    elif heartbeat_override is not None:
+        merged["heartbeat"] = heartbeat_override
+
+    for key, value in raw_persona_overrides.items():
+        if key == "heartbeat":
+            continue
+        if value is not None:
+            merged[key] = value
+
+    return merged
+
+
 def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]) -> SessionRuntimeConfig:
     """解析会话最终配置。
 
@@ -128,10 +156,10 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
                 else raw_model_overrides[key]
             )
 
-    effective_persona_data = app_config.persona.model_dump()
-    for key, value in raw_persona_overrides.items():
-        if value is not None:
-            effective_persona_data[key] = value
+    effective_persona_data = _merge_persona_overrides(
+        app_config.persona.model_dump(),
+        raw_persona_overrides,
+    )
 
     effective_model_config = ModelConfig(**effective_model_data)
     effective_persona_config = PersonaConfig(**effective_persona_data)
@@ -175,8 +203,10 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
     model_response["api_key"] = raw_model_overrides.get("api_key", "") or ""
     model_response["api_base"] = raw_model_overrides.get("api_base", "") or ""
 
-    persona_response = app_config.persona.model_dump()
-    persona_response.update(raw_persona_overrides)
+    persona_response = _merge_persona_overrides(
+        app_config.persona.model_dump(),
+        raw_persona_overrides,
+    )
 
     return SessionRuntimeConfig(
         use_custom_config=use_custom_config,

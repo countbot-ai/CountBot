@@ -93,7 +93,10 @@ class AgentLoop:
             try:
                 from backend.modules.providers import create_provider
                 from backend.modules.config.loader import config_loader
-                from backend.modules.providers.runtime import get_provider_runtime_state
+                from backend.modules.providers.runtime import (
+                    build_provider_unavailable_message,
+                    get_provider_runtime_state,
+                )
 
                 provider_id = override_provider or config_loader.config.model.provider
                 runtime_state = get_provider_runtime_state(
@@ -104,7 +107,10 @@ class AgentLoop:
                 )
                 if not runtime_state.selectable:
                     raise ValueError(
-                        f"Provider '{provider_id}' is unavailable: {runtime_state.reason}"
+                        build_provider_unavailable_message(
+                            provider_id,
+                            runtime_state.reason,
+                        )
                     )
 
                 candidate_provider = create_provider(
@@ -144,6 +150,7 @@ class AgentLoop:
         message: str,
         session_id: str,
         context: Optional[List[Dict[str, Any]]] = None,
+        session_summary: Optional[str] = None,
         media: Optional[List[str]] = None,
         channel: Optional[str] = None,
         chat_id: Optional[str] = None,
@@ -175,6 +182,7 @@ class AgentLoop:
             messages = self.context_builder.build_messages(
                 history=context,
                 current_message=message,
+                session_summary=session_summary,
                 media=media,
                 channel=channel,
                 chat_id=chat_id,

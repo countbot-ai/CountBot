@@ -26,6 +26,7 @@ from backend.modules.agent.team_commands import (
     resolve_explicit_team_command,
 )
 from backend.modules.config.loader import config_loader
+from backend.modules.config.schema import ModelConfig, PersonaConfig
 from backend.modules.external_agents.conversation import (
     build_history_prompt,
     resolve_effective_session_mode,
@@ -39,7 +40,11 @@ from backend.modules.providers.runtime import (
     build_provider_unavailable_message,
     get_provider_runtime_state,
 )
-from backend.modules.session import resolve_session_runtime_config
+from backend.modules.session import (
+    ConversationContextService,
+    resolve_session_runtime_config,
+    schedule_context_maintenance,
+)
 from backend.modules.session.manager import SessionManager
 from backend.modules.session.message_context import (
     MAX_CHAT_ATTACHMENTS,
@@ -49,6 +54,7 @@ from backend.modules.session.message_context import (
     build_workspace_attachment_destination,
     extract_attachment_items_from_message_context,
     extract_reasoning_content_from_message_context,
+    normalize_assistant_persistence_payload,
     resolve_workspace_attachments,
 )
 from backend.modules.tools.registry import ToolRegistry
@@ -75,6 +81,69 @@ def _extract_attachment_items_from_message_context(raw: Optional[str]) -> List[D
 def _resolve_active_workspace() -> Path:
     config = config_loader.config
     return Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+
+
+def _normalize_session_model_overrides(raw_model: Dict[str, Any]) -> Dict[str, Any]:
+    """校验并标准化会话级模型覆盖配置。"""
+    config = config_loader.config
+    candidate = dict(raw_model)
+    api_key = candidate.pop("api_key", None)
+    api_base = candidate.pop("api_base", None)
+
+    if "api_mode" in candidate:
+        candidate["api_mode"] = _normalize_api_mode(candidate.get("api_mode"))
+
+    effective_model_data = config.model.model_dump()
+    for key, value in candidate.items():
+        if value is not None:
+            effective_model_data[key] = value
+
+    validated_model = ModelConfig(**effective_model_data)
+    validated_dump = validated_model.model_dump()
+
+    normalized_overrides: Dict[str, Any] = {}
+    for key in candidate:
+        normalized_overrides[key] = validated_dump[key]
+
+    if "api_key" in raw_model:
+        normalized_overrides["api_key"] = "" if api_key is None else str(api_key)
+    if "api_base" in raw_model:
+        normalized_overrides["api_base"] = "" if api_base is None else str(api_base).strip()
+
+    return normalized_overrides
+
+
+def _normalize_session_persona_overrides(raw_persona: Dict[str, Any]) -> Dict[str, Any]:
+    """校验并标准化会话级 persona 覆盖配置。"""
+    config = config_loader.config
+    candidate = dict(raw_persona)
+
+    if "heartbeat" in candidate and candidate["heartbeat"] is not None:
+        heartbeat_override = candidate["heartbeat"]
+        if not isinstance(heartbeat_override, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="persona_config.heartbeat must be an object",
+            )
+
+        base_heartbeat = config.persona.heartbeat.model_dump()
+        candidate["heartbeat"] = {
+            **base_heartbeat,
+            **{key: value for key, value in heartbeat_override.items() if value is not None},
+        }
+
+    effective_persona_data = config.persona.model_dump()
+    for key, value in candidate.items():
+        if value is not None:
+            effective_persona_data[key] = value
+
+    validated_persona = PersonaConfig(**effective_persona_data)
+    validated_dump = validated_persona.model_dump()
+
+    return {
+        key: validated_dump[key]
+        for key in candidate
+    }
 
 
 async def _require_session(db: AsyncSession, session_id: str):
@@ -109,6 +178,27 @@ def _resolve_attachment_inputs(attachments: Optional[List[str]], workspace: Path
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+async def _notify_webui_session_updated(session_id: str) -> None:
+    """通知 WebUI 指定会话和会话列表需要刷新。"""
+    try:
+        from backend.ws.connection import (
+            ServerMessage,
+            connection_manager,
+            send_dict_to_session,
+        )
+
+        await send_dict_to_session(
+            session_id,
+            {
+                "type": "history_updated",
+                "sessionId": session_id,
+            },
+        )
+        await connection_manager.broadcast(ServerMessage(type="sessions_updated"))
+    except Exception as exc:
+        logger.debug(f"Failed to notify WebUI for session {session_id}: {exc}")
 
 
 # ============================================================================
@@ -303,11 +393,6 @@ async def get_agent_loop(
             persona_config=runtime_config.persona_config,
         )
         
-        from backend.modules.agent.memory import ConversationSummarizer
-        summarizer = ConversationSummarizer(provider=provider, char_limit=2000)
-        
-        session_manager = SessionManager(db, summarizer=summarizer)
-        
         # 创建或获取全局 SubagentManager
         from backend.modules.agent.subagent import SubagentManager
         
@@ -346,7 +431,6 @@ async def get_agent_loop(
             workspace=workspace,
             tools=tools,
             context_builder=context_builder,
-            session_manager=session_manager,
             subagent_manager=_global_subagent_manager,
             model=runtime_config.model_name,
             max_iterations=runtime_config.max_iterations,
@@ -367,18 +451,6 @@ async def get_agent_loop(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initialize agent: {str(e)}"
         )
-
-
-# ============================================================================
-# Auto Memory Helpers
-# ============================================================================
-
-# 记录已自动总结的会话，避免重复触发（session_id -> 上次总结时的消息数）
-_auto_summarized_sessions: Dict[str, int] = {}
-
-# 自动总结阈值
-_AUTO_SUMMARIZE_MESSAGE_THRESHOLD = 30
-_AUTO_SUMMARIZE_CHAR_THRESHOLD = 15000
 
 
 def _resolve_explicit_external_tool_request(
@@ -457,85 +529,6 @@ def _inject_explicit_external_request_context(
     augmented_context = list(context)
     augmented_context.append({"role": "system", "content": system_message})
     return augmented_context
-
-
-async def _maybe_auto_summarize(
-    session_id: str,
-    session_manager: SessionManager,
-    agent_loop: AgentLoop,
-) -> None:
-    """检查会话是否达到自动总结阈值，如果是则后台触发记忆写入。
-    
-    触发条件（满足任一）：
-    - 会话消息数 >= 30 条
-    - 会话总字符数 >= 15000
-    
-    且距上次自动总结后新增了至少 30 条消息。
-    """
-    from backend.modules.agent.analyzer import MessageAnalyzer
-    from backend.modules.agent.prompts import CONVERSATION_TO_MEMORY_PROMPT
-    from pathlib import Path
-
-    messages = await session_manager.get_messages(session_id=session_id)
-    if not messages:
-        return
-
-    msg_count = len(messages)
-    
-    # 检查是否已经在这个消息数附近总结过
-    last_summarized_at = _auto_summarized_sessions.get(session_id, 0)
-    if msg_count - last_summarized_at < 30:
-        return
-
-    # 检查是否达到阈值
-    total_chars = sum(len(msg.content or "") for msg in messages)
-    if msg_count < _AUTO_SUMMARIZE_MESSAGE_THRESHOLD and total_chars < _AUTO_SUMMARIZE_CHAR_THRESHOLD:
-        return
-
-    logger.info(
-        f"Auto-summarize triggered for session {session_id}: "
-        f"{msg_count} messages, {total_chars} chars"
-    )
-
-    try:
-        analyzer = MessageAnalyzer()
-        message_dicts = [
-            {"role": msg.role, "content": msg.content}
-            for msg in messages
-        ]
-        formatted = analyzer.format_messages_for_summary(message_dicts, max_chars=4000)
-
-        prompt = CONVERSATION_TO_MEMORY_PROMPT.format(messages=formatted)
-
-        summary_content = ""
-        async for chunk in agent_loop.provider.chat_stream(
-            messages=[{"role": "user", "content": prompt}],
-            model=agent_loop.model,
-            temperature=0.3,
-        ):
-            if chunk.is_content and chunk.content:
-                summary_content += chunk.content
-
-        summary = summary_content.strip()
-
-        if "无需记录" in summary:
-            logger.info(f"Auto-summarize: no valuable content for session {session_id}")
-            _auto_summarized_sessions[session_id] = msg_count
-            return
-
-        config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-        memory_dir = workspace / "memory"
-        memory_dir.mkdir(parents=True, exist_ok=True)
-        memory = MemoryStore(memory_dir)
-
-        line_num = memory.append_entry(source="web-chat", content=summary)
-        _auto_summarized_sessions[session_id] = msg_count
-
-        logger.info(f"Auto-summarize saved at line {line_num} for session {session_id}")
-
-    except Exception as e:
-        logger.error(f"Auto-summarize failed for session {session_id}: {e}")
 
 
 # ============================================================================
@@ -640,9 +633,7 @@ async def send_message(
     try:
         normalized_message = _validate_message_or_attachments(request.message, request.attachments)
         session = await _require_session(db, request.session_id)
-        
-        # 获取会话总结
-        session_summary = session.summary
+        runtime_config = resolve_session_runtime_config(config_loader.config, session)
         workspace = _resolve_active_workspace()
         resolved_attachments = _resolve_attachment_inputs(request.attachments, workspace)
         attachment_items = build_attachment_items_from_workspace(resolved_attachments)
@@ -678,36 +669,14 @@ async def send_message(
             agent_loop,
             normalized_message,
         )
-        
-        # 从配置中获取最大历史消息条数
-        from backend.modules.config.loader import config_loader
-        config = config_loader.config
-        max_history = config.persona.max_history_messages
-        
-        # 滚动窗口溢出总结：截断前先将旧消息写入记忆
-        if max_history > 0:
-            try:
-                from pathlib import Path as _Path
-                _workspace = _Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-                _memory_dir = _workspace / "memory"
-                _memory_dir.mkdir(parents=True, exist_ok=True)
-                _overflow_memory = MemoryStore(_memory_dir)
-                await session_manager.summarize_overflow(
-                    session_id=request.session_id,
-                    max_history=max_history,
-                    provider=agent_loop.provider,
-                    model=agent_loop.model,
-                    memory_store=_overflow_memory,
-                )
-            except Exception as overflow_err:
-                logger.warning(f"Overflow summarize failed (non-fatal): {overflow_err}")
-        
-        # 获取带总结的会话历史(使用配置的最大条数限制)
-        # -1 表示不限制，传递 None 给 get_history_with_summary
-        context = await session_manager.get_history_with_summary(
+
+        context_service = ConversationContextService(db)
+        context_payload = await context_service.build_model_context(
             session_id=request.session_id,
-            limit=None if max_history == -1 else max_history
+            max_history_messages=runtime_config.persona_config.max_history_messages,
+            enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
         )
+        context = context_payload.history
         
         # 排除刚添加的用户消息(因为 process_message 会添加)
         if context and context[-1].get("role") == "user":
@@ -721,7 +690,6 @@ async def send_message(
             """SSE 事件流生成器"""
             assistant_content = ""
             assistant_reasoning = ""
-            original_build_messages = None
             
             try:
                 # 发送开始事件
@@ -775,19 +743,6 @@ async def send_message(
                     yield f"event: message\ndata: {json.dumps({'content': assistant_content})}\n\n"
                     await asyncio.sleep(0)
                 else:
-                    # 处理消息并流式输出（传入会话总结）
-                    if session_summary and agent_loop.context_builder:
-                        # 保存原始的 build_messages 方法
-                        original_build_messages = agent_loop.context_builder.build_messages
-
-                        # 创建包装方法来注入 session_summary
-                        def build_messages_with_summary(*args, **kwargs):
-                            kwargs['session_summary'] = session_summary
-                            return original_build_messages(*args, **kwargs)
-
-                        # 临时替换方法
-                        agent_loop.context_builder.build_messages = build_messages_with_summary
-
                     prefer_direct_workflow_result = False
                     team_finder = getattr(agent_loop.context_builder, "_find_mentioned_team", None)
                     if callable(team_finder):
@@ -808,6 +763,7 @@ async def send_message(
                         message=normalized_message,
                         session_id=request.session_id,
                         context=context_for_processing,
+                        session_summary=context_payload.session_summary,
                         media=attachment_paths,
                         channel="web-chat",
                         cancel_token=cancel_token,
@@ -837,12 +793,24 @@ async def send_message(
                         )
 
                 # 保存助手响应到数据库
-                persisted_content = assistant_content or assistant_reasoning
+                persisted_content, normalized_reasoning, used_reasoning_fallback = (
+                    normalize_assistant_persistence_payload(
+                        assistant_content,
+                        assistant_reasoning,
+                    )
+                )
                 assistant_message_context = (
-                    build_message_context(reasoning_content=assistant_reasoning)
+                    build_message_context(reasoning_content=normalized_reasoning)
                 )
 
                 if persisted_content:
+                    if used_reasoning_fallback:
+                        yield (
+                            "event: message\n"
+                            f"data: {json.dumps({'content': persisted_content}, ensure_ascii=False)}\n\n"
+                        )
+                        await asyncio.sleep(0)
+
                     assistant_message = await session_manager.add_message(
                         session_id=request.session_id,
                         role="assistant",
@@ -859,19 +827,20 @@ async def send_message(
                         )
                     except Exception as backfill_err:
                         logger.warning(f"Failed to backfill tool conversations for session {request.session_id}: {backfill_err}")
+
+                    schedule_context_maintenance(
+                        db_session_factory=get_db_session_factory(),
+                        session_id=request.session_id,
+                        max_history_messages=runtime_config.persona_config.max_history_messages,
+                        enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
+                        provider=agent_loop.provider,
+                        model=runtime_config.model_name,
+                        memory_store=getattr(agent_loop.context_builder, "memory", None),
+                        auto_summary_source="web-chat",
+                    )
                     
                     # 发送完成事件
                     yield f"event: done\ndata: {json.dumps({'message_id': str(assistant_message.id)})}\n\n"
-                    
-                    # 自动记忆检测：当会话消息达到阈值时，后台触发自动总结
-                    try:
-                        await _maybe_auto_summarize(
-                            session_id=request.session_id,
-                            session_manager=session_manager,
-                            agent_loop=agent_loop,
-                        )
-                    except Exception as auto_err:
-                        logger.warning(f"Auto-summarize check failed (non-fatal): {auto_err}")
                 else:
                     # 没有内容，发送空完成事件
                     yield f"event: done\ndata: {json.dumps({'message_id': None})}\n\n"
@@ -889,8 +858,6 @@ async def send_message(
                 }
                 yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
             finally:
-                if original_build_messages is not None and agent_loop.context_builder:
-                    agent_loop.context_builder.build_messages = original_build_messages
                 if agent_loop.tools:
                     agent_loop.tools.set_cancel_token(None)
         
@@ -1525,8 +1492,8 @@ async def get_session(
         HTTPException: 会话不存在
     """
     try:
-        session_manager = SessionManager(db)
-        session = await session_manager.get_session(session_id)
+        context_service = ConversationContextService(db)
+        session = await context_service.get_session(session_id)
         
         if session is None:
             raise HTTPException(
@@ -1574,28 +1541,20 @@ async def update_session_summary(
         HTTPException: 会话不存在
     """
     try:
-        from sqlalchemy import select
-        from backend.models.session import Session
-        
-        # 查找会话
-        result = await db.execute(
-            select(Session).where(Session.id == session_id)
+        context_service = ConversationContextService(db)
+        session = await context_service.update_session_summary(
+            session_id,
+            request.summary,
         )
-        session = result.scalar_one_or_none()
-        
+
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Session '{session_id}' not found"
             )
         
-        # 更新总结
-        session.summary = request.summary
-        session.summary_updated_at = datetime.now(timezone.utc)
-        
-        await db.commit()
-        
         logger.info(f"Updated summary for session {session_id}")
+        await _notify_webui_session_updated(session_id)
         
         return {
             "success": True,
@@ -1633,26 +1592,17 @@ async def delete_session_summary(
         HTTPException: 会话不存在
     """
     try:
-        from sqlalchemy import select
-        from backend.models.session import Session
-        
-        result = await db.execute(
-            select(Session).where(Session.id == session_id)
-        )
-        session = result.scalar_one_or_none()
-        
+        context_service = ConversationContextService(db)
+        session = await context_service.clear_session_summary(session_id)
+
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Session '{session_id}' not found"
             )
         
-        session.summary = None
-        session.summary_updated_at = None
-        
-        await db.commit()
-        
         logger.info(f"Deleted summary for session {session_id}")
+        await _notify_webui_session_updated(session_id)
         
         return {"success": True, "session_id": session_id}
         
@@ -1897,15 +1847,18 @@ async def update_session_config(
         
         # 更新配置
         if request.model is not None:
-            normalized_model = dict(request.model)
-            if "api_mode" in normalized_model:
-                normalized_model["api_mode"] = _normalize_api_mode(
-                    normalized_model.get("api_mode")
-                )
-            session.session_model_config = json.dumps(normalized_model)
+            normalized_model = _normalize_session_model_overrides(dict(request.model))
+            session.session_model_config = json.dumps(
+                normalized_model,
+                ensure_ascii=False,
+            )
         
         if request.persona is not None:
-            session.session_persona_config = json.dumps(request.persona)
+            normalized_persona = _normalize_session_persona_overrides(dict(request.persona))
+            session.session_persona_config = json.dumps(
+                normalized_persona,
+                ensure_ascii=False,
+            )
         
         session.use_custom_config = True
         session.updated_at = datetime.now(timezone.utc)
@@ -1914,6 +1867,7 @@ async def update_session_config(
         await db.refresh(session)
         
         logger.info(f"Updated config for session {session_id}")
+        await _notify_webui_session_updated(session_id)
         
         return {
             "success": True,
@@ -1971,6 +1925,7 @@ async def reset_session_config(
         await db.commit()
         
         logger.info(f"Reset config for session {session_id}")
+        await _notify_webui_session_updated(session_id)
         
         return {
             "success": True,

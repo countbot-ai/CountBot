@@ -14,7 +14,7 @@
 - 对话自动总结写入
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -238,78 +238,3 @@ class MemoryStore:
             "sources": sources,
             "date_range": date_range,
         }
-
-
-class ConversationSummarizer:
-    """对话总结器 - 使用 LLM 直接总结对话"""
-
-    def __init__(self, provider, char_limit: int = 2000):
-        self.provider = provider
-        self.char_limit = char_limit
-
-    async def summarize_conversation(
-        self,
-        messages: List[dict],
-        previous_summary: str = "",
-    ) -> str:
-        """总结对话历史
-
-        Args:
-            messages: 要总结的消息列表
-            previous_summary: 之前的总结
-
-        Returns:
-            str: 生成的总结文本
-        """
-        from backend.modules.agent.prompts import (
-            CONVERSATION_TO_MEMORY_PROMPT,
-            RECURSIVE_SUMMARY_PROMPT,
-        )
-        from backend.modules.agent.analyzer import MessageAnalyzer
-
-        try:
-            analyzer = MessageAnalyzer()
-            formatted = analyzer.format_messages_for_summary(messages, max_chars=self.char_limit * 2)
-
-            if previous_summary:
-                prompt = RECURSIVE_SUMMARY_PROMPT.format(
-                    previous_summary=previous_summary,
-                    past_messages=formatted,
-                    char_limit=self.char_limit,
-                )
-            else:
-                prompt = CONVERSATION_TO_MEMORY_PROMPT.format(messages=formatted)
-
-            # 使用 chat_stream 收集完整响应
-            result_parts = []
-            async for chunk in self.provider.chat_stream(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            ):
-                if chunk.is_content and chunk.content:
-                    result_parts.append(chunk.content)
-
-            return "".join(result_parts).strip()
-
-        except Exception as e:
-            logger.error(f"Failed to summarize conversation: {e}")
-            return f"[对话 {len(messages)} 条消息]"
-
-    def should_summarize(
-        self,
-        messages: List[dict],
-        message_threshold: int = 20,
-        char_threshold: int = 10000,
-    ) -> bool:
-        """判断是否需要总结（委托给 MessageAnalyzer）"""
-        from backend.modules.agent.analyzer import MessageAnalyzer
-        return MessageAnalyzer().should_summarize(messages, message_threshold, char_threshold)
-
-    def get_messages_to_keep(
-        self,
-        messages: List[dict],
-        keep_recent: int = 10,
-    ) -> Tuple[List[dict], List[dict]]:
-        """分割消息（委托给 MessageAnalyzer）"""
-        from backend.modules.agent.analyzer import MessageAnalyzer
-        return MessageAnalyzer().split_messages(messages, keep_recent)
