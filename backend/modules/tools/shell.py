@@ -86,12 +86,27 @@ class ExecTool(Tool):
             allow_patterns: 允许模式（白名单），设置后仅允许匹配的命令
             restrict_to_workspace: 是否限制在工作空间内，默认 True
         """
+        normalized_deny_patterns = [
+            str(pattern).strip()
+            for pattern in (deny_patterns or DANGEROUS_PATTERNS)
+            if str(pattern or "").strip()
+        ]
+        normalized_allow_patterns = (
+            [
+                str(pattern).strip()
+                for pattern in allow_patterns
+                if str(pattern or "").strip()
+            ]
+            if allow_patterns is not None
+            else None
+        )
+
         self.workspace = workspace.resolve()
         self.timeout = timeout
         self.max_output_length = max_output_length
         self.allow_dangerous = allow_dangerous
-        self.deny_patterns = deny_patterns or DANGEROUS_PATTERNS
-        self.allow_patterns = allow_patterns or []
+        self.deny_patterns = normalized_deny_patterns
+        self.allow_patterns = normalized_allow_patterns
         self.restrict_to_workspace = restrict_to_workspace
         
         logger.debug(
@@ -513,16 +528,44 @@ class ExecTool(Tool):
         """
         cmd = command.strip()
         lower = cmd.lower()
+
+        def matches_pattern(pattern: str) -> tuple[bool, Optional[str]]:
+            try:
+                return bool(re.search(pattern, lower)), None
+            except re.error as exc:
+                logger.warning(f"Invalid safety regex pattern ignored during exec guard: {pattern} ({exc})")
+                return False, f"{pattern}: {exc}"
         
         # 白名单检查
-        if self.allow_patterns:
-            if not any(re.search(p, lower) for p in self.allow_patterns):
+        if self.allow_patterns is not None:
+            if not self.allow_patterns:
+                return "Error: Command blocked by safety guard (allowlist is empty)"
+            allowlist_errors: List[str] = []
+            for pattern in self.allow_patterns:
+                matched, error = matches_pattern(pattern)
+                if error:
+                    allowlist_errors.append(error)
+                    continue
+                if matched:
+                    break
+            else:
+                if allowlist_errors:
+                    return (
+                        "Error: Command blocked by safety guard "
+                        f"(invalid allowlist regex: {allowlist_errors[0]})"
+                    )
                 return "Error: Command blocked by safety guard (not in allowlist)"
         
         # 危险模式检查
         if not self.allow_dangerous:
             for pattern in self.deny_patterns:
-                if re.search(pattern, lower):
+                matched, error = matches_pattern(pattern)
+                if error:
+                    return (
+                        "Error: Command blocked by safety guard "
+                        f"(invalid denylist regex: {error})"
+                    )
+                if matched:
                     return "Error: Command blocked by safety guard (dangerous pattern detected)"
         
         # 工作空间路径限制

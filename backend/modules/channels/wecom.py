@@ -10,7 +10,7 @@ import hashlib
 import json
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Dict, List, Callable
 import threading
@@ -70,10 +70,12 @@ class StreamState:
     stream_id: str
     accumulated_text: str = ""
     reasoning_text: str = ""
+    progress_lines: List[str] = field(default_factory=list)
     last_send_time: float = 0
     message_count: int = 0
     finished: bool = False
     request_id: str = ""
+
 @dataclass
 class LongConnRequest:
     """长连接请求帧"""
@@ -136,6 +138,123 @@ def build_stream_content(reasoning_text: str = "", visible_text: str = "", finis
     think_block = f"<think>{normalized_reasoning}</think>" if should_close_think else f"<think>{normalized_reasoning}"
     
     return f"{think_block}\n{normalized_visible}" if normalized_visible else think_block
+
+
+_THINK_TAG_RE = re.compile(r"<\s*(/?)\s*(?:think(?:ing)?|thought)\b[^<>]*>", re.IGNORECASE)
+_FAST_COMMAND_EXACT = {
+    "/new",
+    "/newsession",
+    "/new_session",
+    "/n",
+    "/list",
+    "/sessions",
+    "/list_sessions",
+    "/l",
+    "/ls",
+    "/all",
+    "/all_sessions",
+    "/al",
+    "/clear",
+    "/clear_history",
+    "/c",
+    "/stop",
+    "/cancel",
+    "/help",
+    "/h",
+    "/?",
+    "/provider",
+    "/m",
+    "/personality",
+    "/p",
+    "/team",
+}
+_FAST_COMMAND_PREFIXES = (
+    "/switch ",
+    "/s ",
+    "/route",
+    "/rt",
+    "/coder",
+    "/cdr",
+    "/provider ",
+    "/m ",
+    "/personality ",
+    "/p ",
+)
+
+
+def normalize_thinking_tags(text: str) -> str:
+    """Normalize think tag variants to the canonical WeCom form."""
+    if not text:
+        return ""
+
+    normalized = _THINK_TAG_RE.sub(
+        lambda match: "</think>" if match.group(1) else "<think>",
+        str(text),
+    )
+    return normalized.strip()
+
+
+def is_fast_command_text(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized in _FAST_COMMAND_EXACT:
+        return True
+    return normalized.startswith(_FAST_COMMAND_PREFIXES)
+
+
+def truncate_progress_text(value: Any, limit: int = 80) -> str:
+    text = str(value or "").strip().replace("\n", " ")
+    if len(text) > limit:
+        return text[: limit - 3] + "..."
+    return text
+
+
+def build_tool_progress_line(event_type: str, payload: Dict[str, Any]) -> Optional[str]:
+    if event_type == "tool_call":
+        tool_name = truncate_progress_text(payload.get("tool_name") or "unknown")
+        return f"调用工具：`{tool_name}`"
+    if event_type == "tool_result":
+        tool_name = truncate_progress_text(payload.get("tool_name") or "unknown")
+        return f"工具完成：`{tool_name}`"
+    if event_type == "tool_error":
+        tool_name = truncate_progress_text(payload.get("tool_name") or "unknown")
+        return f"工具失败：`{tool_name}`"
+    if event_type == "tool_progress":
+        tool_name = truncate_progress_text(payload.get("tool_name") or "unknown")
+        message = truncate_progress_text(payload.get("message") or "仍在运行")
+        return f"`{tool_name}` {message}"
+    if event_type == "workflow_agent_start":
+        label = truncate_progress_text(
+            payload.get("agent_label") or payload.get("agent_id") or "阶段"
+        )
+        return f"阶段开始：`{label}`"
+    if event_type == "workflow_agent_tool_call":
+        label = truncate_progress_text(
+            payload.get("agent_label") or payload.get("agent_id") or "阶段"
+        )
+        tool_name = truncate_progress_text(payload.get("tool") or "unknown")
+        return f"`{label}` 调用工具：`{tool_name}`"
+    if event_type == "workflow_agent_complete":
+        label = truncate_progress_text(
+            payload.get("agent_label") or payload.get("agent_id") or "阶段"
+        )
+        return f"阶段完成：`{label}`"
+    return None
+
+
+def render_progress_text(lines: List[str]) -> str:
+    body = "\n".join(f"- {line}" for line in lines[-8:])
+    return f"处理中...\n\n{body}" if body else ""
+
+
+def resolve_stream_visible_text(state: StreamState, *, include_progress: bool) -> str:
+    visible_text = str(state.accumulated_text or "").strip()
+    if visible_text:
+        return visible_text
+    if include_progress:
+        return render_progress_text(state.progress_lines)
+    return ""
 
 
 MAX_REPLY_MSG_ITEMS = 10
@@ -364,6 +483,26 @@ class LongConnBot:
             )
 
         return msg_items
+
+    def prepare_reply_payload(
+        self,
+        text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        metadata = metadata or {}
+        content_to_send, directive_media_paths = self._split_reply_media_from_text(text)
+        pending_media_paths = metadata.get("_wecom_pending_media_paths", []) or []
+        pending_media_text = str(metadata.get("_wecom_pending_media_text", "") or "").strip()
+
+        reply_media_paths = [*pending_media_paths, *directive_media_paths]
+        msg_items = self._build_reply_image_msg_items(reply_media_paths)
+
+        if pending_media_text and not content_to_send:
+            content_to_send = pending_media_text
+        elif not content_to_send and msg_items:
+            content_to_send = "已发送图片，请查看。"
+
+        return content_to_send, msg_items
 
     async def start(self, ctx: Optional[asyncio.Event] = None) -> None:
         """启动长连接机器人"""
@@ -610,12 +749,73 @@ class LongConnBot:
             request_id=request_id
         )
         self.set_stream_state(message_id, stream_state)
+        metadata = frame.body.copy()
+        metadata["sender_name"] = sender_name
+        metadata["_wecom_stream_message_id"] = message_id
+        metadata["_wecom_frame_headers"] = dict(frame.headers or {})
         
         # 发送思考提示
-        await self.send_thinking_reply(frame, stream_id)
+        if not is_fast_command_text(content):
+            await self.send_thinking_reply(frame, stream_id)
         
         if self.handler:
             try:
+                async def push_progress_line(line: str) -> None:
+                    if not line:
+                        return
+
+                    state = self.get_stream_state(message_id)
+                    if not state or state.finished:
+                        return
+
+                    if state.progress_lines and state.progress_lines[-1] == line:
+                        return
+
+                    state.progress_lines.append(line)
+                    if len(state.progress_lines) > 8:
+                        state.progress_lines = state.progress_lines[-8:]
+
+                    if state.accumulated_text.strip():
+                        return
+
+                    if not self.can_send_intermediate(state):
+                        return
+
+                    if self.should_throttle_update(state):
+                        return
+
+                    content_to_send = build_stream_content(
+                        reasoning_text=state.reasoning_text,
+                        visible_text=resolve_stream_visible_text(state, include_progress=True),
+                        finish=False,
+                    )
+                    await self.send_stream_reply(
+                        frame,
+                        state.stream_id,
+                        content_to_send,
+                        finish=False,
+                    )
+                    state.last_send_time = time.time() * 1000
+                    state.message_count += 1
+
+                async def tool_event_handler(event_type: str, payload: Dict[str, Any]) -> None:
+                    line = build_tool_progress_line(event_type, payload or {})
+                    if line:
+                        await push_progress_line(line)
+
+                async def abort_stream_handler() -> None:
+                    state = self.get_stream_state(message_id)
+                    if not state or state.finished:
+                        return
+                    state.finished = True
+                    await self.send_stream_reply(
+                        frame,
+                        state.stream_id,
+                        "已停止生成。",
+                        finish=True,
+                    )
+                    self.delete_stream_state(message_id)
+
                 async def stream_handler(text_chunk: str, is_final: bool = False, is_reasoning: bool = False):
                     """流式处理器：累积文本并发送到企业微信"""
                     state = self.get_stream_state(message_id)
@@ -635,19 +835,12 @@ class LongConnBot:
                     if is_final:
                         content_to_send = build_stream_content(
                             reasoning_text=state.reasoning_text,
-                            visible_text=state.accumulated_text,
+                            visible_text=resolve_stream_visible_text(state, include_progress=False),
                             finish=True
                         )
-                        content_to_send, directive_media_paths = self._split_reply_media_from_text(content_to_send)
-                        pending_media_paths = metadata.pop("_wecom_pending_media_paths", [])
-                        pending_media_text = str(metadata.pop("_wecom_pending_media_text", "") or "").strip()
-                        reply_media_paths = [*pending_media_paths, *directive_media_paths]
-                        msg_items = self._build_reply_image_msg_items(reply_media_paths)
-
-                        if pending_media_text and not content_to_send:
-                            content_to_send = pending_media_text
-                        elif not content_to_send and msg_items:
-                            content_to_send = "已发送图片，请查看。"
+                        content_to_send, msg_items = self.prepare_reply_payload(content_to_send, metadata)
+                        if not content_to_send and state.progress_lines and not msg_items:
+                            content_to_send = "处理完成。"
 
                         logger.info(
                             f"[LongConnBot] Final reply: {len(content_to_send)} chars, "
@@ -655,7 +848,7 @@ class LongConnBot:
                         )
                         await self.send_stream_reply(
                             frame,
-                            stream_id,
+                            state.stream_id,
                             content_to_send,
                             finish=True,
                             msg_items=msg_items or None,
@@ -675,13 +868,13 @@ class LongConnBot:
                     # 发送中间更新
                     content_to_send = build_stream_content(
                         reasoning_text=state.reasoning_text,
-                        visible_text=state.accumulated_text,
+                        visible_text=resolve_stream_visible_text(state, include_progress=True),
                         finish=False
                     )
                     
                     await self.send_stream_reply(
                         frame,
-                        stream_id,
+                        state.stream_id,
                         content_to_send,
                         finish=False,
                     )
@@ -689,9 +882,9 @@ class LongConnBot:
                     state.message_count += 1
                 
                 # 通过 metadata 传递流式处理器
-                metadata = frame.body.copy()
-                metadata["sender_name"] = sender_name
                 metadata['_stream_handler'] = stream_handler
+                metadata["_tool_event_handler"] = tool_event_handler
+                metadata["_stream_abort_handler"] = abort_stream_handler
                 
                 await self.handler(sender_id, chat_id, content, metadata)
                 
@@ -699,7 +892,12 @@ class LongConnBot:
                 logger.error(f"[LongConnBot] Handler error: {e}")
                 state = self.get_stream_state(message_id)
                 if state:
-                    await self.send_stream_reply(frame, stream_id, "处理消息时发生错误，请稍后重试。", finish=True)
+                    await self.send_stream_reply(
+                        frame,
+                        state.stream_id,
+                        "处理消息时发生错误，请稍后重试。",
+                        finish=True,
+                    )
                     self.delete_stream_state(message_id)
     async def _handle_event_callback(self, frame: LongConnFrame) -> None:
         """处理事件回调"""
@@ -1002,6 +1200,41 @@ class WeComChannel(BaseChannel):
             if stream_handler:
                 await stream_handler("处理消息时发生错误，请稍后重试。", is_final=True)
             return None
+
+    async def _maybe_send_via_active_stream(
+        self,
+        msg: OutboundMessage,
+        text: str,
+    ) -> bool:
+        if not self.bot:
+            return False
+
+        metadata = msg.metadata or {}
+        message_id = str(metadata.get("_wecom_stream_message_id") or "").strip()
+        frame_headers = metadata.get("_wecom_frame_headers") or {}
+        req_id = str(frame_headers.get("req_id") or "").strip()
+        if not message_id or not req_id:
+            return False
+
+        state = self.bot.get_stream_state(message_id)
+        if not state or state.finished:
+            return False
+
+        content_to_send, msg_items = self.bot.prepare_reply_payload(text, metadata)
+        if not content_to_send and not msg_items:
+            return False
+
+        await self.bot.send_stream_reply(
+            LongConnFrame(headers=dict(frame_headers)),
+            state.stream_id,
+            content_to_send,
+            finish=True,
+            msg_items=msg_items or None,
+        )
+        state.finished = True
+        self.bot.delete_stream_state(message_id)
+        logger.debug(f"[WeCom] Reused passive stream for outbound reply: {message_id}")
+        return True
     
     async def send(self, msg: OutboundMessage) -> None:
         """发送消息"""
@@ -1017,7 +1250,9 @@ class WeComChannel(BaseChannel):
                     "当前仅支持接收入站附件，以及在本轮被动回复中附带图片。"
                 )
             if text:
-                await self.bot.send_markdown(msg.chat_id, text)
+                reused_stream = await self._maybe_send_via_active_stream(msg, text)
+                if not reused_stream:
+                    await self.bot.send_markdown(msg.chat_id, text)
             logger.debug(f"[WeCom] → Sent to {msg.chat_id}")
         except Exception as e:
             logger.error(f"[WeCom] Failed to send message: {e}")

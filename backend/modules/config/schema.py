@@ -103,7 +103,16 @@ class PersonaConfig(BaseModel):
     output_language: str = Field(default="中文", description="AI默认输出语言")
     personality: str = Field(default="grumpy", description="AI的性格类型")
     custom_personality: str = Field(default="", description="自定义性格描述")
-    max_history_messages: int = Field(default=100, ge=-1, le=500, description="最大对话历史条数，-1表示不限")
+    max_history_messages: int = Field(
+        default=0,
+        ge=-1,
+        le=500,
+        description="最大对话历史条数，0表示不限且关闭短期上下文总结，-1为旧版兼容的不限制",
+    )
+    enable_short_context_summary: bool = Field(
+        default=False,
+        description="是否启用短期上下文摘要缓存；默认关闭，关闭后即使限制历史条数，也只发送最近窗口原始消息",
+    )
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig, description="主动问候配置")
 
 

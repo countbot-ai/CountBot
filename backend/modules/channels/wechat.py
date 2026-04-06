@@ -16,6 +16,7 @@ import base64
 import hashlib
 import html
 import json
+import os
 import random
 import re
 import secrets
@@ -47,6 +48,9 @@ DEFAULT_API_TIMEOUT_MS = 15_000
 DEFAULT_LIGHT_API_TIMEOUT_MS = 10_000
 LOGIN_TTL_MS = 5 * 60_000
 SESSION_PAUSE_DURATION_MS = 60 * 60_000
+MAX_CONSECUTIVE_FAILURES = 3
+BACKOFF_DELAY_MS = 30_000
+RETRY_DELAY_MS = 2_000
 CONFIG_CACHE_TTL_MS = 24 * 60 * 60_000
 CONFIG_CACHE_INITIAL_RETRY_MS = 2_000
 CONFIG_CACHE_MAX_RETRY_MS = 60 * 60_000
@@ -126,6 +130,14 @@ _MARKDOWN_STRIKE_RE = re.compile(r"~~(.*?)~~", re.DOTALL)
 _MARKDOWN_HR_RE = re.compile(r"^\s{0,3}([-*_]\s*){3,}$", re.MULTILINE)
 _MARKDOWN_HTML_TAG_RE = re.compile(r"<[^>]+>")
 _MARKDOWN_MULTI_NEWLINES_RE = re.compile(r"\n{3,}")
+_REASONING_HEADING_RE = re.compile(
+    r"^\s*##\s*(?:思考过程|thinking|reasoning)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_VISIBLE_REPLY_HEADING_RE = re.compile(
+    r"^\s*##\s*(?:回复|reply|final\s+reply|answer)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class WeChatApiError(RuntimeError):
@@ -138,10 +150,11 @@ class WeChatLoginSession:
 
     session_key: str
     account_id: str
-    base_url: str
+    requested_base_url: str
     qrcode: str
     qrcode_url: str
     started_at: float
+    current_api_base_url: str = DEFAULT_BASE_URL
     config_snapshot: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -162,6 +175,23 @@ class WeChatConfigCacheEntry:
 def _ensure_trailing_slash(url: str) -> str:
     normalized = str(url or "").strip() or DEFAULT_BASE_URL
     return normalized if normalized.endswith("/") else f"{normalized}/"
+
+
+def _build_common_headers() -> Dict[str, str]:
+    headers: Dict[str, str] = {}
+    app_id = os.getenv("COUNTBOT_WECHAT_ILINK_APP_ID", "").strip()
+    client_version = (
+        os.getenv("COUNTBOT_WECHAT_ILINK_APP_CLIENT_VERSION", "").strip() or "1"
+    )
+    route_tag = os.getenv("COUNTBOT_WECHAT_ROUTE_TAG", "").strip()
+
+    if app_id:
+        headers["iLink-App-Id"] = app_id
+    if client_version:
+        headers["iLink-App-ClientVersion"] = client_version
+    if route_tag:
+        headers["SKRouteTag"] = route_tag
+    return headers
 
 
 def pause_wechat_session(account_id: str) -> None:
@@ -232,6 +262,7 @@ def _build_headers(body: str, token: Optional[str] = None) -> Dict[str, str]:
         "AuthorizationType": "ilink_bot_token",
         "Content-Length": str(len(body.encode("utf-8"))),
         "X-WECHAT-UIN": _random_wechat_uin(),
+        **_build_common_headers(),
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -271,7 +302,8 @@ async def _api_get_json(
     timeout_ms: int = DEFAULT_LIGHT_API_TIMEOUT_MS,
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    response = await client.get(url, headers=headers or {}, timeout=timeout_ms / 1000)
+    merged_headers = {**_build_common_headers(), **(headers or {})}
+    response = await client.get(url, headers=merged_headers, timeout=timeout_ms / 1000)
     response.raise_for_status()
     data = response.json()
     if not isinstance(data, dict):
@@ -452,9 +484,14 @@ async def _upload_buffer_to_cdn(
     filekey: str,
     cdn_base_url: str,
     aes_key: bytes,
+    upload_full_url: str = "",
 ) -> str:
     ciphertext = _aes_ecb_encrypt(plaintext, aes_key)
-    url = _build_cdn_upload_url(cdn_base_url, upload_param, filekey)
+    url = str(upload_full_url or "").strip() or _build_cdn_upload_url(
+        cdn_base_url,
+        upload_param,
+        filekey,
+    )
     last_error: Optional[Exception] = None
     for _ in range(3):
         try:
@@ -482,8 +519,12 @@ async def _download_plain_cdn_buffer(
     *,
     cdn_base_url: str,
     encrypted_query_param: str,
+    full_url: str = "",
 ) -> bytes:
-    url = _build_cdn_download_url(cdn_base_url, encrypted_query_param)
+    url = str(full_url or "").strip() or _build_cdn_download_url(
+        cdn_base_url,
+        encrypted_query_param,
+    )
     response = await client.get(url, timeout=DEFAULT_API_TIMEOUT_MS / 1000)
     response.raise_for_status()
     return response.content
@@ -495,11 +536,13 @@ async def _download_and_decrypt_cdn_buffer(
     cdn_base_url: str,
     encrypted_query_param: str,
     aes_key_base64: str,
+    full_url: str = "",
 ) -> bytes:
     encrypted = await _download_plain_cdn_buffer(
         client,
         cdn_base_url=cdn_base_url,
         encrypted_query_param=encrypted_query_param,
+        full_url=full_url,
     )
     return _aes_ecb_decrypt(encrypted, _parse_inbound_aes_key(aes_key_base64))
 
@@ -547,6 +590,23 @@ def _markdown_to_plain_text(text: str) -> str:
     return result.strip()
 
 
+def _extract_visible_reply_from_reasoning_bundle(text: str) -> str:
+    raw = str(text or "")
+    stripped = raw.strip()
+    if not stripped:
+        return ""
+
+    heading = _REASONING_HEADING_RE.search(stripped)
+    if not heading or heading.start() != 0:
+        return stripped
+
+    visible_match = _VISIBLE_REPLY_HEADING_RE.search(stripped)
+    if not visible_match:
+        return ""
+
+    return stripped[visible_match.end():].strip()
+
+
 def _mime_from_path(file_path: str) -> str:
     suffix = Path(file_path).suffix.lower()
     return _MIME_BY_EXT.get(suffix, "application/octet-stream")
@@ -576,6 +636,56 @@ def _load_sync_buffer(account_id: str) -> str:
         return ""
 
 
+def _load_context_tokens(account_id: str) -> OrderedDict[str, str]:
+    state_dir = get_channel_temp_dir("wechat", "state")
+    path = state_dir / f"context_{account_id}.json"
+    restored: OrderedDict[str, str] = OrderedDict()
+    if not path.exists():
+        return restored
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[wechat] failed to load context tokens for {account_id}: {exc}")
+        return restored
+
+    if isinstance(raw, dict):
+        items = raw.items()
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        return restored
+
+    for entry in items:
+        if isinstance(entry, tuple) and len(entry) == 2:
+            chat_id, token = entry
+        elif isinstance(entry, list) and len(entry) == 2:
+            chat_id, token = entry
+        else:
+            continue
+        chat_key = str(chat_id or "").strip()
+        token_value = str(token or "").strip()
+        if not chat_key or not token_value:
+            continue
+        restored[chat_key] = token_value
+
+    while len(restored) > 500:
+        restored.popitem(last=False)
+    return restored
+
+
+def _save_context_tokens(account_id: str, tokens: "OrderedDict[str, str]") -> None:
+    state_dir = get_channel_temp_dir("wechat", "state")
+    path = state_dir / f"context_{account_id}.json"
+    try:
+        path.write_text(
+            json.dumps(dict(tokens), ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[wechat] failed to save context tokens for {account_id}: {exc}")
+
+
 def _save_sync_buffer(account_id: str, value: str) -> None:
     state_dir = get_channel_temp_dir("wechat", "state")
     path = state_dir / f"sync_{account_id}.txt"
@@ -595,6 +705,32 @@ def _purge_expired_login_sessions() -> None:
         _ACTIVE_LOGIN_SESSIONS.pop(key, None)
 
 
+async def _fetch_wechat_login_qrcode(
+    client: httpx.AsyncClient,
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    bot_type: str = "3",
+) -> Dict[str, str]:
+    url = (
+        f"{_ensure_trailing_slash(base_url)}"
+        f"ilink/bot/get_bot_qrcode?bot_type={quote(bot_type)}"
+    )
+    data = await _api_get_json(client, url=url, timeout_ms=5_000)
+    if int(data.get("errcode") or 0) or int(data.get("ret") or 0):
+        _raise_if_api_error("ilink/bot/get_bot_qrcode", data)
+
+    qrcode = str(data.get("qrcode") or "").strip()
+    qrcode_url = str(
+        data.get("qrcode_url") or data.get("qrcode_img_content") or ""
+    ).strip()
+    if not qrcode or not qrcode_url:
+        raise WeChatApiError("WeChat login QR code fetch failed")
+    return {
+        "qrcode": qrcode,
+        "qrcode_url": qrcode_url,
+    }
+
+
 async def start_wechat_qr_login(
     *,
     account_id: str,
@@ -603,30 +739,23 @@ async def start_wechat_qr_login(
 ) -> Dict[str, Any]:
     _purge_expired_login_sessions()
     session_key = str(uuid.uuid4())
-    base = _ensure_trailing_slash(base_url)
-    url = f"{base}ilink/bot/get_bot_qrcode?bot_type=3"
-
     async with httpx.AsyncClient(follow_redirects=True) as client:
-        data = await _api_get_json(client, url=url)
-
-    qrcode = str(data.get("qrcode") or "").strip()
-    qrcode_url = str(data.get("qrcode_img_content") or "").strip()
-    if not qrcode or not qrcode_url:
-        raise WeChatApiError("微信登录二维码获取失败")
+        qr_data = await _fetch_wechat_login_qrcode(client, base_url=DEFAULT_BASE_URL)
 
     _ACTIVE_LOGIN_SESSIONS[session_key] = WeChatLoginSession(
         session_key=session_key,
         account_id=account_id,
-        base_url=base_url,
-        qrcode=qrcode,
-        qrcode_url=qrcode_url,
+        requested_base_url=str(base_url or "").strip() or DEFAULT_BASE_URL,
+        qrcode=qr_data["qrcode"],
+        qrcode_url=qr_data["qrcode_url"],
         started_at=time.time(),
+        current_api_base_url=DEFAULT_BASE_URL,
         config_snapshot=dict(config_snapshot or {}),
     )
 
     return {
         "session_key": session_key,
-        "qrcode_url": qrcode_url,
+        "qrcode_url": qr_data["qrcode_url"],
         "account_id": account_id,
     }
 
@@ -635,11 +764,15 @@ async def poll_wechat_qr_login(session_key: str) -> Dict[str, Any]:
     _purge_expired_login_sessions()
     session = _ACTIVE_LOGIN_SESSIONS.get(session_key)
     if not session:
-        return {"success": False, "status": "expired", "message": "二维码已过期，请重新扫码登录"}
+        return {
+            "success": False,
+            "status": "expired",
+            "message": "二维码已过期，请重新扫码登录",
+        }
 
-    base = _ensure_trailing_slash(session.base_url)
+    base = _ensure_trailing_slash(session.current_api_base_url or DEFAULT_BASE_URL)
     url = f"{base}ilink/bot/get_qrcode_status?qrcode={quote(session.qrcode)}"
-    headers = {"iLink-App-ClientVersion": "1"}
+    headers = _build_common_headers()
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
@@ -656,9 +789,48 @@ async def poll_wechat_qr_login(session_key: str) -> Dict[str, Any]:
                 "message": "等待扫码确认",
                 "session_key": session_key,
             }
+        except httpx.HTTPStatusError as exc:
+            if exc.response is not None and exc.response.status_code in {502, 503, 504, 522, 524}:
+                return {
+                    "success": True,
+                    "status": "wait",
+                    "message": "等待扫码确认",
+                    "session_key": session_key,
+                }
+            raise
+        except httpx.RequestError:
+            return {
+                "success": True,
+                "status": "wait",
+                "message": "等待扫码确认",
+                "session_key": session_key,
+            }
 
     status = str(data.get("status") or "wait").strip().lower()
+    if status == "scaned_but_redirect":
+        redirect_host = str(data.get("redirect_host") or "").strip()
+        if redirect_host:
+            if redirect_host.startswith("http://") or redirect_host.startswith("https://"):
+                session.current_api_base_url = redirect_host
+            else:
+                session.current_api_base_url = f"https://{redirect_host}"
+        return {
+            "success": True,
+            "status": "scaned",
+            "message": "已扫码，请在微信里确认授权",
+            "session_key": session_key,
+        }
+
     if status == "confirmed":
+        token = str(data.get("bot_token") or "").strip()
+        login_bot_id = str(data.get("ilink_bot_id") or "").strip()
+        if not login_bot_id:
+            _ACTIVE_LOGIN_SESSIONS.pop(session_key, None)
+            return {
+                "success": False,
+                "status": "error",
+                "message": "微信登录已确认，但未返回 bot 标识，请重新扫码登录",
+            }
         _ACTIVE_LOGIN_SESSIONS.pop(session_key, None)
         return {
             "success": True,
@@ -668,9 +840,13 @@ async def poll_wechat_qr_login(session_key: str) -> Dict[str, Any]:
             "account_id": session.account_id,
             "config_snapshot": session.config_snapshot,
             "result": {
-                "token": str(data.get("bot_token") or "").strip(),
-                "base_url": str(data.get("baseurl") or session.base_url or DEFAULT_BASE_URL).strip(),
-                "login_bot_id": str(data.get("ilink_bot_id") or "").strip(),
+                "token": token,
+                "base_url": str(
+                    data.get("baseurl")
+                    or session.requested_base_url
+                    or DEFAULT_BASE_URL
+                ).strip(),
+                "login_bot_id": login_bot_id,
                 "login_user_id": str(data.get("ilink_user_id") or "").strip(),
             },
         }
@@ -692,6 +868,52 @@ async def poll_wechat_qr_login(session_key: str) -> Dict[str, Any]:
     }
 
 
+def _is_media_item_type(item_type: int) -> bool:
+    return item_type in {
+        MESSAGE_ITEM_IMAGE,
+        MESSAGE_ITEM_VOICE,
+        MESSAGE_ITEM_FILE,
+        MESSAGE_ITEM_VIDEO,
+    }
+
+
+def _item_has_downloadable_media(item: Dict[str, Any]) -> bool:
+    item_type = int(item.get("type") or 0)
+    media: Dict[str, Any]
+    if item_type == MESSAGE_ITEM_IMAGE:
+        media = (item.get("image_item") or {}).get("media") or {}
+    elif item_type == MESSAGE_ITEM_FILE:
+        media = (item.get("file_item") or {}).get("media") or {}
+    elif item_type == MESSAGE_ITEM_VIDEO:
+        media = (item.get("video_item") or {}).get("media") or {}
+    elif item_type == MESSAGE_ITEM_VOICE:
+        voice_item = item.get("voice_item") or {}
+        if str(voice_item.get("text") or "").strip():
+            return False
+        media = voice_item.get("media") or {}
+    else:
+        return False
+
+    encrypted_query_param = str(media.get("encrypt_query_param") or "").strip()
+    full_url = str(media.get("full_url") or "").strip()
+    return bool(encrypted_query_param or full_url)
+
+
+def _extract_ref_media_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if int(item.get("type") or 0) != MESSAGE_ITEM_TEXT:
+        return None
+
+    ref_msg = item.get("ref_msg") or {}
+    ref_item = ref_msg.get("message_item")
+    if not isinstance(ref_item, dict):
+        return None
+    if not _is_media_item_type(int(ref_item.get("type") or 0)):
+        return None
+    if not _item_has_downloadable_media(ref_item):
+        return None
+    return ref_item
+
+
 def _extract_text_from_item_list(item_list: List[Dict[str, Any]]) -> str:
     for item in item_list:
         item_type = int(item.get("type") or 0)
@@ -704,6 +926,8 @@ def _extract_text_from_item_list(item_list: List[Dict[str, Any]]) -> str:
                 return text
             title = str(ref_msg.get("title") or "").strip()
             ref_item = ref_msg.get("message_item")
+            if isinstance(ref_item, dict) and _is_media_item_type(int(ref_item.get("type") or 0)):
+                return text
             ref_text = ""
             if isinstance(ref_item, dict):
                 ref_text = _extract_text_from_item_list([ref_item])
@@ -759,6 +983,7 @@ class WeChatChannel(BaseChannel):
         if self._running:
             return
 
+        self._context_tokens = _load_context_tokens(self.account_id)
         self._http = httpx.AsyncClient(follow_redirects=True)
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
@@ -805,7 +1030,10 @@ class WeChatChannel(BaseChannel):
             if not context_token:
                 raise WeChatApiError("当前用户没有可用的微信会话上下文，请先由该用户发起一条消息")
 
-            text_content = _markdown_to_plain_text(msg.content)
+            visible_content = _extract_visible_reply_from_reasoning_bundle(msg.content)
+            text_content = _markdown_to_plain_text(visible_content)
+            if not text_content and str(msg.content or "").strip() and not visible_content:
+                text_content = "抱歉，这次没有整理出可发送的回复，请重试。"
             media_items = list(msg.media or [])
             if media_items:
                 sent_text = False
@@ -896,6 +1124,7 @@ class WeChatChannel(BaseChannel):
         assert self._http is not None
         get_updates_buf = _load_sync_buffer(self.account_id)
         timeout_ms = DEFAULT_LONG_POLL_TIMEOUT_MS
+        consecutive_failures = 0
 
         try:
             while self._running:
@@ -907,51 +1136,81 @@ class WeChatChannel(BaseChannel):
                     await asyncio.sleep(min(max(pause_remaining_ms / 1000, 1), 30))
                     continue
 
-                response = await get_wechat_updates(
-                    self._http,
-                    base_url=self.base_url,
-                    token=self.token,
-                    get_updates_buf=get_updates_buf,
-                    timeout_ms=timeout_ms,
-                )
-
-                errcode = int(response.get("errcode") or 0)
-                ret = int(response.get("ret") or 0)
-                if errcode == SESSION_EXPIRED_ERRCODE or ret == SESSION_EXPIRED_ERRCODE:
-                    self._mark_session_paused("登录态过期")
-                    pause_remaining_ms = get_wechat_session_pause_remaining_ms(self.account_id)
-                    logger.warning(
-                        f"[wechat:{self.account_id}] 登录态过期，暂停出站与轮询约 "
-                        f"{max(1, int((pause_remaining_ms + 59_999) / 60_000))} 分钟"
+                try:
+                    response = await get_wechat_updates(
+                        self._http,
+                        base_url=self.base_url,
+                        token=self.token,
+                        get_updates_buf=get_updates_buf,
+                        timeout_ms=timeout_ms,
                     )
-                    continue
-                if errcode or ret:
-                    logger.warning(
-                        f"[wechat:{self.account_id}] getupdates failed: ret={ret}, "
-                        f"errcode={errcode}, errmsg={response.get('errmsg')}"
-                    )
-                    await asyncio.sleep(2)
-                    continue
 
-                suggested_timeout = int(response.get("longpolling_timeout_ms") or 0)
-                if suggested_timeout > 0:
-                    timeout_ms = suggested_timeout
-                self._last_runtime_note = "微信渠道已连接"
-
-                next_buf = str(response.get("get_updates_buf") or "").strip()
-                if next_buf:
-                    get_updates_buf = next_buf
-                    _save_sync_buffer(self.account_id, next_buf)
-
-                for raw_msg in response.get("msgs") or []:
-                    if not isinstance(raw_msg, dict):
+                    errcode = int(response.get("errcode") or 0)
+                    ret = int(response.get("ret") or 0)
+                    if errcode == SESSION_EXPIRED_ERRCODE or ret == SESSION_EXPIRED_ERRCODE:
+                        consecutive_failures = 0
+                        self._mark_session_paused("登录态过期")
+                        pause_remaining_ms = get_wechat_session_pause_remaining_ms(self.account_id)
+                        logger.warning(
+                            f"[wechat:{self.account_id}] 登录态过期，暂停出站与轮询约 "
+                            f"{max(1, int((pause_remaining_ms + 59_999) / 60_000))} 分钟"
+                        )
                         continue
-                    await self._handle_inbound_wechat_message(raw_msg)
+
+                    if errcode or ret:
+                        consecutive_failures += 1
+                        delay_ms = (
+                            BACKOFF_DELAY_MS
+                            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES
+                            else RETRY_DELAY_MS
+                        )
+                        self._last_runtime_note = (
+                            f"微信轮询异常，{int(delay_ms / 1000)} 秒后重试"
+                        )
+                        logger.warning(
+                            f"[wechat:{self.account_id}] getupdates failed: ret={ret}, "
+                            f"errcode={errcode}, errmsg={response.get('errmsg')}, "
+                            f"failures={consecutive_failures}, retry_in_ms={delay_ms}"
+                        )
+                        await asyncio.sleep(delay_ms / 1000)
+                        continue
+
+                    consecutive_failures = 0
+                    suggested_timeout = int(response.get("longpolling_timeout_ms") or 0)
+                    if suggested_timeout > 0:
+                        timeout_ms = suggested_timeout
+                    self._last_runtime_note = "微信渠道已连接"
+
+                    next_buf = str(response.get("get_updates_buf") or "").strip()
+                    if next_buf:
+                        get_updates_buf = next_buf
+                        _save_sync_buffer(self.account_id, next_buf)
+
+                    for raw_msg in response.get("msgs") or []:
+                        if not isinstance(raw_msg, dict):
+                            continue
+                        await self._handle_inbound_wechat_message(raw_msg)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    if self._handle_possible_session_expiry(exc, reason="轮询时登录态过期"):
+                        consecutive_failures = 0
+                        continue
+
+                    consecutive_failures += 1
+                    delay_ms = (
+                        BACKOFF_DELAY_MS
+                        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES
+                        else RETRY_DELAY_MS
+                    )
+                    self._last_runtime_note = f"长轮询异常，{int(delay_ms / 1000)} 秒后重试"
+                    logger.warning(
+                        f"[wechat:{self.account_id}] poll loop error: {exc} "
+                        f"(failures={consecutive_failures}, retry_in_ms={delay_ms})"
+                    )
+                    await asyncio.sleep(delay_ms / 1000)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001
-            self._last_runtime_note = f"长轮询异常: {exc}"
-            logger.exception(f"[wechat:{self.account_id}] 长轮询异常: {exc}")
         finally:
             self._running = False
 
@@ -1105,6 +1364,7 @@ class WeChatChannel(BaseChannel):
         self._context_tokens.move_to_end(chat_id)
         while len(self._context_tokens) > 500:
             self._context_tokens.popitem(last=False)
+        _save_context_tokens(self.account_id, self._context_tokens)
 
     def _remember_message_id(self, message_id: str) -> bool:
         if not message_id:
@@ -1193,6 +1453,35 @@ class WeChatChannel(BaseChannel):
 
             if media_path:
                 media_paths.append(media_path)
+
+        if media_paths:
+            return media_paths
+
+        for item in item_list:
+            if not isinstance(item, dict):
+                continue
+            ref_item = _extract_ref_media_item(item)
+            if ref_item is None:
+                continue
+            try:
+                item_type = int(ref_item.get("type") or 0)
+                if item_type == MESSAGE_ITEM_IMAGE:
+                    media_path = await self._download_image_item(ref_item, message_id=message_id)
+                elif item_type == MESSAGE_ITEM_FILE:
+                    media_path = await self._download_file_item(ref_item, message_id=message_id)
+                elif item_type == MESSAGE_ITEM_VIDEO:
+                    media_path = await self._download_video_item(ref_item, message_id=message_id)
+                elif item_type == MESSAGE_ITEM_VOICE:
+                    media_path = await self._download_voice_item(ref_item, message_id=message_id)
+                else:
+                    media_path = None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"[wechat:{self.account_id}] failed to download ref media: {exc}")
+                media_path = None
+
+            if media_path:
+                return [media_path]
+
         return media_paths
 
     async def _download_image_item(
@@ -1204,7 +1493,8 @@ class WeChatChannel(BaseChannel):
         image_item = item.get("image_item") or {}
         media = image_item.get("media") or {}
         encrypted_query_param = str(media.get("encrypt_query_param") or "").strip()
-        if not encrypted_query_param:
+        full_url = str(media.get("full_url") or "").strip()
+        if not encrypted_query_param and not full_url:
             return None
 
         aes_key = str(image_item.get("aeskey") or "").strip()
@@ -1219,12 +1509,14 @@ class WeChatChannel(BaseChannel):
                 cdn_base_url=self.cdn_base_url,
                 encrypted_query_param=encrypted_query_param,
                 aes_key_base64=aes_key_base64,
+                full_url=full_url,
             )
         else:
             data = await _download_plain_cdn_buffer(
                 self._http,
                 cdn_base_url=self.cdn_base_url,
                 encrypted_query_param=encrypted_query_param,
+                full_url=full_url,
             )
 
         content_type, ext = _guess_image_type(data)
@@ -1246,8 +1538,9 @@ class WeChatChannel(BaseChannel):
         file_item = item.get("file_item") or {}
         media = file_item.get("media") or {}
         encrypted_query_param = str(media.get("encrypt_query_param") or "").strip()
+        full_url = str(media.get("full_url") or "").strip()
         aes_key_base64 = str(media.get("aes_key") or "").strip()
-        if not encrypted_query_param or not aes_key_base64:
+        if (not encrypted_query_param and not full_url) or not aes_key_base64:
             return None
 
         data = await _download_and_decrypt_cdn_buffer(
@@ -1255,6 +1548,7 @@ class WeChatChannel(BaseChannel):
             cdn_base_url=self.cdn_base_url,
             encrypted_query_param=encrypted_query_param,
             aes_key_base64=aes_key_base64,
+            full_url=full_url,
         )
         filename = str(file_item.get("file_name") or "file.bin").strip() or "file.bin"
         return save_bytes_to_temp(
@@ -1275,8 +1569,9 @@ class WeChatChannel(BaseChannel):
         video_item = item.get("video_item") or {}
         media = video_item.get("media") or {}
         encrypted_query_param = str(media.get("encrypt_query_param") or "").strip()
+        full_url = str(media.get("full_url") or "").strip()
         aes_key_base64 = str(media.get("aes_key") or "").strip()
-        if not encrypted_query_param or not aes_key_base64:
+        if (not encrypted_query_param and not full_url) or not aes_key_base64:
             return None
 
         data = await _download_and_decrypt_cdn_buffer(
@@ -1284,6 +1579,7 @@ class WeChatChannel(BaseChannel):
             cdn_base_url=self.cdn_base_url,
             encrypted_query_param=encrypted_query_param,
             aes_key_base64=aes_key_base64,
+            full_url=full_url,
         )
         return save_bytes_to_temp(
             "wechat",
@@ -1307,8 +1603,9 @@ class WeChatChannel(BaseChannel):
 
         media = voice_item.get("media") or {}
         encrypted_query_param = str(media.get("encrypt_query_param") or "").strip()
+        full_url = str(media.get("full_url") or "").strip()
         aes_key_base64 = str(media.get("aes_key") or "").strip()
-        if not encrypted_query_param or not aes_key_base64:
+        if (not encrypted_query_param and not full_url) or not aes_key_base64:
             return None
 
         data = await _download_and_decrypt_cdn_buffer(
@@ -1316,6 +1613,7 @@ class WeChatChannel(BaseChannel):
             cdn_base_url=self.cdn_base_url,
             encrypted_query_param=encrypted_query_param,
             aes_key_base64=aes_key_base64,
+            full_url=full_url,
         )
         return save_bytes_to_temp(
             "wechat",
@@ -1480,7 +1778,8 @@ class WeChatChannel(BaseChannel):
             },
         )
         upload_param = str(upload_resp.get("upload_param") or "").strip()
-        if not upload_param:
+        upload_full_url = str(upload_resp.get("upload_full_url") or "").strip()
+        if not upload_param and not upload_full_url:
             raise WeChatApiError("微信上传参数获取失败")
 
         download_param = await _upload_buffer_to_cdn(
@@ -1490,6 +1789,7 @@ class WeChatChannel(BaseChannel):
             filekey=filekey,
             cdn_base_url=self.cdn_base_url,
             aes_key=aes_key,
+            upload_full_url=upload_full_url,
         )
         return {
             "download_param": download_param,

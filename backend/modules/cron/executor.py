@@ -7,7 +7,6 @@ from typing import Any, Optional
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
-from backend.modules.session.manager import SessionManager
 from backend.modules.channels.manager import ChannelManager
 from backend.utils.logger import logger
 
@@ -25,13 +24,11 @@ class CronExecutor:
         self,
         agent: AgentLoop,
         bus: EnterpriseMessageQueue,
-        session_manager: SessionManager,
         channel_manager: Optional[ChannelManager] = None,
         heartbeat_service=None,
     ):
         self.agent = agent
         self.bus = bus
-        self.session_manager = session_manager
         self.channel_manager = channel_manager
         self.heartbeat_service = heartbeat_service
 
@@ -110,35 +107,50 @@ class CronExecutor:
             return ""
 
         try:
-            greeting = await self.heartbeat_service.execute()
-            if not greeting:
+            if not channel or not chat_id:
+                logger.warning(
+                    "主动问候已跳过：未配置推送渠道或目标 chat_id，"
+                    "请在设置中补全问候助手的投递目标"
+                )
                 return ""
 
-            # 通过渠道投递问候（复用定时任务的渠道投递）
-            if channel and chat_id:
-                await self._deliver_to_channel(
-                    channel=channel,
-                    account_id=account_id,
-                    chat_id=chat_id,
-                    message=greeting,
-                    job_id=job_id,
-                )
-                
-                # 将问候语保存到会话历史中，以便用户回复时 AI 能看到上下文
-                await self._save_greeting_to_session(
-                    channel=channel,
-                    account_id=account_id,
-                    chat_id=chat_id,
-                    greeting=greeting,
-                )
-            else:
-                logger.warning(
-                    "Heartbeat: no channel/chat_id configured on heartbeat cron job, "
-                    "greeting generated but not delivered. "
-                    "Please configure channel and chat_id in the cron job settings."
-                )
+            resolved_account_id = self._resolve_channel_account_id(channel, account_id)
+            session_id = await self._get_or_create_session(
+                channel,
+                resolved_account_id,
+                chat_id,
+            )
+            dispatch = await self.heartbeat_service.prepare_dispatch(
+                session_id=session_id,
+                channel=channel,
+                account_id=resolved_account_id,
+                chat_id=chat_id,
+            )
+            if not dispatch:
+                return ""
 
-            return greeting
+            await self._deliver_to_channel(
+                channel=channel,
+                account_id=resolved_account_id,
+                chat_id=chat_id,
+                message=dispatch.greeting,
+                job_id=job_id,
+                strict=True,
+            )
+
+            # 将问候语保存到会话历史中，以便用户回复时 AI 能看到上下文
+            await self._save_greeting_to_session(
+                channel=channel,
+                account_id=resolved_account_id,
+                chat_id=chat_id,
+                greeting=dispatch.greeting,
+                session_id=session_id,
+                strict=True,
+            )
+
+            self.heartbeat_service.commit_dispatch(dispatch)
+
+            return dispatch.greeting
         except Exception as e:
             logger.error(f"Heartbeat execution failed: {e}")
             return ""
@@ -149,22 +161,30 @@ class CronExecutor:
         account_id: Optional[str],
         chat_id: str,
         message: str,
-        job_id: str
-    ):
+        job_id: str,
+        *,
+        strict: bool = False,
+    ) -> bool:
         """发送响应到渠道"""
         try:
             if not self.channel_manager:
-                logger.warning(f"Channel manager unavailable")
-                return
+                error = "Channel manager unavailable"
+                if strict:
+                    raise RuntimeError(error)
+                logger.warning(error)
+                return False
 
-            normalized_account_id = self._normalize_account_id(account_id)
+            normalized_account_id = self._resolve_channel_account_id(channel, account_id)
             channel_instance = self.channel_manager.get_channel(
                 channel,
                 account_id=normalized_account_id,
             )
             if not channel_instance:
-                logger.warning(f"Channel {channel}:{normalized_account_id} not found")
-                return
+                error = f"Channel {channel}:{normalized_account_id} not found"
+                if strict:
+                    raise RuntimeError(error)
+                logger.warning(error)
+                return False
 
             logger.info(f"Delivering to {channel}:{normalized_account_id}:{chat_id}")
 
@@ -179,9 +199,13 @@ class CronExecutor:
             )
 
             logger.info(f"Delivered to {channel}:{normalized_account_id}:{chat_id}")
+            return True
 
         except Exception as e:
+            if strict:
+                raise
             logger.error(f"Failed to deliver: {e}")
+            return False
 
     async def _save_greeting_to_session(
         self,
@@ -189,14 +213,18 @@ class CronExecutor:
         account_id: Optional[str],
         chat_id: str,
         greeting: str,
-    ):
+        *,
+        session_id: Optional[str] = None,
+        strict: bool = False,
+    ) -> bool:
         """将问候语保存到会话历史中"""
         try:
             from backend.database import get_db_session_factory
             from backend.models.message import Message
             
             # 获取或创建会话
-            session_id = await self._get_or_create_session(channel, account_id, chat_id)
+            if not session_id:
+                session_id = await self._get_or_create_session(channel, account_id, chat_id)
             
             # 保存 AI 的问候消息到数据库
             db_factory = get_db_session_factory()
@@ -211,13 +239,42 @@ class CronExecutor:
                 await db.commit()
                 
                 logger.info(f"Greeting saved to session {session_id}")
+                return True
                 
         except Exception as e:
+            if strict:
+                raise
             logger.error(f"Failed to save greeting to session: {e}")
+            return False
 
     @staticmethod
     def _normalize_account_id(account_id: Optional[str]) -> str:
         return str(account_id or PRIMARY_ACCOUNT_ID).strip() or PRIMARY_ACCOUNT_ID
+
+    def _resolve_channel_account_id(self, channel: str, account_id: Optional[str]) -> str:
+        """将默认账号解析为当前渠道真实可用实例，避免单机器人隐藏账号后路由失真。"""
+        normalized_account_id = self._normalize_account_id(account_id)
+        if not self.channel_manager:
+            return normalized_account_id
+
+        exact_channel = self.channel_manager.get_channel(channel, account_id=normalized_account_id)
+        if exact_channel:
+            return str(getattr(exact_channel, "account_id", normalized_account_id) or normalized_account_id)
+
+        if normalized_account_id == PRIMARY_ACCOUNT_ID:
+            fallback_channel = self.channel_manager.get_channel(channel)
+            if fallback_channel:
+                resolved_account_id = str(
+                    getattr(fallback_channel, "account_id", normalized_account_id) or normalized_account_id
+                )
+                if resolved_account_id != normalized_account_id:
+                    logger.info(
+                        f"Auto-resolved channel account for {channel}: "
+                        f"{normalized_account_id} -> {resolved_account_id}"
+                    )
+                return resolved_account_id
+
+        return normalized_account_id
 
     @staticmethod
     def _is_group_chat(channel: str, chat_id: str) -> bool:

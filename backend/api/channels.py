@@ -270,6 +270,28 @@ async def _restart_channel_manager(fastapi_request: Request) -> Optional[Channel
     if cron_executor is not None:
         cron_executor.channel_manager = manager
 
+    shared = getattr(app_state, "shared", None)
+    if isinstance(shared, dict):
+        tool_params = shared.get("tool_params")
+        if isinstance(tool_params, dict):
+            try:
+                from backend.modules.tools.setup import register_all_tools
+
+                tool_params["channel_manager"] = manager
+                shared["tool_registry"] = register_all_tools(
+                    **tool_params,
+                    memory_store=shared.get("memory"),
+                )
+                cron_agent = getattr(cron_executor, "agent", None)
+                if cron_agent is not None:
+                    cron_agent.tools = register_all_tools(
+                        **tool_params,
+                        memory_store=shared.get("memory"),
+                    )
+                logger.info("Shared tool registry synced with reloaded channel manager")
+            except Exception as exc:
+                logger.warning(f"Failed to sync shared tool registry after channel reload: {exc}")
+
     background_tasks = getattr(app_state, "background_tasks", None)
     if isinstance(background_tasks, list) and old_task is not None:
         app_state.background_tasks = [

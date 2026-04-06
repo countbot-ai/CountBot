@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from backend.utils.logger import setup_logger
+from backend.utils.runtime_env import resolve_bind_host
 from backend.database import get_db_session_factory
 from backend.version import APP_VERSION
 
@@ -159,7 +160,6 @@ async def lifespan(app: FastAPI):
     from backend.modules.cron.scheduler import CronScheduler
     from backend.modules.cron.service import CronService
     from backend.modules.agent.loop import AgentLoop
-    from backend.modules.session.manager import SessionManager
     from backend.modules.tools.setup import register_all_tools
     from backend.api.channels import set_channel_manager
     from backend.modules.auth.middleware import (
@@ -237,6 +237,13 @@ async def lifespan(app: FastAPI):
     app.state.channel_manager = channel_manager
     set_channel_manager(channel_manager)
     message_handler.set_channel_manager(channel_manager)
+    shared_tool_params = shared.get("tool_params")
+    if isinstance(shared_tool_params, dict):
+        shared_tool_params["channel_manager"] = channel_manager
+        shared["tool_registry"] = register_all_tools(
+            **shared_tool_params,
+            memory_store=shared["memory"],
+        )
     logger.info("Channel manager created")
 
     # 初始化 OSS 上传器（可选）
@@ -273,6 +280,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing cron system...")
     cron_tool_registry = register_all_tools(
         **shared["tool_params"],
+        memory_store=shared["memory"],
     )
     cron_agent = AgentLoop(
         provider=shared["provider"],
@@ -286,8 +294,7 @@ async def lifespan(app: FastAPI):
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
     )
-    session_manager = SessionManager(shared["workspace"])
-    logger.info("Cron agent and session manager created")
+    logger.info("Cron agent created")
 
     # 初始化心跳服务
     logger.info("Initializing heartbeat service...")
@@ -316,7 +323,6 @@ async def lifespan(app: FastAPI):
     cron_executor = CronExecutor(
         agent=cron_agent,
         bus=message_queue,
-        session_manager=session_manager,
         channel_manager=channel_manager,
         heartbeat_service=heartbeat_service,
     )
@@ -393,8 +399,7 @@ app = FastAPI(
 )
 
 # 保存绑定地址用于认证判断
-import os as _os
-app.state.bind_host = _os.getenv("HOST", "127.0.0.1")
+app.state.bind_host = resolve_bind_host()
 
 
 def get_tool_registry():
@@ -519,7 +524,11 @@ async def websocket_endpoint(websocket: WebSocket):
         else:
             await websocket.close(
                 code=1011,
-                reason=build_provider_unavailable_message(provider_id, runtime_state.reason),
+                reason=build_provider_unavailable_message(
+                    provider_id,
+                    runtime_state.reason,
+                    compact=True,
+                ),
             )
             return
 

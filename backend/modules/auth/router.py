@@ -28,6 +28,7 @@ from backend.modules.auth.utils import (
     validate_username,
     verify_password,
 )
+from backend.utils.runtime_env import is_public_bind_host
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -187,7 +188,7 @@ async def auth_status(request: Request):
 
     authenticated = bool(validate_session(token) if token else False)
     bind_host = getattr(request.app.state, "bind_host", "127.0.0.1")
-    remote_access_enabled = bind_host == "0.0.0.0"
+    remote_access_enabled = is_public_bind_host(bind_host)
 
     return {
         "is_local": is_local,

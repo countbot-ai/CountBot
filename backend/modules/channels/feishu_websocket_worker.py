@@ -114,6 +114,7 @@ class FeishuWebSocketWorker:
                 ),
                 "chat_id": message.chat_id,
                 "chat_type": message.chat_type,
+                "create_time": getattr(message, "create_time", None),
                 "msg_type": msg_type,
                 "content": content,
             }

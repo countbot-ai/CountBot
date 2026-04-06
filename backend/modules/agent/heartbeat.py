@@ -2,6 +2,7 @@
 
 import json
 import random
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -24,9 +25,24 @@ DEFAULT_ACTIVE_END = 22    # 北京时间
 DEFAULT_MAX_GREETS_PER_DAY = 2  # 每天最多问候次数
 
 
+@dataclass(frozen=True)
+class HeartbeatDispatch:
+    """一次已通过前置检查、等待真正投递的问候任务。"""
+
+    session_id: str
+    channel: str
+    account_id: str
+    chat_id: str
+    today: str
+    matched_time: int
+    idle_hours: float
+    greet_num: int
+    greeting: str
+
+
 
 class HeartbeatService:
-    """主动问候服务 - 由 cron executor 调用，只负责生成问候语"""
+    """主动问候服务。负责判定是否触发，并为真正投递生成问候内容。"""
 
     def __init__(
         self,
@@ -102,6 +118,30 @@ class HeartbeatService:
         except Exception as e:
             logger.error(f"Failed to save heartbeat state: {e}")
 
+    def _build_config_signature(self) -> str:
+        """构造和当日随机计划相关的配置签名。"""
+        return f"{self.quiet_start}:{self.quiet_end}:{self.max_greets_per_day}"
+
+    @staticmethod
+    def _prune_old_state(state: dict) -> None:
+        """清理旧数据（保留最近7天）。"""
+        dates = sorted(state.keys())
+        if len(dates) > 7:
+            for old_date in dates[:-7]:
+                del state[old_date]
+
+    def _build_today_entry(self, today: str, previous_entry: Optional[dict] = None) -> dict:
+        """构造当日状态，必要时保留已成功发送的记录。"""
+        previous_entry = previous_entry if isinstance(previous_entry, dict) else {}
+        greeted_times = list(previous_entry.get("greeted_times") or [])
+        entry = {
+            "scheduled_times": self._generate_random_times(today),
+            "greeted_times": greeted_times,
+            "count": len(greeted_times),
+            "config_signature": self._build_config_signature(),
+        }
+        return entry
+
     def _generate_random_times(self, date: str) -> List[int]:
         """为指定日期生成随机问候时间点（分钟数），每天不同且跨进程重启稳定（幂等）。
 
@@ -176,42 +216,72 @@ class HeartbeatService:
     def _get_today_state(self, today: str) -> dict:
         """获取今天的状态"""
         state = self._load_state()
-        
-        if today not in state:
-            # 为今天生成随机时间点
-            random_times = self._generate_random_times(today)
-            state[today] = {
-                "scheduled_times": random_times,
-                "greeted_times": [],
-                "count": 0
-            }
+        today_entry = state.get(today)
+        expected_signature = self._build_config_signature()
+
+        needs_rebuild = (
+            not isinstance(today_entry, dict)
+            or today_entry.get("config_signature") != expected_signature
+        )
+
+        if needs_rebuild:
+            state[today] = self._build_today_entry(today, today_entry)
+            self._prune_old_state(state)
             self._save_state(state)
-            logger.info(f"Generated random greeting times for {today}: {[f'{t//60}:{t%60:02d}' for t in random_times]}")
-        
+            logger.info(
+                "已生成今日主动问候时间点 | "
+                f"日期={today} | 配置签名={expected_signature} | "
+                f"时间点={[f'{t//60}:{t%60:02d}' for t in state[today]['scheduled_times']]}"
+            )
+        else:
+            greeted_times = list(today_entry.get("greeted_times") or [])
+            normalized = False
+            if today_entry.get("count") != len(greeted_times):
+                today_entry["count"] = len(greeted_times)
+                normalized = True
+            if not isinstance(today_entry.get("scheduled_times"), list):
+                today_entry["scheduled_times"] = []
+                normalized = True
+            if normalized:
+                state[today] = today_entry
+                self._save_state(state)
+
         return state[today]
 
     def _mark_greeted(self, today: str, scheduled_time: int):
         """标记某个计划时间点已问候过（记录 scheduled_time 而非 current_minute）"""
         state = self._load_state()
-        
-        if today not in state:
-            state[today] = {
-                "scheduled_times": [],
-                "greeted_times": [],
-                "count": 0
-            }
-        
+
+        if today not in state or not isinstance(state[today], dict):
+            state[today] = self._build_today_entry(today)
+
         if scheduled_time not in state[today]["greeted_times"]:
             state[today]["greeted_times"].append(scheduled_time)
             state[today]["count"] = len(state[today]["greeted_times"])
-        
-        # 清理旧数据（保留最近7天）
-        dates = sorted(state.keys())
-        if len(dates) > 7:
-            for old_date in dates[:-7]:
-                del state[old_date]
-        
+
+        state[today]["config_signature"] = self._build_config_signature()
+        self._prune_old_state(state)
         self._save_state(state)
+
+    def refresh_today_schedule(self, reason: str = "") -> bool:
+        """在配置变更后刷新当天随机计划，保留已成功发送的次数。"""
+        today = self._now_shanghai().strftime("%Y-%m-%d")
+        state = self._load_state()
+        previous_entry = state.get(today)
+        if not isinstance(previous_entry, dict):
+            return False
+
+        state[today] = self._build_today_entry(today, previous_entry)
+        self._prune_old_state(state)
+        self._save_state(state)
+
+        logger.info(
+            "已刷新今日主动问候计划 | "
+            f"日期={today} | 原因={reason or '配置变更'} | "
+            f"已成功发送={state[today]['count']} | "
+            f"新时间点={[f'{t//60}:{t%60:02d}' for t in state[today]['scheduled_times']]}"
+        )
+        return True
 
     def _should_greet_now(self, today: str, current_minute: int) -> Optional[int]:
         """判断当前时间是否应该问候。
@@ -236,8 +306,15 @@ class HeartbeatService:
 
         return None
 
-    async def execute(self) -> str:
-        """cron executor 调用入口。返回问候语或空字符串。
+    async def prepare_dispatch(
+        self,
+        *,
+        session_id: str,
+        channel: str,
+        account_id: str,
+        chat_id: str,
+    ) -> Optional[HeartbeatDispatch]:
+        """准备一次待投递的问候任务，但不提前记成功。
 
         流程：
         1. 时间窗口检查（北京时间免打扰时段）
@@ -245,7 +322,7 @@ class HeartbeatService:
         3. 今日已发检查
         4. 用户空闲检查（>= idle_threshold_hours）
         5. LLM 生成问候
-        6. 返回问候语，由 CronExecutor 负责渠道投递
+        6. 返回待投递任务，由 CronExecutor 负责渠道投递和最终提交
         """
         now = self._now_shanghai()
         today = now.strftime("%Y-%m-%d")
@@ -254,49 +331,71 @@ class HeartbeatService:
         # 1. 免打扰时段检查
         if self._is_quiet_hour(now.hour):
             logger.debug(f"Heartbeat skipped: {now.hour}:00 is in quiet hours ({self.quiet_start}:00-{self.quiet_end}:00 Beijing)")
-            return ""
+            return None
 
         # 2. 随机时间点检查
         matched_time = self._should_greet_now(today, current_minute)
         if matched_time is None:
             logger.debug(f"Heartbeat skipped: not in scheduled time window (current: {now.hour}:{now.minute:02d})")
-            return ""
+            return None
 
         # 3. 空闲检测
-        idle_hours = await self._get_user_idle_hours()
+        idle_hours = await self._get_user_idle_hours(session_id)
         if idle_hours is None or idle_hours < self.idle_threshold_hours:
-            logger.debug(f"Heartbeat skipped: idle {idle_hours}h < threshold {self.idle_threshold_hours}h")
-            return ""
+            logger.debug(
+                "Heartbeat skipped: "
+                f"session={session_id}, idle {idle_hours}h < threshold {self.idle_threshold_hours}h"
+            )
+            return None
 
         # 4. 生成问候
         today_state = self._get_today_state(today)
         greet_num = today_state["count"] + 1
-        
+
         logger.info(
-            f"Heartbeat triggered: idle {idle_hours:.1f}h, "
-            f"Beijing time {now.strftime('%H:%M')}, "
-            f"greet #{greet_num}/{self.max_greets_per_day}"
+            "主动问候命中触发条件 | "
+            f"会话={session_id} | 渠道={channel}:{account_id}:{chat_id} | "
+            f"空闲={idle_hours:.1f}h | 北京时间={now.strftime('%H:%M')} | "
+            f"次数={greet_num}/{self.max_greets_per_day}"
         )
-        
+
         greeting = await self._generate_greeting(now, idle_hours)
         if not greeting:
-            return ""
+            return None
 
-        # 5. 标记已问候（记录计划时间点，防止同一槽位重复触发）
-        self._mark_greeted(today, matched_time)
-        
-        logger.info(f"Heartbeat greeting generated (#{greet_num}/{self.max_greets_per_day}): {greeting[:60]}")
-        return greeting
+        return HeartbeatDispatch(
+            session_id=session_id,
+            channel=channel,
+            account_id=account_id,
+            chat_id=chat_id,
+            today=today,
+            matched_time=matched_time,
+            idle_hours=idle_hours,
+            greet_num=greet_num,
+            greeting=greeting,
+        )
 
-    async def _get_user_idle_hours(self) -> Optional[float]:
-        """查询所有会话中用户最近一条消息的时间，计算空闲时长"""
+    def commit_dispatch(self, dispatch: HeartbeatDispatch) -> None:
+        """真正投递成功后再提交本次问候，避免白扣次数。"""
+        self._mark_greeted(dispatch.today, dispatch.matched_time)
+        logger.info(
+            "主动问候已成功发送 | "
+            f"会话={dispatch.session_id} | 渠道={dispatch.channel}:{dispatch.account_id}:{dispatch.chat_id} | "
+            f"次数={dispatch.greet_num}/{self.max_greets_per_day} | 内容={dispatch.greeting[:80]}"
+        )
+
+    async def _get_user_idle_hours(self, session_id: str) -> Optional[float]:
+        """查询目标会话中用户最近一条消息的时间，计算空闲时长。"""
         from sqlalchemy import select, func
         from backend.models.message import Message
 
         try:
             async with self.db_session_factory() as db:
                 result = await db.execute(
-                    select(func.max(Message.created_at)).where(Message.role == "user")
+                    select(func.max(Message.created_at)).where(
+                        Message.role == "user",
+                        Message.session_id == session_id,
+                    )
                 )
                 last_msg_time = result.scalar()
                 if last_msg_time is None:
@@ -366,9 +465,9 @@ class HeartbeatService:
             ):
                 if chunk.is_content and chunk.content:
                     parts.append(chunk.content)
-            greeting = "".join(parts).strip()
+            greeting = " ".join("".join(parts).split()).strip()
             # 过滤掉空结果或异常长结果
-            if not greeting or len(greeting) > 200:
+            if not greeting or len(greeting) > 50:
                 return ""
             return greeting
         except Exception as e:

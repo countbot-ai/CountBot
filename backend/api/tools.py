@@ -72,6 +72,7 @@ class ConversationStatsResponse(BaseModel):
 
 def get_tool_registry() -> ToolRegistry:
     """获取工具注册表实例（包含所有工具)"""
+    from backend.modules.agent.memory import MemoryStore
     from backend.modules.tools.setup import register_all_tools
     from backend.api.chat import get_global_subagent_manager
     from backend.api.channels import get_channel_manager
@@ -80,6 +81,9 @@ def get_tool_registry() -> ToolRegistry:
     config = config_loader.config
     workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
     workspace.mkdir(parents=True, exist_ok=True)
+    memory_dir = workspace / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    memory_store = MemoryStore(memory_dir)
     
     # 获取全局 SubagentManager
     subagent_manager = get_global_subagent_manager()
@@ -102,7 +106,9 @@ def get_tool_registry() -> ToolRegistry:
         custom_allow_patterns=config.security.custom_allow_patterns if config.security.command_whitelist_enabled else None,
         audit_log_enabled=config.security.audit_log_enabled,
         subagent_manager=subagent_manager,
-        channel_manager=channel_manager,  # 添加 channel_manager
+        channel_manager=channel_manager,
+        memory_store=memory_store,
+        config_loader=config_loader,
     )
     
     return tools

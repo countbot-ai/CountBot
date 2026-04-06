@@ -11,10 +11,12 @@ import re
 import time
 import uuid
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from multiprocessing import Process, Queue
 from pathlib import Path
+from queue import Empty
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -68,7 +70,13 @@ _MSG_TYPE_MAP = {
 
 _STREAMING_ELEMENT_ID = "streaming_content"
 _STREAM_FLUSH_INTERVAL_MS = 200
+_QUEUE_POLL_TIMEOUT_S = 1.0
 _ABORT_COMMANDS = {"/stop", "/cancel"}
+_PROCESSED_MESSAGE_TTL_MS = 12 * 60 * 60 * 1000
+_PROCESSED_MESSAGE_MAX_ENTRIES = 5_000
+_MESSAGE_EXPIRY_MS = 30 * 60 * 1000
+_SENDER_NAME_CACHE_TTL_MS = 30 * 60 * 1000
+_SENDER_NAME_CACHE_MAX_ENTRIES = 500
 _UNAVAILABLE_HINTS = (
     "message has been deleted",
     "message has been recalled",
@@ -149,7 +157,9 @@ class FeishuChannel(BaseChannel):
         self._client = None
         self._ws_process: Optional[Process] = None
         self._message_queue: Optional[Queue] = None
-        self._processed_ids: OrderedDict[str, None] = OrderedDict()
+        self._queue_reader_task: Optional[asyncio.Task] = None
+        self._processed_ids: OrderedDict[str, float] = OrderedDict()
+        self._sender_name_cache: OrderedDict[str, Tuple[Optional[str], float]] = OrderedDict()
         self._terminal_stream_ids: OrderedDict[str, None] = OrderedDict()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stream_states: Dict[str, FeishuStreamState] = {}
@@ -196,7 +206,7 @@ class FeishuChannel(BaseChannel):
         self._ws_process.start()
         logger.info(f"Feishu WebSocket worker started (PID: {self._ws_process.pid})")
 
-        asyncio.create_task(self._read_ws_messages())
+        self._queue_reader_task = asyncio.create_task(self._read_ws_messages())
 
         while self._running:
             await asyncio.sleep(1)
@@ -204,6 +214,12 @@ class FeishuChannel(BaseChannel):
     async def stop(self) -> None:
         """停止飞书机器人。"""
         self._running = False
+
+        if self._queue_reader_task and not self._queue_reader_task.done():
+            self._queue_reader_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._queue_reader_task
+        self._queue_reader_task = None
 
         if self._ws_process:
             try:
@@ -230,6 +246,22 @@ class FeishuChannel(BaseChannel):
             except Exception as e:
                 logger.debug(f"Error cleaning up queue: {e}")
 
+        flush_tasks = [
+            state.flush_task
+            for state in self._stream_states.values()
+            if state.flush_task and not state.flush_task.done()
+        ]
+        for task in flush_tasks:
+            task.cancel()
+        if flush_tasks:
+            await asyncio.gather(*flush_tasks, return_exceptions=True)
+
+        self._stream_states.clear()
+        self._active_streams_by_chat.clear()
+        self._processed_ids.clear()
+        self._sender_name_cache.clear()
+        self._terminal_stream_ids.clear()
+
         logger.info("Feishu bot stopped")
 
     # ------------------------------------------------------------------
@@ -246,14 +278,34 @@ class FeishuChannel(BaseChannel):
             while self._running:
                 try:
                     msg_data = await asyncio.get_running_loop().run_in_executor(
-                        None, lambda: self._message_queue.get(timeout=1.0)
+                        None, lambda: self._message_queue.get(timeout=_QUEUE_POLL_TIMEOUT_S)
                     )
-                    if msg_data and msg_data.get("type") == "message":
-                        await self._process_message(msg_data)
+                except Empty:
+                    continue
+                except asyncio.CancelledError:
+                    raise
+                except (EOFError, OSError, ValueError) as e:
+                    if self._running:
+                        logger.warning(f"Feishu message queue closed: {e}")
+                    break
                 except Exception as e:
-                    if "Empty" not in str(e) and "timeout" not in str(e).lower():
-                        logger.debug(f"Queue read error: {e}")
+                    logger.debug(f"Queue read error: {e}")
                     await asyncio.sleep(0.1)
+                    continue
+
+                if not isinstance(msg_data, dict):
+                    logger.debug(f"Unexpected Feishu queue payload: {type(msg_data)}")
+                    continue
+
+                payload_type = str(msg_data.get("type") or "").strip().lower()
+                if payload_type == "message":
+                    await self._process_message(msg_data)
+                elif payload_type == "status":
+                    logger.info(f"Feishu worker status: {msg_data.get('message')}")
+                elif payload_type == "error":
+                    logger.error(f"Feishu worker error: {msg_data.get('error')}")
+                else:
+                    logger.debug(f"Unknown Feishu queue payload type: {payload_type or '<empty>'}")
         except Exception as e:
             logger.error(f"Message queue reader error: {e}")
         finally:
@@ -266,20 +318,36 @@ class FeishuChannel(BaseChannel):
     async def _process_message(self, msg_data: dict) -> None:
         """处理来自 WebSocket 子进程的消息"""
         try:
-            message_id = msg_data["message_id"]
-
-            # 消息去重
-            if message_id in self._processed_ids:
+            message_id = str(msg_data.get("message_id") or "").strip()
+            if not message_id:
+                logger.debug("Received Feishu message without message_id, ignored")
                 return
-            self._processed_ids[message_id] = None
-            while len(self._processed_ids) > 1000:
-                self._processed_ids.popitem(last=False)
 
-            sender_id = msg_data["sender_id"]
-            sender_name = msg_data.get("sender_name") or sender_id
-            chat_id = msg_data["chat_id"]
-            chat_type = msg_data["chat_type"]
-            msg_type = msg_data["msg_type"]
+            if not self._remember_processed_message(message_id):
+                logger.debug(f"[Feishu] Duplicate message skipped: {message_id}")
+                return
+
+            create_time = msg_data.get("create_time")
+            if self._is_message_expired(create_time):
+                logger.info(f"[Feishu] Expired message skipped: {message_id}")
+                return
+
+            sender_id = str(msg_data.get("sender_id") or "").strip()
+            if not sender_id:
+                logger.debug(f"[Feishu] Message {message_id} missing sender_id, ignored")
+                return
+
+            sender_name = await self._resolve_sender_name(
+                sender_id,
+                msg_data.get("sender_name"),
+            )
+            chat_id = str(msg_data.get("chat_id") or "").strip()
+            if not chat_id:
+                logger.debug(f"[Feishu] Message {message_id} missing chat_id, ignored")
+                return
+
+            chat_type = self._normalize_chat_type(msg_data.get("chat_type"))
+            msg_type = str(msg_data.get("msg_type") or "").strip().lower()
 
             await self._add_reaction(message_id, "THUMBSUP")
 
@@ -300,8 +368,9 @@ class FeishuChannel(BaseChannel):
             if not content:
                 return
 
-            reply_to = chat_id if chat_type == "group" else sender_id
-            receive_id_type = "chat_id" if chat_type == "group" else "open_id"
+            is_group_chat = chat_type == "group"
+            reply_to = chat_id if is_group_chat else sender_id
+            receive_id_type = "chat_id" if is_group_chat else "open_id"
             chat_key = self._build_stream_chat_key(reply_to, receive_id_type)
 
             if self._is_abort_command(content):
@@ -421,6 +490,7 @@ class FeishuChannel(BaseChannel):
                 "sender_name": sender_name,
                 "chat_type": chat_type,
                 "msg_type": msg_type,
+                "create_time": create_time,
                 "_stream_handler": stream_handler,
                 "_stream_abort_handler": abort_stream_handler,
                 "_tool_event_handler": tool_event_handler,
@@ -435,6 +505,151 @@ class FeishuChannel(BaseChannel):
             )
         except Exception as e:
             logger.error(f"Error processing Feishu message: {e}")
+
+    def _remember_processed_message(self, message_id: str) -> bool:
+        """记录已处理消息，兼顾 TTL 和容量上限。"""
+        if not message_id:
+            return False
+
+        now_ms = time.time() * 1000
+        self._prune_processed_ids(now_ms)
+
+        existing = self._processed_ids.get(message_id)
+        if existing is not None and (now_ms - existing) < _PROCESSED_MESSAGE_TTL_MS:
+            return False
+        if existing is not None:
+            self._processed_ids.pop(message_id, None)
+
+        self._processed_ids[message_id] = now_ms
+        while len(self._processed_ids) > _PROCESSED_MESSAGE_MAX_ENTRIES:
+            self._processed_ids.popitem(last=False)
+        return True
+
+    def _get_cached_sender_name(self, sender_id: str) -> Tuple[bool, Optional[str]]:
+        """读取 sender_name 缓存，命中后顺带刷新 LRU 顺序。"""
+        if not sender_id:
+            return False, None
+
+        now_ms = time.time() * 1000
+        cached = self._sender_name_cache.get(sender_id)
+        if cached is None:
+            return False, None
+
+        sender_name, expire_at_ms = cached
+        if expire_at_ms <= now_ms:
+            self._sender_name_cache.pop(sender_id, None)
+            return False, None
+
+        self._sender_name_cache.move_to_end(sender_id)
+        return True, sender_name
+
+    def _set_cached_sender_name(self, sender_id: str, sender_name: Optional[str]) -> None:
+        """写入 sender_name 缓存，空值代表已探测但暂时无法解析。"""
+        if not sender_id:
+            return
+
+        expire_at_ms = (time.time() * 1000) + _SENDER_NAME_CACHE_TTL_MS
+        normalized_name = str(sender_name or "").strip() or None
+        self._sender_name_cache.pop(sender_id, None)
+        self._sender_name_cache[sender_id] = (normalized_name, expire_at_ms)
+        while len(self._sender_name_cache) > _SENDER_NAME_CACHE_MAX_ENTRIES:
+            self._sender_name_cache.popitem(last=False)
+
+    @staticmethod
+    def _should_use_sender_name(raw_sender_name: Any, sender_id: str) -> bool:
+        """判断 worker 透传的 sender_name 是否已是可展示的人类名称。"""
+        candidate = str(raw_sender_name or "").strip()
+        if not candidate:
+            return False
+        if candidate.lower() == "unknown":
+            return False
+        return candidate != str(sender_id or "").strip()
+
+    async def _resolve_sender_name(self, sender_id: str, raw_sender_name: Any = None) -> str:
+        """优先走缓存，缺失时再调用联系人接口解析 sender_name。"""
+        normalized_sender_id = str(sender_id or "").strip()
+        if not normalized_sender_id:
+            return ""
+
+        if self._should_use_sender_name(raw_sender_name, normalized_sender_id):
+            normalized_name = str(raw_sender_name).strip()
+            self._set_cached_sender_name(normalized_sender_id, normalized_name)
+            return normalized_name
+
+        cached, cached_name = self._get_cached_sender_name(normalized_sender_id)
+        if cached:
+            return cached_name or normalized_sender_id
+
+        resolved_name = await self._run_sync(self._resolve_sender_name_sync, normalized_sender_id)
+        normalized_name = str(resolved_name or "").strip() or None
+        self._set_cached_sender_name(normalized_sender_id, normalized_name)
+        return normalized_name or normalized_sender_id
+
+    def _resolve_sender_name_sync(self, sender_id: str) -> Optional[str]:
+        """同步解析飞书用户名称，供线程池包装调用。"""
+        if not self._client or not sender_id:
+            return None
+
+        try:
+            from lark_oapi.api.contact.v3 import GetUserRequest
+
+            request = (
+                GetUserRequest.builder()
+                .user_id(sender_id)
+                .user_id_type("open_id")
+                .department_id_type("open_department_id")
+                .build()
+            )
+            response = self._client.contact.v3.user.get(request)
+            if not response.success():
+                logger.debug(
+                    f"[Feishu] Failed to resolve sender_name for {sender_id}: "
+                    f"code={response.code}, msg={response.msg}"
+                )
+                return None
+
+            user = getattr(getattr(response, "data", None), "user", None)
+            if not user:
+                return None
+
+            for field_name in ("name", "display_name", "nickname", "en_name"):
+                value = str(getattr(user, field_name, "") or "").strip()
+                if value:
+                    return value
+        except Exception as e:
+            logger.debug(f"[Feishu] Error resolving sender_name for {sender_id}: {e}")
+
+        return None
+
+    def _prune_processed_ids(self, now_ms: Optional[float] = None) -> None:
+        """按 FIFO 清理去重缓存中过期的消息 ID。"""
+        current_ms = float(now_ms or (time.time() * 1000))
+        while self._processed_ids:
+            _, first_seen_ms = next(iter(self._processed_ids.items()))
+            if (current_ms - first_seen_ms) < _PROCESSED_MESSAGE_TTL_MS:
+                break
+            self._processed_ids.popitem(last=False)
+
+    @staticmethod
+    def _is_message_expired(create_time: Any, expiry_ms: int = _MESSAGE_EXPIRY_MS) -> bool:
+        """过滤明显过期的回放消息，避免重连后重复处理历史积压。"""
+        if create_time in (None, ""):
+            return False
+        try:
+            create_time_ms = int(str(create_time).strip())
+        except (TypeError, ValueError):
+            return False
+        return (time.time() * 1000) - create_time_ms > expiry_ms
+
+    @staticmethod
+    def _normalize_chat_type(chat_type: Any) -> str:
+        """统一飞书 chat_type 表达，便于下游复用。"""
+        normalized = str(chat_type or "").strip().lower()
+        if normalized == "group":
+            return "group"
+        if normalized in {"p2p", "private", "single"}:
+            return "private"
+        return normalized or "private"
 
     @staticmethod
     def _build_stream_chat_key(chat_id: str, receive_id_type: str) -> str:

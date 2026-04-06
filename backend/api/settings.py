@@ -2,9 +2,10 @@
 
 import json
 import os
+import re
 import shutil
-from typing import Any, Dict, List, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
@@ -25,6 +26,166 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 def _normalize_api_mode_value(value: Any) -> str:
     return "chat_completions"
+
+
+def _coerce_boolean_value(value: Any, *, field_name: str) -> bool:
+    """将用户输入安全转换为布尔值，拒绝模糊字符串。"""
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"{field_name} must be a boolean",
+    )
+
+
+def _list_enabled_channel_account_ids(config: AppConfig, channel_name: str) -> List[str]:
+    """列出指定渠道当前已启用的账号 ID。"""
+    channel_cfg = getattr(config.channels, channel_name, None)
+    if channel_cfg is None:
+        return []
+
+    ordered_account_ids: List[str] = []
+
+    if bool(getattr(channel_cfg, "enabled", False)):
+        top_level_account_id = str(getattr(channel_cfg, "account_id", "default") or "default")
+        ordered_account_ids.append(top_level_account_id)
+
+    accounts = getattr(channel_cfg, "accounts", {}) or {}
+    for raw_account_id, account_cfg in accounts.items():
+        if isinstance(account_cfg, dict):
+            enabled = bool(account_cfg.get("enabled", False))
+            account_id = str(raw_account_id or account_cfg.get("account_id") or "default")
+        else:
+            enabled = bool(getattr(account_cfg, "enabled", False))
+            account_id = str(raw_account_id or getattr(account_cfg, "account_id", "default") or "default")
+        if enabled:
+            ordered_account_ids.append(account_id)
+
+    deduped: List[str] = []
+    for account_id in ordered_account_ids:
+        if account_id not in deduped:
+            deduped.append(account_id)
+    return deduped
+
+
+def _normalize_pattern_list(value: Any) -> List[str]:
+    """清理正则模式列表，去掉空白项并去重，保留原顺序。"""
+    if not isinstance(value, list):
+        return []
+
+    normalized: List[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if not text or text in normalized:
+            continue
+        normalized.append(text)
+    return normalized
+
+
+def _validate_regex_patterns_or_raise(patterns: List[str], *, field_name: str) -> None:
+    """保存配置前校验正则表达式，尽早返回明确错误。"""
+    for index, pattern in enumerate(patterns):
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field_name}[{index}] 无效: {exc}",
+            ) from exc
+
+
+def _validate_cron_schedule_or_raise(schedule: Any, *, field_name: str) -> str:
+    """校验 cron 表达式。"""
+    from croniter import croniter
+
+    normalized = str(schedule or "").strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} 不能为空",
+        )
+
+    try:
+        croniter(normalized)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} 无效: {e}",
+        ) from e
+
+    return normalized
+
+
+def _validate_and_normalize_heartbeat_settings(config: AppConfig) -> None:
+    """校验问候助手配置，并在单机器人场景下自动补全真实账号 ID。"""
+    heartbeat = config.persona.heartbeat
+    heartbeat.account_id = str(getattr(heartbeat, "account_id", "default") or "default").strip() or "default"
+    heartbeat.schedule = _validate_cron_schedule_or_raise(
+        heartbeat.schedule,
+        field_name="persona.heartbeat.schedule",
+    )
+
+    if not heartbeat.enabled:
+        return
+
+    heartbeat.channel = str(heartbeat.channel or "").strip()
+    heartbeat.chat_id = str(heartbeat.chat_id or "").strip()
+    if not heartbeat.channel:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="启用问候助手前必须先选择推送渠道",
+        )
+    if not heartbeat.chat_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="启用问候助手前必须填写推送目标 ID",
+        )
+
+    enabled_account_ids = _list_enabled_channel_account_ids(config, heartbeat.channel)
+    if not enabled_account_ids:
+        available_channels = ", ".join(config.channels.model_dump().keys())
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"问候助手渠道 '{heartbeat.channel}' 当前没有可用机器人实例。"
+                f"可用渠道: {available_channels}"
+            ),
+        )
+
+    if heartbeat.account_id in enabled_account_ids:
+        return
+
+    if heartbeat.account_id == "default" and len(enabled_account_ids) == 1:
+        heartbeat.account_id = enabled_account_ids[0]
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            f"问候助手账号 ID '{heartbeat.account_id}' 无效，"
+            f"当前渠道可用账号: {', '.join(enabled_account_ids)}"
+        ),
+    )
+
+
+def _heartbeat_plan_settings_changed(before: Optional[Dict[str, Any]], after: Optional[Dict[str, Any]]) -> bool:
+    """判断是否需要刷新当天随机问候计划。"""
+    if not before or not after:
+        return False
+
+    watched_keys = ("quiet_start", "quiet_end", "max_greets_per_day")
+    return any(before.get(key) != after.get(key) for key in watched_keys)
 
 
 class ExternalCodingProfilePayload(BaseModel):
@@ -157,13 +318,21 @@ def _validate_workspace_path_or_raise(path: str) -> Path:
 
 def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> None:
     """将新的工作空间路径热更新到当前运行态。"""
+    from backend.modules.agent.memory import MemoryStore
+
     workspace_path = workspace_manager.activate_workspace_path(workspace_path)
     seed_bundled_workspace_resources(workspace_path)
+    memory_dir = workspace_path / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    memory_store = MemoryStore(memory_dir)
 
     message_handler = getattr(request.app.state, 'message_handler', None)
     if message_handler:
         try:
-            message_handler.reload_config(workspace=workspace_path)
+            message_handler.reload_config(
+                workspace=workspace_path,
+                memory_store=memory_store,
+            )
             logger.info(f"Message handler workspace reloaded: {workspace_path}")
         except Exception as e:
             logger.warning(f"Failed to reload message handler workspace: {e}")
@@ -172,6 +341,7 @@ def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> Non
     if shared:
         try:
             shared['workspace'] = workspace_path
+            shared['memory'] = memory_store
             tool_params = shared.get('tool_params')
             if isinstance(tool_params, dict):
                 tool_params['workspace'] = workspace_path
@@ -182,6 +352,7 @@ def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> Non
                     context_builder.update_workspace(workspace_path)
                 else:
                     context_builder.workspace = workspace_path
+                context_builder.memory = memory_store
 
             subagent_manager = shared.get('subagent_manager')
             if subagent_manager:
@@ -202,12 +373,38 @@ def _hot_reload_workspace_runtime(request: Request, workspace_path: Path) -> Non
                 except Exception as e:
                     logger.warning(f"Failed to reload skills after workspace change: {e}")
 
+            _rebuild_shared_tool_registry_runtime(request)
             request.app.state.skills = shared.get('skills')
-            request.app.state.memory = shared.get('memory')
+            request.app.state.memory = memory_store
 
             logger.info(f"Shared components workspace reloaded: {workspace_path}")
         except Exception as e:
             logger.warning(f"Failed to reload shared components workspace: {e}")
+
+
+def _rebuild_shared_tool_registry_runtime(request: Request) -> None:
+    """重建全局共享工具注册表，保证依赖共享注册表的渠道读取到最新配置。"""
+    shared = getattr(request.app.state, 'shared', None)
+    if not shared:
+        return
+
+    tool_params = shared.get('tool_params')
+    if not isinstance(tool_params, dict):
+        return
+
+    from backend.modules.tools.setup import register_all_tools
+
+    register_kwargs = dict(tool_params)
+    channel_manager = getattr(request.app.state, 'channel_manager', None)
+    if channel_manager is not None:
+        register_kwargs['channel_manager'] = channel_manager
+        tool_params['channel_manager'] = channel_manager
+
+    shared['tool_registry'] = register_all_tools(
+        **register_kwargs,
+        memory_store=shared.get('memory'),
+    )
+    logger.info("Shared tool registry reloaded")
 
 
 def _prepare_message_handler_reload_params(
@@ -255,6 +452,7 @@ def _prepare_message_handler_reload_params(
 
     if reload_persona:
         reload_params['persona_config'] = config.persona
+        reload_params['max_history_messages'] = config.persona.max_history_messages
         logger.info(
             "Prepared persona config for hot reload: "
             f"{config.persona.ai_name}, {config.persona.user_name}, "
@@ -336,7 +534,10 @@ def _reload_cron_runtime(
             try:
                 from backend.modules.tools.setup import register_all_tools
 
-                cron_agent.tools = register_all_tools(**tool_params)
+                cron_agent.tools = register_all_tools(
+                    **tool_params,
+                    memory_store=shared.get('memory'),
+                )
                 logger.info("Cron agent tool registry reloaded")
             except Exception as e:
                 logger.warning(f"Failed to reload cron agent tools: {e}")
@@ -422,6 +623,12 @@ async def _apply_saved_config_runtime(
             reload_persona=reload_persona,
             reload_security=reload_security,
         )
+
+    if reload_security and workspace_path is None:
+        try:
+            _rebuild_shared_tool_registry_runtime(req)
+        except Exception as e:
+            logger.warning(f"Failed to reload shared tool registry: {e}")
 
     try:
         _reload_cron_runtime(
@@ -536,6 +743,8 @@ class ProviderMetadataResponse(BaseModel):
     requires_api_base: bool = Field(False, description="是否要求自定义 API Base")
     status: str = Field("disabled", description="运行状态")
     reason: str = Field("disabled", description="状态原因")
+    provider_group: str = Field("experimental", description="前端展示分组")
+    thinking_control_tier: str = Field("unsupported", description="思考开关支持等级")
 
 
 class ProviderConfigResponse(BaseModel):
@@ -607,7 +816,14 @@ class PersonaConfigResponse(BaseModel):
     output_language: str = Field(default="中文", description="AI默认输出语言")
     personality: str = Field(..., description="AI的性格类型")
     custom_personality: str = Field(..., description="自定义性格描述")
-    max_history_messages: int = Field(..., description="最大对话历史条数")
+    max_history_messages: int = Field(
+        ...,
+        description="最大对话历史条数，0 表示不限且关闭短期上下文总结",
+    )
+    enable_short_context_summary: bool = Field(
+        default=False,
+        description="是否启用短期上下文摘要缓存，默认关闭",
+    )
     heartbeat: HeartbeatConfigResponse = Field(..., description="主动问候配置")
 
 
@@ -686,6 +902,8 @@ async def get_available_providers() -> List[ProviderMetadataResponse]:
                 requires_api_base=runtime_state.requires_api_base,
                 status=runtime_state.status,
                 reason=runtime_state.reason,
+                provider_group=meta.provider_group,
+                thinking_control_tier=meta.thinking_control_tier,
             )
         )
     return response
@@ -745,6 +963,11 @@ async def get_settings() -> SettingsResponse:
                 personality=config.persona.personality,
                 custom_personality=config.persona.custom_personality,
                 max_history_messages=config.persona.max_history_messages,
+                enable_short_context_summary=getattr(
+                    config.persona,
+                    'enable_short_context_summary',
+                    False,
+                ),
                 heartbeat=HeartbeatConfigResponse(
                     enabled=config.persona.heartbeat.enabled,
                     channel=config.persona.heartbeat.channel,
@@ -780,6 +1003,7 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
         SettingsResponse: 更新后的设置
     """
     try:
+        previous_heartbeat = config_loader.config.persona.heartbeat.model_dump()
         config = config_loader.config.model_copy(deep=True)
         workspace_migration_info = None
         old_workspace = None
@@ -839,13 +1063,17 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                 config.security.dangerous_commands_blocked = request.security["dangerous_commands_blocked"]
             
             if "custom_deny_patterns" in request.security:
-                config.security.custom_deny_patterns = request.security["custom_deny_patterns"]
+                config.security.custom_deny_patterns = _normalize_pattern_list(
+                    request.security["custom_deny_patterns"]
+                )
             
             if "command_whitelist_enabled" in request.security:
                 config.security.command_whitelist_enabled = request.security["command_whitelist_enabled"]
             
             if "custom_allow_patterns" in request.security:
-                config.security.custom_allow_patterns = request.security["custom_allow_patterns"]
+                config.security.custom_allow_patterns = _normalize_pattern_list(
+                    request.security["custom_allow_patterns"]
+                )
             
             if "audit_log_enabled" in request.security:
                 config.security.audit_log_enabled = request.security["audit_log_enabled"]
@@ -894,6 +1122,15 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             
             if "restrict_to_workspace" in request.security:
                 config.security.restrict_to_workspace = request.security["restrict_to_workspace"]
+
+            _validate_regex_patterns_or_raise(
+                config.security.custom_deny_patterns,
+                field_name="security.custom_deny_patterns",
+            )
+            _validate_regex_patterns_or_raise(
+                config.security.custom_allow_patterns,
+                field_name="security.custom_allow_patterns",
+            )
         
         if request.persona:
             if "ai_name" in request.persona:
@@ -916,6 +1153,12 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             
             if "max_history_messages" in request.persona:
                 config.persona.max_history_messages = request.persona["max_history_messages"]
+
+            if "enable_short_context_summary" in request.persona:
+                config.persona.enable_short_context_summary = _coerce_boolean_value(
+                    request.persona["enable_short_context_summary"],
+                    field_name="persona.enable_short_context_summary",
+                )
             
             if "heartbeat" in request.persona:
                 hb = request.persona["heartbeat"]
@@ -938,6 +1181,9 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                         config.persona.heartbeat.quiet_end = hb["quiet_end"]
                     if "max_greets_per_day" in hb:
                         config.persona.heartbeat.max_greets_per_day = hb["max_greets_per_day"]
+
+            if "heartbeat" in request.persona:
+                _validate_and_normalize_heartbeat_settings(config)
         
         # 保存配置（await 确保写入完成）
         await config_loader.save_config(config)
@@ -974,6 +1220,17 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
             reload_security=bool(request.security),
             sync_heartbeat=bool(request.persona and "heartbeat" in request.persona),
         )
+
+        if request.persona and "heartbeat" in request.persona:
+            current_heartbeat = config.persona.heartbeat.model_dump()
+            if _heartbeat_plan_settings_changed(previous_heartbeat, current_heartbeat):
+                cron_executor = getattr(req.app.state, "cron_executor", None)
+                heartbeat_service = getattr(cron_executor, "heartbeat_service", None)
+                if heartbeat_service is not None and hasattr(heartbeat_service, "refresh_today_schedule"):
+                    try:
+                        heartbeat_service.refresh_today_schedule(reason="设置页修改问候参数")
+                    except Exception as e:
+                        logger.warning(f"Failed to refresh heartbeat today schedule: {e}")
         
         logger.info("Settings updated successfully")
         

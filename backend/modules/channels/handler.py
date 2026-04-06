@@ -44,6 +44,7 @@ from backend.modules.session import (
     build_session_model_override,
     resolve_session_runtime_config,
 )
+from backend.modules.session.message_context import normalize_assistant_persistence_payload
 from backend.modules.tools.setup import register_all_tools
 
 # 预编译 @mention 清理正则
@@ -270,6 +271,17 @@ def _format_message_for_model(role: str, content: str, message_context: Optional
     return content
 
 
+def _normalize_assistant_output(
+    content: Optional[str],
+    reasoning_content: Optional[str] = None,
+) -> tuple[str, str]:
+    normalized_content, normalized_reasoning, _ = normalize_assistant_persistence_payload(
+        content,
+        reasoning_content,
+    )
+    return normalized_content, str(normalized_reasoning or "")
+
+
 class ChannelMessageHandler:
     """频道消息处理器
 
@@ -341,48 +353,6 @@ class ChannelMessageHandler:
         )
         self.agent_loop.tools = self.tool_registry
 
-    @staticmethod
-    def _compose_reasoning_sections(reasoning_text: str, visible_text: str) -> str:
-        """将 reasoning 和正文拼装为通用文本结构。"""
-        normalized_reasoning = str(reasoning_text or "").strip()
-        normalized_visible = str(visible_text or "").strip()
-
-        if not normalized_reasoning:
-            return normalized_visible
-
-        sections = [f"## 思考过程\n\n{normalized_reasoning}"]
-        if normalized_visible:
-            sections.append(f"## 回复\n\n{normalized_visible}")
-        return "\n\n---\n\n".join(sections)
-
-    @classmethod
-    def _format_reasoning_reply(
-        cls,
-        channel: Optional[str],
-        reasoning_text: str,
-        visible_text: str,
-    ) -> str:
-        """为不同渠道生成带 reasoning 的最终文本。"""
-        normalized_reasoning = str(reasoning_text or "").strip()
-        normalized_visible = str(visible_text or "").strip()
-
-        if not normalized_reasoning:
-            return normalized_visible
-
-        if channel == "wecom":
-            from backend.modules.channels.wecom import build_stream_content
-
-            return build_stream_content(
-                reasoning_text=normalized_reasoning,
-                visible_text=normalized_visible,
-                finish=True,
-            )
-
-        return cls._compose_reasoning_sections(
-            normalized_reasoning,
-            normalized_visible,
-        )
-
     # ------------------------------------------------------------------
     # 配置热重载
     # ------------------------------------------------------------------
@@ -398,6 +368,7 @@ class ChannelMessageHandler:
         max_history_messages: Optional[int] = None,
         persona_config=None,
         workspace=None,
+        memory_store=None,
         tool_params_updates: Optional[dict] = None,
     ) -> None:
         """热重载 AI 配置（前端修改设置后调用）。"""
@@ -425,6 +396,11 @@ class ChannelMessageHandler:
                 f"user_name={persona_config.user_name}, "
                 f"user_address={getattr(persona_config, 'user_address', '')}"
             )
+
+        if memory_store is not None:
+            self._memory_store = memory_store
+            self.context_builder.memory = memory_store
+            should_rebuild_tools = True
 
         if tool_params_updates:
             self._tool_params.update(tool_params_updates)
@@ -708,12 +684,12 @@ class ChannelMessageHandler:
                     response_parts.append(chunk)
                     await stream_handler(chunk, is_final=False)
 
-                response = self._format_reasoning_reply(
-                    msg.channel,
-                    "".join(reasoning_parts),
+                response, response_reasoning = _normalize_assistant_output(
                     "".join(response_parts),
+                    "".join(reasoning_parts),
                 )
-                response_reasoning = "".join(reasoning_parts)
+                if not response and response_reasoning:
+                    response = "抱歉，这次没有整理出可发送的回复，请重试。"
                 if not cancel_token.is_cancelled:
                     await stream_handler("", is_final=True)
             else:
@@ -946,14 +922,18 @@ class ChannelMessageHandler:
                 if cancel_token.is_cancelled:
                     break
                 parts.append(chunk)
-            result = self._format_reasoning_reply(
-                channel,
-                "".join(reasoning_parts),
+            result, normalized_reasoning = _normalize_assistant_output(
                 "".join(parts),
+                "".join(reasoning_parts),
             )
             return (
-                result or "抱歉，未能生成回复，请稍后重试。",
-                "".join(reasoning_parts),
+                result
+                or (
+                    "抱歉，这次没有整理出可发送的回复，请重试。"
+                    if normalized_reasoning
+                    else "抱歉，未能生成回复，请稍后重试。"
+                ),
+                normalized_reasoning,
             )
         except Exception as e:
             logger.error(f"Agent processing error: {e}")
