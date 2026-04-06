@@ -38,6 +38,17 @@ CountBot was born from natural language. Its vision is not to require more peopl
 
 ## Latest Updates
 
+- **v0.8.0**
+  - Addressed multiple issues and user-reported problems, fixing a batch of known bugs in high-frequency usage scenarios
+  - Fully optimized the frontend interface and interaction experience, improving overall usability and operation flow
+  - Continued optimizing the end-to-end response pipeline to improve the accuracy, timeliness, and overall stability of AI replies
+  - Refactored conversation context maintenance with short-context summary caching, overflow history summarization, and full-session memory persistence
+  - Strengthened multi-channel reliability, especially for WeChat, WeCom, and Lark message handling, deduplication, and streaming delivery control
+  - Optimized heartbeat and scheduled execution logic to avoid counting messages before successful delivery and to support schedule refresh after config changes
+  - Improved reasoning switches and runtime config resolution with provider-specific thinking field mapping and persona merge rules
+  - Unified bind host and port environment variables and added documentation for `COUNTBOT_HOST` / `COUNTBOT_PORT`
+  - Release notes: [https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0)
+
 - **v0.7.0**
   - Addressed multiple issue reports, fixed a batch of known bugs, and improved overall stability
   - Added file upload and processing flows to the WEBUI, improved Mermaid rendering, and made chart presentation more user-friendly
@@ -147,6 +158,20 @@ python start_app.py
 
 After startup, CountBot opens at `http://127.0.0.1:8000` by default.
 
+You can override the default bind host and port with environment variables. Priority is `COUNTBOT_HOST` / `COUNTBOT_PORT` > defaults.
+
+```powershell
+$env:COUNTBOT_HOST = '0.0.0.0'
+$env:COUNTBOT_PORT = '8001'
+python start_app.py
+```
+
+```cmd
+set COUNTBOT_HOST=0.0.0.0
+set COUNTBOT_PORT=8001
+python start_app.py
+```
+
 If GitHub access is limited, you can switch to Gitee:
 
 ```bash
@@ -161,36 +186,31 @@ git clone https://gitee.com/countbot-ai/CountBot.git
 
 ---
 
-## Key Changes in v0.7.0
+## Key Changes in v0.8.0
 
-### 1. Focused on bug fixes and stability improvements
+### 1. Focused on bug fixes and high-frequency scenario stability
 
-This release first tackles known issues coming from GitHub issues and daily usage feedback, covering tool invocation, configuration flows, skill integration, and interaction details, making CountBot more stable and predictable in complex scenarios.
+This release first tackles multiple problems reported through GitHub issues and daily user feedback, with systematic fixes for known bugs in high-frequency scenarios, making CountBot more stable and predictable in complex and long-running workflows.
 
-### 2. Frontend interaction keeps getting tighter and faster
+### 2. Frontend interface and interaction experience were upgraded across the board
 
-The frontend continues to be optimized around common operation paths, reducing the cognitive load of configuration and skill management so daily use feels more direct.
+The frontend continues to be refined around common operation paths, especially in configuration, sessions, skills, and daily management flows, reducing cognitive load and improving overall usability.
 
-### 3. The tool invocation chain is now leaner
+### 3. The overall response pipeline is now faster and more consistent
 
-The tool flow, context assembly, and execution chain were reworked again. Without sacrificing capability coverage, token usage dropped significantly. 
+The conversation context, execution flow, and response pipeline were reworked again. Without sacrificing capability coverage, this version further improves the accuracy, timeliness, and overall stability of AI responses.
 
-### 4. Model thinking control is more precise
+### 4. Conversation context maintenance was refactored
 
-A new thinking control switch lets you decide whether to enable or reduce reasoning intensity based on task complexity, which improves perceived response speed in many high-frequency scenarios.
+This version adds short-context summary caching, overflow history summarization, and full-session memory persistence, making long-conversation context management clearer and long-running memory maintenance more controllable.
 
-### 5. SkillsHub is now part of the conversational management flow
+### 5. Multi-channel message handling became more robust
 
-The new `find-skills` skill integrates Tencent Cloud SkillsHub into the conversation flow. You can now search, install, enable, disable, and remove skills directly through natural language without manually handling underlying files.
+This release strengthens message handling, deduplication, and streaming delivery for channels such as WeChat, WeCom, and Lark, reducing disruption from duplicate messages, expired events, and interrupted delivery.
 
-### 6. IMA knowledge base and notes are now built in
+### 6. Heartbeat, reasoning control, and runtime configuration were further improved
 
-CountBot adds two new skills:
-
-- `ima-knowledge-base`: search knowledge bases, inspect hit details, browse entries, upload files, and import web pages
-- `ima-notes`: search notes, read notes, create new notes, and append content
-
-This allows CountBot to write material directly into the IMA knowledge base or persist content into the IMA notes system, further strengthening the idea of "conversation as management".
+This version also improves heartbeat and scheduled execution logic so deliveries are counted only after success, while expanding provider-specific reasoning field mapping, persona merge rules, and unified runtime configuration via `COUNTBOT_HOST` and `COUNTBOT_PORT`.
 
 ---
 
@@ -204,7 +224,7 @@ This allows CountBot to write material directly into the IMA knowledge base or p
 | Remote Access Guide | Remote initialization, authentication, and troubleshooting | [https://654321.ai/docs/advanced/remote-access](https://654321.ai/docs/advanced/remote-access) |
 | Authentication | Password setup and access boundaries | [https://654321.ai/docs/advanced/auth](https://654321.ai/docs/advanced/auth) |
 | API Reference | REST API and WebSocket | [https://654321.ai/docs/api-reference](https://654321.ai/docs/api-reference) |
-| Release Notes | Version history and release changes | [https://654321.ai/docs/releases/v0.7.0](https://654321.ai/docs/releases/v0.7.0) |
+| Release Notes | Version history and release changes | [https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0) |
 
 For the full documentation site, see: [https://654321.ai/docs](https://654321.ai/docs)
 
