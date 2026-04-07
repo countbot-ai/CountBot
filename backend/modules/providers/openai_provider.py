@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+import uuid
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
@@ -105,10 +106,12 @@ class OpenAIProvider(LLMProvider):
         compatibility_key = self._get_compatibility_cache_key(model)
         compatibility_hints: Dict[str, Any] = {}
         compatibility_recorded = False
+        request_trace_id = str(kwargs.pop("request_trace_id", "")).strip() or uuid.uuid4().hex[:8]
+        sanitized_messages = self._sanitize_messages_for_chat_completions(messages)
 
         request_params: Dict[str, Any] = {
             "model": model,
-            "messages": self._sanitize_messages_for_chat_completions(messages),
+            "messages": sanitized_messages,
             "stream": True,
         }
 
@@ -138,11 +141,15 @@ class OpenAIProvider(LLMProvider):
         self._apply_cached_compatibility(request_params, compatibility_key)
 
         logger.debug(
-            "OpenAI params: "
+            f"OpenAI 请求参数 [trace={request_trace_id}]: "
             + json.dumps(
                 {k: v for k, v in request_params.items() if k not in ["api_key", "messages"]},
                 ensure_ascii=False,
             )
+        )
+        logger.debug(
+            f"发往上游的工具消息序列 [trace={request_trace_id}]: "
+            + self._summarize_tool_message_sequence(sanitized_messages)
         )
 
         stream = None
@@ -175,23 +182,30 @@ class OpenAIProvider(LLMProvider):
                     if fallback_info:
                         compatibility_hints.update(fallback_info.get("hints", {}))
                         logger.warning(
-                            "OpenAI upstream rejected optional request params; "
+                            f"OpenAI upstream rejected optional request params [trace={request_trace_id}]; "
                             f"retrying without {fallback_info['description']}"
                         )
                         continue
 
                 error_summary = self._summarize_error_for_log(e)
+                if self._looks_like_tool_mismatch_error(e):
+                    logger.error(
+                        "检测到上游工具调用不匹配错误: "
+                        f"trace={request_trace_id}, model={model}, sequence="
+                        f"{self._summarize_tool_message_sequence(sanitized_messages)}, error={error_summary}"
+                    )
                 if attempt < max_attempts:
                     wait = min(2 ** attempt, 30)
                     logger.warning(
-                        f"OpenAI 调用失败 (第{attempt}/{max_attempts}次)，"
+                        f"OpenAI 调用失败 [trace={request_trace_id}] (第{attempt}/{max_attempts}次)，"
                         f"{wait}s 后重试: {error_summary}"
                     )
                     attempt += 1
                     await asyncio.sleep(wait)
                 else:
                     logger.error(
-                        f"OpenAI 调用最终失败 ({max_attempts}次尝试耗尽): {error_summary}"
+                        f"OpenAI 调用最终失败 [trace={request_trace_id}] ({max_attempts}次尝试耗尽): "
+                        f"{error_summary}"
                     )
                     raise
 
@@ -296,7 +310,7 @@ class OpenAIProvider(LLMProvider):
                     if fallback_info:
                         compatibility_hints.update(fallback_info.get("hints", {}))
                         logger.warning(
-                            "OpenAI upstream rejected optional request params during stream setup; "
+                            f"OpenAI upstream rejected optional request params during stream setup [trace={request_trace_id}]; "
                             f"retrying without {fallback_info['description']}"
                         )
                         stream = await client.chat.completions.create(**request_params)
@@ -310,7 +324,7 @@ class OpenAIProvider(LLMProvider):
                     stream_retry += 1
                     wait = min(2 ** stream_retry, 30)
                     logger.warning(
-                        f"OpenAI 流读取超时（第{stream_retry}/{max_stream_retries}次），"
+                        f"OpenAI 流读取超时 [trace={request_trace_id}]（第{stream_retry}/{max_stream_retries}次），"
                         f"{wait}s 后重试: {stream_err}"
                     )
                     await asyncio.sleep(wait)
@@ -319,7 +333,7 @@ class OpenAIProvider(LLMProvider):
                     chunk_count = 0
                 elif content_yielded and is_timeout:
                     logger.warning(
-                        f"OpenAI 流式读取超时（已发送 {chunk_count} 个 chunk），"
+                        f"OpenAI 流式读取超时 [trace={request_trace_id}]（已发送 {chunk_count} 个 chunk），"
                         f"优雅截断并结束流: {stream_err}"
                     )
                     yield StreamChunk(finish_reason="length")
@@ -495,7 +509,131 @@ class OpenAIProvider(LLMProvider):
 
             sanitized_messages.append(sanitized)
 
-        return sanitized_messages
+        return self._normalize_tool_message_sequence(sanitized_messages)
+
+    @classmethod
+    def _normalize_tool_message_sequence(
+        cls,
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Repair obviously-invalid assistant/tool message sequences before sending upstream."""
+        normalized_messages: List[Dict[str, Any]] = []
+        pending_tool_call_ids: List[str] = []
+        pending_tool_result_ids: set[str] = set()
+        pending_assistant_index: Optional[int] = None
+
+        def reset_pending() -> None:
+            nonlocal pending_tool_call_ids, pending_tool_result_ids, pending_assistant_index
+            pending_tool_call_ids = []
+            pending_tool_result_ids = set()
+            pending_assistant_index = None
+
+        def drop_pending_tool_calls(reason: str) -> None:
+            nonlocal normalized_messages
+            if pending_assistant_index is None:
+                reset_pending()
+                return
+
+            assistant_message = normalized_messages[pending_assistant_index]
+            if "tool_calls" in assistant_message:
+                assistant_message = dict(assistant_message)
+                assistant_message.pop("tool_calls", None)
+                normalized_messages[pending_assistant_index] = assistant_message
+                logger.warning(
+                    "Dropping dangling assistant tool_calls before upstream request: "
+                    f"{reason}"
+                )
+            reset_pending()
+
+        for message in messages:
+            role = message.get("role")
+
+            if role == "assistant" and message.get("tool_calls"):
+                if pending_tool_call_ids:
+                    drop_pending_tool_calls("previous tool call batch was incomplete")
+
+                deduped_tool_calls: List[Dict[str, Any]] = []
+                seen_tool_call_ids: set[str] = set()
+
+                for tool_call in message.get("tool_calls", []):
+                    if not isinstance(tool_call, dict):
+                        continue
+
+                    tool_call_id = str(tool_call.get("id") or "").strip()
+                    function = tool_call.get("function") or {}
+                    tool_name = str(function.get("name") or "").strip()
+
+                    if tool_call_id and tool_call_id in seen_tool_call_ids:
+                        logger.warning(
+                            "Dropping duplicate assistant tool_call by id before upstream request: "
+                            f"{tool_name} ({tool_call_id})"
+                        )
+                        continue
+
+                    if tool_call_id:
+                        seen_tool_call_ids.add(tool_call_id)
+                    deduped_tool_calls.append(tool_call)
+
+                updated_message = dict(message)
+                if deduped_tool_calls:
+                    updated_message["tool_calls"] = deduped_tool_calls
+                else:
+                    updated_message.pop("tool_calls", None)
+
+                normalized_messages.append(updated_message)
+
+                if deduped_tool_calls:
+                    pending_tool_call_ids = [
+                        str(tool_call.get("id") or "").strip()
+                        for tool_call in deduped_tool_calls
+                        if str(tool_call.get("id") or "").strip()
+                    ]
+                    pending_tool_result_ids = set()
+                    pending_assistant_index = len(normalized_messages) - 1
+                else:
+                    reset_pending()
+                continue
+
+            if role == "tool":
+                tool_call_id = str(message.get("tool_call_id") or "").strip()
+                if not pending_tool_call_ids:
+                    logger.warning(
+                        "Dropping orphan tool result before upstream request: "
+                        f"tool_call_id={tool_call_id or '<empty>'}"
+                    )
+                    continue
+
+                if not tool_call_id or tool_call_id not in pending_tool_call_ids:
+                    logger.warning(
+                        "Dropping unmatched tool result before upstream request: "
+                        f"tool_call_id={tool_call_id or '<empty>'}"
+                    )
+                    continue
+
+                if tool_call_id in pending_tool_result_ids:
+                    logger.warning(
+                        "Dropping duplicate tool result before upstream request: "
+                        f"tool_call_id={tool_call_id}"
+                    )
+                    continue
+
+                normalized_messages.append(message)
+                pending_tool_result_ids.add(tool_call_id)
+                if len(pending_tool_result_ids) == len(pending_tool_call_ids):
+                    reset_pending()
+                continue
+
+            if pending_tool_call_ids:
+                drop_pending_tool_calls(
+                    f"encountered role '{role}' before all tool results were present"
+                )
+
+            normalized_messages.append(message)
+
+        if pending_tool_call_ids:
+            drop_pending_tool_calls("message list ended before all tool results were present")
+
+        return normalized_messages
 
 
     @staticmethod
@@ -509,6 +647,35 @@ class OpenAIProvider(LLMProvider):
             return f"gpt-{match.group(1)}"
 
         return normalized
+
+    @staticmethod
+    def _summarize_tool_message_sequence(messages: List[Dict[str, Any]]) -> str:
+        summary_parts: List[str] = []
+        for message in messages[-12:]:
+            role = str(message.get("role") or "").strip() or "unknown"
+            if role == "assistant" and message.get("tool_calls"):
+                tool_calls = message.get("tool_calls") or []
+                tool_call_ids = [
+                    str(tool_call.get("id") or "").strip()
+                    for tool_call in tool_calls
+                    if isinstance(tool_call, dict)
+                ]
+                compact_ids = ",".join(tool_call_ids[:3])
+                if len(tool_call_ids) > 3:
+                    compact_ids += ",..."
+                summary_parts.append(
+                    f"assistant(tool_calls={len(tool_calls)} ids=[{compact_ids}])"
+                )
+                continue
+
+            if role == "tool":
+                tool_call_id = str(message.get("tool_call_id") or "").strip()
+                summary_parts.append(f"tool(id={tool_call_id or '<empty>'})")
+                continue
+
+            summary_parts.append(role)
+
+        return " -> ".join(summary_parts) if summary_parts else "<empty>"
 
     @staticmethod
     def _extract_error_text(error: Exception) -> str:
@@ -546,6 +713,15 @@ class OpenAIProvider(LLMProvider):
             return float(match.group(1))
         except ValueError:
             return None
+
+    @classmethod
+    def _looks_like_tool_mismatch_error(cls, error: Exception) -> bool:
+        raw = cls._extract_error_text(error).lower()
+        return (
+            "tool call and result not match" in raw
+            or "tool_calls" in raw and "tool_call_id" in raw
+            or "tool use" in raw and "tool result" in raw and "match" in raw
+        )
 
     @classmethod
     def _is_expected_upstream_error(cls, error: Exception) -> bool:

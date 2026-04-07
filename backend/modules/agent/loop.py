@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -47,6 +48,15 @@ class AgentLoop:
         logger.debug(
             f"AgentLoop initialized: max_iterations={max_iterations}, max_retries={max_retries}"
         )
+
+    @staticmethod
+    def _summarize_tool_calls_for_log(tool_calls: List[Any]) -> str:
+        parts = []
+        for tool_call in tool_calls:
+            tool_id = str(getattr(tool_call, "id", "") or "").strip() or "<empty>"
+            tool_name = str(getattr(tool_call, "name", "") or "").strip() or "<unknown>"
+            parts.append(f"{tool_name}#{tool_id}")
+        return ", ".join(parts) if parts else "<none>"
 
     def _resolve_execution_runtime(
         self,
@@ -212,6 +222,13 @@ class AgentLoop:
         total_tool_calls = 0
         final_content = ""
         direct_result_selected = False
+        tool_call_limit_reached = False
+        request_trace_id = f"{session_id[:8]}-{uuid.uuid4().hex[:8]}"
+
+        logger.info(
+            "Agent 循环请求开始: "
+            f"trace={request_trace_id}, session={session_id}, model={runtime_model or '<default>'}"
+        )
 
         try:
             while iteration < runtime_max_iterations:
@@ -230,6 +247,9 @@ class AgentLoop:
                 finish_reason = None
                 reasoning_buffer = ""
                 provider_payload = None
+                provider_trace_kwargs: Dict[str, Any] = {}
+                if active_provider.__class__.__module__.endswith(".openai_provider"):
+                    provider_trace_kwargs["request_trace_id"] = request_trace_id
                 
                 async for chunk in active_provider.chat_stream(
                     messages=messages,
@@ -238,6 +258,7 @@ class AgentLoop:
                     temperature=runtime_temperature,
                     max_tokens=runtime_max_tokens,
                     thinking_enabled=runtime_thinking_enabled,
+                    **provider_trace_kwargs,
                 ):
                     if chunk.is_content and chunk.content:
                         content_buffer += chunk.content
@@ -278,6 +299,42 @@ class AgentLoop:
                     final_content = reasoning_buffer
                 
                 if tool_calls_buffer:
+                    deduped_tool_calls = []
+                    seen_tool_call_ids = set()
+                    for tc in tool_calls_buffer:
+                        if tc.id and tc.id in seen_tool_call_ids:
+                            logger.warning(
+                                f"Skipping duplicate tool call by id in main loop: {tc.name} ({tc.id})"
+                            )
+                            continue
+
+                        if tc.id:
+                            seen_tool_call_ids.add(tc.id)
+                        deduped_tool_calls.append(tc)
+
+                    tool_calls_buffer = deduped_tool_calls
+
+                    logger.info(
+                        "已接收工具批次: "
+                        f"trace={request_trace_id}, iteration={iteration}, count={len(tool_calls_buffer)}, "
+                        f"calls=[{self._summarize_tool_calls_for_log(tool_calls_buffer)}]"
+                    )
+
+                    remaining_tool_slots = runtime_max_iterations - total_tool_calls
+                    if remaining_tool_slots <= 0:
+                        logger.warning(
+                            "Reached max tool call limit before executing a new tool call batch; "
+                            "aborting batch to avoid sending unmatched tool results upstream"
+                        )
+                        tool_call_limit_reached = True
+                        break
+                    if len(tool_calls_buffer) > remaining_tool_slots:
+                        logger.warning(
+                            f"Truncating tool call batch from {len(tool_calls_buffer)} to "
+                            f"{remaining_tool_slots} to keep tool_calls/tool_results aligned"
+                        )
+                        tool_calls_buffer = tool_calls_buffer[:remaining_tool_slots]
+
                     tool_call_dicts = [
                         {
                             "id": tc.id,
@@ -327,7 +384,11 @@ class AgentLoop:
                         tool_args = tool_call.arguments
                         tool_id = tool_call.id
 
-                        logger.debug(f"Executing tool {total_tool_calls}: {tool_name}")
+                        logger.info(
+                            "开始执行工具: "
+                            f"trace={request_trace_id}, seq={total_tool_calls}, "
+                            f"name={tool_name}, tool_call_id={tool_id}"
+                        )
 
                         if tool_event_handler:
                             try:
@@ -442,6 +503,11 @@ class AgentLoop:
                                     "name": tool_name,
                                     "content": result,
                                 })
+                            logger.info(
+                                "已追加工具结果: "
+                                f"trace={request_trace_id}, name={tool_name}, tool_call_id={tool_id}, "
+                                f"status=success, duration_ms={duration_ms}"
+                            )
                         else:
                             error_msg = f"Tool execution failed after {self.max_retries} attempts: {str(last_error)}"
                             logger.error(f"Tool {tool_name} failed permanently: {error_msg}")
@@ -501,6 +567,11 @@ class AgentLoop:
                                     "name": tool_name,
                                     "content": error_msg,
                                 })
+                            logger.info(
+                                "已追加工具结果: "
+                                f"trace={request_trace_id}, name={tool_name}, tool_call_id={tool_id}, "
+                                f"status=error, duration_ms={duration_ms}"
+                            )
                     if direct_result_selected:
                         break
                 else:
@@ -512,8 +583,12 @@ class AgentLoop:
                     break
             
             # 检查是否达到限制
-            if iteration >= runtime_max_iterations or total_tool_calls >= runtime_max_iterations:
-                if total_tool_calls >= runtime_max_iterations:
+            if (
+                tool_call_limit_reached
+                or iteration >= runtime_max_iterations
+                or total_tool_calls >= runtime_max_iterations
+            ):
+                if tool_call_limit_reached or total_tool_calls >= runtime_max_iterations:
                     logger.warning(f"Max tool calls ({runtime_max_iterations}) reached")
                     warning_msg = f"\n\n[达到最大工具调用次数 {runtime_max_iterations}]"
                 else:
@@ -571,7 +646,7 @@ class AgentLoop:
         if not self.tools:
             raise ValueError("ToolRegistry not initialized")
         
-        logger.debug(f"Executing tool: {tool_name}")
+        logger.debug(f"执行工具: {tool_name}")
         
         try:
             result = await self.tools.execute(tool_name, arguments, auto_record=False)
