@@ -540,17 +540,19 @@ class ContextBuilder:
         messages.extend(history)
         
         # 动态检测团队调用并注入强制提示词
+        team_reminder = None
         mentioned_team = self._find_mentioned_team(current_message)
         if mentioned_team:
             # 提取最近的对话上下文
             context_summary = self._extract_recent_context(history, limit=5)
             team_reminder = self._build_team_reminder_with_context(mentioned_team, context_summary)
-            messages.append({"role": "system", "content": team_reminder})
         elif "@" in current_message:
             team_names = self._get_active_team_names()
             team_list = "、".join(team_names) if team_names else "无"
             team_reminder = f"💡 检测到 @ 符号，可用团队：{team_list}"
-            messages.append({"role": "system", "content": team_reminder})
+        
+        if team_reminder:
+            messages[0]["content"] += f"\n\n{team_reminder}"
         
         user_content = self._build_user_content(current_message, media)
         messages.append({"role": "user", "content": user_content})

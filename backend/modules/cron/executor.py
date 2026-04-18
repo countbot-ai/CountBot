@@ -1,14 +1,17 @@
 """Cron 任务执行器"""
 
-import json
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT
-from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
-from backend.modules.channels.manager import ChannelManager
 from backend.utils.logger import logger
+
+if TYPE_CHECKING:
+    from backend.modules.channels.manager import ChannelManager
+    from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 
 # Heartbeat 特殊消息标记
 HEARTBEAT_MESSAGE_MARKER = "__heartbeat__"
@@ -42,8 +45,6 @@ class CronExecutor:
         deliver_response: bool = False
     ) -> str:
         """执行定时任务"""
-        logger.info(f"Executing job {job_id}: {message[:100]}...")
-
         # 识别 heartbeat 特殊任务
         if message == HEARTBEAT_MESSAGE_MARKER:
             return await self._execute_heartbeat(
@@ -54,6 +55,8 @@ class CronExecutor:
                 deliver_response,
             )
 
+        logger.info(f"Executing job {job_id}: {message[:100]}...")
+
         try:
             # 如果有 channel 和 chat_id，查找或创建对应的会话
             if channel and chat_id:
@@ -61,9 +64,11 @@ class CronExecutor:
             else:
                 session_id = f"cron:{job_id}"
 
-            # 使用专用的 cron 任务提示词包装消息
-            cron_message = CRON_TASK_EXECUTION_PROMPT.format(task_message=message)
+            if self.agent.tools:
+                self.agent.tools.set_session_id(session_id)
+                self.agent.tools.set_channel(channel or "cron")
 
+            cron_message = CRON_TASK_EXECUTION_PROMPT.format(task_message=message)
             response = await self.agent.process_direct(
                 content=cron_message,
                 session_id=session_id,

@@ -260,7 +260,6 @@ class SubagentManager:
             from backend.modules.tools.registry import ToolRegistry
             from backend.modules.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
             from backend.modules.tools.shell import ExecTool
-
             # 从配置获取工具超时时间
             tool_timeout = 360
             if self.config_loader:
@@ -674,7 +673,7 @@ class SubagentManager:
             from backend.models.task import Task
             
             async with self.db_session_factory() as db:
-                # 检查任务是否已存在
+                # 检查记录是否已存在
                 from sqlalchemy import select
                 result = await db.execute(
                     select(Task).where(Task.id == task.task_id)
