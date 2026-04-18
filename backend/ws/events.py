@@ -141,7 +141,15 @@ def _inject_explicit_external_request_context(
         return list(context)
 
     augmented_context = list(context)
-    augmented_context.append({"role": "system", "content": system_message})
+    if augmented_context and augmented_context[0].get("role") == "system":
+        existing_content = str(augmented_context[0].get("content", "") or "")
+        separator = "\n\n" if existing_content else ""
+        augmented_context[0] = {
+            **augmented_context[0],
+            "content": f"{existing_content}{separator}{system_message}",
+        }
+    else:
+        augmented_context.insert(0, {"role": "system", "content": system_message})
     return augmented_context
 
 

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.models.message import Message
 from backend.models.session import Session
 from backend.modules.agent.memory import MemoryStore
+from backend.modules.session.message_context import strip_workflow_exec_metadata
 MessageFormatter = Callable[[Message], dict[str, str]]
 
 _CONTEXT_MAINTENANCE_TASKS: dict[str, asyncio.Task[None]] = {}
@@ -27,7 +28,7 @@ def default_message_formatter(message: Message) -> dict[str, str]:
     """Default formatter for web chat style history."""
     return {
         "role": message.role,
-        "content": str(message.content or ""),
+        "content": strip_workflow_exec_metadata(message.content),
     }
 
 

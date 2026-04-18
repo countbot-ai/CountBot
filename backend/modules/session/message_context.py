@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,10 @@ from backend.modules.channels.media_utils import infer_extension, sanitize_filen
 from backend.modules.workspace.manager import workspace_manager
 
 MAX_CHAT_ATTACHMENTS = 10
+_WORKFLOW_EXEC_META_RE = re.compile(
+    r"\s*<!--WORKFLOW_EXEC:.*?:WORKFLOW_EXEC-->\s*",
+    re.DOTALL,
+)
 
 
 def parse_message_context(raw: Optional[str]) -> dict[str, Any]:
@@ -75,6 +80,11 @@ def normalize_assistant_persistence_payload(
         return fallback_message, normalized_reasoning, True
 
     return "", None, False
+
+
+def strip_workflow_exec_metadata(content: Optional[str]) -> str:
+    """Strip hidden workflow execution metadata before reusing message text in model context."""
+    return _WORKFLOW_EXEC_META_RE.sub("", str(content or "")).strip()
 
 
 def infer_attachment_kind(path_or_name: str, content_type: Optional[str] = None) -> str:
