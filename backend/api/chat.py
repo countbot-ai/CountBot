@@ -7,9 +7,9 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import unquote
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -64,6 +64,9 @@ from backend.utils.paths import WORKSPACE_DIR
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 MAX_CHAT_ATTACHMENT_SIZE = 25 * 1024 * 1024
+DEFAULT_TOOL_PREVIEW_LIMIT = 1200
+MAX_TOOL_PREVIEW_LIMIT = 8000
+SPECIAL_HISTORY_TOOL_NAMES = {"spawn", "workflow_run"}
 
 
 def _normalize_api_mode(value: Any) -> str:
@@ -261,12 +264,16 @@ class ToolCallResponse(BaseModel):
     
     id: str
     name: str
-    arguments: Dict[str, Any]
+    arguments: Dict[str, Any] = Field(default_factory=dict)
     result: Optional[str] = None
     error: Optional[str] = None
     status: str = "success"
     duration: Optional[int] = None
     spawn_task: Optional[Dict[str, Any]] = None  # 子代理任务详情（仅 spawn 工具调用）
+    detail_available: bool = False
+    detail_loaded: bool = True
+    result_truncated: bool = False
+    error_truncated: bool = False
 
 
 class MessageResponse(BaseModel):
@@ -279,7 +286,165 @@ class MessageResponse(BaseModel):
     reasoning_content: Optional[str] = None
     attachment_items: List[AttachmentItemResponse] = Field(default_factory=list)
     created_at: str
+    tool_call_count: int = 0
+    special_tool_call_names: List[str] = Field(default_factory=list)
     tool_calls: List[ToolCallResponse] = Field(default_factory=list, description="工具调用记录")
+
+
+class MessageToolCallPageResponse(BaseModel):
+    """单条消息的工具调用分页响应"""
+
+    message_id: int
+    total: int
+    offset: int
+    limit: int
+    has_more: bool
+    items: List[ToolCallResponse] = Field(default_factory=list)
+
+
+def _clamp_tool_preview_limit(value: int) -> int:
+    return max(120, min(int(value), MAX_TOOL_PREVIEW_LIMIT))
+
+
+def _parse_tool_arguments(raw: Optional[str]) -> Dict[str, Any]:
+    if not raw:
+        return {}
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+
+    if isinstance(parsed, dict):
+        return parsed
+    return {"value": parsed}
+
+
+def _truncate_text(value: Optional[str], limit: int) -> tuple[Optional[str], bool]:
+    if value is None:
+        return None, False
+
+    normalized = str(value)
+    if len(normalized) <= limit:
+        return normalized, False
+
+    trimmed = normalized[:limit].rstrip()
+    return f"{trimmed}\n...", True
+
+
+def _extract_spawn_task_id(result_text: Optional[str]) -> Optional[str]:
+    if not result_text:
+        return None
+
+    try:
+        parsed = json.loads(result_text)
+        if isinstance(parsed, dict) and parsed.get("task_id"):
+            return str(parsed["task_id"]).strip()
+    except (TypeError, json.JSONDecodeError):
+        pass
+
+    match = re.search(r"\(ID: ([a-f0-9\-]+)\)", result_text)
+    if match:
+        return match.group(1)
+    return None
+
+
+async def _load_spawn_task_detail(
+    *,
+    tool_call_result: Optional[str],
+    subagent_mgr,
+    db: AsyncSession,
+) -> Optional[Dict[str, Any]]:
+    task_id = _extract_spawn_task_id(tool_call_result)
+    if not task_id:
+        return None
+
+    if subagent_mgr:
+        task = subagent_mgr.get_task(task_id)
+        if task:
+            return task.to_dict()
+
+    from sqlalchemy import select
+    from backend.models.task import Task as TaskModel
+
+    result = await db.execute(
+        select(TaskModel).where(TaskModel.id == task_id)
+    )
+    db_task = result.scalar_one_or_none()
+    if not db_task:
+        return None
+
+    tool_call_records = []
+    if db_task.tool_call_records:
+        try:
+            tool_call_records = json.loads(db_task.tool_call_records)
+        except json.JSONDecodeError as exc:
+            logger.warning(f"Failed to parse tool_call_records: {exc}")
+
+    return {
+        "task_id": db_task.id,
+        "label": db_task.label,
+        "message": db_task.message,
+        "session_id": db_task.session_id,
+        "status": db_task.status,
+        "progress": db_task.progress,
+        "result": db_task.result,
+        "error": db_task.error,
+        "created_at": to_utc_iso(db_task.created_at),
+        "started_at": to_utc_iso(db_task.started_at),
+        "completed_at": to_utc_iso(db_task.completed_at),
+        "tool_call_records": tool_call_records,
+    }
+
+
+async def _build_tool_call_response(
+    *,
+    tc,
+    db: AsyncSession,
+    subagent_mgr,
+    tool_mode: Literal["full", "summary", "none"] = "full",
+    preview_limit: int = DEFAULT_TOOL_PREVIEW_LIMIT,
+) -> ToolCallResponse:
+    arguments = _parse_tool_arguments(tc.arguments)
+
+    status_value = "error" if tc.error else "success"
+    use_full_payload = tool_mode == "full" or tc.tool_name in SPECIAL_HISTORY_TOOL_NAMES
+
+    result_text = tc.result
+    error_text = tc.error
+    result_truncated = False
+    error_truncated = False
+    detail_available = False
+    detail_loaded = True
+
+    if tool_mode == "summary" and not use_full_payload:
+        result_text, result_truncated = _truncate_text(tc.result, preview_limit)
+        error_text, error_truncated = _truncate_text(tc.error, preview_limit)
+        detail_available = result_truncated or error_truncated
+        detail_loaded = not detail_available
+
+    spawn_task = None
+    if tc.tool_name == "spawn":
+        spawn_task = await _load_spawn_task_detail(
+            tool_call_result=tc.result,
+            subagent_mgr=subagent_mgr,
+            db=db,
+        )
+
+    return ToolCallResponse(
+        id=tc.id,
+        name=tc.tool_name,
+        arguments=arguments,
+        result=result_text,
+        error=error_text,
+        status=status_value,
+        duration=tc.duration_ms,
+        spawn_task=spawn_task,
+        detail_available=detail_available,
+        detail_loaded=detail_loaded,
+        result_truncated=result_truncated,
+        error_truncated=error_truncated,
+    )
 
 
 # ============================================================================
@@ -527,7 +692,15 @@ def _inject_explicit_external_request_context(
         return list(context)
 
     augmented_context = list(context)
-    augmented_context.append({"role": "system", "content": system_message})
+    if augmented_context and augmented_context[0].get("role") == "system":
+        existing_content = str(augmented_context[0].get("content", "") or "")
+        separator = "\n\n" if existing_content else ""
+        augmented_context[0] = {
+            **augmented_context[0],
+            "content": f"{existing_content}{separator}{system_message}",
+        }
+    else:
+        augmented_context.insert(0, {"role": "system", "content": system_message})
     return augmented_context
 
 
@@ -1054,6 +1227,12 @@ async def get_session_messages(
     session_id: str,
     limit: Optional[int] = None,
     offset: int = 0,
+    tool_mode: Literal["full", "summary", "none"] = "full",
+    tool_preview_limit: int = Query(
+        DEFAULT_TOOL_PREVIEW_LIMIT,
+        ge=120,
+        le=MAX_TOOL_PREVIEW_LIMIT,
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> List[MessageResponse]:
     """
@@ -1072,7 +1251,7 @@ async def get_session_messages(
         HTTPException: 会话不存在
     """
     try:
-        from sqlalchemy import select
+        from sqlalchemy import func, select
         from backend.models.tool_conversation import ToolConversation
         
         # 获取全局 subagent_manager
@@ -1095,31 +1274,62 @@ async def get_session_messages(
             offset=offset,
         )
         
-        # 创建有效消息 ID 集合（用于过滤孤立的工具调用记录）
-        valid_message_ids = {msg.id for msg in messages}
-        
-        # 获取该会话的所有工具调用记录（只获取有效的）
-        # 过滤条件：message_id 为 NULL（会话级）或 message_id 在有效消息列表中
-        tool_calls_query = (
-            select(ToolConversation)
-            .where(ToolConversation.session_id == session_id)
-            .where(
-                (ToolConversation.message_id.is_(None)) |
-                (ToolConversation.message_id.in_(valid_message_ids))
-            )
-            .order_by(ToolConversation.timestamp.asc())
-        )
-        
-        tool_calls_result = await db.execute(tool_calls_query)
-        all_tool_calls = tool_calls_result.scalars().all()
-        
-        # 按 message_id 分组工具调用
+        tool_call_counts: Dict[int, int] = {}
+        special_tool_names_by_message: Dict[int, List[str]] = {}
         tool_calls_by_message: Dict[int, List[ToolConversation]] = {}
-        for tc in all_tool_calls:
-            if tc.message_id is not None:
-                if tc.message_id not in tool_calls_by_message:
-                    tool_calls_by_message[tc.message_id] = []
-                tool_calls_by_message[tc.message_id].append(tc)
+        if messages:
+            valid_message_ids = {msg.id for msg in messages}
+
+            count_query = (
+                select(
+                    ToolConversation.message_id,
+                    func.count(ToolConversation.id),
+                )
+                .where(ToolConversation.session_id == session_id)
+                .where(ToolConversation.message_id.in_(valid_message_ids))
+                .group_by(ToolConversation.message_id)
+            )
+            count_result = await db.execute(count_query)
+            tool_call_counts = {
+                int(message_id): int(total)
+                for message_id, total in count_result.all()
+                if message_id is not None
+            }
+
+            special_tool_query = (
+                select(ToolConversation.message_id, ToolConversation.tool_name)
+                .where(ToolConversation.session_id == session_id)
+                .where(ToolConversation.message_id.in_(valid_message_ids))
+                .where(ToolConversation.tool_name.in_(SPECIAL_HISTORY_TOOL_NAMES))
+                .order_by(ToolConversation.timestamp.asc())
+            )
+            special_tool_result = await db.execute(special_tool_query)
+            for message_id, tool_name in special_tool_result.all():
+                if message_id is None or not tool_name:
+                    continue
+                bucket = special_tool_names_by_message.setdefault(int(message_id), [])
+                if tool_name not in bucket:
+                    bucket.append(str(tool_name))
+
+            if tool_mode != "none":
+                preview_limit = _clamp_tool_preview_limit(tool_preview_limit)
+                tool_calls_query = (
+                    select(ToolConversation)
+                    .where(ToolConversation.session_id == session_id)
+                    .where(ToolConversation.message_id.in_(valid_message_ids))
+                    .order_by(ToolConversation.timestamp.asc())
+                )
+
+                tool_calls_result = await db.execute(tool_calls_query)
+                all_tool_calls = tool_calls_result.scalars().all()
+
+                for tc in all_tool_calls:
+                    if tc.message_id is not None:
+                        tool_calls_by_message.setdefault(tc.message_id, []).append(tc)
+            else:
+                preview_limit = DEFAULT_TOOL_PREVIEW_LIMIT
+        else:
+            preview_limit = DEFAULT_TOOL_PREVIEW_LIMIT
         
         # 构建响应，包含工具调用
         response_messages = []
@@ -1130,89 +1340,13 @@ async def get_session_messages(
             # 转换工具调用为响应格式
             tool_call_responses = []
             for tc in msg_tool_calls:
-                logger.info(f"Tool call: {tc.tool_name}, ID: {tc.id}")
-                try:
-                    arguments = json.loads(tc.arguments) if tc.arguments else {}
-                except json.JSONDecodeError:
-                    arguments = {}
-                
-                # 确定状态
-                status_value = "success"
-                if tc.error:
-                    status_value = "error"
-                
-                # 为 spawn 工具调用添加任务详情
-                spawn_task = None
-                logger.info(f"Checking spawn: tool_name={tc.tool_name}, subagent_mgr={subagent_mgr is not None}")
-                if tc.tool_name == "spawn" and subagent_mgr:
-                    logger.info(f"Processing spawn tool call: {tc.id}")
-                    try:
-                        # 从 result 字段提取 task_id
-                        task_id = None
-                        if tc.result:
-                            # result 格式: "子 Agent [label] 已启动 (ID: task_id)。..." 或 "子 Agent [label] 已完成 (ID: task_id)。..."
-                            match = re.search(r'\(ID: ([a-f0-9\-]+)\)', tc.result)
-                            if match:
-                                task_id = match.group(1)
-                                logger.info(f"Found spawn task_id: {task_id}")
-                        
-                        if task_id:
-                            # 先从内存查询
-                            task = subagent_mgr.get_task(task_id)
-                            if task:
-                                logger.debug(f"Found spawn task in memory: {task_id}")
-                                spawn_task = task.to_dict()
-                            else:
-                                # 内存中没有，从数据库查询
-                                logger.debug(f"Task not in memory, querying database: {task_id}")
-                                from sqlalchemy import select
-                                from backend.models.task import Task as TaskModel
-                                
-                                result = await db.execute(
-                                    select(TaskModel).where(TaskModel.id == task_id)
-                                )
-                                db_task = result.scalar_one_or_none()
-                                
-                                if db_task:
-                                    logger.debug(f"Found spawn task in database: {task_id}")
-                                    # 从数据库任务构建 spawn_task
-                                    tool_call_records = []
-                                    if db_task.tool_call_records:
-                                        try:
-                                            tool_call_records = json.loads(db_task.tool_call_records)
-                                            logger.debug(f"Loaded {len(tool_call_records)} tool call records")
-                                        except json.JSONDecodeError as e:
-                                            logger.warning(f"Failed to parse tool_call_records: {e}")
-                                    
-                                    spawn_task = {
-                                        "task_id": db_task.id,
-                                        "label": db_task.label,
-                                        "message": db_task.message,
-                                        "session_id": db_task.session_id,
-                                        "status": db_task.status,
-                                        "progress": db_task.progress,
-                                        "result": db_task.result,
-                                        "error": db_task.error,
-                                        "created_at": to_utc_iso(db_task.created_at),
-                                        "started_at": to_utc_iso(db_task.started_at),
-                                        "completed_at": to_utc_iso(db_task.completed_at),
-                                        "tool_call_records": tool_call_records,
-                                    }
-                                else:
-                                    logger.warning(f"Spawn task not found in database: {task_id}")
-                    except Exception as e:
-                        logger.warning(f"Failed to get spawn task details: {e}", exc_info=True)
-                
                 tool_call_responses.append(
-                    ToolCallResponse(
-                        id=tc.id,
-                        name=tc.tool_name,
-                        arguments=arguments,
-                        result=tc.result,
-                        error=tc.error,
-                        status=status_value,
-                        duration=tc.duration_ms,
-                        spawn_task=spawn_task,
+                    await _build_tool_call_response(
+                        tc=tc,
+                        db=db,
+                        subagent_mgr=subagent_mgr,
+                        tool_mode=tool_mode,
+                        preview_limit=preview_limit,
                     )
                 )
             
@@ -1232,6 +1366,8 @@ async def get_session_messages(
                         )
                     ],
                     created_at=to_utc_iso(msg.created_at),
+                    tool_call_count=tool_call_counts.get(msg.id, 0),
+                    special_tool_call_names=special_tool_names_by_message.get(msg.id, []),
                     tool_calls=tool_call_responses,
                 )
             )
@@ -1245,6 +1381,137 @@ async def get_session_messages(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get messages: {str(e)}"
+        )
+
+
+@router.get(
+    "/sessions/{session_id}/messages/{message_id}/tool-calls",
+    response_model=MessageToolCallPageResponse,
+)
+async def get_message_tool_calls(
+    session_id: str,
+    message_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    tool_mode: Literal["full", "summary"] = "summary",
+    tool_preview_limit: int = Query(
+        DEFAULT_TOOL_PREVIEW_LIMIT,
+        ge=120,
+        le=MAX_TOOL_PREVIEW_LIMIT,
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> MessageToolCallPageResponse:
+    """分页获取单条消息关联的工具调用。"""
+    try:
+        from sqlalchemy import func, select
+        from backend.models.message import Message
+        from backend.models.tool_conversation import ToolConversation
+
+        subagent_mgr = get_global_subagent_manager()
+        session_manager = SessionManager(db)
+
+        session = await session_manager.get_session(session_id)
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session '{session_id}' not found",
+            )
+
+        message_result = await db.execute(
+            select(Message)
+            .where(Message.id == message_id)
+            .where(Message.session_id == session_id)
+        )
+        message = message_result.scalar_one_or_none()
+        if message is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Message '{message_id}' not found in session '{session_id}'",
+            )
+
+        total_result = await db.execute(
+            select(func.count(ToolConversation.id))
+            .where(ToolConversation.session_id == session_id)
+            .where(ToolConversation.message_id == message_id)
+        )
+        total = int(total_result.scalar_one() or 0)
+
+        preview_limit = _clamp_tool_preview_limit(tool_preview_limit)
+        tool_calls_result = await db.execute(
+            select(ToolConversation)
+            .where(ToolConversation.session_id == session_id)
+            .where(ToolConversation.message_id == message_id)
+            .order_by(ToolConversation.timestamp.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        tool_calls = tool_calls_result.scalars().all()
+
+        items: List[ToolCallResponse] = []
+        for tc in tool_calls:
+            items.append(
+                await _build_tool_call_response(
+                    tc=tc,
+                    db=db,
+                    subagent_mgr=subagent_mgr,
+                    tool_mode=tool_mode,
+                    preview_limit=preview_limit,
+                )
+            )
+
+        return MessageToolCallPageResponse(
+            message_id=message_id,
+            total=total,
+            offset=offset,
+            limit=limit,
+            has_more=offset + len(items) < total,
+            items=items,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get message tool calls: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get message tool calls: {str(e)}"
+        )
+
+
+@router.get("/tool-calls/{tool_call_id}", response_model=ToolCallResponse)
+async def get_tool_call_detail(
+    tool_call_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ToolCallResponse:
+    """按需获取单条工具调用的完整详情。"""
+    try:
+        from sqlalchemy import select
+        from backend.models.tool_conversation import ToolConversation
+
+        subagent_mgr = get_global_subagent_manager()
+        result = await db.execute(
+            select(ToolConversation).where(ToolConversation.id == tool_call_id)
+        )
+        tool_call = result.scalar_one_or_none()
+        if tool_call is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tool call '{tool_call_id}' not found",
+            )
+
+        return await _build_tool_call_response(
+            tc=tool_call,
+            db=db,
+            subagent_mgr=subagent_mgr,
+            tool_mode="full",
+            preview_limit=DEFAULT_TOOL_PREVIEW_LIMIT,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get tool call detail: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get tool call detail: {str(e)}"
         )
 
 

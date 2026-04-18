@@ -132,7 +132,7 @@ async def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
     """
     try:
         # 隐藏的工具列表（禁止前端直接调用）
-        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec'}
+        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec', 'todo'}
         
         # 安全检查：禁止调用隐藏的工具
         if request.tool in hidden_tools:
@@ -190,7 +190,7 @@ async def list_tools() -> ListToolsResponse:
         definitions = tools.get_definitions()
         
         # 隐藏的工具列表（不在前端显示）
-        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec'}
+        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec', 'todo'}
         
         # 转换为响应格式，过滤隐藏的工具
         tool_list = [
@@ -236,7 +236,7 @@ async def get_conversations(
         conversation_history = get_conversation_history()
         
         # 隐藏的工具列表
-        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell'}
+        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell', 'todo'}
         
         # 根据参数获取不同的记录
         if session_id:
@@ -337,7 +337,7 @@ async def get_audit_history(
     """
     try:
         # 隐藏的工具列表
-        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell'}
+        hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell', 'todo'}
         
         if session_id:
             history = file_audit_logger.get_logs_by_session(session_id, limit)
