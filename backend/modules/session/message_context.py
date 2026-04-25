@@ -77,7 +77,9 @@ def normalize_assistant_persistence_payload(
         return normalized_content, normalized_reasoning, False
 
     if normalized_reasoning:
-        return fallback_message, normalized_reasoning, True
+        # 某些模型会把最终可见结果写进 reasoning_content，
+        # 这里优先保留这部分内容，避免把成功结果覆盖成兜底错误消息。
+        return normalized_reasoning, normalized_reasoning, True
 
     return "", None, False
 
