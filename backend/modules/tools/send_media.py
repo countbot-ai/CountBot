@@ -174,6 +174,20 @@ class SendMediaTool(Tool):
             logger.error(f"Error parsing session info: {e}")
             return None
     
+    def _handle_web_mode(self, file_paths: List[str], message: str) -> str:
+        """网页版模式下，只返回消息文本。图片由前端的 file_paths 参数渲染逻辑处理。"""
+        invalid_files = []
+        
+        for path in file_paths:
+            file_path = Path(path)
+            if not file_path.exists():
+                invalid_files.append(f"{path} (不存在)")
+        
+        if invalid_files:
+            return f"{message}\n\n跳过 {len(invalid_files)} 个无效文件: {', '.join(invalid_files)}" if message else f"跳过 {len(invalid_files)} 个无效文件: {', '.join(invalid_files)}"
+        
+        return message if message else "已准备文件"
+
     async def execute(self, file_paths: List[str], message: str = "") -> str:
         """执行发送媒体文件"""
         try:
@@ -182,13 +196,7 @@ class SendMediaTool(Tool):
             
             session_info = await self._parse_session_info()
             if not session_info:
-                return (
-                    "错误：此工具仅支持频道会话使用\n\n"
-                    "当前环境不支持发送文件，可能原因：\n"
-                    "- 在网页版或终端界面对话\n"
-                    "- 未连接到支持的频道（飞书/QQ/钉钉/企业微信）\n\n"
-                    "请在频道会话中使用此功能"
-                )
+                return self._handle_web_mode(file_paths, message)
             
             channel, chat_id, metadata = session_info
             logger.info(f"Sending media to {channel}:{chat_id}")
