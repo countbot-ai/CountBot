@@ -45,6 +45,8 @@ class ConfigLoader:
                     if isinstance(provider_data, dict):
                         if provider_data.get("api_key") is None:
                             provider_data["api_key"] = ""
+                        if provider_data.get("api_keys") is None:
+                            provider_data["api_keys"] = []
                         if "model" not in provider_data:
                             provider_data["model"] = None
 

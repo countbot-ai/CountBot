@@ -65,6 +65,7 @@ def _create_shared_components(config, config_loader=None):
     logger.info("Creating LLM provider...")
     provider = create_provider(
         api_key=runtime_state.api_key or None,
+        api_keys=runtime_state.api_keys or None,
         api_base=runtime_state.api_base,
         default_model=config.model.model,
         api_mode=config.model.api_mode,
@@ -534,6 +535,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     provider = create_provider(
         api_key=runtime_state.api_key or None,
+        api_keys=runtime_state.api_keys or None,
         api_base=runtime_state.api_base,
         default_model=config.model.model,
         api_mode=config.model.api_mode,

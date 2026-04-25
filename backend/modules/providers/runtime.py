@@ -1,7 +1,8 @@
 """Provider 运行态状态与校验辅助。"""
 
-from dataclasses import dataclass
-from typing import Optional
+import threading
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from backend.modules.providers.registry import get_all_providers, get_provider_metadata
 
@@ -17,6 +18,36 @@ def _normalized_text(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _collect_effective_api_keys(
+    provider_config,
+    *,
+    api_key_override: Optional[str] = None,
+) -> List[str]:
+    """从 provider 配置中收集去重后的有效 API Key 列表。"""
+    seen: set[str] = set()
+    result: List[str] = []
+
+    if api_key_override:
+        trimmed = api_key_override.strip()
+        if trimmed:
+            seen.add(trimmed)
+            result.append(trimmed)
+            return result
+
+    if hasattr(provider_config, "get_effective_api_keys"):
+        for key in provider_config.get_effective_api_keys():
+            if key not in seen:
+                seen.add(key)
+                result.append(key)
+    else:
+        primary = _normalized_text(getattr(provider_config, "api_key", ""))
+        if primary:
+            seen.add(primary)
+            result.append(primary)
+
+    return result
+
+
 @dataclass
 class ProviderRuntimeState:
     """Provider 当前运行态状态。"""
@@ -29,9 +60,93 @@ class ProviderRuntimeState:
     requires_api_key: bool
     requires_api_base: bool
     api_key: str
-    api_base: Optional[str]
-    status: str
-    reason: str
+    api_keys: List[str] = field(default_factory=list)
+    api_base: Optional[str] = None
+    status: str = "disabled"
+    reason: str = "disabled"
+
+
+class KeyRotator:
+    """线程安全的 API Key 轮换器，支持轮询和故障转移。"""
+
+    def __init__(self, api_keys: List[str]):
+        self._keys = [k for k in api_keys if k and k.strip()]
+        self._index = 0
+        self._lock = threading.Lock()
+
+    @property
+    def keys(self) -> List[str]:
+        return list(self._keys)
+
+    @property
+    def count(self) -> int:
+        return len(self._keys)
+
+    def next_key(self) -> Optional[str]:
+        """获取下一个 key（轮询策略）。"""
+        with self._lock:
+            if not self._keys:
+                return None
+            key = self._keys[self._index % len(self._keys)]
+            self._index = (self._index + 1) % len(self._keys)
+            return key
+
+    def current_key(self) -> Optional[str]:
+        """获取当前 key（不移动指针）。"""
+        with self._lock:
+            if not self._keys:
+                return None
+            return self._keys[self._index % len(self._keys)]
+
+    def mark_key_failed(self, failed_key: str) -> Optional[str]:
+        """标记某个 key 失败，返回下一个可用 key。"""
+        with self._lock:
+            if len(self._keys) <= 1:
+                return None
+            try:
+                idx = self._keys.index(failed_key)
+            except ValueError:
+                return self.next_key()
+            next_idx = (idx + 1) % len(self._keys)
+            if self._keys[next_idx] == failed_key:
+                return None
+            self._index = next_idx
+            return self._keys[self._index]
+
+    def is_auth_error(self, error: Exception) -> bool:
+        """判断错误是否为认证/密钥相关错误。"""
+        error_text = f"{type(error).__name__} {str(error)}".lower()
+        auth_hints = (
+            "401", "unauthorized", "invalid api key", "invalid_api_key",
+            "authentication", "invalid token", "token is unusable",
+            "api key", "apikey", "access denied", "forbidden",
+            "insufficient_quota", "account_deactivated",
+        )
+        return any(hint in error_text for hint in auth_hints)
+
+    def is_rate_limit_error(self, error: Exception) -> bool:
+        """判断错误是否为限流/配额错误。"""
+        error_text = f"{type(error).__name__} {str(error)}".lower()
+        rate_hints = (
+            "429", "rate limit", "rate_limit", "quota", "too many requests",
+            "insufficient_quota", "capacity", "overloaded",
+        )
+        return any(hint in error_text for hint in rate_hints)
+
+
+_PROVIDER_KEY_ROTATORS: dict[str, KeyRotator] = {}
+_ROTATOR_LOCK = threading.Lock()
+
+
+def get_key_rotator(provider_id: str, api_keys: List[str]) -> KeyRotator:
+    """获取或更新指定 provider 的 KeyRotator 实例。"""
+    with _ROTATOR_LOCK:
+        existing = _PROVIDER_KEY_ROTATORS.get(provider_id)
+        if existing is not None and existing.keys == api_keys:
+            return existing
+        rotator = KeyRotator(api_keys)
+        _PROVIDER_KEY_ROTATORS[provider_id] = rotator
+        return rotator
 
 
 def get_provider_runtime_state(
@@ -49,9 +164,12 @@ def get_provider_runtime_state(
 
     enabled = bool(provider_config.enabled) if provider_config else False
 
-    api_key = _normalized_text(api_key_override)
-    if api_key is None:
-        api_key = _normalized_text(provider_config.api_key if provider_config else "")
+    api_keys = _collect_effective_api_keys(
+        provider_config,
+        api_key_override=api_key_override,
+    )
+
+    api_key = api_keys[0] if api_keys else ""
 
     api_base = _normalized_text(api_base_override)
     if api_base is None:
@@ -98,7 +216,8 @@ def get_provider_runtime_state(
         selectable=selectable,
         requires_api_key=requires_api_key,
         requires_api_base=requires_api_base,
-        api_key=api_key or "",
+        api_key=api_key,
+        api_keys=api_keys,
         api_base=api_base,
         status=status,
         reason=reason,

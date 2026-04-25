@@ -8,9 +8,24 @@ from pydantic import BaseModel, Field, field_validator
 class ProviderConfig(BaseModel):
     """LLM 提供商配置"""
     api_key: str = ""
+    api_keys: List[str] = Field(default_factory=list, description="API 密钥列表，用于轮换")
     api_base: Optional[str] = None
     enabled: bool = True
     model: Optional[str] = None
+
+    def get_effective_api_keys(self) -> List[str]:
+        """返回去重后的有效 API Key 列表，保证至少包含 api_key。"""
+        seen: set[str] = set()
+        result: List[str] = []
+        for key in self.api_keys:
+            trimmed = (key or "").strip()
+            if trimmed and trimmed not in seen:
+                seen.add(trimmed)
+                result.append(trimmed)
+        primary = (self.api_key or "").strip()
+        if primary and primary not in seen:
+            result.insert(0, primary)
+        return result
 
 
 class ModelConfig(BaseModel):

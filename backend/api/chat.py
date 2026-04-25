@@ -523,6 +523,7 @@ async def get_agent_loop(
         
         provider = create_provider(
             api_key=runtime_state.api_key or None,
+            api_keys=runtime_state.api_keys or None,
             api_base=runtime_state.api_base,
             default_model=runtime_config.model_name,
             api_mode=runtime_config.api_mode,
@@ -790,6 +791,135 @@ async def upload_chat_attachment(
         content_type=content_type,
     )
     return AttachmentItemResponse(**item)
+
+
+@router.get("/sessions/{session_id}/attachments/{attachment_path:path}")
+async def download_chat_attachment(
+    session_id: str,
+    attachment_path: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取/下载会话附件文件。"""
+    from fastapi.responses import FileResponse
+    import mimetypes
+
+    await _require_session(db, session_id)
+
+    workspace = _resolve_active_workspace()
+    safe_path = attachment_path.strip().replace("\\", "/")
+    resolved_file = (workspace / safe_path).resolve()
+
+    try:
+        relative = resolved_file.relative_to(workspace)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Attachment path is outside workspace",
+        ) from exc
+
+    session_prefix = str(Path("uploads") / "chat" / session_id)
+    if not str(relative).startswith(session_prefix):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Attachment does not belong to this session",
+        )
+
+    if not resolved_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    mime_type, _ = mimetypes.guess_type(resolved_file.name)
+    return FileResponse(
+        resolved_file,
+        media_type=mime_type or "application/octet-stream",
+        filename=resolved_file.name,
+    )
+
+
+@router.get("/sessions/{session_id}/workspace/{file_path:path}")
+async def download_workspace_file(
+    session_id: str,
+    file_path: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取/下载工作区文件（供 send_media 等工具的参数预览使用）。"""
+    from fastapi.responses import FileResponse
+    import mimetypes
+
+    await _require_session(db, session_id)
+
+    workspace = _resolve_active_workspace()
+    safe_path = file_path.strip().replace("\\", "/")
+    resolved_file = (workspace / safe_path).resolve()
+
+    try:
+        resolved_file.relative_to(workspace)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="File path is outside workspace",
+        ) from exc
+
+    if not resolved_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
+
+    if resolved_file.stat().st_size > 50 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large to serve",
+        )
+
+    mime_type, _ = mimetypes.guess_type(resolved_file.name)
+    return FileResponse(
+        resolved_file,
+        media_type=mime_type or "application/octet-stream",
+        filename=resolved_file.name,
+    )
+
+
+@router.get("/workspace/{file_path:path}")
+async def download_workspace_file_public(
+    file_path: str,
+):
+    """获取/下载工作区文件（无需 session 校验，供 send_media 工具预览使用）。"""
+    from fastapi.responses import FileResponse
+    import mimetypes
+
+    workspace = _resolve_active_workspace()
+    safe_path = file_path.strip().replace("\\", "/")
+    resolved_file = (workspace / safe_path).resolve()
+
+    try:
+        resolved_file.relative_to(workspace)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="File path is outside workspace",
+        ) from exc
+
+    if not resolved_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
+
+    if resolved_file.stat().st_size > 50 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large to serve",
+        )
+
+    mime_type, _ = mimetypes.guess_type(resolved_file.name)
+    return FileResponse(
+        resolved_file,
+        media_type=mime_type or "application/octet-stream",
+        filename=resolved_file.name,
+    )
 
 
 @router.post("/send", response_model=SendMessageResponse)

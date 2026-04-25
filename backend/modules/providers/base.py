@@ -21,6 +21,7 @@ class StreamChunk:
     finish_reason: Optional[str] = None
     usage: Optional[Dict[str, int]] = None
     error: Optional[str] = None
+    raw_error: Optional[str] = None
     reasoning_content: Optional[str] = None
     provider_payload: Optional[Dict[str, Any]] = None
 

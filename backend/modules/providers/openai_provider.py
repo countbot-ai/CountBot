@@ -90,7 +90,7 @@ class OpenAIProvider(LLMProvider):
                     f"OpenAI call failed [{type(e).__name__}]: {log_summary}"
                 )
             friendly_msg = self._format_error_message(error_msg)
-            yield StreamChunk(error=friendly_msg)
+            yield StreamChunk(error=friendly_msg, raw_error=error_msg)
 
     async def _chat_stream_via_chat_completions(
         self,
@@ -194,6 +194,13 @@ class OpenAIProvider(LLMProvider):
                         f"trace={request_trace_id}, model={model}, sequence="
                         f"{self._summarize_tool_message_sequence(sanitized_messages)}, error={error_summary}"
                     )
+
+                if self._is_auth_error(e):
+                    logger.warning(
+                        f"OpenAI 认证/密钥错误 [trace={request_trace_id}]，不重试，直接上抛: {error_summary}"
+                    )
+                    raise
+
                 if attempt < max_attempts:
                     wait = min(2 ** attempt, 30)
                     logger.warning(
@@ -734,6 +741,22 @@ class OpenAIProvider(LLMProvider):
 
         raw = cls._extract_error_text(error).lower()
         return "<html" in raw or "<!doctype html" in raw
+
+    @classmethod
+    def _is_auth_error(cls, error: Exception) -> bool:
+        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。"""
+        status_code = cls._extract_status_code(error)
+        if status_code == 401:
+            return True
+        if status_code == 403:
+            return True
+        raw = cls._extract_error_text(error).lower()
+        auth_hints = (
+            "invalid api key", "invalid_api_key", "authentication",
+            "invalid token", "token is unusable", "apikey",
+            "account_deactivated", "insufficient_quota",
+        )
+        return any(hint in raw for hint in auth_hints)
 
     @classmethod
     def _is_invalid_params_error(cls, error: Exception) -> bool:

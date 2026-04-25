@@ -432,6 +432,7 @@ def _prepare_message_handler_reload_params(
 
             reload_params['provider'] = create_provider(
                 api_key=runtime_state.api_key or None,
+                api_keys=runtime_state.api_keys or None,
                 api_base=runtime_state.api_base,
                 default_model=config.model.model,
                 api_mode=config.model.api_mode,
@@ -752,6 +753,7 @@ class ProviderConfigResponse(BaseModel):
     
     enabled: bool = Field(..., description="是否启用")
     api_key: Optional[str] = Field(None, description="API 密钥（脱敏）")
+    api_keys: List[str] = Field(default_factory=list, description="API 密钥列表")
     api_base: Optional[str] = Field(None, description="API 基础 URL")
 
 
@@ -925,7 +927,8 @@ async def get_settings() -> SettingsResponse:
         for name, provider_config in config.providers.items():
             providers_response[name] = ProviderConfigResponse(
                 enabled=provider_config.enabled,
-                api_key=provider_config.api_key,  # 直接返回，不脱敏
+                api_key=provider_config.api_key,
+                api_keys=provider_config.get_effective_api_keys(),
                 api_base=provider_config.api_base,
             )
         
@@ -1022,6 +1025,15 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
 
                 if "api_key" in provider_data:
                     provider_config.api_key = provider_data["api_key"]
+
+                if "api_keys" in provider_data:
+                    raw_keys = provider_data["api_keys"]
+                    if isinstance(raw_keys, list):
+                        provider_config.api_keys = [
+                            k for k in raw_keys if isinstance(k, str) and k.strip()
+                        ]
+                    else:
+                        provider_config.api_keys = []
 
                 if "api_base" in provider_data:
                     provider_config.api_base = provider_data["api_base"]

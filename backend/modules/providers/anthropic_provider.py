@@ -78,7 +78,7 @@ class AnthropicProvider(LLMProvider):
             error_msg = str(e).strip() or e.__class__.__name__
             logger.error(f"Anthropic call failed: {error_msg!r}")
             friendly_msg = self._format_error_message(error_msg)
-            yield StreamChunk(error=friendly_msg)
+            yield StreamChunk(error=friendly_msg, raw_error=error_msg)
 
     def _should_use_sdk(self) -> bool:
         """Use the official SDK only for the official Anthropic provider."""
@@ -471,6 +471,12 @@ class AnthropicProvider(LLMProvider):
                 stream = await client.messages.create(**request_params)
                 break
             except Exception as e:
+                if self._is_auth_error(e):
+                    logger.warning(
+                        f"Anthropic 认证/密钥错误，不重试，直接上抛: {e}"
+                    )
+                    raise
+
                 if attempt < self.max_retries:
                     wait = min(2**attempt, 30)
                     logger.warning(
@@ -812,6 +818,12 @@ class AnthropicProvider(LLMProvider):
                     yield StreamChunk(finish_reason="length")
                     return
 
+                if self._is_auth_error(e):
+                    logger.warning(
+                        f"Anthropic HTTP 认证/密钥错误，不重试，直接上抛: {e}"
+                    )
+                    raise
+
                 if attempt < self.max_retries:
                     wait = min(2**attempt, 30)
                     logger.warning(
@@ -983,6 +995,23 @@ class AnthropicProvider(LLMProvider):
 
         err_str = str(error).lower()
         return any(token in err_str for token in ("timeout", "timed out", "read error", "socket"))
+
+    @staticmethod
+    def _is_auth_error(error: Exception) -> bool:
+        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。"""
+        status_code = getattr(error, "status_code", None)
+        if not isinstance(status_code, int):
+            response = getattr(error, "response", None)
+            status_code = getattr(response, "status_code", None)
+        if status_code in (401, 403):
+            return True
+        err_str = str(error).lower()
+        auth_hints = (
+            "invalid api key", "invalid_api_key", "authentication",
+            "invalid token", "token is unusable", "apikey",
+            "account_deactivated", "insufficient_quota",
+        )
+        return any(hint in err_str for hint in auth_hints)
 
     @staticmethod
     def _format_error_message(raw: str) -> str:

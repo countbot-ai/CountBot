@@ -12,8 +12,26 @@ from loguru import logger
 from backend.modules.tools.conversation_history import get_conversation_history
 
 
+def _is_key_rotation_eligible_error(error_text: str) -> bool:
+    """判断错误是否适合触发 key 轮换重试。"""
+    lower = (error_text or "").lower()
+    auth_hints = (
+        "401", "unauthorized", "invalid api key", "invalid_api_key",
+        "authentication", "invalid token", "token is unusable",
+        "api key", "apikey", "access denied",
+        "insufficient_quota", "account_deactivated",
+    )
+    rate_hints = (
+        "429", "rate limit", "rate_limit", "quota",
+        "too many requests", "capacity", "overloaded",
+    )
+    return any(hint in lower for hint in auth_hints + rate_hints)
+
+
 class AgentLoop:
     """Agent 主循环类 - 处理消息、调用 LLM、执行工具、生成响应"""
+
+    MAX_KEY_ROTATION_RETRIES = 3
 
     def __init__(
         self,
@@ -44,6 +62,7 @@ class AgentLoop:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_enabled = thinking_enabled
+        self._key_rotation_count = 0
         
         logger.debug(
             f"AgentLoop initialized: max_iterations={max_iterations}, max_retries={max_retries}"
@@ -125,6 +144,7 @@ class AgentLoop:
 
                 candidate_provider = create_provider(
                     api_key=runtime_state.api_key or None,
+                    api_keys=runtime_state.api_keys or None,
                     api_base=runtime_state.api_base,
                     default_model=candidate_model,
                     api_mode=candidate_api_mode,
@@ -223,6 +243,7 @@ class AgentLoop:
         final_content = ""
         direct_result_selected = False
         tool_call_limit_reached = False
+        self._key_rotation_count = 0
         request_trace_id = f"{session_id[:8]}-{uuid.uuid4().hex[:8]}"
 
         logger.info(
@@ -289,7 +310,16 @@ class AgentLoop:
                         finish_reason = chunk.finish_reason
                     
                     if chunk.is_error:
-                        # Yield friendly error to user and stop
+                        error_text = chunk.raw_error or chunk.error or ""
+                        rotated_provider = self._try_key_rotation(
+                            active_provider, error_text
+                        )
+                        if rotated_provider is not None:
+                            active_provider = rotated_provider
+                            iteration -= 1
+                            self._key_rotation_count += 1
+                            await asyncio.sleep(1.0)
+                            continue
                         yield chunk.error
                         return
                 
@@ -623,6 +653,78 @@ class AgentLoop:
         except Exception as e:
             logger.exception(f"Error in agent loop: {e}")
             raise
+
+    def _try_key_rotation(
+        self,
+        current_provider: Any,
+        error_text: str,
+    ) -> Optional[Any]:
+        """尝试通过 key 轮换恢复请求。
+
+        当错误是认证/限流相关时，切换到下一个 API Key 并返回新的 provider。
+        如果无法轮换（只有一个 key 或不适用），返回 None。
+        """
+        if not _is_key_rotation_eligible_error(error_text):
+            return None
+
+        if self._key_rotation_count >= self.MAX_KEY_ROTATION_RETRIES:
+            logger.warning(
+                f"Key rotation limit reached ({self.MAX_KEY_ROTATION_RETRIES}), "
+                f"stopping rotation attempts"
+            )
+            return None
+
+        provider_id = getattr(current_provider, "provider_id", None)
+        if not provider_id:
+            return None
+
+        from backend.modules.providers.runtime import get_key_rotator, KeyRotator
+        from backend.modules.config.loader import config_loader
+        from backend.modules.providers.runtime import get_provider_runtime_state
+
+        config = config_loader.config
+        runtime_state = get_provider_runtime_state(config, provider_id)
+        api_keys = runtime_state.api_keys
+
+        if len(api_keys) <= 1:
+            logger.debug(
+                f"Key rotation skipped for {provider_id}: only {len(api_keys)} key(s) available"
+            )
+            return None
+
+        rotator = get_key_rotator(provider_id, api_keys)
+        current_key = getattr(current_provider, "api_key", "") or ""
+        next_key = rotator.mark_key_failed(current_key)
+
+        if not next_key or next_key == current_key:
+            logger.warning(
+                f"Key rotation exhausted for {provider_id}: no alternative key available"
+            )
+            return None
+
+        logger.info(
+            f"Key rotation for {provider_id}: switching from "
+            f"{current_key[:8]}... to {next_key[:8]}... "
+            f"(error: {error_text[:100]})"
+        )
+
+        from backend.modules.providers import create_provider
+
+        try:
+            new_provider = create_provider(
+                api_key=next_key,
+                api_keys=api_keys,
+                api_base=runtime_state.api_base,
+                default_model=getattr(current_provider, "default_model", None),
+                api_mode=getattr(current_provider, "api_mode", "chat_completions"),
+                timeout=getattr(current_provider, "timeout", 120.0),
+                max_retries=getattr(current_provider, "max_retries", self.max_retries),
+                provider_id=provider_id,
+            )
+            return new_provider
+        except Exception as exc:
+            logger.warning(f"Failed to create rotated provider: {exc}")
+            return None
 
     async def execute_tool(
         self,

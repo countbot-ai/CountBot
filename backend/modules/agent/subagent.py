@@ -358,6 +358,7 @@ class SubagentManager:
                             active_provider = create_provider(
                                 provider_id=provider_name,
                                 api_key=runtime_state.api_key or None,
+                                api_keys=runtime_state.api_keys or None,
                                 api_base=runtime_state.api_base,
                                 api_mode=task.model_override.get(
                                     "api_mode",
