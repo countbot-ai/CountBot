@@ -297,6 +297,38 @@ class XiaozhiConfig(XiaozhiAccountConfig):
     accounts: Dict[str, XiaozhiAccountConfig] = Field(default_factory=dict)
 
 
+class McpServerConfig(BaseModel):
+    """单个 MCP Server 连接配置"""
+    id: str = ""
+    name: str = ""
+    enabled: bool = True
+    transport: Optional[Literal["stdio", "streamable_http", "sse"]] = None
+    description: str = ""
+    include_tools: List[str] = Field(default_factory=lambda: ["*"])
+    exclude_tools: List[str] = Field(default_factory=list)
+    enable_resources: bool = False
+    enable_prompts: bool = False
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    env: Dict[str, str] = Field(default_factory=dict)
+    url: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    timeout: int = Field(default=30, ge=5, le=300)
+    connect_timeout: int = Field(default=10, ge=5, le=60)
+
+
+class McpRegistryConfig(BaseModel):
+    """MCP Server 注册表"""
+    version: int = 1
+    servers: List[McpServerConfig] = Field(default_factory=list)
+
+
+class McpConfig(BaseModel):
+    """MCP 总配置"""
+    enabled: bool = Field(default=False, description="是否启用 MCP 功能，默认关闭")
+    registry: McpRegistryConfig = Field(default_factory=McpRegistryConfig)
+
+
 class ChannelsConfig(BaseModel):
     """渠道配置"""
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
@@ -318,6 +350,7 @@ class AppConfig(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
+    mcp: McpConfig = Field(default_factory=McpConfig)
     theme: str = "auto"
     language: str = "auto"
     font_size: str = "medium"
