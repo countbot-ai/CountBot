@@ -31,6 +31,10 @@ pywebview>=5.3
 # ── 网页内容提取 ──────────────────────────
 beautifulsoup4>=4.14.2
 
+# ── Wiki 知识库 ────────────────────────────
+python-frontmatter>=1.0.0
+PyYAML>=6.0
+
 # ── 渠道 SDK ─────────────────────────────
 qq-botpy>=1.2.1
 dingtalk-stream>=0.24.3
