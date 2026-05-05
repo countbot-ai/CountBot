@@ -544,8 +544,8 @@ class McpClientManager:
 
     async def ensure_connected(self) -> bool:
         """确保MCP已连接，未连接则尝试连接（延迟初始化）。
-        
-        借鉴nanobot的lazy connect设计：首次访问时自动连接。
+
+        采用延迟连接策略：首次访问时自动建立连接。
         Returns True if connected (or already was).
         """
         if self._connected:

@@ -411,19 +411,11 @@ class HeartbeatService:
             return None
 
     async def _generate_greeting(self, now: datetime, idle_hours: float) -> str:
-        """用 LLM 生成问候语（两阶段决策：先判断是否需要问候，再生成内容）
-        
-        借鉴nanobot的两阶段心跳设计：
-        Phase 1: 通过虚拟工具调用判断是否有需要问候的理由（避免无效唤醒）
-        Phase 2: 只在Phase 1确认后才生成完整问候内容
-        """
-        # Phase 1: 快速决策 - 是否值得问候
-        should_greet = await self._should_generate_greeting(now, idle_hours)
-        if not should_greet:
-            logger.debug("Heartbeat Phase 1: LLM decided no greeting needed, skipping")
-            return ""
+        """用 LLM 生成问候语。
 
-        # Phase 2: 生成问候内容
+        前置检查已在 prepare_dispatch 中完成（免打扰时段、随机时间点、
+        用户空闲时长、每日上限），此处直接生成内容。
+        """
         from backend.modules.agent.prompts import HEARTBEAT_GREETING_PROMPT
         from backend.modules.agent.personalities import get_personality_prompt
 
@@ -437,7 +429,7 @@ class HeartbeatService:
         else:
             time_desc = f"晚上{hour}点"
 
-        # 尝试读取最近记忆作为上下文
+        # 读取最近记忆作为上下文
         memory_context = ""
         try:
             memory = MemoryStore(self.workspace / "memory")
@@ -449,7 +441,7 @@ class HeartbeatService:
 
         # 获取性格描述
         personality_desc = get_personality_prompt(
-            self.personality, 
+            self.personality,
             self.custom_personality
         )
 
@@ -485,87 +477,6 @@ class HeartbeatService:
         except Exception as e:
             logger.error(f"Failed to generate greeting: {e}")
             return ""
-
-    async def _should_generate_greeting(self, now: datetime, idle_hours: float) -> bool:
-        """Phase 1: 通过虚拟工具调用快速判断是否需要问候。
-        
-        借鉴nanobot的heartbeat设计：使用结构化工具调用代替自由文本解析，
-        让LLM返回skip/run决策，避免无效的Phase 2 API调用。
-        """
-        hour = now.hour
-        if hour < 12:
-            time_desc = f"上午{hour}点"
-        elif hour < 14:
-            time_desc = f"中午{hour}点"
-        elif hour < 18:
-            time_desc = f"下午{hour}点"
-        else:
-            time_desc = f"晚上{hour}点"
-
-        decision_tools = [{
-            "type": "function",
-            "function": {
-                "name": "heartbeat_decision",
-                "description": "Decide whether to send a greeting to the user.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "enum": ["skip", "run"],
-                            "description": "skip = no greeting needed now, run = should greet the user",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "Brief reason for the decision",
-                        },
-                    },
-                    "required": ["action"],
-                },
-            },
-        }]
-
-        prompt = (
-            f"你是{self.ai_name}，现在北京时间{time_desc}，"
-            f"用户{self.user_name}已经{idle_hours:.0f}小时没有和你说话了。\n"
-            f"请判断现在是否需要主动问候用户。\n"
-            f"考虑因素：时间段是否合适、用户可能的状态、是否有必要打扰。\n"
-            f"如果用户可能在忙碌、休息或不需要打扰，选择skip。"
-        )
-
-        try:
-            response = await self.provider.chat(
-                messages=[{"role": "user", "content": prompt}],
-                model=self.model,
-                temperature=0.3,
-                tools=decision_tools,
-                tool_choice={"type": "function", "function": {"name": "heartbeat_decision"}},
-            )
-            tool_calls = getattr(response, "tool_calls", None) or []
-            if not tool_calls:
-                return True
-            for tc in tool_calls:
-                func = getattr(tc, "function", None)
-                if not func:
-                    continue
-                args_str = getattr(func, "arguments", "{}")
-                if isinstance(args_str, str):
-                    import json as _json
-                    try:
-                        args = _json.loads(args_str)
-                    except Exception:
-                        return True
-                else:
-                    args = args_str
-                action = args.get("action", "run")
-                reason = args.get("reason", "")
-                if action == "skip":
-                    logger.debug(f"Heartbeat Phase 1 skip: {reason}")
-                    return False
-                return True
-        except Exception as e:
-            logger.debug(f"Heartbeat Phase 1 fallback (will greet): {e}")
-        return True
 
 
 
