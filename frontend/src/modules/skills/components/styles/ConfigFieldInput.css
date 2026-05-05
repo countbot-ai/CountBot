@@ -1,0 +1,287 @@
+
+.config-field {
+  margin-bottom: var(--spacing-lg);
+}
+
+.config-field.nested {
+  margin-left: var(--spacing-lg);
+  padding-left: var(--spacing-md);
+  border-left: 2px solid var(--border-color);
+}
+
+.object-field {
+  margin-bottom: var(--spacing-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.92) 100%);
+  overflow: hidden;
+}
+
+.object-field.nested {
+  margin-left: var(--spacing-lg);
+}
+
+.object-header {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: rgba(248, 250, 252, 0.78);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.object-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-base);
+}
+
+.object-toggle:hover {
+  background: rgba(241, 245, 249, 0.96);
+}
+
+.object-header-copy {
+  min-width: 0;
+}
+
+.object-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.object-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform var(--transition-base), color var(--transition-base);
+}
+
+.object-chevron.rotated {
+  transform: rotate(180deg);
+  color: var(--color-primary);
+}
+
+.object-body {
+  padding: var(--spacing-lg);
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.required {
+  color: var(--color-error);
+}
+
+.sensitive-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-light, #fef3c7);
+  color: var(--color-warning, #f59e0b);
+  font-size: var(--font-size-xs);
+}
+
+.field-description {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+.field-input,
+.field-select {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-base);
+}
+
+.field-input:focus,
+.field-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.field-input.readonly,
+.field-select.readonly {
+  background: var(--bg-tertiary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.password-field {
+  position: relative;
+}
+
+.toggle-password {
+  position: absolute;
+  right: var(--spacing-sm);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: var(--spacing-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-password:hover {
+  color: var(--text-primary);
+}
+
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+}
+
+.switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  transition: all var(--transition-base);
+}
+
+.switch-slider:before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: all var(--transition-base);
+}
+
+.switch-input:checked + .switch-slider {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.switch-input:checked + .switch-slider:before {
+  transform: translateX(20px);
+}
+
+.switch-slider.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.switch-text {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.help-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: opacity var(--transition-base);
+}
+
+.help-link:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.collapse-enter-from,
+.collapse-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.collapse-enter-to,
+.collapse-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 深色模式 */
+:root[data-theme="dark"] .sensitive-badge {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+}
+
+:root[data-theme="dark"] .field-input,
+:root[data-theme="dark"] .field-select {
+  background: var(--bg-secondary, #0e1422);
+  border-color: #152035;
+}
+
+:root[data-theme="dark"] .field-input:focus,
+:root[data-theme="dark"] .field-select:focus {
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.1);
+}
+
+:root[data-theme="dark"] .field-input.readonly,
+:root[data-theme="dark"] .field-select.readonly {
+  background: #0a0e1a;
+}
+
+:root[data-theme="dark"] .switch-slider {
+  background-color: #131b2c;
+  border-color: #1e2d45;
+}
+
+:root[data-theme="dark"] .object-field {
+  background: linear-gradient(180deg, rgba(10, 14, 26, 0.96) 0%, rgba(12, 18, 32, 0.9) 100%);
+  border-color: #1f2b44;
+}
+
+:root[data-theme="dark"] .object-header {
+  background: rgba(16, 22, 37, 0.92);
+  border-bottom-color: rgba(37, 54, 84, 0.55);
+}
+
+:root[data-theme="dark"] .object-toggle:hover {
+  background: rgba(18, 25, 41, 0.98);
+}
+
+:root[data-theme="dark"] .switch-input:checked + .switch-slider {
+  background-color: rgba(0, 240, 255, 0.2);
+  border-color: rgba(0, 240, 255, 0.4);
+}

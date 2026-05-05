@@ -1,0 +1,185 @@
+
+.dependency-graph {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.graph-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.graph-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.graph-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.control-btn {
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.graph-container {
+  position: relative;
+  width: 100%;
+  height: 600px;
+  overflow: auto;
+  background: 
+    linear-gradient(90deg, var(--border-color) 1px, transparent 1px),
+    linear-gradient(var(--border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.graph-svg {
+  width: 100%;
+  height: 100%;
+  min-width: 800px;
+  min-height: 600px;
+}
+
+.edge {
+  stroke: var(--text-tertiary);
+  stroke-width: 2;
+  fill: none;
+  transition: all 0.2s;
+}
+
+.edge.highlighted {
+  stroke: var(--accent-color);
+  stroke-width: 3;
+}
+
+.node {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.node-rect {
+  fill: var(--bg-primary);
+  stroke: var(--border-color);
+  stroke-width: 2;
+  transition: all 0.2s;
+}
+
+.node:hover .node-rect {
+  fill: var(--bg-secondary);
+  stroke: var(--accent-color);
+  stroke-width: 2.5;
+}
+
+.node.highlighted .node-rect {
+  fill: var(--bg-secondary);
+  stroke: var(--accent-color);
+  stroke-width: 3;
+  filter: drop-shadow(0 4px 8px rgba(59, 130, 246, 0.3));
+}
+
+.node.has-condition .node-rect {
+  stroke: #f59e0b;
+  stroke-dasharray: 4 2;
+}
+
+.node-label {
+  font-size: 13px;
+  font-weight: 500;
+  fill: var(--text-primary);
+  pointer-events: none;
+}
+
+.condition-indicator {
+  fill: #f59e0b;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.node-tooltip {
+  position: absolute;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  max-width: 250px;
+  pointer-events: none;
+}
+
+.tooltip-content strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.tooltip-content p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+
+.tooltip-deps {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.tooltip-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cycle-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(251, 191, 36, 0.1);
+  border-top: 1px solid #f59e0b;
+  color: var(--text-primary);
+}
+
+.cycle-warning svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+.cycle-warning strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #f59e0b;
+}
+
+.cycle-warning p {
+  font-size: 13px;
+  margin: 2px 0;
+  font-family: monospace;
+  color: var(--text-secondary);
+}
