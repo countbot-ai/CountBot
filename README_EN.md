@@ -38,6 +38,33 @@ CountBot was born from natural language. Its vision is not to require more peopl
 
 ## Latest Updates
 
+- **v0.9.0**
+  - Added MCP client module with multi-server connections, health checks, and tool discovery. Disabled by default, designed for advanced users with personalized needs
+  - Added Wiki knowledge base module with BM25 full-text search, batch retrieval, relevance filtering, and LRU cache
+  - New MCP and Wiki management panels with component modularization and i18n support
+  - New WebSocket status broadcast module for real-time MCP connection state sync to frontend
+  - Improved context management and heartbeat mechanism, simplified greeting logic to reduce LLM calls
+  - Refined tool registration and initialization flow for better startup consistency
+  - Added API Key rotation with automatic failover and multi-key support
+  - Improved send_media tool compatibility for web mode, supports image preview and file download in Web UI
+  - Optimized model preset interface and updated build artifacts
+  - Release notes: [https://654321.ai/docs/releases/v0.9.0](https://654321.ai/docs/releases/v0.9.0)
+
+- **v0.8.3**
+  - Improved model preset interface and updated build artifacts
+  - Release notes: [https://654321.ai/docs/releases/v0.8.3](https://654321.ai/docs/releases/v0.8.3)
+
+- **v0.8.2**
+  - Added API Key rotation and failover capability with automatic key switching on 401/429 errors
+  - Improved send_media tool web-mode compatibility
+  - Release notes: [https://654321.ai/docs/releases/v0.8.2](https://654321.ai/docs/releases/v0.8.2)
+
+- **v0.8.1**
+  - Fixed DeepSeek multi-turn reasoning_content loss issue
+  - Added knowledge base module with BM25 search
+  - Updated documentation and build artifacts
+  - Release notes: [https://654321.ai/docs/releases/v0.8.1](https://654321.ai/docs/releases/v0.8.1)
+
 - **v0.8.0**
   - Addressed multiple issues and user-reported problems, fixing a batch of known bugs in high-frequency usage scenarios
   - Fully optimized the frontend interface and interaction experience, improving overall usability and operation flow
@@ -183,34 +210,6 @@ git clone https://gitee.com/countbot-ai/CountBot.git
 - Gitee Releases: https://gitee.com/countbot-ai/CountBot/releases
 - GitHub Releases: https://github.com/countbot-ai/CountBot/releases
 - Supported platforms: Windows / macOS / Linux
-
----
-
-## Key Changes in v0.8.0
-
-### 1. Focused on bug fixes and high-frequency scenario stability
-
-This release first tackles multiple problems reported through GitHub issues and daily user feedback, with systematic fixes for known bugs in high-frequency scenarios, making CountBot more stable and predictable in complex and long-running workflows.
-
-### 2. Frontend interface and interaction experience were upgraded across the board
-
-The frontend continues to be refined around common operation paths, especially in configuration, sessions, skills, and daily management flows, reducing cognitive load and improving overall usability.
-
-### 3. The overall response pipeline is now faster and more consistent
-
-The conversation context, execution flow, and response pipeline were reworked again. Without sacrificing capability coverage, this version further improves the accuracy, timeliness, and overall stability of AI responses.
-
-### 4. Conversation context maintenance was refactored
-
-This version adds short-context summary caching, overflow history summarization, and full-session memory persistence, making long-conversation context management clearer and long-running memory maintenance more controllable.
-
-### 5. Multi-channel message handling became more robust
-
-This release strengthens message handling, deduplication, and streaming delivery for channels such as WeChat, WeCom, and Lark, reducing disruption from duplicate messages, expired events, and interrupted delivery.
-
-### 6. Heartbeat, reasoning control, and runtime configuration were further improved
-
-This version also improves heartbeat and scheduled execution logic so deliveries are counted only after success, while expanding provider-specific reasoning field mapping, persona merge rules, and unified runtime configuration via `COUNTBOT_HOST` and `COUNTBOT_PORT`.
 
 ---
 
