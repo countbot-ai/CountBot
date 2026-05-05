@@ -8,16 +8,38 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
+_STOP_WORDS: frozenset = frozenset((
+    '的', '了', '是', '在', '和', '与', '或', '但', '而', '就', '都', '很',
+    '太', '最', '也', '还', '不', '有', '会', '能', '可以', '要', '把', '被',
+    '对', '从', '到', '为', '以', '及', '等', '其', '这', '那', '么', '什么',
+    '一个', '一下', '这', '我', '你', '他', '她', '它', '们', '着', '过', '地',
+    '得', '吗', '呢', '吧', '啊', '呀', '嗯', '哦', '哈', '嘛', '啦', '唉',
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
+    'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'how',
+    'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+    'it', 'its', 'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he',
+    'him', 'his', 'she', 'her', 'they', 'them', 'their', 'in', 'on',
+    'at', 'to', 'for', 'with', 'by', 'from', 'of', 'about', 'into',
+    'not', 'no', 'nor', 'so', 'too', 'very', 'just', 'only', 'also',
+))
+
+
 class BM25Index:
     """BM25 全文搜索引擎
 
     支持中英文混合搜索。
     中文使用 jieba 分词（如可用），否则按单字分词。
     英文按单词和连字符分词。
+
+    分词策略：黑名单（停用词）过滤，而非白名单（词性）。
+    原因：BM25 搜索需要高召回率，词性白名单会误杀数字、代词、量词等
+    有搜索价值的 token（如"3个人"中的"3"、"如何使用"中的"如何"）。
     """
 
     _jieba = None
-    SCORE_THRESHOLD = 0.5  # 最低相关性阈值
+    SCORE_THRESHOLD = 0.5
 
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
@@ -27,7 +49,6 @@ class BM25Index:
         self.avg_doc_length: float = 0.0
         self.total_docs: int = 0
 
-        # 倒排索引：token -> {doc_id: freq}
         self._inverted_index: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._idf_cache: Dict[str, float] = {}
         self._load_jieba()
@@ -54,10 +75,8 @@ class BM25Index:
         """
         text = text.lower()
 
-        # 先用 jieba 分中文（如果可用）
         if cls._jieba:
             if fine_grained:
-                # 细粒度模式：同时使用精确模式和搜索引擎模式
                 tokens1 = cls._jieba.lcut(text)
                 tokens2 = cls._jieba.lcut_for_search(text)
                 tokens = list(set(tokens1 + tokens2))
@@ -65,12 +84,9 @@ class BM25Index:
                 tokens = cls._jieba.lcut(text)
 
             tokens = [t.strip() for t in tokens if len(t.strip()) > 0]
-            # 过滤停用词
-            stop_words = {'的', '了', '是', '在', '和', '与', '或', '但', '而', '就', '都', '很', '太', '最', '也', '还', '不', '有', '会', '能', '可以', '要', '把', '被', '对', '从', '到', '为', '以', '及', '等', '其', '这', '那', '么', '什么', '一个', '一下', '这'}
-            tokens = [t for t in tokens if t not in stop_words and len(t) > 0]
+            tokens = [t for t in tokens if t not in _STOP_WORDS and len(t) > 0]
             return tokens
 
-        # Fallback: 单字分词中文 + 按词分词英文
         chinese_chars = re.findall(r'[\u4e00-\u9fff]', text)
         words = re.findall(r'[a-z0-9]+(?:[-_][a-z0-9]+)*', text)
         return chinese_chars + words
