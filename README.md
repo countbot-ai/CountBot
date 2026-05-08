@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/d42ee929-a9a9-4017-a07b-9eb66670bcc3" alt="CountBot Logo" width="180">
-  <h1>CountBot</h1>
+ <h1>CountBot</h1>
   <p>面向中文用户的开源 AI Agent 框架与运行中枢</p>
   <p>连接大模型、IM 渠道、工作流与外部工具，帮助 AI 真正进入执行链路</p>
 
@@ -10,9 +9,10 @@
 
   <p>
     <a href="https://github.com/countbot-ai/countbot/stargazers"><img src="https://img.shields.io/github/stars/countbot-ai/countbot?style=social" alt="GitHub stars"></a>
-    <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python"></a>
+    <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/Python-3.8+-blue.svg" alt="Python"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
   </p>
+  <img src="https://github.com/user-attachments/assets/5a848b1f-04bf-40ff-8249-8a453294f444" alt="CountBot Logo" width="680">
 </div>
 
 ---
