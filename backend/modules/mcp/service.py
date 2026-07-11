@@ -93,7 +93,7 @@ class McpService:
             return {
                 "status": "connected",
                 "server_count": len(servers),
-                "connected_servers": list(self._manager._stacks.keys())
+                "connected_servers": list(self._manager._conn_tasks.keys())
             }
 
     async def disconnect_all(self) -> None:
