@@ -217,7 +217,7 @@ async def test_server(data: Dict[str, Any]):
                 server_id = server_config.id or server_config.name or "unknown"
                 manager._server_configs[server_id] = server_config
 
-                if server_id in manager._stacks:
+                if server_id in manager._conn_tasks:
                     await manager.reconnect_server(server_id)
                 else:
                     import asyncio

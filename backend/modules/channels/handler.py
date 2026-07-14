@@ -353,6 +353,18 @@ class ChannelMessageHandler:
         )
         self.agent_loop.tools = self.tool_registry
 
+    def _reconcile_mcp_tools(self) -> None:
+        """每轮消息前，把本 handler 的注册表与当前全局 MCP 工具集对齐。
+
+        与 WS 对话同理：本注册表在整个 handler 生命周期内复用，若不重新对齐，
+        中途改了 MCP 配置后老会话就加载不到最新工具。
+        """
+        try:
+            from backend.modules.mcp.client import McpClientManager
+            McpClientManager.get_instance().reconcile_registry_sync(self.tool_registry)
+        except Exception as exc:
+            logger.debug(f"MCP reconcile skipped: {exc}")
+
     # ------------------------------------------------------------------
     # 配置热重载
     # ------------------------------------------------------------------
@@ -605,6 +617,7 @@ class ChannelMessageHandler:
                 return
 
             self.tool_registry.set_session_id(session_id)
+            self._reconcile_mcp_tools()
             workflow_tool = self.tool_registry.get_tool("workflow_run")
             if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
                 workflow_tool.set_event_callback(tool_event_handler)
@@ -1853,6 +1866,7 @@ class ChannelMessageHandler:
             self.tool_registry.set_session_id(session_id)
             self.tool_registry.set_channel(msg.channel)
             self.tool_registry.set_cancel_token(cancel_token)
+            self._reconcile_mcp_tools()
 
             await self._save_message(
                 session_id,

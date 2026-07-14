@@ -297,6 +297,15 @@ async def handle_message_event(
             agent_loop.tools.set_session_id(session_id)
             agent_loop.tools.set_cancel_token(cancel_token)
             logger.debug(f"Propagated session_id={session_id} to tool registry")
+
+            # 每轮对话开始前，把会话级注册表的 MCP 工具与当前全局 MCP 工具集对齐。
+            # 修复“中途改了 MCP 配置，老对话不加载新工具”的问题：本连接的注册表只在
+            # WS 建立时同步过一次，这里让它在每条消息前重新对齐（增/删/换）。
+            try:
+                from backend.modules.mcp.client import McpClientManager
+                McpClientManager.get_instance().reconcile_registry_sync(agent_loop.tools)
+            except Exception as e:
+                logger.debug(f"MCP reconcile skipped: {e}")
         explicit_external_request = _resolve_explicit_external_tool_request(
             agent_loop,
             content,
