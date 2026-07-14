@@ -23,6 +23,11 @@ _message_context_var: contextvars.ContextVar[Optional[dict]] = contextvars.Conte
     default=None,
 )
 
+_session_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "send_media_session_id",
+    default=None,
+)
+
 WECOM_REPLY_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 WECOM_REPLY_IMAGE_MAX_COUNT = 10
 
@@ -54,11 +59,15 @@ class SendMediaTool(Tool):
         super().__init__()
         self.channel_manager = channel_manager
         self.session_manager = session_manager
-        self._current_session_id = None
-    
+
+    @property
+    def _current_session_id(self) -> Optional[str]:
+        # 用 contextvar 读取，保证并发会话隔离（实例被所有并发消息共享）。
+        return _session_id_var.get()
+
     def set_session_id(self, session_id: str):
-        """设置当前会话 ID"""
-        self._current_session_id = session_id
+        """设置当前会话 ID（异步安全，按执行上下文隔离）"""
+        _session_id_var.set(session_id)
 
     def set_message_context(self, message_context: Optional[dict]) -> None:
         """设置当前入站消息上下文。"""
