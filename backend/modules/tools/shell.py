@@ -8,6 +8,7 @@
 
 import json
 import asyncio
+import contextvars
 import locale
 import os
 import re
@@ -114,7 +115,16 @@ class ExecTool(Tool):
             f"timeout={timeout}s, max_output={max_output_length}, "
             f"allow_dangerous={allow_dangerous}, restrict_to_workspace={restrict_to_workspace}"
         )
-        self._message_context: Optional[Dict[str, Any]] = None
+        # 消息上下文用 contextvar 存储，保证并发会话隔离：
+        # 工具实例被渠道 handler 的所有并发消息共享，实例属性会互相覆盖，
+        # 导致子进程环境变量（渠道/发件人/账号）串到其它会话。
+        self._message_context_ctx: contextvars.ContextVar[Optional[Dict[str, Any]]] = (
+            contextvars.ContextVar("exec_tool_message_context", default=None)
+        )
+
+    @property
+    def _message_context(self) -> Optional[Dict[str, Any]]:
+        return self._message_context_ctx.get()
 
     @property
     def name(self) -> str:
@@ -156,8 +166,8 @@ class ExecTool(Tool):
         }
 
     def set_message_context(self, message_context: Optional[Dict[str, Any]]) -> None:
-        """保存当前消息上下文，供技能脚本读取渠道环境变量。"""
-        self._message_context = message_context or None
+        """保存当前消息上下文，供技能脚本读取渠道环境变量（异步安全）。"""
+        self._message_context_ctx.set(message_context or None)
 
     def _json_safe_metadata(self, value: Any) -> Any:
         """将 metadata 递归裁剪为可 JSON 序列化的结构。"""

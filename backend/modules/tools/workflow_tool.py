@@ -44,16 +44,30 @@ class WorkflowTool(Tool):
     def __init__(self, subagent_manager, skills=None) -> None:
         self._manager = subagent_manager
         self._skills = skills  # 技能系统实例
-        self._session_id: Optional[str] = None
-        self._cancel_token = None
+        # 会话 ID 与取消令牌用 contextvars 存储，保证并发会话隔离：
+        # 工具实例被渠道 handler 的所有并发消息共享，实例属性会互相覆盖。
+        self._session_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+            "workflow_tool_session_id", default=None
+        )
+        self._cancel_token_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
+            "workflow_tool_cancel_token", default=None
+        )
+
+    @property
+    def _session_id(self) -> Optional[str]:
+        return self._session_id_ctx.get()
+
+    @property
+    def _cancel_token(self) -> Any:
+        return self._cancel_token_ctx.get()
 
     def set_session_id(self, session_id: str) -> None:
         """绑定当前会话 ID，用于实时推送 workflow 事件。"""
-        self._session_id = session_id
+        self._session_id_ctx.set(session_id)
 
     def set_cancel_token(self, token) -> None:
         """绑定取消令牌，用于在用户点击停止时中断工作流执行。"""
-        self._cancel_token = token
+        self._cancel_token_ctx.set(token)
 
     def set_event_callback(self, callback) -> None:
         """绑定当前异步上下文的工作流事件回调。"""
