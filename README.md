@@ -48,7 +48,7 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 新增 API Key 轮换机制与故障转移能力，支持多 key 自动切换
   - 改进 send_media 工具网页版兼容性，支持在WEB UI 预览图片和下载附件
   - 优化模型预设界面并更新构建产物
-  - 发布说明：[https://654321.ai/docs/releases/v0.9.0](https://654321.ai/docs/releases/v0.9.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.9.0](https://countbot.cn/docs/releases/v0.9.0)
 
 - **v0.8.0**
   - 集中修复 issue 与用户反馈中的多项问题，修复一批高频使用场景下的已知 Bug
@@ -59,7 +59,7 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 优化主动问候与定时执行逻辑，避免未成功投递时提前计次，并支持配置变更后刷新当日计划
   - 完善推理开关与运行时配置解析，补充不同提供商的思考字段映射与 persona 合并策略
   - 统一启动时的监听地址与端口环境变量，补充 `COUNTBOT_HOST` / `COUNTBOT_PORT` 文档说明
-  - 发布说明：[https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0)
 
 - **v0.7.0**
   - 集中解决多个 issue 反馈问题，修复一批已知 Bug，提升整体稳定性
@@ -69,7 +69,7 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 新增模型思考控制开关，可按场景切换思考强度，在体感上获得更快的 AI 响应
   - 新增 `find-skills`，全面接入腾讯云 SkillsHub，可通过对话完成 skills 的搜索、安装、启用、禁用与删除
   - 新增 `ima-knowledge-base`、`ima-notes`，全面接入 IMA 知识库与笔记能力，支持知识库搜索、上传、网页导入，以及笔记搜索、读取、新建和追加
-  - 发布说明：[https://654321.ai/docs/releases/v0.7.0](https://654321.ai/docs/releases/v0.7.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.7.0](https://countbot.cn/docs/releases/v0.7.0)
 
 - **v0.6.0**
   - 新增微信ClawBot接入，支持多个账号绑定
@@ -77,25 +77,25 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 新增远程首次初始化安全入口 `/setup/<random>`
   - 新增 `REMOTE_SETUP_SECRET_TTL_MINUTES`，远程初始化入口有效期可控
   - 强化远程认证边界，覆盖 `/api/*` 与 `/ws/chat`
-  - 发布说明：[https://654321.ai/docs/releases/v0.6.0](https://654321.ai/docs/releases/v0.6.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.6.0](https://countbot.cn/docs/releases/v0.6.0)
 
 - **v0.5.0**
   - Agent Team 正式成型，支持多角色分工、上下文衔接与团队级编排
   - 配置体系从会话级演进到角色级、团队级与多机器人协同
   - 渠道系统进一步增强，支持更多企业与社交入口
   - 前端聊天、配置、技能、团队与工具面板整体升级
-  - 发布说明：[https://654321.ai/docs/releases/v0.5.0](https://654321.ai/docs/releases/v0.5.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.5.0](https://countbot.cn/docs/releases/v0.5.0)
 
 - **v0.4.0**
   - 引入会话级配置，支持不同会话使用不同模型与提示词
   - 扩展飞书、企业微信、微博、小智 AI 等渠道能力
   - 优化多智能体协作，新增 `/help` 等使用入口
-  - 发布说明：[https://654321.ai/docs/releases/v0.4.0](https://654321.ai/docs/releases/v0.4.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.4.0](https://countbot.cn/docs/releases/v0.4.0)
 
 - **v0.3.0**
   - 多智能体协作（`pipeline` / `graph` / `council`）首次体系化落地
   - 定时任务、技能配置、工作空间管理能力显著增强
-  - 发布说明：[https://654321.ai/docs/releases/v0.3.0](https://654321.ai/docs/releases/v0.3.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.3.0](https://countbot.cn/docs/releases/v0.3.0)
 
 - **v0.2.0 · 2026-02-26**
   - 聚焦 Bug 修复、交互体验优化与构建流程整理
@@ -202,15 +202,15 @@ git clone https://gitee.com/countbot-ai/CountBot.git
 
 | 文档 | 说明 | 链接 |
 |------|------|------|
-| 快速开始 | 安装、配置、启动 | [https://654321.ai/docs/getting-started/quick-start-guide](https://654321.ai/docs/getting-started/quick-start-guide) |
-| 配置手册 | 完整配置说明 | [https://654321.ai/docs/getting-started/configuration-manual](https://654321.ai/docs/getting-started/configuration-manual) |
-| 部署与运维 | 启动、部署、排障 | [https://654321.ai/docs/advanced/deployment](https://654321.ai/docs/advanced/deployment) |
-| 远程访问指南 | 远程初始化、认证、排障 | [https://654321.ai/docs/advanced/remote-access](https://654321.ai/docs/advanced/remote-access) |
-| 认证说明 | 密码初始化与访问边界 | [https://654321.ai/docs/advanced/auth](https://654321.ai/docs/advanced/auth) |
-| API 参考 | REST API 与 WebSocket | [https://654321.ai/docs/api-reference](https://654321.ai/docs/api-reference) |
-| 发布说明 | 版本演进记录 | [https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0) |
+| 快速开始 | 安装、配置、启动 | [https://countbot.cn/docs/getting-started/quick-start-guide](https://countbot.cn/docs/getting-started/quick-start-guide) |
+| 配置手册 | 完整配置说明 | [https://countbot.cn/docs/getting-started/configuration-manual](https://countbot.cn/docs/getting-started/configuration-manual) |
+| 部署与运维 | 启动、部署、排障 | [https://countbot.cn/docs/advanced/deployment](https://countbot.cn/docs/advanced/deployment) |
+| 远程访问指南 | 远程初始化、认证、排障 | [https://countbot.cn/docs/advanced/remote-access](https://countbot.cn/docs/advanced/remote-access) |
+| 认证说明 | 密码初始化与访问边界 | [https://countbot.cn/docs/advanced/auth](https://countbot.cn/docs/advanced/auth) |
+| API 参考 | REST API 与 WebSocket | [https://countbot.cn/docs/api-reference](https://countbot.cn/docs/api-reference) |
+| 发布说明 | 版本演进记录 | [https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0) |
 
-完整站点文档请查看：[https://654321.ai/docs](https://654321.ai/docs)
+完整站点文档请查看：[https://countbot.cn/docs](https://countbot.cn/docs)
 
 ---
 
@@ -255,9 +255,9 @@ MIT License
 <div align="center">
   <p>连接模型、渠道、团队与工具的 AI Agent 中枢</p>
   <p>
-    <a href="https://654321.ai">官方网站</a> ·
+    <a href="https://count bo t">官方网站</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
     <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
-    <a href="https://654321.ai/docs">完整文档</a>
+    <a href="https://countbot.cn/docs">完整文档</a>
   </p>
 </div>
