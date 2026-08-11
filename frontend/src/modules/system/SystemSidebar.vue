@@ -120,7 +120,7 @@
                 <component :is="ExternalLinkIcon" :size="14" class="external-icon" />
               </a>
               <a
-                href="https://654321.ai"
+                href="https://countbot.cn"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="project-link"
@@ -128,12 +128,12 @@
                 <component :is="GlobeIcon" :size="18" />
                 <div class="project-link-content">
                   <span class="project-link-title">{{ $t('sidebar.website') || '官网' }}</span>
-                  <span class="project-link-desc">654321.ai</span>
+                  <span class="project-link-desc">countbot.cn</span>
                 </div>
                 <component :is="ExternalLinkIcon" :size="14" class="external-icon" />
               </a>
               <a
-                href="https://654321.ai/docs/"
+                href="https://countbot.cn/docs/"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="project-link"
@@ -147,7 +147,7 @@
               </a>
             </div>
             <div class="project-tagline">
-              <p>654321, AI Delivers</p>
+              <p>countbot.cn, AI Delivers</p>
             </div>
           </div>
 

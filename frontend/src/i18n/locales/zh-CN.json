@@ -61,7 +61,7 @@
     },
     "app": {
         "title": "CountBot",
-        "welcome": "CountBot - 654321，AI 即可达成",
+        "welcome": "CountBot - countbot.cn",
         "status": "状态",
         "connected": "已连接",
         "disconnected": "未连接",
