@@ -306,8 +306,8 @@
         class="assistant-response-shell"
       >
         <ReasoningBlock
-          :content="message.reasoningContent || ''"
-          :is-thinking="Boolean(message.isThinking && message.reasoningContent)"
+          :content="embeddedReasoningContent"
+          :is-thinking="Boolean(message.isThinking && embeddedReasoningContent)"
           :default-expanded="false"
           embedded
         />
@@ -439,6 +439,7 @@ import SpawnTaskPanel from '@/components/chat/SpawnTaskPanel.vue'
 import InterleavedMessage from '@/components/chat/InterleavedMessage.vue'
 import MessageAttachment from '@/components/chat/MessageAttachment.vue'
 import { normalizeHistoryToolCall } from '@/modules/chat/utils/historyMessages'
+import { splitReasoningSections } from '@/utils/reasoningSections'
 import { useChatStore } from '@/store/chat'
 import type { ChatMessage, ChatToolCall } from '@/types/chat'
 
@@ -791,8 +792,32 @@ const displayContent = computed(() => {
   return props.message.content || ''
 })
 
+const hasWorkflowResult = computed(() => {
+  return hasHistoryWorkflowTool.value || effectiveToolCalls.value.some(
+    toolCall => toolCall.name === 'workflow_run'
+  )
+})
+
+const workflowReasoningSections = computed(() => {
+  if (props.message.role !== 'assistant' || !hasWorkflowResult.value) {
+    return null
+  }
+
+  const sections = splitReasoningSections(displayContent.value)
+  return sections.reasoning ? sections : null
+})
+
+const embeddedReasoningContent = computed(() => {
+  return [
+    props.message.reasoningContent,
+    workflowReasoningSections.value?.reasoning,
+  ]
+    .filter((content): content is string => Boolean(content))
+    .join('\n\n---\n\n')
+})
+
 const renderedContent = computed(() => {
-  const content = displayContent.value
+  const content = workflowReasoningSections.value?.content ?? displayContent.value
   if (props.message.role === 'assistant') {
     return renderMarkdown(content)
   }
@@ -860,7 +885,7 @@ const hasSpecialVisibleToolCalls = computed(() => {
 const shouldFuseReasoningReply = computed(() => {
   return (
     props.message.role === 'assistant' &&
-    Boolean(props.message.reasoningContent) &&
+    Boolean(embeddedReasoningContent.value) &&
     !useInterleavedMode.value
   )
 })
@@ -1185,5 +1210,3 @@ onBeforeUnmount(() => {
 <style scoped>
 @import './styles/MessageItem.css';
 </style>
-
-
