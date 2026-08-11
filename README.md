@@ -214,6 +214,12 @@ git clone https://gitee.com/countbot-ai/CountBot.git
 
 ---
 
+## 项目状态
+
+CountBot 短期内将不再由作者持续更新，当前主要供对 AI Agent 感兴趣的同学学习、研究和二次开发使用。欢迎各位开发者以 Issue、文档改进、功能修复或新能力等各种形式提交 PR，共同完善项目。
+
+---
+
 ## 开发与贡献
 
 ### 本地开发
@@ -255,9 +261,10 @@ MIT License
 <div align="center">
   <p>连接模型、渠道、团队与工具的 AI Agent 中枢</p>
   <p>
-    <a href="https://count bo t">官方网站</a> ·
+    <a href="https://countbot.cn">官方网站</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
     <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
     <a href="https://countbot.cn/docs">完整文档</a>
   </p>
+  <p><strong>说明：</strong><code>654321.ai</code> 域名已过期，不再使用；项目网站现为 <a href="https://countbot.cn">countbot.cn</a>。</p>
 </div>

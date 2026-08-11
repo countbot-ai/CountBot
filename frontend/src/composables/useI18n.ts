@@ -8,7 +8,6 @@ import { computed } from 'vue'
 import { useI18n as useVueI18n } from 'vue-i18n'
 import {
     type SupportedLocale,
-    detectSystemLanguage,
     getStoredLocale,
     setStoredLocale,
     normalizeLocale
@@ -82,8 +81,7 @@ export function useI18n() {
         if (stored) {
             setLocale(stored)
         } else {
-            const detected = detectSystemLanguage()
-            setLocale(detected)
+            setLocale('en-US')
         }
     }
 
