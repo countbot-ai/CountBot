@@ -66,7 +66,7 @@
     },
     "app": {
         "title": "CountBot",
-        "welcome": "CountBot - 654321, AI Delivers",
+        "welcome": "CountBot - countbot.cn, AI Delivers",
         "status": "Status",
         "connected": "Connected",
         "disconnected": "Disconnected",

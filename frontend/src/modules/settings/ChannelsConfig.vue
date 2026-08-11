@@ -7,7 +7,7 @@
         </h3>
         <div class="header-actions">
           <a
-            href="https://654321.ai/docs/getting-started/ChannelConfig"
+            href="https://countbot.cn/docs/getting-started/ChannelConfig"
             target="_blank"
             rel="noopener noreferrer"
             class="action-btn btn-secondary"

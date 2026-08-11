@@ -9,7 +9,7 @@
         <h1 class="brand-name">
           <span class="brand-count">Count</span><span class="brand-bot">Bot</span>
         </h1>
-        <p class="brand-tagline">654321, AI Delivers</p>
+        <p class="brand-tagline">countbot.cn, AI Delivers</p>
       </div>
 
       <!-- Mode hint -->
