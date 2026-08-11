@@ -229,6 +229,12 @@ For the full documentation site, see: [https://countbot.cn/docs](https://countbo
 
 ---
 
+## Project Status
+
+The author will not actively maintain CountBot in the near term. The project is primarily available for people interested in AI agents to learn from, study, and extend. Developers are welcome to contribute in any form, including issues, documentation improvements, bug fixes, new capabilities, and pull requests.
+
+---
+
 ## Development and Contribution
 
 ### Local Development
@@ -275,4 +281,5 @@ Thanks to FastAPI, Vue.js, SQLAlchemy, Pydantic, LiteLLM, and other open-source 
     <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
     <a href="https://countbot.cn/docs">Full Documentation</a>
   </p>
+  <p><strong>Notice:</strong> The <code>654321.ai</code> domain has expired and is no longer in use. The project website is now <a href="https://countbot.cn">countbot.cn</a>.</p>
 </div>

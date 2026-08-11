@@ -123,10 +123,10 @@ export function setStoredTheme(theme: Theme): void {
 }
 
 /**
- * 获取最终使用的语言（优先级：存储 > 系统 > 默认）
+ * 获取最终使用的语言（优先级：存储 > 默认）
  */
 export function getEffectiveLocale(): SupportedLocale {
-    return getStoredLocale() || detectSystemLanguage()
+    return getStoredLocale() || 'en-US'
 }
 
 /**
