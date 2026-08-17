@@ -87,6 +87,37 @@
       "success_exit_codes": [
         0
       ]
+    },
+    {
+      "name": "dsh",
+      "aliases": [
+        "deepseek-harness",
+        "dsh-headless"
+      ],
+      "type": "cli",
+      "icon_svg": "",
+      "enabled": false,
+      "description": "DeepSeek Harness（headless 一次性任务，打印最终答案后退出）",
+      "command": "dsh",
+      "args": [
+        "--profile",
+        "headless",
+        "{prompt}"
+      ],
+      "working_dir": "",
+      "stdin_template": null,
+      "env": {},
+      "inherit_env": [
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "DSH_HOME"
+      ],
+      "session_mode": "history",
+      "history_message_count": 10,
+      "timeout": 900,
+      "success_exit_codes": [
+        0
+      ]
     }
   ]
 }
