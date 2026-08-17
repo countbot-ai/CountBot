@@ -447,6 +447,18 @@ POST /api/settings/external-coding-tools/check
 }
 ```
 
+### DeepSeek Harness（dsh）配置说明
+
+dsh（DeepSeek Harness）是 DeepSeek 官方开源的 Agent 框架，其 headless 模式适合作为一次性编码工具接入。新工作区首次生成 `external_coding_tools.json` 时会自动带出 dsh profile（默认 `enabled: false`）；**老工作区不会自动出现，需在设置页手动新增，或手改 json 添加**。
+
+- 调用契约：`dsh --profile headless "<task>"`；`--profile headless` 必须写在最前，任务从命令行参数读取，不从 stdin 读取，因此**不要配置 `stdin_template`**。
+- 行为：每次运行创建一个全新的一次性会话，任务完成后把最后一条非空 assistant 文本写到 stdout 并退出；正常完成退出码 0，出错（含启动失败、初始化失败、最终原因为 error）退出码非 0。
+- 工作目录：dsh 把当前工作目录当作默认 workspace 根，直接沿用 CountBot 传入的 `working_dir`（子进程 cwd），无需 `{working_dir}` 占位符。
+- 会话：headless 不支持续会话，`session_mode` 固定用 `history`（或 `stateless`），**不要用 `native`**。
+- 凭证：dsh 默认从 `~/.dsh/.credentials.yaml` 读取凭证（由 `dsh-credentials-local` 提供），不依赖环境变量；`inherit_env` 里的 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DSH_HOME` 只是可选的 env 替代方式，未设置不代表不可用。
+- 首次运行：headless 首次使用会向 `$DSH_HOME/profiles/headless` 写初始化文件，要求子进程有可写的 `HOME` / `DSH_HOME`（默认 `~/.dsh`）；请确保 CountBot 与 dsh 以同一用户运行，否则会以 `EPERM` 失败。
+- 前置条件：机器上 `dsh` 在 PATH 中（Node CLI，一般 `npm i -g @deepseek-ai/dsh`），且已有可用凭证。
+
 ## 10. 导入导出
 
 图形化路径：
