@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from backend.modules.agent.skills import SkillsLoader
+from backend.modules.agent.skills import SkillsLoader, build_frontmatter
 from backend.modules.agent.skills_config import SkillConfigManager
 from backend.modules.agent.skills_schema import SkillConfigSchema
 from backend.modules.config.loader import config_loader
@@ -455,24 +455,13 @@ async def create_skill(request: CreateSkillRequest, req: Request) -> SkillDetail
             )
         
         # 构建技能内容（包含 frontmatter）
-        metadata = {
-            "CountBot": {
-                "always": request.auto_load,
-                "requires": {
-                    "bins": request.requirements
-                }
-            }
-        }
-        
-        frontmatter = f"""---
-name: {request.name}
-description: {request.description}
-metadata: {json.dumps(metadata)}
----
+        full_content = build_frontmatter(
+            name=request.name,
+            description=request.description,
+            auto_load=request.auto_load,
+            requirements=request.requirements,
+        ) + request.content
 
-"""
-        full_content = frontmatter + request.content
-        
         # 创建技能
         success = skills_loader.add_skill(request.name, full_content)
         
@@ -521,24 +510,13 @@ async def update_skill(name: str, request: UpdateSkillRequest, req: Request) -> 
         ensure_workspace_skill(skill, "update")
         
         # 构建技能内容（包含 frontmatter）
-        metadata = {
-            "CountBot": {
-                "always": request.auto_load,
-                "requires": {
-                    "bins": request.requirements
-                }
-            }
-        }
-        
-        frontmatter = f"""---
-name: {name}
-description: {request.description}
-metadata: {json.dumps(metadata)}
----
+        full_content = build_frontmatter(
+            name=name,
+            description=request.description,
+            auto_load=request.auto_load,
+            requirements=request.requirements,
+        ) + request.content
 
-"""
-        full_content = frontmatter + request.content
-        
         # 更新技能
         success = skills_loader.update_skill(name, full_content)
         

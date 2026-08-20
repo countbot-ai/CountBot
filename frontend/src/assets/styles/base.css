@@ -1,0 +1,84 @@
+/**
+ * 基础样式重置
+ */
+
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    font-family: var(--font-family-base);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-primary);
+}
+
+/* 移除按钮默认样式 */
+button {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+/* 移除输入框默认样式 */
+input,
+textarea,
+select {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+}
+
+/* 移除链接默认样式 */
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* 移除列表默认样式 */
+ul,
+ol {
+    list-style: none;
+}
+
+/* 图片响应式 */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* 表格样式 */
+table {
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+
+/* 选中文本样式 */
+::selection {
+    background-color: var(--color-primary);
+    color: #ffffff;
+}
+
+/* Focus 样式 */
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}

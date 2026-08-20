@@ -265,20 +265,35 @@ class ToolRegistry:
             f"before execution ({parse_error}). {guidance}{suffix}"
         )
 
+    @staticmethod
+    def _schema_name(schema: Dict[str, Any]) -> str:
+        return (schema.get("function") or schema).get("name", "")
+
     def get_definitions(self) -> List[Dict[str, Any]]:
         """
         获取所有工具的定义
         
         用于生成 LLM 函数调用的工具列表。
+        内置工具按名称排序在前，MCP 工具按名称排序在后，
+        保证跨次调用的顺序一致性，有利于 LLM prompt caching。
         
         Returns:
             List[dict]: 工具定义列表
         """
         if self._definitions_cache is None:
-            self._definitions_cache = [
-                tool.get_definition() for tool in self._tools.values()
-            ]
-            logger.debug(f"Generated {len(self._definitions_cache)} tool definitions")
+            definitions = [tool.get_definition() for tool in self._tools.values()]
+            builtins: List[Dict[str, Any]] = []
+            mcp_tools: List[Dict[str, Any]] = []
+            for schema in definitions:
+                name = self._schema_name(schema)
+                if name.startswith("mcp_"):
+                    mcp_tools.append(schema)
+                else:
+                    builtins.append(schema)
+            builtins.sort(key=self._schema_name)
+            mcp_tools.sort(key=self._schema_name)
+            self._definitions_cache = builtins + mcp_tools
+            logger.debug(f"Generated {len(self._definitions_cache)} tool definitions ({len(builtins)} builtin, {len(mcp_tools)} MCP)")
         return self._definitions_cache
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any], auto_record: bool = True) -> str:

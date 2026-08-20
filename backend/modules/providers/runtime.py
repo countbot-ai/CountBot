@@ -106,7 +106,12 @@ class KeyRotator:
             try:
                 idx = self._keys.index(failed_key)
             except ValueError:
-                return self.next_key()
+                # failed_key 不在列表中（如 key 列表已变更或为空串）。
+                # 直接内联轮询取下一个 key —— 不能调用 self.next_key()，
+                # 因为它会再次获取非重入的 self._lock，导致同线程死锁。
+                key = self._keys[self._index % len(self._keys)]
+                self._index = (self._index + 1) % len(self._keys)
+                return key
             next_idx = (idx + 1) % len(self._keys)
             if self._keys[next_idx] == failed_key:
                 return None

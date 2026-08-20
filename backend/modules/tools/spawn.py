@@ -1,6 +1,7 @@
 """Spawn Tool - 生成子 Agent 工具"""
 
 import asyncio
+import contextvars
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -20,20 +21,35 @@ class SpawnTool(Tool):
 
     def __init__(self, manager, config_loader=None):
         self._manager = manager
-        self._session_id = None
         self._config_loader = config_loader
-        self._cancel_token = None
+        # 会话 ID 与取消令牌用 contextvars 存储，保证并发会话隔离：
+        # 该工具实例在渠道 handler 中被所有并发消息共享，若用实例属性会互相覆盖
+        # （A 会话的文件被发到 B、取消 A 却打断 B）。见 external_coding_agent.py 同款做法。
+        self._session_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+            "spawn_tool_session_id", default=None
+        )
+        self._cancel_token_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
+            "spawn_tool_cancel_token", default=None
+        )
+
+    @property
+    def _session_id(self) -> Optional[str]:
+        return self._session_id_ctx.get()
+
+    @property
+    def _cancel_token(self) -> Any:
+        return self._cancel_token_ctx.get()
 
     def set_context(self, session_id: str) -> None:
-        self._session_id = session_id
+        self._session_id_ctx.set(session_id)
 
     def set_session_id(self, session_id: Optional[str]) -> None:
         """兼容 ToolRegistry 的会话注入接口。"""
-        self._session_id = session_id
+        self._session_id_ctx.set(session_id)
 
     def set_cancel_token(self, cancel_token) -> None:
         """设置取消令牌"""
-        self._cancel_token = cancel_token
+        self._cancel_token_ctx.set(cancel_token)
 
     @property
     def name(self) -> str:

@@ -172,6 +172,7 @@ async def lifespan(app: FastAPI):
 
     # 初始化数据库和配置
     logger.info("Starting CountBot backend...")
+    app.state.background_tasks = []
     await init_db()
     logger.info("Database initialized")
     await config_loader.load()
@@ -246,6 +247,27 @@ async def lifespan(app: FastAPI):
             memory_store=shared["memory"],
         )
     logger.info("Channel manager created")
+
+    # 初始化 MCP 客户端（如果已启用，非阻塞后台连接）
+    if config.mcp.enabled:
+        logger.info("Initializing MCP client (background)...")
+        try:
+            from backend.modules.mcp.client import McpClientManager
+            manager = McpClientManager.get_instance()
+            manager.set_registry(shared["tool_registry"])
+            enabled_servers = [s for s in config.mcp.registry.servers if s.enabled]
+            if enabled_servers:
+                logger.info(f"Scheduling background connection to {len(enabled_servers)} MCP server(s)...")
+                task = asyncio.create_task(manager.connect(enabled_servers))
+                app.state.background_tasks.append(task)
+            else:
+                logger.info("No enabled MCP servers to connect")
+        except ImportError:
+            logger.info("MCP package not installed, skipping MCP initialization")
+        except Exception as e:
+            logger.warning(f"Failed to schedule MCP initialization: {e}")
+    else:
+        logger.info("MCP is disabled, skipping initialization")
 
     # 初始化 OSS 上传器（可选）
     logger.info("Initializing OSS uploader (optional)...")
@@ -441,6 +463,8 @@ from backend.api.queue import router as queue_router
 from backend.api.auth import router as auth_router
 from backend.api.personalities import router as personalities_router
 from backend.api.agent_teams import router as agent_teams_router
+from backend.api.mcp import router as mcp_router
+from backend.api.wiki import router as wiki_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
@@ -455,6 +479,8 @@ app.include_router(channels_router)
 app.include_router(queue_router)
 app.include_router(personalities_router)
 app.include_router(agent_teams_router)
+app.include_router(mcp_router)
+app.include_router(wiki_router)
 
 
 # WebSocket 端点
@@ -500,6 +526,17 @@ async def websocket_endpoint(websocket: WebSocket):
         **shared["tool_params"],
         memory_store=shared["memory"],
     )
+
+    # 同步 MCP 工具到当前会话的工具注册表（同步版本）
+    try:
+        from backend.modules.mcp.client import McpClientManager
+        manager = McpClientManager.get_instance()
+        if manager.connected:
+            synced = manager.sync_to_registry_sync(tool_registry)
+            if synced > 0:
+                logger.debug(f"Synced {synced} MCP tools to WebSocket session")
+    except Exception as e:
+        logger.debug(f"Failed to sync MCP tools to WebSocket: {e}")
 
     from backend.modules.config.loader import config_loader
     config = config_loader.config

@@ -411,7 +411,11 @@ class HeartbeatService:
             return None
 
     async def _generate_greeting(self, now: datetime, idle_hours: float) -> str:
-        """用 LLM 生成问候语"""
+        """用 LLM 生成问候语。
+
+        前置检查已在 prepare_dispatch 中完成（免打扰时段、随机时间点、
+        用户空闲时长、每日上限），此处直接生成内容。
+        """
         from backend.modules.agent.prompts import HEARTBEAT_GREETING_PROMPT
         from backend.modules.agent.personalities import get_personality_prompt
 
@@ -425,7 +429,7 @@ class HeartbeatService:
         else:
             time_desc = f"晚上{hour}点"
 
-        # 尝试读取最近记忆作为上下文
+        # 读取最近记忆作为上下文
         memory_context = ""
         try:
             memory = MemoryStore(self.workspace / "memory")
@@ -437,7 +441,7 @@ class HeartbeatService:
 
         # 获取性格描述
         personality_desc = get_personality_prompt(
-            self.personality, 
+            self.personality,
             self.custom_personality
         )
 

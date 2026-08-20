@@ -1,0 +1,38 @@
+/* Persona子标签样式 */
+.persona-tabs {
+    width: 100%;
+}
+
+.persona-tab-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.persona-tab-btn {
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    position: relative;
+    bottom: -1px;
+}
+
+.persona-tab-btn:hover {
+    color: var(--text-primary);
+}
+
+.persona-tab-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.persona-tab-content {
+    width: 100%;
+}

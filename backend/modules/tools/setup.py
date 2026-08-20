@@ -199,6 +199,18 @@ def register_all_tools(
         except Exception as e:
             logger.error(f"Failed to register memory tool: {e}")
 
+    # 8b. 注册 Wiki 知识库工具
+    try:
+        from backend.modules.wiki.tool import WikiTool
+
+        wiki_dir = workspace / "wiki"
+        wiki_dir.mkdir(parents=True, exist_ok=True)
+        wiki_tool = WikiTool(wiki_dir)
+        tools.register(wiki_tool)
+        logger.debug("Registered wiki tool")
+    except Exception as e:
+        logger.error(f"Failed to register wiki tool: {e}")
+
     # 9. 注册小智AI send_message 工具（仅在小智频道启用且对话模式开启时注册）
     try:
         from backend.modules.config.loader import config_loader as _cl

@@ -1,0 +1,247 @@
+
+.tool-history {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary, #f9fafb);
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-primary, #ffffff);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.header-icon {
+  color: var(--color-primary, #3b82f6);
+}
+
+.history-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary, #111827);
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--hover-bg, #f3f4f6);
+  color: var(--text-primary, #111827);
+  border-color: var(--color-primary, #3b82f6);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 状态 */
+.loading-state,
+.error-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-3xl);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.error-state {
+  color: var(--color-error);
+}
+
+.retry-btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.retry-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* 对话列表 */
+.conversations-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.conversation-item {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary, #ffffff);
+  overflow: hidden;
+  transition: all var(--transition-base);
+}
+
+.conversation-item:hover {
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.conv-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  transition: background var(--transition-base);
+}
+
+.conv-header:hover {
+  background: var(--hover-bg, #f3f4f6);
+}
+
+.tool-icon {
+  color: var(--color-primary, #3b82f6);
+}
+
+.tool-name {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--text-primary, #111827);
+}
+
+.tool-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary, #9ca3af);
+}
+
+.chevron {
+  transition: transform var(--transition-base);
+  color: var(--text-tertiary, #9ca3af);
+}
+
+.chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.conv-details {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary, #f9fafb);
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.detail-section.error {
+  color: var(--color-error, #ef4444);
+}
+
+.detail-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  color: var(--text-tertiary, #9ca3af);
+}
+
+.detail-content {
+  padding: var(--spacing-sm);
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-family: 'Consolas', 'Monaco', monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.detail-meta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary, #9ca3af);
+}
+
+/* 动画 */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.2s ease;
+  max-height: 1000px;
+  overflow: hidden;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* 深色模式 */
+:root[data-theme="dark"] .tool-history {
+  background: var(--bg-secondary, #101827);
+}
+
+:root[data-theme="dark"] .history-header {
+  background: var(--bg-primary, #0b1320);
+}
+
+:root[data-theme="dark"] .conversation-item {
+  background: var(--bg-primary, #0b1320);
+}
+
+:root[data-theme="dark"] .conv-details {
+  background: var(--bg-tertiary, #162131);
+}
+
+:root[data-theme="dark"] .detail-content {
+  background: var(--bg-secondary, #101827);
+}

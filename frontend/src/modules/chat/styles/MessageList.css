@@ -1,0 +1,183 @@
+
+.message-list-container {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--spacing-xl);
+  background: transparent;
+  /* 使用 GPU 加速 */
+  transform: translateZ(0);
+  will-change: scroll-position;
+}
+
+.message-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  max-width: 100%;
+  margin: 0 auto;
+  width: 100%;
+  /* 最小高度确保内容不足时也能滚动 */
+  min-height: 100%;
+  padding-bottom: var(--spacing-xl);
+  min-width: 0;
+}
+
+.history-load-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-load-more-btn {
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text-primary, #0f172a);
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.history-load-more-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(71, 85, 105, 0.28);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.history-load-more-btn:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.history-load-more-note {
+  font-size: 12px;
+  color: var(--text-tertiary, #64748b);
+  text-align: center;
+}
+
+.message-list-anchor {
+  width: 100%;
+  height: 1px;
+  margin-top: -1px;
+  pointer-events: none;
+}
+
+/* 滚动到底部按钮 */
+.scroll-to-bottom {
+  position: absolute;
+  bottom: var(--spacing-xl);
+  right: var(--spacing-xl);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--bg-primary) 90%, white);
+  color: var(--text-primary);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  z-index: 10;
+}
+
+.scroll-to-bottom:hover {
+  background: var(--color-primary);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.scroll-to-bottom:active {
+  transform: translateY(0);
+}
+
+/* 淡入淡出动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* 平滑滚动 */
+.message-list-container {
+  scroll-behavior: smooth;
+}
+
+/* 优化的滚动条样式 */
+.message-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-list-container::-webkit-scrollbar-track {
+  background: transparent;
+  margin: var(--spacing-md) 0;
+}
+
+.message-list-container::-webkit-scrollbar-thumb {
+  background: var(--border-color, #e5e7eb);
+  border-radius: 3px;
+  transition: background var(--transition-base);
+}
+
+.message-list-container::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary, #9ca3af);
+}
+
+/* 深色模式 */
+:root[data-theme="dark"] .message-list-container {
+  background:
+    radial-gradient(circle at top center, rgba(117, 136, 164, 0.03), transparent 24%),
+    linear-gradient(180deg, rgba(17, 22, 30, 0.985), rgba(13, 17, 24, 1));
+}
+
+:root[data-theme="dark"] .scroll-to-bottom {
+  background: rgba(28, 34, 42, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #c8d0da;
+  box-shadow: 0 14px 28px rgba(3, 7, 14, 0.22);
+}
+
+:root[data-theme="dark"] .scroll-to-bottom:hover {
+  background: rgba(36, 44, 54, 0.98);
+  color: #d7dee7;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme="dark"] .message-list-container::-webkit-scrollbar-thumb {
+  background: rgba(80, 89, 102, 0.82);
+}
+
+:root[data-theme="dark"] .message-list-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 113, 128, 0.92);
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .message-list-container {
+    padding: var(--spacing-md);
+  }
+  
+  .message-list-wrapper {
+    gap: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
+  }
+  
+  .scroll-to-bottom {
+    bottom: var(--spacing-md);
+    right: var(--spacing-md);
+    width: 40px;
+    height: 40px;
+  }
+}

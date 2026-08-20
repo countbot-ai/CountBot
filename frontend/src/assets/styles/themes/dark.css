@@ -1,0 +1,76 @@
+/**
+ * 深色主题
+ * 深石墨蓝灰 + 低饱和冷色强调
+ */
+
+[data-theme='dark'] {
+    --color-primary: #8ea4d6;
+    --color-primary-hover: #a4b7e2;
+    --color-primary-active: #7b92c6;
+    --color-primary-light: #151d2a;
+    --color-primary-alpha: rgba(142, 164, 214, 0.14);
+
+    --color-secondary: #7f9cb6;
+    --color-secondary-hover: #95afc6;
+    --color-secondary-light: #151d29;
+
+    --color-success: #6cb49d;
+    --color-success-hover: #81c3ae;
+    --color-success-light: #13211d;
+
+    --color-warning: #c4a06e;
+    --color-warning-hover: #d3b184;
+    --color-warning-light: #241d15;
+
+    --color-error: #cf8696;
+    --color-error-hover: #dca0ad;
+    --color-error-light: #26171c;
+
+    --color-info: #7da2c7;
+    --color-info-hover: #93b4d3;
+    --color-info-light: #15202c;
+
+    --color-text-primary: #e5ecf6;
+    --color-text-secondary: #a3b0c2;
+    --color-text-tertiary: #738196;
+    --color-text-disabled: #4a586c;
+    --color-text-inverse: #0a1017;
+
+    --color-bg-primary: #0d1118;
+    --color-bg-secondary: #121821;
+    --color-bg-tertiary: #18202b;
+    --color-bg-elevated: #1d2633;
+
+    --color-border-primary: #222d3b;
+    --color-border-secondary: #314052;
+    --color-border-focus: #8ea4d6;
+
+    --color-shadow: rgba(3, 7, 14, 0.48);
+    --color-shadow-hover: rgba(5, 10, 18, 0.38);
+
+    --color-overlay: rgba(6, 10, 16, 0.72);
+
+    --code-bg: #111823;
+    --code-text: #dfe7f3;
+    --code-comment: #6f7f93;
+    --code-keyword: #c88ea0;
+    --code-string: #88b99e;
+    --code-number: #caaa7a;
+    --code-function: #91aeda;
+
+    --scrollbar-track: #0f141c;
+    --scrollbar-thumb: #253141;
+    --scrollbar-thumb-hover: #324153;
+
+    --sidebar-bg: #0c1118;
+    --sidebar-border: #202a38;
+    --sidebar-item-hover: #161e2a;
+    --sidebar-item-active: #1a2330;
+
+    --header-bg: #101722;
+    --header-border: #212c39;
+
+    --card-bg: #171f2b;
+    --card-border: #243040;
+    --card-shadow: 0 14px 30px rgba(3, 7, 14, 0.22);
+}

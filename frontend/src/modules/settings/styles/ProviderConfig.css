@@ -1,0 +1,719 @@
+
+.provider-config {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 12px;
+}
+
+.state-card,
+.workspace-card,
+.toggle-card,
+.test-result {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 249, 252, 0.98));
+  box-shadow:
+    0 14px 36px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+.state-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.state-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.state-card.is-dirty {
+  border-color: rgba(34, 197, 94, 0.26);
+}
+
+.state-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.state-provider {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.state-model {
+  margin: 0;
+  display: -webkit-box;
+  font-size: 18px;
+  line-height: 1.3;
+  color: var(--text-primary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.state-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  min-width: 0;
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  min-width: 0;
+}
+
+.workspace-header h4 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.workspace-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.status-pill.ready {
+  color: #166534;
+  border-color: rgba(34, 197, 94, 0.22);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.status-pill.warning {
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.status-pill.neutral {
+  color: #475569;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.form-group-wide {
+  grid-column: 1 / -1;
+}
+
+.api-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.api-key-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.api-key-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.api-key-hint {
+  margin: 0;
+}
+
+.model-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.model-input-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.model-input-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.openrouter-model-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(248, 250, 252, 0.9);
+  width: 100%;
+  min-width: 0;
+}
+
+.openrouter-model-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.openrouter-model-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.openrouter-model-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.openrouter-model-select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 280px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.openrouter-model-select:focus {
+  border-color: rgba(37, 99, 235, 0.38);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.openrouter-model-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.openrouter-model-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.openrouter-model-name {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.openrouter-model-id {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.openrouter-model-variant {
+  display: block !important;
+  margin: 0 0 10px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.openrouter-model-description {
+  display: -webkit-box !important;
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.openrouter-model-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.openrouter-model-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 6px 10px !important;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.7);
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.openrouter-model-params,
+.openrouter-model-empty {
+  display: block !important;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.label-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.required-hint {
+  color: #dc2626;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.provider-capability-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.provider-capability-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-capability-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.capability-group {
+  color: var(--color-primary);
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.capability-tier-native {
+  color: #15803d;
+  border-color: rgba(21, 128, 61, 0.18);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.capability-tier-limited,
+.capability-tier-response_only {
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.18);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.capability-tier-experimental,
+.capability-tier-compat {
+  color: #1d4ed8;
+  border-color: rgba(29, 78, 216, 0.18);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.capability-tier-unsupported {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.16);
+  background: rgba(239, 68, 68, 0.10);
+}
+
+.provider-capability-note {
+  margin: 0;
+}
+
+.openrouter-access {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.openrouter-access-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.openrouter-access-link {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.openrouter-access-link:hover {
+  text-decoration: underline;
+}
+
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 18px;
+  min-width: 0;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.test-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.test-result.success {
+  color: #166534;
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.test-result.error {
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+:root[data-theme='dark'] .state-card,
+:root[data-theme='dark'] .workspace-card,
+:root[data-theme='dark'] .toggle-card,
+:root[data-theme='dark'] .test-result {
+  border-color: rgba(71, 85, 105, 0.42);
+  background:
+    radial-gradient(circle at top left, rgba(34, 197, 94, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(10, 16, 28, 0.98));
+  box-shadow:
+    0 20px 40px rgba(2, 6, 23, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme='dark'] .section-title,
+:root[data-theme='dark'] .state-model,
+:root[data-theme='dark'] .workspace-header h4,
+:root[data-theme='dark'] .label,
+:root[data-theme='dark'] .status-pill {
+  color: #e2e8f0;
+}
+
+:root[data-theme='dark'] .state-provider,
+:root[data-theme='dark'] .hint,
+:root[data-theme='dark'] .label-hint,
+:root[data-theme='dark'] .state-label,
+:root[data-theme='dark'] .openrouter-model-id,
+:root[data-theme='dark'] .openrouter-model-variant,
+:root[data-theme='dark'] .openrouter-model-description,
+:root[data-theme='dark'] .openrouter-model-params,
+:root[data-theme='dark'] .openrouter-model-empty {
+  color: #94a3b8;
+}
+
+:root[data-theme='dark'] .provider-capability-card {
+  border-color: rgba(71, 85, 105, 0.42);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+:root[data-theme='dark'] .provider-capability-pill {
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(71, 85, 105, 0.4);
+}
+
+:root[data-theme='dark'] .capability-group {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(30, 64, 175, 0.24);
+}
+
+:root[data-theme='dark'] .capability-tier-native {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(20, 83, 45, 0.4);
+}
+
+:root[data-theme='dark'] .capability-tier-limited,
+:root[data-theme='dark'] .capability-tier-response_only {
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(120, 53, 15, 0.34);
+}
+
+:root[data-theme='dark'] .capability-tier-experimental,
+:root[data-theme='dark'] .capability-tier-compat {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(30, 64, 175, 0.28);
+}
+
+:root[data-theme='dark'] .capability-tier-unsupported {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(127, 29, 29, 0.3);
+}
+
+:root[data-theme='dark'] .state-flag {
+  border-color: rgba(34, 197, 94, 0.22);
+  background: rgba(34, 197, 94, 0.14);
+  color: #bbf7d0;
+}
+
+:root[data-theme='dark'] .status-pill {
+  border-color: rgba(71, 85, 105, 0.42);
+  background: rgba(15, 23, 42, 0.82);
+}
+
+:root[data-theme='dark'] .status-pill.neutral {
+  color: #cbd5e1;
+}
+
+:root[data-theme='dark'] .status-pill.ready {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+:root[data-theme='dark'] .status-pill.warning {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+:root[data-theme='dark'] .openrouter-model-panel {
+  border-color: rgba(71, 85, 105, 0.42);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+:root[data-theme='dark'] .openrouter-model-select,
+:root[data-theme='dark'] .openrouter-model-detail {
+  border-color: rgba(71, 85, 105, 0.38);
+  background: rgba(15, 23, 42, 0.86);
+}
+
+:root[data-theme='dark'] .openrouter-model-panel-title,
+:root[data-theme='dark'] .openrouter-model-name {
+  color: #e2e8f0;
+}
+
+:root[data-theme='dark'] .openrouter-model-pill {
+  background: rgba(30, 41, 59, 0.92);
+  color: #cbd5e1;
+}
+
+@container settings-content (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-header,
+  .toggle-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-badges {
+    justify-content: flex-start;
+  }
+
+}
+
+@container settings-content (max-width: 680px) {
+  .state-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-input-row,
+  .openrouter-model-panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .section-header,
+  .workspace-header,
+  .toggle-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-badges {
+    justify-content: flex-start;
+  }
+
+  .section-actions :deep(.button) {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pill,
+  .openrouter-model-card {
+    transition: none !important;
+  }
+}

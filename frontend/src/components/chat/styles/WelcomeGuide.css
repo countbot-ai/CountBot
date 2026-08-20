@@ -1,0 +1,292 @@
+
+.welcome-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 40px 20px;
+  background: linear-gradient(180deg, var(--bg-secondary, #f8fafc) 0%, var(--bg-primary, #ffffff) 100%);
+}
+
+:root[data-theme='dark'] .welcome-guide {
+  background:
+    radial-gradient(circle at top center, rgba(121, 143, 182, 0.055), transparent 30%),
+    linear-gradient(180deg, rgba(18, 23, 31, 0.985), rgba(13, 18, 26, 1));
+}
+
+.welcome-hero {
+  text-align: center;
+  margin-bottom: 48px;
+  animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.welcome-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 24px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%);
+  color: #4c648d;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
+}
+
+.welcome-icon svg,
+.welcome-icon-custom svg {
+  width: 54px;
+  height: 54px;
+  filter: none;
+}
+
+.welcome-icon-custom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+:root[data-theme='dark'] .welcome-icon {
+  border-color: rgba(49, 64, 82, 0.64);
+  background:
+    radial-gradient(circle at top left, rgba(121, 143, 182, 0.055), transparent 38%),
+    linear-gradient(180deg, rgba(24, 31, 41, 0.98) 0%, rgba(17, 23, 32, 0.97) 100%);
+  color: #9aaed0;
+  box-shadow: 0 14px 28px rgba(3, 7, 14, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+:root[data-theme='dark'] .welcome-icon svg {
+  filter: none;
+}
+
+.welcome-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary, #1f2937);
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+}
+
+.welcome-subtitle {
+  font-size: 16px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0;
+}
+
+:root[data-theme='dark'] .welcome-title {
+  color: #e5ecf6;
+}
+
+:root[data-theme='dark'] .welcome-subtitle,
+:root[data-theme='dark'] .footer-text {
+  color: #95a4b9;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-width: 600px;
+  width: 100%;
+  margin-bottom: 40px;
+  animation: fadeInUp 0.6s ease-out 0.2s both;
+}
+
+.action-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  text-align: left;
+}
+
+.action-card:hover {
+  border-color: var(--text-tertiary, #9ca3af);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
+  transform: translateY(-1px);
+}
+
+:root[data-theme='dark'] .action-card {
+  background: linear-gradient(180deg, rgba(22, 29, 39, 0.84), rgba(16, 22, 31, 0.92));
+  border-color: rgba(49, 64, 82, 0.54);
+  box-shadow: 0 10px 22px rgba(3, 7, 14, 0.12);
+}
+
+:root[data-theme='dark'] .action-card:hover {
+  border-color: rgba(117, 137, 173, 0.2);
+  box-shadow: 0 14px 28px rgba(3, 7, 14, 0.16);
+}
+
+.action-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--bg-secondary, #f3f4f6), var(--bg-tertiary, #e5e7eb));
+  color: var(--text-secondary, #6b7280);
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.action-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.action-card:hover .action-icon {
+  background: linear-gradient(135deg, var(--bg-tertiary, #e5e7eb), var(--bg-secondary, #f3f4f6));
+  color: var(--text-primary, #1f2937);
+  transform: scale(1.04);
+}
+
+:root[data-theme='dark'] .action-icon {
+  background: linear-gradient(135deg, rgba(121, 143, 182, 0.14), rgba(121, 143, 182, 0.05));
+  color: #afbdd7;
+}
+
+:root[data-theme='dark'] .action-card:hover .action-icon {
+  background: linear-gradient(135deg, rgba(131, 152, 188, 0.22), rgba(131, 152, 188, 0.12));
+  color: #d7e0ef;
+}
+
+:root[data-theme='dark'] .action-title {
+  color: #e5ecf6;
+}
+
+:root[data-theme='dark'] .action-desc {
+  color: #91a1b6;
+}
+
+.action-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.action-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+  margin: 0 0 2px;
+}
+
+.action-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.action-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary, #9ca3af);
+  transition: all 0.2s ease;
+}
+
+.action-arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.action-card:hover .action-arrow {
+  color: var(--text-secondary, #6b7280);
+  transform: translateX(2px);
+}
+
+:root[data-theme='dark'] .action-card:hover .action-arrow {
+  color: #b3c0d8;
+}
+
+.welcome-footer {
+  text-align: center;
+  animation: fadeInUp 0.6s ease-out 0.4s both;
+}
+
+.footer-text {
+  font-size: 14px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .welcome-guide {
+    padding: 24px 16px;
+  }
+
+  .welcome-hero {
+    margin-bottom: 28px;
+  }
+
+  .welcome-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 20px;
+  }
+
+  .welcome-icon svg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .welcome-title {
+    font-size: 24px;
+  }
+
+  .welcome-subtitle {
+    font-size: 14px;
+  }
+
+  .quick-actions {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
+
+  .action-card {
+    padding: 12px;
+  }
+
+  .action-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .action-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .action-title {
+    font-size: 13px;
+  }
+
+  .action-desc {
+    font-size: 11px;
+  }
+
+  .action-arrow svg {
+    width: 14px;
+    height: 14px;
+  }
+}

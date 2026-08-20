@@ -39,6 +39,18 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
 
 ## 最新动态
 
+- **v0.9.0**
+  - 新增 MCP 客户端模块，支持多服务器连接、健康检查与工具发现，扩展 AI 执行能力边界。默认关闭，为个性化用户而新增的功能
+  - 新增 Wiki 知识库模块，基于 BM25 全文搜索，支持批量获取、相关性过滤与 LRU 缓存加速
+  - 新增 MCP、Wiki 管理面板，组件模块化拆分与国际化支持
+  - 新增 WebSocket 状态广播模块，实时同步 MCP 连接状态至前端会话
+  - 改进上下文管理与心跳机制，简化问候逻辑，减少 LLM 调用成本
+  - 完善工具注册与初始化流程，提升系统启动一致性与可维护性
+  - 新增 API Key 轮换机制与故障转移能力，支持多 key 自动切换
+  - 改进 send_media 工具网页版兼容性，支持在WEB UI 预览图片和下载附件
+  - 优化模型预设界面并更新构建产物
+  - 发布说明：[https://countbot.cn/docs/releases/v0.9.0](https://countbot.cn/docs/releases/v0.9.0)
+
 - **v0.8.0**
   - 集中修复 issue 与用户反馈中的多项问题，修复一批高频使用场景下的已知 Bug
   - 全面优化前端界面与交互体验，提升整体易用性与操作流畅度
@@ -48,7 +60,7 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 优化主动问候与定时执行逻辑，避免未成功投递时提前计次，并支持配置变更后刷新当日计划
   - 完善推理开关与运行时配置解析，补充不同提供商的思考字段映射与 persona 合并策略
   - 统一启动时的监听地址与端口环境变量，补充 `COUNTBOT_HOST` / `COUNTBOT_PORT` 文档说明
-  - 发布说明：[https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0)
 
 - **v0.7.0**
   - 集中解决多个 issue 反馈问题，修复一批已知 Bug，提升整体稳定性
@@ -58,7 +70,7 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 新增模型思考控制开关，可按场景切换思考强度，在体感上获得更快的 AI 响应
   - 新增 `find-skills`，全面接入腾讯云 SkillsHub，可通过对话完成 skills 的搜索、安装、启用、禁用与删除
   - 新增 `ima-knowledge-base`、`ima-notes`，全面接入 IMA 知识库与笔记能力，支持知识库搜索、上传、网页导入，以及笔记搜索、读取、新建和追加
-  - 发布说明：[https://654321.ai/docs/releases/v0.7.0](https://654321.ai/docs/releases/v0.7.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.7.0](https://countbot.cn/docs/releases/v0.7.0)
 
 - **v0.6.0**
   - 新增微信ClawBot接入，支持多个账号绑定
@@ -66,25 +78,25 @@ CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学�
   - 新增远程首次初始化安全入口 `/setup/<random>`
   - 新增 `REMOTE_SETUP_SECRET_TTL_MINUTES`，远程初始化入口有效期可控
   - 强化远程认证边界，覆盖 `/api/*` 与 `/ws/chat`
-  - 发布说明：[https://654321.ai/docs/releases/v0.6.0](https://654321.ai/docs/releases/v0.6.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.6.0](https://countbot.cn/docs/releases/v0.6.0)
 
 - **v0.5.0**
   - Agent Team 正式成型，支持多角色分工、上下文衔接与团队级编排
   - 配置体系从会话级演进到角色级、团队级与多机器人协同
   - 渠道系统进一步增强，支持更多企业与社交入口
   - 前端聊天、配置、技能、团队与工具面板整体升级
-  - 发布说明：[https://654321.ai/docs/releases/v0.5.0](https://654321.ai/docs/releases/v0.5.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.5.0](https://countbot.cn/docs/releases/v0.5.0)
 
 - **v0.4.0**
   - 引入会话级配置，支持不同会话使用不同模型与提示词
   - 扩展飞书、企业微信、微博、小智 AI 等渠道能力
   - 优化多智能体协作，新增 `/help` 等使用入口
-  - 发布说明：[https://654321.ai/docs/releases/v0.4.0](https://654321.ai/docs/releases/v0.4.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.4.0](https://countbot.cn/docs/releases/v0.4.0)
 
 - **v0.3.0**
   - 多智能体协作（`pipeline` / `graph` / `council`）首次体系化落地
   - 定时任务、技能配置、工作空间管理能力显著增强
-  - 发布说明：[https://654321.ai/docs/releases/v0.3.0](https://654321.ai/docs/releases/v0.3.0)
+  - 发布说明：[https://countbot.cn/docs/releases/v0.3.0](https://countbot.cn/docs/releases/v0.3.0)
 
 - **v0.2.0 · 2026-02-26**
   - 聚焦 Bug 修复、交互体验优化与构建流程整理
@@ -187,47 +199,25 @@ git clone https://gitee.com/countbot-ai/CountBot.git
 
 ---
 
-## v0.8.0 重点变化
-
-### 1. 聚焦问题修复与高频场景稳定性提升
-
-这一版首先集中处理来自 issue 与日常使用反馈中的多项问题，针对高频使用场景下的已知 Bug 做了系统修复，让 CountBot 在复杂链路与长期运行场景中更稳定、更可预期。
-
-### 2. 前端界面与交互体验全面优化
-
-围绕常用操作路径继续优化前端界面与交互体验，重点改善配置、会话、技能与日常管理流程的操作流畅度，进一步降低理解成本，提升整体易用性。
-
-### 3. 系统响应链路继续提速
-
-对会话上下文、执行链路与响应流程做了新一轮整理，在不牺牲能力覆盖的前提下，进一步提升 AI 回复的准确性、及时性与整体稳定性。
-
-### 4. 会话上下文维护链路重构
-
-新增短期上下文摘要缓存、溢出历史总结与整会话自动记忆沉淀机制，使长会话场景下的上下文管理更清晰，也让长期运行时的记忆维护更可控。
-
-### 5. 多渠道消息处理稳定性增强
-
-重点补强微信、企业微信、飞书等渠道的消息处理、去重控制与流式投递链路，减少重复消息、过期消息与异常中断带来的干扰。
-
-### 6. 主动问候、推理控制与运行时配置进一步完善
-
-这一版同步优化了主动问候与定时执行逻辑，避免未成功投递时提前计次；同时补充不同提供商的思考字段映射与 persona 合并策略，并统一 `COUNTBOT_HOST` / `COUNTBOT_PORT` 运行时配置入口。
-
----
-
 ## 文档入口
 
 | 文档 | 说明 | 链接 |
 |------|------|------|
-| 快速开始 | 安装、配置、启动 | [https://654321.ai/docs/getting-started/quick-start-guide](https://654321.ai/docs/getting-started/quick-start-guide) |
-| 配置手册 | 完整配置说明 | [https://654321.ai/docs/getting-started/configuration-manual](https://654321.ai/docs/getting-started/configuration-manual) |
-| 部署与运维 | 启动、部署、排障 | [https://654321.ai/docs/advanced/deployment](https://654321.ai/docs/advanced/deployment) |
-| 远程访问指南 | 远程初始化、认证、排障 | [https://654321.ai/docs/advanced/remote-access](https://654321.ai/docs/advanced/remote-access) |
-| 认证说明 | 密码初始化与访问边界 | [https://654321.ai/docs/advanced/auth](https://654321.ai/docs/advanced/auth) |
-| API 参考 | REST API 与 WebSocket | [https://654321.ai/docs/api-reference](https://654321.ai/docs/api-reference) |
-| 发布说明 | 版本演进记录 | [https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0) |
+| 快速开始 | 安装、配置、启动 | [https://countbot.cn/docs/getting-started/quick-start-guide](https://countbot.cn/docs/getting-started/quick-start-guide) |
+| 配置手册 | 完整配置说明 | [https://countbot.cn/docs/getting-started/configuration-manual](https://countbot.cn/docs/getting-started/configuration-manual) |
+| 部署与运维 | 启动、部署、排障 | [https://countbot.cn/docs/advanced/deployment](https://countbot.cn/docs/advanced/deployment) |
+| 远程访问指南 | 远程初始化、认证、排障 | [https://countbot.cn/docs/advanced/remote-access](https://countbot.cn/docs/advanced/remote-access) |
+| 认证说明 | 密码初始化与访问边界 | [https://countbot.cn/docs/advanced/auth](https://countbot.cn/docs/advanced/auth) |
+| API 参考 | REST API 与 WebSocket | [https://countbot.cn/docs/api-reference](https://countbot.cn/docs/api-reference) |
+| 发布说明 | 版本演进记录 | [https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0) |
 
-完整站点文档请查看：[https://654321.ai/docs](https://654321.ai/docs)
+完整站点文档请查看：[https://countbot.cn/docs](https://countbot.cn/docs)
+
+---
+
+## 项目状态
+
+CountBot 短期内将不再由作者持续更新，当前主要供对 AI Agent 感兴趣的同学学习、研究和二次开发使用。欢迎各位开发者以 Issue、文档改进、功能修复或新能力等各种形式提交 PR，共同完善项目。
 
 ---
 
@@ -272,9 +262,10 @@ MIT License
 <div align="center">
   <p>连接模型、渠道、团队与工具的 AI Agent 中枢</p>
   <p>
-    <a href="https://654321.ai">官方网站</a> ·
+    <a href="https://countbot.cn">官方网站</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
     <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
-    <a href="https://654321.ai/docs">完整文档</a>
+    <a href="https://countbot.cn/docs">完整文档</a>
   </p>
+  <p><strong>说明：</strong><code>654321.ai</code> 域名已过期，不再使用；项目网站现为 <a href="https://countbot.cn">countbot.cn</a>。</p>
 </div>
