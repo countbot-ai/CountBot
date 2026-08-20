@@ -7,11 +7,94 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import yaml
 from loguru import logger
 from backend.utils.paths import APPLICATION_ROOT
 
 # 默认内置技能目录
 BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "workspace" / "skills"
+
+# frontmatter 分隔符。兼容 CRLF（Windows 上编辑过的 SKILL.md 会是 \r\n）与结尾无换行的文件。
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.DOTALL)
+
+# Agent Skills 开放标准：description 上限 1024 字符，name 为 kebab-case。
+# 超限只告警不拒绝——宁可技能可用但有提示，也不要静默消失。
+MAX_DESCRIPTION_LENGTH = 1024
+MAX_NAME_LENGTH = 64
+_SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _coerce_bool(value: Any) -> bool:
+    """YAML 里 `always: true` 是真 bool，但手写的 `always: "yes"` 是字符串，两种都要认。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "1", "on")
+    return False
+
+
+def _coerce_str_list(value: Any) -> List[str]:
+    """接受 YAML 列表，也接受逗号分隔的单行字符串（Claude Code 生态两种写法都有）。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _coerce_requires(value: Any) -> Dict[str, List[str]]:
+    """规范化 requires 为 {bins: [...], env: [...]}。"""
+    if not isinstance(value, dict):
+        return {}
+    requires: Dict[str, List[str]] = {}
+    for key in ("bins", "env"):
+        items = _coerce_str_list(value.get(key))
+        if items:
+            requires[key] = items
+    return requires
+
+
+def _extract_frontmatter(content: str) -> Optional[str]:
+    """取出 frontmatter 原文；没有 frontmatter 返回 None。"""
+    if not content.startswith("---"):
+        return None
+    match = _FRONTMATTER_RE.match(content)
+    return match.group(1) if match else None
+
+
+def build_frontmatter(
+    name: str,
+    description: str,
+    auto_load: bool = False,
+    requirements: Optional[List[str]] = None,
+) -> str:
+    """生成 SKILL.md 的 frontmatter。
+
+    必须用 yaml.safe_dump 而不是 f-string 拼接：描述里只要含 ": "、以 "#" 开头、
+    或者是多行文本，裸拼出来就是非法 YAML，会让整个 frontmatter 解析失败。
+    safe_dump 会按需自动加引号 / 转块标量。
+    """
+    payload: Dict[str, Any] = {
+        "name": name,
+        "description": description,
+        "metadata": {
+            "CountBot": {
+                "always": bool(auto_load),
+                "requires": {"bins": list(requirements or [])},
+            }
+        },
+    }
+    body = yaml.safe_dump(
+        payload,
+        allow_unicode=True,      # 中文描述不要被转义成 \uXXXX
+        sort_keys=False,
+        default_flow_style=False,
+    )
+    return f"---\n{body}---\n\n"
 
 
 def _is_same_or_nested_path(path: Path, base: Path) -> bool:
@@ -45,49 +128,151 @@ class Skill:
         self.auto_load = self.metadata.get("always", False)
 
     def _parse_metadata(self) -> Dict[str, Any]:
-        """解析技能文件的元数据（YAML frontmatter）"""
-        metadata = {
+        """解析技能文件的 YAML frontmatter。
+
+        用真正的 YAML 解析器。此前是手搓的 `split(":", 1)` 行循环，它读不了块标量
+        （`description: |`）——遇到时会把 description 解析成字面量 "|"，导致技能在
+        系统提示词里没有任何触发语，永远不会被激活，而且不报错。
+
+        解析失败时降级到 legacy 行解析并记录 parse_error，而不是让整个技能失去元数据。
+        """
+        metadata: Dict[str, Any] = {
             "title": self.name,
             "description": "",
             "dependencies": [],
             "tags": [],
             "always": False,
             "requires": {},
+            # 开放标准字段：此前被解析后丢弃
+            "name": "",
+            "version": "",
+            "license": "",
+            "allowed_tools": [],
+            # 诊断信息，供 API/UI 显式暴露，不再静默 warning
+            "warnings": [],
+            "parse_error": "",
         }
-        
-        # 解析 YAML frontmatter
-        if self.content.startswith("---"):
-            match = re.match(r"^---\n(.*?)\n---", self.content, re.DOTALL)
-            if match:
-                yaml_content = match.group(1)
-                
-                # 简单的 YAML 解析
-                for line in yaml_content.split("\n"):
-                    if ":" in line:
-                        key, value = line.split(":", 1)
-                        key = key.strip()
-                        value = value.strip().strip('"\'')
-                        
-                        if key == "title":
-                            metadata["title"] = value
-                        elif key == "description":
-                            metadata["description"] = value
-                        elif key == "always":
-                            metadata["always"] = value.lower() in ("true", "yes", "1")
-                        elif key == "metadata":
-                            # 解析技能元数据 JSON
-                            try:
-                                meta_data = json.loads(value)
-                                if isinstance(meta_data, dict):
-                                    skill_meta = meta_data.get("CountBot", {})
-                                    if "requires" in skill_meta:
-                                        metadata["requires"] = skill_meta["requires"]
-                                    if "always" in skill_meta:
-                                        metadata["always"] = skill_meta["always"]
-                            except (json.JSONDecodeError, TypeError):
-                                pass
-        
+
+        raw = _extract_frontmatter(self.content)
+        if raw is None:
+            return metadata
+
+        try:
+            data = yaml.safe_load(raw)
+        except yaml.YAMLError as exc:
+            detail = " ".join(str(exc).split())
+            metadata["parse_error"] = f"YAML 解析失败: {detail[:200]}"
+            # 降级：至少把能捞的 key 捞出来，技能不至于完全没有描述
+            self._apply_legacy_frontmatter(raw, metadata)
+            return metadata
+
+        if data is None:
+            return metadata
+        if not isinstance(data, dict):
+            metadata["parse_error"] = (
+                f"frontmatter 必须是 YAML 映射（key: value），实际解析出 {type(data).__name__}"
+            )
+            return metadata
+
+        self._apply_frontmatter(data, metadata)
         return metadata
+
+    def _apply_frontmatter(self, data: Dict[str, Any], metadata: Dict[str, Any]) -> None:
+        """把解析出的 YAML 映射投影到 metadata，并做开放标准的 lint。"""
+        warnings: List[str] = metadata["warnings"]
+
+        if data.get("title") is not None:
+            metadata["title"] = str(data["title"]).strip()
+
+        description = data.get("description")
+        if description is not None:
+            metadata["description"] = str(description).strip()
+
+        for key in ("name", "version", "license"):
+            if data.get(key) is not None:
+                metadata[key] = str(data[key]).strip()
+
+        metadata["tags"] = _coerce_str_list(data.get("tags"))
+        metadata["dependencies"] = _coerce_str_list(data.get("dependencies"))
+
+        # allowed-tools（开放标准写法）与 allowed_tools 都认。
+        # 注意：解析出来只是暴露给 API/UI，运行时尚未强制执行（见 S2）。
+        allowed = data.get("allowed-tools")
+        if allowed is None:
+            allowed = data.get("allowed_tools")
+        metadata["allowed_tools"] = _coerce_str_list(allowed)
+
+        if "always" in data:
+            metadata["always"] = _coerce_bool(data["always"])
+
+        # 顶层 requires（原生 YAML 写法）
+        metadata["requires"] = _coerce_requires(data.get("requires"))
+
+        # metadata: 既可能是 YAML 内联映射（API 写出来的 JSON 恰好是合法 YAML flow map），
+        # 也可能是遗留的 JSON 字符串。两种都要认。
+        nested = data.get("metadata")
+        if isinstance(nested, str):
+            try:
+                nested = json.loads(nested)
+            except (json.JSONDecodeError, TypeError):
+                warnings.append("metadata 字段不是合法的 JSON/YAML 映射，已忽略")
+                nested = None
+        if isinstance(nested, dict):
+            countbot_meta = nested.get("CountBot")
+            if isinstance(countbot_meta, dict):
+                if "requires" in countbot_meta:
+                    # 顶层 requires 优先；仅在其缺省时回退到嵌套写法
+                    nested_requires = _coerce_requires(countbot_meta.get("requires"))
+                    if nested_requires and not metadata["requires"]:
+                        metadata["requires"] = nested_requires
+                if "always" in countbot_meta:
+                    metadata["always"] = _coerce_bool(countbot_meta["always"])
+
+        self._lint(data, metadata, warnings)
+
+    def _lint(
+        self, data: Dict[str, Any], metadata: Dict[str, Any], warnings: List[str]
+    ) -> None:
+        """开放标准合规检查。只告警，不让技能失效。"""
+        if not metadata["description"]:
+            warnings.append("缺少 description，模型将无法判断何时使用该技能")
+        elif len(metadata["description"]) > MAX_DESCRIPTION_LENGTH:
+            warnings.append(
+                f"description 长度 {len(metadata['description'])} 超过开放标准上限 "
+                f"{MAX_DESCRIPTION_LENGTH}"
+            )
+
+        declared_name = metadata["name"]
+        if declared_name:
+            if len(declared_name) > MAX_NAME_LENGTH:
+                warnings.append(f"name 长度超过 {MAX_NAME_LENGTH} 字符")
+            if not _SKILL_NAME_RE.match(declared_name):
+                warnings.append(f"name '{declared_name}' 不是合法的 kebab-case")
+            if declared_name != self.name:
+                # 目录名才是技能身份（.skills_config.json / API 路由 / 读文件拦截都以它为键）。
+                # 这里只提示，不改身份——改身份是破坏性变更。
+                warnings.append(
+                    f"frontmatter name '{declared_name}' 与目录名 '{self.name}' 不一致；"
+                    f"系统以目录名为准"
+                )
+
+    def _apply_legacy_frontmatter(self, raw: str, metadata: Dict[str, Any]) -> None:
+        """YAML 解析失败时的降级路径：老的逐行 split 解析。
+
+        只求尽量捞回 description/title/always，不追求正确性。
+        """
+        for line in raw.split("\n"):
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key == "title":
+                metadata["title"] = value
+            elif key == "description":
+                metadata["description"] = value
+            elif key == "always":
+                metadata["always"] = _coerce_bool(value)
 
     def get_summary(self) -> str:
         """获取技能摘要"""
@@ -252,6 +437,13 @@ class SkillsLoader:
                 enabled=enabled,
             )
             self.skills[name] = skill
+
+            parse_error = skill.metadata.get("parse_error")
+            if parse_error:
+                logger.error(f"Skill '{name}' frontmatter 解析失败（已降级解析）: {parse_error}")
+            for warning in skill.metadata.get("warnings", []):
+                logger.warning(f"Skill '{name}': {warning}")
+
             logger.debug(f"Loaded {source} skill: {name}")
         except Exception as e:
             logger.warning(f"Failed to load {source} skill {skill_file.parent}: {e}")
@@ -379,6 +571,12 @@ class SkillsLoader:
             "description": skill.metadata.get("description", ""),
             "auto_load": skill.metadata.get("always", False),
             "requirements": list(skill.metadata.get("requires", {}).get("bins", [])),
+            "version": skill.metadata.get("version", ""),
+            "license": skill.metadata.get("license", ""),
+            "allowed_tools": list(skill.metadata.get("allowed_tools", [])),
+            # 诊断信息：frontmatter 坏了要能在 UI 上看见，而不是只躺在日志里
+            "warnings": list(skill.metadata.get("warnings", [])),
+            "parse_error": skill.metadata.get("parse_error", ""),
         }
     
     def toggle_skill(self, name: str, enabled: bool) -> bool:
@@ -470,9 +668,9 @@ class SkillsLoader:
         return "\n".join(lines) if lines else ""
 
     def _strip_frontmatter(self, content: str) -> str:
-        """从 markdown 内容中移除 YAML frontmatter"""
+        """从 markdown 内容中移除 YAML frontmatter（兼容 CRLF）"""
         if content.startswith("---"):
-            match = re.match(r"^---\n.*?\n---\n", content, re.DOTALL)
+            match = _FRONTMATTER_RE.match(content)
             if match:
                 return content[match.end():].strip()
         return content

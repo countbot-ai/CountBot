@@ -1,0 +1,279 @@
+
+.workflow-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wf-run-panel {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.wf-run-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.wf-run-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.wf-run-sigil {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--color-primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.wf-run-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wf-run-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-run-kicker {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+.wf-run-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.wf-run-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.wf-run-mode {
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.wf-run-status-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.wf-run-status-running {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.wf-run-status-success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.wf-view-controls {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.wf-view-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.wf-view-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.wf-run-chevron {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.wf-run-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.wf-agents-list {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wf-agent-item {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wf-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wf-agent-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wf-dot-running {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.wf-dot-done {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.wf-agent-label {
+  font-weight: 500;
+  font-size: 13px;
+  flex: 1;
+}
+
+.wf-agent-tc-count {
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wf-agent-chevron {
+  transition: transform 0.2s;
+}
+
+.wf-agent-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.wf-agent-tools {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.wf-tools-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wf-tools-title {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wf-tools-count {
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.wf-tools-chevron {
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+
+.wf-tools-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.wf-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.wf-agent-thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.wf-agent-result-text {
+  padding: 8px 0;
+}
+
+.wf-agents-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.wf-history-note {
+  font-style: italic;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

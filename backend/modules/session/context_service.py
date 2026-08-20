@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.models.message import Message
 from backend.models.session import Session
 from backend.modules.agent.memory import MemoryStore
-from backend.modules.session.message_context import strip_workflow_exec_metadata
+from backend.modules.session.message_context import (
+    extract_reasoning_content_from_message_context,
+    strip_workflow_exec_metadata,
+)
 MessageFormatter = Callable[[Message], dict[str, str]]
 
 _CONTEXT_MAINTENANCE_TASKS: dict[str, asyncio.Task[None]] = {}
@@ -26,10 +29,16 @@ _AUTO_SUMMARIZE_CHAR_THRESHOLD = 15000
 
 def default_message_formatter(message: Message) -> dict[str, str]:
     """Default formatter for web chat style history."""
-    return {
+    result = {
         "role": message.role,
         "content": strip_workflow_exec_metadata(message.content),
     }
+    reasoning = extract_reasoning_content_from_message_context(
+        getattr(message, "message_context", None)
+    )
+    if reasoning:
+        result["reasoning_content"] = reasoning
+    return result
 
 
 def build_short_summary_system_message(summary_text: str) -> dict[str, str]:

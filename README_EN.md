@@ -38,6 +38,33 @@ CountBot was born from natural language. Its vision is not to require more peopl
 
 ## Latest Updates
 
+- **v0.9.0**
+  - Added MCP client module with multi-server connections, health checks, and tool discovery. Disabled by default, designed for advanced users with personalized needs
+  - Added Wiki knowledge base module with BM25 full-text search, batch retrieval, relevance filtering, and LRU cache
+  - New MCP and Wiki management panels with component modularization and i18n support
+  - New WebSocket status broadcast module for real-time MCP connection state sync to frontend
+  - Improved context management and heartbeat mechanism, simplified greeting logic to reduce LLM calls
+  - Refined tool registration and initialization flow for better startup consistency
+  - Added API Key rotation with automatic failover and multi-key support
+  - Improved send_media tool compatibility for web mode, supports image preview and file download in Web UI
+  - Optimized model preset interface and updated build artifacts
+  - Release notes: [https://countbot.cn/docs/releases/v0.9.0](https://countbot.cn/docs/releases/v0.9.0)
+
+- **v0.8.3**
+  - Improved model preset interface and updated build artifacts
+  - Release notes: [https://countbot.cn/docs/releases/v0.8.3](https://countbot.cn/docs/releases/v0.8.3)
+
+- **v0.8.2**
+  - Added API Key rotation and failover capability with automatic key switching on 401/429 errors
+  - Improved send_media tool web-mode compatibility
+  - Release notes: [https://countbot.cn/docs/releases/v0.8.2](https://countbot.cn/docs/releases/v0.8.2)
+
+- **v0.8.1**
+  - Fixed DeepSeek multi-turn reasoning_content loss issue
+  - Added knowledge base module with BM25 search
+  - Updated documentation and build artifacts
+  - Release notes: [https://countbot.cn/docs/releases/v0.8.1](https://countbot.cn/docs/releases/v0.8.1)
+
 - **v0.8.0**
   - Addressed multiple issues and user-reported problems, fixing a batch of known bugs in high-frequency usage scenarios
   - Fully optimized the frontend interface and interaction experience, improving overall usability and operation flow
@@ -47,7 +74,7 @@ CountBot was born from natural language. Its vision is not to require more peopl
   - Optimized heartbeat and scheduled execution logic to avoid counting messages before successful delivery and to support schedule refresh after config changes
   - Improved reasoning switches and runtime config resolution with provider-specific thinking field mapping and persona merge rules
   - Unified bind host and port environment variables and added documentation for `COUNTBOT_HOST` / `COUNTBOT_PORT`
-  - Release notes: [https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0)
+  - Release notes: [https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0)
 
 - **v0.7.0**
   - Addressed multiple issue reports, fixed a batch of known bugs, and improved overall stability
@@ -57,7 +84,7 @@ CountBot was born from natural language. Its vision is not to require more peopl
   - Added a model thinking control switch so you can adjust reasoning intensity by scenario and get faster perceived responses
   - Added `find-skills` with full Tencent Cloud SkillsHub integration, enabling conversational search, install, enable, disable, and delete for skills
   - Added `ima-knowledge-base` and `ima-notes` with full IMA knowledge-base and note capabilities, including search, upload, web import, reading, creation, and append
-  - Release notes: [https://654321.ai/docs/releases/v0.7.0](https://654321.ai/docs/releases/v0.7.0)
+  - Release notes: [https://countbot.cn/docs/releases/v0.7.0](https://countbot.cn/docs/releases/v0.7.0)
 
 - **v0.6.0**
   - Added WeChat ClawBot integration with support for binding multiple accounts
@@ -65,25 +92,25 @@ CountBot was born from natural language. Its vision is not to require more peopl
   - Added the secure first-time remote initialization entry `/setup/<random>`
   - Added `REMOTE_SETUP_SECRET_TTL_MINUTES` so the validity period of the remote setup entry can be controlled
   - Strengthened remote authentication boundaries, covering `/api/*` and `/ws/chat`
-  - Release notes: [https://654321.ai/docs/releases/v0.6.0](https://654321.ai/docs/releases/v0.6.0)
+  - Release notes: [https://countbot.cn/docs/releases/v0.6.0](https://countbot.cn/docs/releases/v0.6.0)
 
 - **v0.5.0**
   - Agent Teams became a first-class capability, supporting multi-role collaboration, context handoff, and team-level orchestration
   - The configuration system evolved from session-level configuration to role-level, team-level, and multi-bot coordination
   - The channel system was further strengthened to support more enterprise and social entry points
   - Frontend panels for chat, configuration, skills, teams, and tools were upgraded as a whole
-  - Release notes: [https://654321.ai/docs/releases/v0.5.0](https://654321.ai/docs/releases/v0.5.0)
+  - Release notes: [https://countbot.cn/docs/releases/v0.5.0](https://countbot.cn/docs/releases/v0.5.0)
 
 - **v0.4.0**
   - Introduced session-level configuration so different sessions can use different models and prompts
   - Expanded channel support for Lark, WeCom, Weibo, Xiaozhi AI, and more
   - Improved multi-agent collaboration and added usage entry points such as `/help`
-  - Release notes: [https://654321.ai/docs/releases/v0.4.0](https://654321.ai/docs/releases/v0.4.0)
+  - Release notes: [https://countbot.cn/docs/releases/v0.4.0](https://countbot.cn/docs/releases/v0.4.0)
 
 - **v0.3.0**
   - Multi-agent collaboration modes (`pipeline` / `graph` / `council`) were first systematized
   - Scheduled tasks, skill configuration, and workspace management were significantly enhanced
-  - Release notes: [https://654321.ai/docs/releases/v0.3.0](https://654321.ai/docs/releases/v0.3.0)
+  - Release notes: [https://countbot.cn/docs/releases/v0.3.0](https://countbot.cn/docs/releases/v0.3.0)
 
 - **v0.2.0 · 2026-02-26**
   - Focused on bug fixes, interaction improvements, and cleanup of the build workflow
@@ -186,47 +213,25 @@ git clone https://gitee.com/countbot-ai/CountBot.git
 
 ---
 
-## Key Changes in v0.8.0
-
-### 1. Focused on bug fixes and high-frequency scenario stability
-
-This release first tackles multiple problems reported through GitHub issues and daily user feedback, with systematic fixes for known bugs in high-frequency scenarios, making CountBot more stable and predictable in complex and long-running workflows.
-
-### 2. Frontend interface and interaction experience were upgraded across the board
-
-The frontend continues to be refined around common operation paths, especially in configuration, sessions, skills, and daily management flows, reducing cognitive load and improving overall usability.
-
-### 3. The overall response pipeline is now faster and more consistent
-
-The conversation context, execution flow, and response pipeline were reworked again. Without sacrificing capability coverage, this version further improves the accuracy, timeliness, and overall stability of AI responses.
-
-### 4. Conversation context maintenance was refactored
-
-This version adds short-context summary caching, overflow history summarization, and full-session memory persistence, making long-conversation context management clearer and long-running memory maintenance more controllable.
-
-### 5. Multi-channel message handling became more robust
-
-This release strengthens message handling, deduplication, and streaming delivery for channels such as WeChat, WeCom, and Lark, reducing disruption from duplicate messages, expired events, and interrupted delivery.
-
-### 6. Heartbeat, reasoning control, and runtime configuration were further improved
-
-This version also improves heartbeat and scheduled execution logic so deliveries are counted only after success, while expanding provider-specific reasoning field mapping, persona merge rules, and unified runtime configuration via `COUNTBOT_HOST` and `COUNTBOT_PORT`.
-
----
-
 ## Documentation
 
 | Document | Description | Link |
 |------|------|------|
-| Quick Start | Installation, configuration, and startup | [https://654321.ai/docs/getting-started/quick-start-guide](https://654321.ai/docs/getting-started/quick-start-guide) |
-| Configuration Manual | Full configuration reference | [https://654321.ai/docs/getting-started/configuration-manual](https://654321.ai/docs/getting-started/configuration-manual) |
-| Deployment and Operations | Startup, deployment, and troubleshooting | [https://654321.ai/docs/advanced/deployment](https://654321.ai/docs/advanced/deployment) |
-| Remote Access Guide | Remote initialization, authentication, and troubleshooting | [https://654321.ai/docs/advanced/remote-access](https://654321.ai/docs/advanced/remote-access) |
-| Authentication | Password setup and access boundaries | [https://654321.ai/docs/advanced/auth](https://654321.ai/docs/advanced/auth) |
-| API Reference | REST API and WebSocket | [https://654321.ai/docs/api-reference](https://654321.ai/docs/api-reference) |
-| Release Notes | Version history and release changes | [https://654321.ai/docs/releases/v0.8.0](https://654321.ai/docs/releases/v0.8.0) |
+| Quick Start | Installation, configuration, and startup | [https://countbot.cn/docs/getting-started/quick-start-guide](https://countbot.cn/docs/getting-started/quick-start-guide) |
+| Configuration Manual | Full configuration reference | [https://countbot.cn/docs/getting-started/configuration-manual](https://countbot.cn/docs/getting-started/configuration-manual) |
+| Deployment and Operations | Startup, deployment, and troubleshooting | [https://countbot.cn/docs/advanced/deployment](https://countbot.cn/docs/advanced/deployment) |
+| Remote Access Guide | Remote initialization, authentication, and troubleshooting | [https://countbot.cn/docs/advanced/remote-access](https://countbot.cn/docs/advanced/remote-access) |
+| Authentication | Password setup and access boundaries | [https://countbot.cn/docs/advanced/auth](https://countbot.cn/docs/advanced/auth) |
+| API Reference | REST API and WebSocket | [https://countbot.cn/docs/api-reference](https://countbot.cn/docs/api-reference) |
+| Release Notes | Version history and release changes | [https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0) |
 
-For the full documentation site, see: [https://654321.ai/docs](https://654321.ai/docs)
+For the full documentation site, see: [https://countbot.cn/docs](https://countbot.cn/docs)
+
+---
+
+## Project Status
+
+The author will not actively maintain CountBot in the near term. The project is primarily available for people interested in AI agents to learn from, study, and extend. Developers are welcome to contribute in any form, including issues, documentation improvements, bug fixes, new capabilities, and pull requests.
 
 ---
 
@@ -271,9 +276,10 @@ Thanks to FastAPI, Vue.js, SQLAlchemy, Pydantic, LiteLLM, and other open-source 
 <div align="center">
   <p>An AI agent runtime hub that connects models, channels, teams, and tools</p>
   <p>
-    <a href="https://654321.ai">Official Website</a> ·
+    <a href="https://countbot.cn">Official Website</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
     <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
-    <a href="https://654321.ai/docs">Full Documentation</a>
+    <a href="https://countbot.cn/docs">Full Documentation</a>
   </p>
+  <p><strong>Notice:</strong> The <code>654321.ai</code> domain has expired and is no longer in use. The project website is now <a href="https://countbot.cn">countbot.cn</a>.</p>
 </div>

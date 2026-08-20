@@ -1,0 +1,142 @@
+
+.login-section {
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+
+.login-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.login-button,
+.secondary-button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-button {
+  background: #16a34a;
+  color: #fff;
+}
+
+.login-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.secondary-button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.login-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-label,
+.meta-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.status-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.status-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.login-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.meta-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meta-value {
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-all;
+  text-align: right;
+}
+
+.qr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  padding-top: 6px;
+}
+
+.qr-image {
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  padding: 10px;
+}
+
+.qr-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.status-confirmed {
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.status-error,
+.status-expired {
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+@media (max-width: 640px) {
+  .login-section-header {
+    flex-direction: column;
+  }
+
+  .login-button {
+    width: 100%;
+  }
+}
