@@ -10,5 +10,10 @@
     "model": "qwen3-omni-flash-2025-12-01",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
     "region": "beijing"
+  },
+  "atlas": {
+    "api_key": "",
+    "model": "qwen/qwen3-vl-235b-a22b-thinking",
+    "base_url": "https://api.atlascloud.ai/v1/chat/completions"
   }
 }

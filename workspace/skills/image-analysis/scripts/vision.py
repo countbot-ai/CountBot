@@ -25,7 +25,7 @@ def main():
     analyze_parser.add_argument('--video', action='append', help='视频 URL（可多次指定）')
     analyze_parser.add_argument('--file', action='append', help='文件 URL（可多次指定）')
     analyze_parser.add_argument('--prompt', required=True, help='提示词')
-    analyze_parser.add_argument('--model', choices=['zhipu', 'qwen'], help='指定模型')
+    analyze_parser.add_argument('--model', choices=['zhipu', 'qwen', 'atlas'], help='指定模型')
     analyze_parser.add_argument('--thinking', action='store_true', help='开启思考模式（仅智谱支持）')
     analyze_parser.add_argument('--json', action='store_true', help='JSON 格式输出')
     analyze_parser.add_argument('--show-usage', action='store_true', help='显示 token 使用情况')

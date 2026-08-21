@@ -206,6 +206,63 @@ class VisionManager:
         response.raise_for_status()
         
         return response.json()
+
+    def analyze_with_atlas(
+        self,
+        prompt: str,
+        images: Optional[List[str]] = None,
+        videos: Optional[List[str]] = None,
+        files: Optional[List[str]] = None,
+        stream: bool = False
+    ) -> Dict:
+        """Use an Atlas Cloud vision model to analyze images."""
+        atlas_config = self.config.get('atlas', {})
+        api_key = atlas_config.get('api_key') or os.getenv('ATLASCLOUD_API_KEY')
+        model = atlas_config.get('model', 'qwen/qwen3-vl-235b-a22b-thinking')
+        base_url = atlas_config.get('base_url', 'https://api.atlascloud.ai/v1/chat/completions')
+
+        if not api_key:
+            raise ValueError("Atlas Cloud API Key 未配置，请设置 ATLASCLOUD_API_KEY 或 atlas.api_key")
+
+        if videos or files:
+            raise ValueError("Atlas Cloud 视觉模型当前仅支持图片输入")
+
+        content = []
+        if images:
+            for image in images:
+                image_url = self._prepare_image_url(image)
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": image_url}
+                })
+
+        content.append({
+            "type": "text",
+            "text": prompt
+        })
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ]
+        }
+
+        if stream:
+            payload["stream"] = True
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(base_url, headers=headers, json=payload, timeout=120)
+        response.raise_for_status()
+
+        return response.json()
     
     def analyze(
         self,
@@ -226,8 +283,12 @@ class VisionManager:
             if thinking:
                 print("警告：千问模型不支持思考模式，将忽略该参数")
             return self.analyze_with_qwen(prompt, images, videos, files, stream)
+        elif use_model == 'atlas':
+            if thinking:
+                print("警告：Atlas Cloud 模型不支持此处的思考模式开关，将忽略该参数")
+            return self.analyze_with_atlas(prompt, images, videos, files, stream)
         else:
-            raise ValueError(f"不支持的模型: {use_model}，请选择 'zhipu' 或 'qwen'")
+            raise ValueError(f"不支持的模型: {use_model}，请选择 'zhipu'、'qwen' 或 'atlas'")
     
     def format_result(self, result: Dict, show_usage: bool = False) -> str:
         """格式化输出结果"""

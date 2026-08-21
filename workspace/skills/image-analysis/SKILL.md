@@ -6,7 +6,7 @@ homepage: https://github.com/countbot-ai/CountBot
 
 # 图片分析与识别
 
-支持智谱 GLM-4V 和千问 Qwen-VL 两种视觉模型。
+支持智谱 GLM-4V、千问 Qwen-VL 和 Atlas Cloud 视觉模型。
 
 当用户发送图片或要求分析图片时，必须使用此技能，不要使用 PIL、pytesseract 等其他方法。
 
@@ -24,13 +24,25 @@ homepage: https://github.com/countbot-ai/CountBot
   "qwen": {
     "api_key": "your-qwen-api-key",
     "model": "qwen3-vl-plus"
+  },
+  "atlas": {
+    "api_key": "",
+    "model": "qwen/qwen3-vl-235b-a22b-thinking",
+    "base_url": "https://api.atlascloud.ai/v1/chat/completions"
   }
 }
+```
+
+Atlas Cloud 也可通过环境变量配置，避免把密钥写入文件：
+
+```bash
+export ATLASCLOUD_API_KEY="your-atlascloud-api-key"
 ```
 
 API Key 获取：
 - 智谱（免费）：https://open.bigmodel.cn/
 - 千问：https://help.aliyun.com/zh/model-studio/get-api-key
+- Atlas Cloud：https://www.atlascloud.ai/
 
 ## 命令行调用
 
@@ -46,6 +58,9 @@ python3 skills/image-analysis/scripts/vision.py analyze --image img1.jpg --image
 
 # 指定模型
 python3 skills/image-analysis/scripts/vision.py analyze --image image.jpg --prompt "描述图片" --model qwen
+
+# 使用 Atlas Cloud（仅图片输入）
+python3 skills/image-analysis/scripts/vision.py analyze --image image.jpg --prompt "描述图片" --model atlas
 
 # 开启思考模式（仅智谱，提升准确度）
 python3 skills/image-analysis/scripts/vision.py analyze --image image.jpg --prompt "详细分析" --thinking
@@ -79,6 +94,7 @@ python3 skills/image-analysis/scripts/vision.py analyze --image data/temp/images
 | 简单描述 | 任意 |
 | 复杂推理、物体定位 | 智谱 + `--thinking` |
 | 高精度识别、文档解析 | 千问 |
+| 可选 OpenAI 兼容视觉接口 | Atlas Cloud |
 | 成本敏感 | 智谱（免费） |
 
 ## 注意事项
@@ -86,4 +102,5 @@ python3 skills/image-analysis/scripts/vision.py analyze --image data/temp/images
 - 本地图片自动转 Base64，支持 jpg/png/gif/webp/bmp
 - 智谱图片限制 5MB，像素不超过 6000x6000
 - 千问不支持同时处理图片、视频和文件
+- Atlas Cloud 当前仅支持图片输入；本地图片会转换为 Base64 Data URL
 - 思考模式会增加响应时间但提升准确度
