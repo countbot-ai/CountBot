@@ -432,6 +432,17 @@ def get_tool_registry():
     except AttributeError:
         return None
 
+
+def get_shared_provider():
+    """返回全局共享 LLM provider，供 Wiki 的 ask/compile 等调用方使用。
+
+    lifespan 启动前（app.state.shared 尚未创建）返回 None，由调用方自行降级。
+    """
+    try:
+        return app.state.shared.get("provider")
+    except AttributeError:
+        return None
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[],
