@@ -1,11 +1,17 @@
 """Wiki Tool - Agent工具接口"""
 
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 from loguru import logger
 
 from backend.modules.tools.base import Tool
 from .service import WikiService
+
+
+def _rag_chunks_enabled() -> bool:
+    """M1 分块检索回滚开关：COUNTBOT_RAG_CHUNKS=1 启用，缺省关闭（零行为变化）"""
+    return os.environ.get("COUNTBOT_RAG_CHUNKS", "").lower() in ("1", "true", "yes", "on")
 
 
 class WikiTool(Tool):
@@ -24,7 +30,17 @@ class WikiTool(Tool):
     """
 
     def __init__(self, wiki_dir: Optional[Path] = None):
-        self._service = WikiService(wiki_dir or Path("workspace/wiki"))
+        self._wiki_dir = wiki_dir or Path("workspace/wiki")
+        self._service = WikiService(self._wiki_dir)
+        self._rag = None
+        if _rag_chunks_enabled():
+            try:
+                from backend.modules.rag.service import RagService
+                self._rag = RagService(self._service, self._wiki_dir)
+                logger.info("RAG chunk-level retrieval enabled (COUNTBOT_RAG_CHUNKS=1)")
+            except Exception as e:
+                logger.warning(f"RAG chunk service unavailable, falling back to doc-level: {e}")
+                self._rag = None
 
     @property
     def name(self) -> str:
@@ -134,6 +150,9 @@ class WikiTool(Tool):
         if not query:
             return "Error: search action requires 'query' parameter"
 
+        if self._rag:
+            return self._rag_search(query, top_k)
+
         # 使用优化的搜索方法，包含元数据和相关性过滤
         results = self._service.search_with_metadata(query, top_k=top_k, min_score_ratio=0.3)
 
@@ -172,6 +191,9 @@ class WikiTool(Tool):
         if not question:
             return "Error: ask action requires 'query' parameter"
 
+        if self._rag:
+            return await self._rag_ask(question)
+
         results = self._service.search(question, top_k=3)
 
         if not results:
@@ -208,6 +230,67 @@ class WikiTool(Tool):
             return await provider.chat_completion(prompt, max_tokens=2000, temperature=0.3)
         except Exception:
             return self._format_search_results(results)
+
+    # ---------- M1: 块级检索路径（COUNTBOT_RAG_CHUNKS=1 时生效） ----------
+
+    def _rag_search(self, query: str, top_k: int) -> str:
+        """块级搜索：返回条目 + 具体节，带 [slug#section] 溯源标识"""
+        chunks = self._rag.search_chunks(query, top_k=top_k)
+        if not chunks:
+            return f"No wiki entries found for: {query}"
+
+        max_score = chunks[0]["score"]
+        lines = [f"Found {len(chunks)} matching sections for '{query}':\n"]
+        for i, c in enumerate(chunks, 1):
+            if c["score"] >= max_score * 0.8:
+                quality = " [高相关]"
+            elif c["score"] >= max_score * 0.5:
+                quality = " [相关]"
+            else:
+                quality = " [低相关]"
+            lines.append(f"{i}. **{c['doc_title']}** › {c['section']} (score: {c['score']:.2f}){quality}")
+            lines.append(f"   Source: {c['chunk_id']}")
+            if c.get("tags"):
+                lines.append(f"   Tags: {', '.join(c['tags'])}")
+            summary = c["content"].strip()[:200]
+            lines.append(f"   {summary}")
+            lines.append("")
+        return "\n".join(lines)
+
+    async def _rag_ask(self, question: str) -> str:
+        """块级问答：注入 top-K 相关块（而非整篇），带溯源"""
+        chunks = self._rag.search_chunks(question, top_k=6)
+        if not chunks:
+            return "Wiki 知识库为空或没有找到相关内容。"
+
+        context_parts = []
+        for c in chunks:
+            context_parts.append(
+                f"### {c['doc_title']} › {c['section']}\n(来源: {c['chunk_id']})\n{c['content']}"
+            )
+        context = "\n\n".join(context_parts)
+
+        try:
+            from backend.app import get_shared_provider
+            provider = get_shared_provider()
+
+            if not provider:
+                return self._rag_search(question, top_k=6)
+
+            prompt = f"""请根据以下 Wiki 知识库内容回答问题。引用时注明来源 [slug#section]。
+
+问题：{question}
+
+---
+
+{context}
+
+---
+
+如果知识库中没有相关内容，请如实告知。"""
+            return await provider.chat_completion(prompt, max_tokens=2000, temperature=0.3)
+        except Exception:
+            return self._rag_search(question, top_k=6)
 
     def _handle_get(self, slug: Optional[str]) -> str:
         """处理获取请求"""
@@ -335,6 +418,8 @@ class WikiTool(Tool):
 
             # 更新索引
             self._service.add_document(slug, title, content, tags or [])
+            if self._rag:
+                self._rag.on_document_added(slug)
 
             logger.info(f"Created wiki entry: {slug}")
             return f"✓ Created wiki entry: **{title}** (slug: {slug})\nTags: {', '.join(tags or [])}"
@@ -382,6 +467,8 @@ class WikiTool(Tool):
                 post.content,
                 post.metadata.get("tags", [])
             )
+            if self._rag:
+                self._rag.on_document_added(slug)
 
             logger.info(f"Updated wiki entry: {slug}")
             return f"✓ Updated wiki entry: **{post.metadata.get('title', slug)}** (slug: {slug})\nUpdated fields: {', '.join(updated_fields)}"
@@ -409,6 +496,8 @@ class WikiTool(Tool):
 
             # 更新索引
             self._service.remove_document(slug)
+            if self._rag:
+                self._rag.on_document_removed(slug)
 
             logger.info(f"Deleted wiki entry: {slug}")
             return f"✓ Deleted wiki entry: **{title}** (slug: {slug})"
@@ -420,6 +509,13 @@ class WikiTool(Tool):
         """处理同步请求"""
         try:
             stats = self._service.force_sync()
+            if self._rag:
+                rag_stats = self._rag.sync()
+                stats = {
+                    "added": stats["added"] + rag_stats["added"],
+                    "updated": stats["updated"] + rag_stats["updated"],
+                    "deleted": stats["deleted"] + rag_stats["deleted"],
+                }
             return (
                 f"✓ Index synchronized:\n"
                 f"• Added: {stats['added']} new entries\n"
