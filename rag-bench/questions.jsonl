@@ -1,0 +1,60 @@
+{"id": "S1-01", "type": "single_doc", "semantic": false, "question": "CountBot 的长期记忆存储在哪里？是什么格式的文件？", "expected_points": ["工作空间中的单文件存储", "JSON 格式，可直接查看编辑"], "source_pages": ["core/memory.md"]}
+{"id": "S1-02", "type": "single_doc", "semantic": false, "question": "CountBot 记忆条目的格式长什么样？包含哪些字段？", "expected_points": ["条目字段结构（id/时间戳/内容/来源等）"], "source_pages": ["core/memory.md"]}
+{"id": "S1-03", "type": "single_doc", "semantic": false, "question": "什么是 auto-overflow 记忆？什么情况下会产生？", "expected_points": ["会话历史超出窗口限制时", "旧消息被压缩写入记忆，来源标记为 auto-overflow"], "source_pages": ["core/memory.md"]}
+{"id": "S1-04", "type": "single_doc", "semantic": false, "question": "AI 模型是怎么读写长期记忆的？需要直接操作文件吗？", "expected_points": ["通过工具调用读写", "模型不直接操作文件"], "source_pages": ["core/memory.md"]}
+{"id": "S1-05", "type": "single_doc", "semantic": false, "question": "CountBot 有哪几种启动方式？分别用什么命令？", "expected_points": ["start_app.py / start_desktop.py / start_dev.py 等启动脚本及区别"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S1-06", "type": "single_doc", "semantic": false, "question": "CountBot 对运行环境有什么要求？需要什么版本的 Python？", "expected_points": ["Python 版本要求", "操作系统支持情况"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S1-07", "type": "single_doc", "semantic": false, "question": "怎么让局域网内其他设备访问 CountBot 的 Web 界面？", "expected_points": ["COUNTBOT_HOST=0.0.0.0 环境变量", "通过本机 IP+端口访问"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S1-08", "type": "single_doc", "semantic": false, "question": "桌面版相比 Web 版有什么限制？", "expected_points": ["桌面版功能边界", "系统依赖差异（libwebkit2gtk）"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S1-09", "type": "single_doc", "semantic": false, "question": "requirements.txt 里的依赖是怎么分类的？", "expected_points": ["依赖分组结构（核心/渠道/桌面等分类方式）"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S1-10", "type": "single_doc", "semantic": false, "question": "CountBot 启动后的自检清单有哪些检查项？", "expected_points": ["启动自检项列表（配置/网络/渠道等）"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S1-11", "type": "single_doc", "semantic": false, "question": "workspace 工作空间目录里都有哪些内容？", "expected_points": ["skills/、memory/、temp/、.skills_config.json 等结构"], "source_pages": ["getting-started/configuration-manual.md"]}
+{"id": "S1-12", "type": "single_doc", "semantic": false, "question": "前端构建产物放在哪个目录？", "expected_points": ["frontend/dist/"], "source_pages": ["advanced/deployment.md"]}
+{"id": "S1-13", "type": "single_doc", "semantic": false, "question": "后端 lifespan 的初始化顺序是什么？", "expected_points": ["数据库初始化→加载配置→共享组件→消息队列→渠道→消息处理→Cron→心跳等顺序"], "source_pages": ["advanced/deployment.md"]}
+{"id": "S1-14", "type": "single_doc", "semantic": false, "question": "CountBot 内置支持多少个模型 provider？", "expected_points": ["22 个"], "source_pages": ["core/providers.md"]}
+{"id": "S1-15", "type": "single_doc", "semantic": false, "question": "Cron 定时任务底层用什么调度库实现？", "expected_points": ["APScheduler"], "source_pages": ["core/cron.md"]}
+{"id": "S1-16", "type": "single_doc", "semantic": true, "question": "我想让 CountBot 到点自动干活，不用我发消息触发，能做到吗？", "expected_points": ["Cron 定时任务功能", "APScheduler 调度"], "source_pages": ["core/cron.md"]}
+{"id": "S1-17", "type": "single_doc", "semantic": true, "question": "CountBot 能在新的一次对话里想起我上次跟它说过的话吗？靠什么机制？", "expected_points": ["长期记忆机制", "跨会话记忆存储"], "source_pages": ["core/memory.md"]}
+{"id": "S1-18", "type": "single_doc", "semantic": true, "question": "一件复杂的事能让几个 AI 角色接力完成吗？", "expected_points": ["Agent 团队功能", "多角色协作"], "source_pages": ["core/agent-teams.md"]}
+{"id": "S1-19", "type": "single_doc", "semantic": true, "question": "我平时在终端里用 AI 编码工具写代码，CountBot 能直接调用它吗？", "expected_points": ["外部编码工具集成（Claude Code/Codex 等）"], "source_pages": ["core/external-coding-tools.md"]}
+{"id": "S1-20", "type": "single_doc", "semantic": true, "question": "同事想在他自己的电脑上打开我的 CountBot 页面来用，行得通吗？", "expected_points": ["远程访问方案", "局域网/公网暴露与认证"], "source_pages": ["advanced/remote-access.md"]}
+{"id": "S1-21", "type": "single_doc", "semantic": true, "question": "知识库文档越存越多，查询会越来越慢吗？", "expected_points": ["Wiki LRU 缓存机制", "缓存容量 128 个文档，重复查询性能提升"], "source_pages": ["releases/v0.9.0.md"]}
+{"id": "S1-22", "type": "single_doc", "semantic": true, "question": "我有好几个 API Key，一个额度用完了能自动换下一个吗？", "expected_points": ["API Key 轮换机制", "401/429 触发自动切换"], "source_pages": ["releases/v0.9.0.md"]}
+{"id": "S1-23", "type": "single_doc", "semantic": true, "question": "我在两个不同的群里分别跟 CountBot 聊，它会把两边的话题记混吗？", "expected_points": ["会话按渠道/聊天隔离", "channels 会话作用域"], "source_pages": ["core/channels.md"]}
+{"id": "S1-24", "type": "single_doc", "semantic": true, "question": "聊到一半想抛开前面的话题重新开始，有什么办法？", "expected_points": ["/new 等斜杠命令重开会话"], "source_pages": ["core/im-commands.md"]}
+{"id": "S1-25", "type": "single_doc", "semantic": true, "question": "升级到新版本的时候，我之前的会话和记忆还能保住吗？", "expected_points": ["升级保留数据", "backup/数据兼容说明"], "source_pages": ["getting-started/update-guide.md"]}
+{"id": "S2-01", "type": "cross_doc", "semantic": false, "question": "怎么配置 CountBot 每天早上 8 点自动搜索新闻并发送到 Telegram？", "expected_points": ["Cron 定时任务配置", "Telegram 渠道配置", "搜索技能与消息发送联动"], "source_pages": ["core/cron.md", "core/channels.md", "scenarios/每天早上一条消息搞定全天：AI早报自动生成的场景与调度技巧.md"]}
+{"id": "S2-02", "type": "cross_doc", "semantic": false, "question": "我在家用桌面版运行 CountBot，出差在外能用手机浏览器访问吗？", "expected_points": ["远程访问方案", "桌面版运行特点", "认证与安全"], "source_pages": ["getting-started/installation.md", "advanced/remote-access.md"]}
+{"id": "S2-03", "type": "cross_doc", "semantic": false, "question": "钉钉上配置完成后机器人不回复消息，应该怎么排查？", "expected_points": ["渠道配置检查", "troubleshooting 排查步骤"], "source_pages": ["getting-started/ChannelConfig.md", "getting-started/troubleshooting.md", "core/channels.md"]}
+{"id": "S2-04", "type": "cross_doc", "semantic": false, "question": "配置好模型 provider 之后，怎么验证连接是正常的？", "expected_points": ["测试模型连接的方式", "provider 状态检查"], "source_pages": ["core/providers.md", "getting-started/quick-reference.md"]}
+{"id": "S2-05", "type": "cross_doc", "semantic": false, "question": "子代理执行完任务之后，结果是怎么回到主对话里的？", "expected_points": ["子代理结果回传机制", "agent loop 中的汇合点"], "source_pages": ["core/subagent.md", "core/agent-loop.md"]}
+{"id": "S2-06", "type": "cross_doc", "semantic": false, "question": "Agent 团队里不同成员想用不同模型，怎么指定优先级？", "expected_points": ["团队成员模型配置", "provider 优先级"], "source_pages": ["core/agent-teams.md", "core/providers.md"]}
+{"id": "S2-07", "type": "cross_doc", "semantic": false, "question": "CountBot 执行 Shell 命令有什么安全限制？怎么防止危险命令？", "expected_points": ["Shell 工具限制", "安全机制（确认/黑名单等）"], "source_pages": ["core/tools.md", "advanced/security.md"]}
+{"id": "S2-08", "type": "cross_doc", "semantic": false, "question": "MCP 工具和外部编码工具（比如 Claude Code）有什么区别？分别什么场景用？", "expected_points": ["MCP 集成方式", "外部编码工具定位", "两者适用场景差异"], "source_pages": ["core/tools.md", "core/external-coding-tools.md"]}
+{"id": "S2-09", "type": "cross_doc", "semantic": false, "question": "什么前提下才能把消息路由到 direct 模式直接给编码工具处理？", "expected_points": ["/route direct 命令", "使用前提（需配置编码工具）"], "source_pages": ["core/im-commands.md", "core/external-coding-tools.md"]}
+{"id": "S2-10", "type": "cross_doc", "semantic": false, "question": "一个会话聊得特别长，系统会发生什么？", "expected_points": ["历史窗口限制", "自动总结触发（30 条/15000 字符）", "auto-overflow 记忆"], "source_pages": ["core/agent-loop.md", "advanced/http-api-deep-dive.md", "core/memory.md"]}
+{"id": "S2-11", "type": "cross_doc", "semantic": false, "question": "把 CountBot 部署在局域网给全组使用，有哪些安全注意事项？", "expected_points": ["认证机制", "API Key 保护", "网络安全配置"], "source_pages": ["advanced/deployment.md", "advanced/security.md", "advanced/remote-access.md"]}
+{"id": "S2-12", "type": "cross_doc", "semantic": false, "question": "升级到新版本之前需要做哪些准备工作？", "expected_points": ["备份", "依赖更新", "数据迁移注意事项"], "source_pages": ["getting-started/update-guide.md", "getting-started/installation.md"]}
+{"id": "S2-13", "type": "cross_doc", "semantic": false, "question": "能在 Web 界面上创建定时任务吗，还是只能改配置文件？", "expected_points": ["Web 界面任务管理", "cron 任务创建方式"], "source_pages": ["core/cron.md", "getting-started/quick-reference.md"]}
+{"id": "S2-14", "type": "cross_doc", "semantic": false, "question": "不想用云端的 API，能不能完全在本地跑模型来用 CountBot？", "expected_points": ["本地模型支持（Ollama 等）", "provider 配置方式", "性能取舍"], "source_pages": ["core/providers.md", "getting-started/installation.md"]}
+{"id": "S2-15", "type": "cross_doc", "semantic": false, "question": "用 /route 和 /coder 切换了路由之后，这些切换会记录进会话历史吗？", "expected_points": ["命令是否写入历史", "会话状态保持方式"], "source_pages": ["core/im-commands.md", "core/agent-loop.md"]}
+{"id": "S3-01", "type": "needle", "semantic": false, "question": "会话达到多少条消息会触发自动总结？", "expected_points": ["30 条"], "source_pages": ["advanced/http-api-deep-dive.md"]}
+{"id": "S3-02", "type": "needle", "semantic": false, "question": "自动总结的字符数阈值是多少？", "expected_points": ["15000 字符"], "source_pages": ["advanced/http-api-deep-dive.md"]}
+{"id": "S3-03", "type": "needle", "semantic": false, "question": "子代理最多允许迭代多少轮？", "expected_points": ["15"], "source_pages": ["core/subagent.md"]}
+{"id": "S3-04", "type": "needle", "semantic": false, "question": "Wiki 知识库的 LRU 缓存容量是多少个文档？", "expected_points": ["128"], "source_pages": ["releases/v0.9.0.md"]}
+{"id": "S3-05", "type": "needle", "semantic": false, "question": "v0.9.0 的心跳问候优化把每次的 LLM 调用次数从几次降到了几次？", "expected_points": ["从 2 次降到 1 次"], "source_pages": ["releases/v0.9.0.md"]}
+{"id": "S3-06", "type": "needle", "semantic": false, "question": "API Key 轮换是在收到哪些 HTTP 状态码时触发的？", "expected_points": ["401 和 429"], "source_pages": ["releases/v0.9.0.md"]}
+{"id": "S3-07", "type": "needle", "semantic": false, "question": "CountBot 内置支持多少个模型 provider？", "expected_points": ["22 个"], "source_pages": ["core/providers.md"]}
+{"id": "S3-08", "type": "needle", "semantic": false, "question": "SQLite 数据库文件叫什么名字？定时任务存在哪张表里？", "expected_points": ["countbot.db", "cron_jobs 表"], "source_pages": ["advanced/deployment.md"]}
+{"id": "S3-09", "type": "needle", "semantic": false, "question": "Telegram 的代理设置支持什么协议？", "expected_points": ["socks5://"], "source_pages": ["getting-started/troubleshooting.md"]}
+{"id": "S3-10", "type": "needle", "semantic": false, "question": "Linux 上安装桌面版需要额外装哪个系统依赖包？", "expected_points": ["libwebkit2gtk-4.0-37"], "source_pages": ["getting-started/installation.md"]}
+{"id": "S4-01", "type": "negative", "semantic": false, "question": "CountBot 怎么部署到 Kubernetes 集群上？", "expected_points": ["应拒答：官方不支持 K8s 部署"], "source_pages": []}
+{"id": "S4-02", "type": "negative", "semantic": false, "question": "CountBot 有官方手机 App 吗？在哪里下载？", "expected_points": ["应拒答：没有官方移动端 App"], "source_pages": []}
+{"id": "S4-03", "type": "negative", "semantic": false, "question": "CountBot 支持语音通话吗？", "expected_points": ["应拒答：不支持语音通话"], "source_pages": []}
+{"id": "S4-04", "type": "negative", "semantic": false, "question": "CountBot 能接入 Home Assistant 控制智能家居设备吗？", "expected_points": ["应拒答：无智能家居集成"], "source_pages": []}
+{"id": "S4-05", "type": "negative", "semantic": false, "question": "CountBot 商业版是怎么收费的？", "expected_points": ["应拒答：开源项目无商业定价"], "source_pages": []}
+{"id": "S4-06", "type": "negative", "semantic": false, "question": "可以把 CountBot 的 SQLite 换成 PostgreSQL 吗？官方支持吗？", "expected_points": ["应拒答：仅支持 SQLite，无 PostgreSQL 支持"], "source_pages": []}
+{"id": "S4-07", "type": "negative", "semantic": false, "question": "哪里可以下载 CountBot 的第三方插件？", "expected_points": ["应拒答：无插件市场"], "source_pages": []}
+{"id": "S4-08", "type": "negative", "semantic": false, "question": "CountBot 能运行在树莓派或 ARM 设备上吗？", "expected_points": ["应拒答：官方未支持 ARM/树莓派"], "source_pages": []}
+{"id": "S4-09", "type": "negative", "semantic": false, "question": "CountBot 支持 SSO 单点登录吗？", "expected_points": ["应拒答：无 SSO 支持"], "source_pages": []}
+{"id": "S4-10", "type": "negative", "semantic": false, "question": "CountBot 支持视频通话或者屏幕共享吗？", "expected_points": ["应拒答：不支持"], "source_pages": []}
