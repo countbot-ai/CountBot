@@ -214,3 +214,164 @@ class TestRagServiceInternals:
         assert all("docker-compose" not in r["content"]
                    for r in rag.search_chunks("docker-compose 一键启动"))
         assert any("helm" in r["content"] for r in rag.search_chunks("k8s helm"))
+
+
+class ScriptedProvider:
+    """按调用顺序返回预设响应的假 LLM provider；Exception 实例则抛出"""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.calls = []
+
+    async def chat_completion(self, prompt, **kwargs):
+        self.calls.append(prompt)
+        if not self.replies:
+            return "DEFAULT"
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+
+def _install_provider(monkeypatch, provider):
+    fake_app = types.ModuleType("backend.app")
+    fake_app.get_shared_provider = lambda: provider
+    monkeypatch.setitem(sys.modules, "backend.app", fake_app)
+
+
+GRADING_MARK = "检索质量评估器"
+REWRITE_MARK = "改写成更适合知识库关键词检索"
+GEN_MARK = "请根据以下 Wiki 知识库内容回答问题"
+
+
+class TestRagAskGrading:
+    """块级问答的评估-路由（CRAG）行为：三段路由 + 拒答 + 全链路回退"""
+
+    def test_grade_all_generates_directly(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            '{"grade": "all", "relevant": [1, 2]}',
+            "ANSWER_OK",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_OK"
+        assert len(provider.calls) == 2  # 评估 1 次 + 生成 1 次，无改写
+        assert GRADING_MARK in provider.calls[0]
+        assert GEN_MARK in provider.calls[1]
+        assert "docker-compose" in provider.calls[1]  # 生成上下文含检索块
+
+    def test_grade_partial_filters_unrelated_chunks(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            '{"grade": "partial", "relevant": [1]}',
+            "ANSWER_OK",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_OK"
+        gen_prompt = provider.calls[1]
+        # 只注入编号 1 的块：无关文档（memory）不得进入生成上下文
+        assert "memory.md" not in gen_prompt
+        assert "检索" not in gen_prompt.split("问题")[0] or "Docker" in gen_prompt
+
+    def test_grade_none_refuses_after_one_rewrite(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            '{"grade": "none", "relevant": []}',   # 首次评估：全不相关
+            "Docker 部署方法",                       # 改写
+            '{"grade": "none", "relevant": []}',   # 重试评估：仍不相关
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert "没有找到" in out
+        # 评估 2 次 + 改写 1 次，绝不发起生成
+        assert len(provider.calls) == 3
+        assert not any(GEN_MARK in c for c in provider.calls)
+
+    def test_grade_none_retry_then_succeeds(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            '{"grade": "none", "relevant": []}',   # 首次评估：不相关
+            "docker compose 部署",                   # 改写
+            '{"grade": "all", "relevant": [1]}',   # 重试评估：相关
+            "ANSWER_AFTER_RETRY",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_AFTER_RETRY"
+        assert len(provider.calls) == 4
+
+    def test_grading_failure_falls_back_to_generation(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            RuntimeError("grading exploded"),  # 评估失败 → 回退旧行为：直接生成
+            "ANSWER_FALLBACK",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_FALLBACK"
+        assert len(provider.calls) == 2
+
+    def test_unparseable_grade_falls_back(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            "我觉得这些结果看起来都挺好的！",  # 非 JSON → 评估不可用
+            "ANSWER_UNPARSED",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+        assert out == "ANSWER_UNPARSED"
+        assert len(provider.calls) == 2
+
+    def test_no_provider_keeps_legacy_fallback(self, wiki_dir, rag_env, monkeypatch):
+        """无 provider：评估/改写/生成全部跳过，回退块级搜索（与旧行为一致）"""
+        provider = ScriptedProvider([])
+        _install_provider(monkeypatch, None)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+        assert "matching sections" in out
+        assert len(provider.calls) == 0
+
+
+class TestParseGrade:
+    """_parse_grade：LLM 输出 → (grade, relevant_ids) 的解析契约"""
+
+    @pytest.mark.parametrize("text,grade,rel", [
+        ('{"grade": "all", "relevant": [1, 2]}', "all", [1, 2]),
+        ('好的，这是我的判断：\n{"grade": "partial", "relevant": [2]}', "partial", [2]),
+        ('{"grade": "NONE", "relevant": []}', "none", []),
+        ('{"grade": "none"}', "none", []),
+    ])
+    def test_valid(self, text, grade, rel):
+        assert WikiTool._parse_grade(text, 6) == (grade, rel)
+
+    @pytest.mark.parametrize("text", [
+        "",
+        "完全没有 JSON",
+        '{"grade": "maybe"}',
+        '{"grade": "partial", "relevant": "not-a-list"}',  # relevant 非列表 → 空编号
+    ])
+    def test_invalid_returns_none(self, text):
+        if "not-a-list" in text:
+            grade, rel = WikiTool._parse_grade(text, 6)
+            assert grade == "partial" and rel == []
+        else:
+            assert WikiTool._parse_grade(text, 6) == (None, None)
+
+    def test_out_of_range_ids_dropped(self):
+        grade, rel = WikiTool._parse_grade('{"grade": "partial", "relevant": [0, 1, 9, "2"]}', 6)
+        assert grade == "partial"
+        assert rel == [1, 2]
