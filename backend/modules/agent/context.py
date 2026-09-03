@@ -293,46 +293,33 @@ class ContextBuilder:
             return self._compact_text(get_personality_prompt(personality_id, custom_text), 220)
 
     def _get_identity(self, persona_config=None) -> str:
-        """获取核心身份部分"""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
+        """获取核心身份部分（仅含配置驱动的静态内容；时间/用户资料等动态信息由 user 消息注入）"""
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
         
         ai_name = "小C"
-        user_name = "老板"
-        user_address = ""
-        output_language = "中文"
         personality = "professional"
         custom_personality = ""
         
         active_persona_config = persona_config or self.persona_config
         if active_persona_config:
             ai_name = active_persona_config.ai_name or "小C"
-            user_name = active_persona_config.user_name or "用户"
-            user_address = getattr(active_persona_config, 'user_address', '') or ""
-            output_language = getattr(active_persona_config, 'output_language', None) or "中文"
             personality = getattr(active_persona_config, 'personality', None) or "professional"
             custom_personality = getattr(active_persona_config, 'custom_personality', None) or ""
         
         personality_desc = self._get_personality_from_db(personality, custom_personality)
         external_coding_guidance = self._build_external_coding_guidance()
 
-        user_lines = [f"- 用户称呼: {user_name}", f"- 默认输出语言: {output_language}"]
-        if user_address:
-            user_lines.append(f"- 用户常用地址: {user_address}")
-
         return f"""# 核心身份
 
 你是“{ai_name}”，运行在 CountBot 内的专用智能助手。
 
 ## 基本信息
-- 当前时间: {now}
 - 运行环境: {runtime}
 - 工作目录: {workspace_path}
 - 技能目录: {workspace_path}/skills
 - 临时文件目录: {workspace_path}/temp
-{chr(10).join(user_lines)}
 
 ## 性格设定
 {personality_desc}
@@ -530,18 +517,9 @@ class ContextBuilder:
             channel=channel,
         )
         
-        if session_summary:
-            system_prompt += f"\n\n## Current Session Context\n{session_summary}"
-        
-        if channel and chat_id:
-            session_lines = [
-                f"Channel: {channel}",
-                f"Chat ID: {chat_id}",
-            ]
-            if account_id:
-                session_lines.append(f"Account ID: {account_id}")
-            system_prompt += "\n\n## Current Session\n" + "\n".join(session_lines)
-        
+        # session_summary / channel / chat_id / account_id 属于随会话变化的动态内容，
+        # 不再拼入 system prompt（否则会破坏 prompt cache 前缀稳定性），
+        # 统一由 _build_dynamic_user_context() 注入首条 user 消息。
         messages.append({"role": "system", "content": system_prompt})
         messages.extend(history)
         
@@ -561,6 +539,22 @@ class ContextBuilder:
             messages[0]["content"] += f"\n\n{team_reminder}"
         
         user_content = self._build_user_content(current_message, media)
+
+        # 动态信息（当前时间/用户资料/会话摘要/渠道信息）统一注入首条 user 消息，
+        # 保持 system prompt 纯静态，避免前缀变化导致 prompt cache 失效。
+        dynamic_context = self._build_dynamic_user_context(
+            session_summary=session_summary,
+            channel=channel,
+            chat_id=chat_id,
+            account_id=account_id,
+            persona_config=persona_config,
+        )
+        if dynamic_context:
+            if user_content:
+                user_content = f"{user_content}\n\n{dynamic_context}"
+            else:
+                user_content = dynamic_context
+
         messages.append({"role": "user", "content": user_content})
         
         return messages
@@ -608,6 +602,61 @@ class ContextBuilder:
             ) + "\n".join(attachment_lines)
 
         return text_content
+
+    def _build_dynamic_user_context(
+        self,
+        *,
+        session_summary: Optional[str] = None,
+        channel: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+        persona_config=None,
+    ) -> str:
+        """构造注入首条 user 消息的动态上下文。
+
+        当前时间、用户称呼/地址/输出语言、会话摘要、渠道信息等均随会话变化；
+        若写入 system prompt（缓存前缀），任何一处变化都会让 prompt cache 整体失效。
+        因此统一作为对话流中的普通上下文，追加到首条 user 消息中。
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
+
+        # 用户资料取值规则与 _get_identity 保持一致：无 persona 配置用默认值，有则覆盖
+        user_name = "老板"
+        user_address = ""
+        output_language = "中文"
+        active_persona_config = persona_config or self.persona_config
+        if active_persona_config:
+            user_name = active_persona_config.user_name or "用户"
+            user_address = getattr(active_persona_config, 'user_address', '') or ""
+            output_language = getattr(active_persona_config, 'output_language', None) or "中文"
+
+        blocks: List[str] = []
+
+        # 1) 当前时间 + 用户资料（原 _get_identity 中混入的动态部分）
+        context_lines = [
+            f"- 当前时间: {now}",
+            f"- 用户称呼: {user_name}",
+            f"- 默认输出语言: {output_language}",
+        ]
+        if user_address:
+            context_lines.append(f"- 用户常用地址: {user_address}")
+        blocks.append("## 当前会话上下文\n" + "\n".join(context_lines))
+
+        # 2) 会话摘要（原拼入 system prompt 的动态内容）
+        if session_summary:
+            blocks.append(f"## Current Session Context\n{session_summary}")
+
+        # 3) 渠道信息（原拼入 system prompt 的动态内容）
+        if channel and chat_id:
+            session_lines = [
+                f"Channel: {channel}",
+                f"Chat ID: {chat_id}",
+            ]
+            if account_id:
+                session_lines.append(f"Account ID: {account_id}")
+            blocks.append("## Current Session\n" + "\n".join(session_lines))
+
+        return "\n\n".join(blocks)
 
     def add_tool_result(
         self,
