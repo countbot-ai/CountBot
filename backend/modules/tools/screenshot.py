@@ -15,6 +15,7 @@ from typing import Any, Dict, Literal
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools._failure import format_failure, single_line
 
 
 class ScreenshotTool(Tool):
@@ -215,8 +216,14 @@ class ScreenshotTool(Tool):
                 )
                 
         except Exception as e:
-            logger.error(f"桌面截图失败: {e}")
-            return f"Error capturing desktop screenshot: {str(e)}"
+            detail = f"桌面截图失败: {e}"
+            logger.error(detail)
+            return format_failure(
+                kind="execution_error",
+                summary=f"Failed to capture desktop screenshot: {single_line(e)}",
+                next="check the screen/monitor is available, then retry",
+                detail=detail,
+            )
 
     async def _capture_webpage(self, **kwargs: Any) -> str:
         """
@@ -315,5 +322,11 @@ class ScreenshotTool(Tool):
                 )
                 
         except Exception as e:
-            logger.error(f"网页截图失败: {e}")
-            return f"Error capturing webpage screenshot: {str(e)}"
+            detail = f"网页截图失败: {e}"
+            logger.error(detail)
+            return format_failure(
+                kind="execution_error",
+                summary=f"Failed to capture webpage screenshot: {single_line(e)}",
+                next="verify the URL is reachable and playwright browsers are installed, then retry",
+                detail=detail,
+            )

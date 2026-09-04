@@ -154,6 +154,12 @@ class SpawnTool(Tool):
         except asyncio.TimeoutError:
             return f"子 Agent [{display_label}] 超时 (ID: {task_id})，任务仍在后台运行。"
 
+        from backend.modules.agent.subagent import TaskStatus
+
+        # 取消 ≠ 失败 ≠ 完成：先判取消，避免"任务已被取消"被误报为"已完成"
+        if sub_task.status == TaskStatus.CANCELLED:
+            return f"子 Agent [{display_label}] 已取消 (ID: {task_id})。"
+
         if sub_task.error:
             return f"子 Agent [{display_label}] 失败 (ID: {task_id}): {sub_task.error}"
 
