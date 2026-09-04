@@ -1,8 +1,10 @@
 """Wiki Tool - Agent工具接口"""
 
+import json
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from backend.modules.tools.base import Tool
@@ -258,10 +260,140 @@ class WikiTool(Tool):
         return "\n".join(lines)
 
     async def _rag_ask(self, question: str) -> str:
-        """块级问答：注入 top-K 相关块（而非整篇），带溯源"""
+        """块级问答：检索 → LLM 评估相关性 → 三段路由（直接生成 / 过滤后生成 / 改写重试后拒答）。
+
+        评估不可用（无 provider / 调用失败 / 输出不可解析）时回退为
+        "全部注入直接生成"（即评估前的行为），保证零破坏。
+        """
         chunks = self._rag.search_chunks(question, top_k=6)
         if not chunks:
             return "Wiki 知识库为空或没有找到相关内容。"
+
+        grade, relevant = await self._grade_chunks(question, chunks)
+
+        if grade == "none":
+            # 检索结果全不相关：改写问题重试一次，仍不相关则如实拒答
+            rewritten = await self._rewrite_query(question)
+            if rewritten and rewritten != question:
+                chunks2 = self._rag.search_chunks(rewritten, top_k=6)
+                if chunks2:
+                    grade2, relevant2 = await self._grade_chunks(rewritten, chunks2)
+                    if grade2 == "all":
+                        return await self._generate_from_chunks(rewritten, chunks2)
+                    if grade2 == "partial":
+                        return await self._generate_from_chunks(
+                            rewritten, self._filter_chunks(chunks2, relevant2) or chunks2
+                        )
+            return ("Wiki 知识库中没有找到与该问题相关的内容。"
+                    "（已检索并逐条校验相关性，结果均与问题无关；"
+                    "可以换个问法重试，或确认知识库中是否已有相关条目。）")
+
+        if grade == "partial" and relevant:
+            chunks = self._filter_chunks(chunks, relevant) or chunks
+
+        return await self._generate_from_chunks(question, chunks)
+
+    # ---------- 块级问答的评估与路由组件（仅 COUNTBOT_RAG_CHUNKS=1 路径使用） ----------
+
+    @staticmethod
+    def _get_provider():
+        """获取共享 LLM provider；不可用时返回 None（各调用方自行回退）"""
+        try:
+            from backend.app import get_shared_provider
+            return get_shared_provider()
+        except Exception:
+            return None
+
+    async def _grade_chunks(self, question: str, chunks: List[dict]) -> Tuple[Optional[str], Optional[List[int]]]:
+        """LLM 评估检索块与问题的相关性（单次轻量调用，约 200-400 token）。
+
+        Returns:
+            ("all"|"partial"|"none", relevant_ids)；评估不可用时 (None, None)。
+            纯分数阈值无法做拒答：实测负样本 top1 分数与正样本重叠率 7/10。
+        """
+        provider = self._get_provider()
+        if provider is None:
+            return None, None
+
+        lines = [
+            f"{i}. {c['doc_title']} › {c['section']}：{c['content'].strip()[:120]}"
+            for i, c in enumerate(chunks, 1)
+        ]
+        prompt = (
+            "你是知识库检索质量评估器。判断下面的检索结果能否支撑回答问题。\n\n"
+            f"问题：{question}\n\n"
+            "检索结果（编号. 文档 › 章节：内容摘录）：\n" + "\n".join(lines) + "\n\n"
+            '只输出一行 JSON，不要输出其他内容：\n'
+            '{"grade": "all|partial|none", "relevant": [相关编号]}\n'
+            "- all：检索结果基本都与问题相关，足以回答\n"
+            "- partial：有任何一条结果可能包含与问题相关的信息"
+            "（哪怕只覆盖问题的一部分、或只提供部分线索），"
+            "relevant 列出这些结果的编号\n"
+            "- none：仅当所有结果谈论的都是与问题完全无关的主题时使用；"
+            "拿不准时优先 partial，不要轻易判 none"
+        )
+        try:
+            resp = await provider.chat_completion(prompt, max_tokens=200, temperature=0.0)
+            return self._parse_grade(resp, len(chunks))
+        except Exception as e:
+            logger.warning(f"Chunk grading failed, falling back to plain generation: {e}")
+            return None, None
+
+    @staticmethod
+    def _parse_grade(text: str, n_chunks: int) -> Tuple[Optional[str], Optional[List[int]]]:
+        """解析评估输出为 (grade, relevant_ids)；不可解析时返回 (None, None)"""
+        if not text:
+            return None, None
+        m = re.search(r"\{[^{}]*\}", text, re.S)
+        if not m:
+            return None, None
+        try:
+            data = json.loads(m.group(0))
+        except Exception:
+            return None, None
+        grade = str(data.get("grade", "")).strip().lower()
+        if grade not in ("all", "partial", "none"):
+            return None, None
+        ids = set()
+        for i in (data.get("relevant") or []):
+            try:
+                n = int(i)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= n <= n_chunks:
+                ids.add(n)
+        return grade, sorted(ids)
+
+    async def _rewrite_query(self, question: str) -> Optional[str]:
+        """全不相关时，让 LLM 把问题改写为更贴近知识库术语的检索词（一次机会）"""
+        provider = self._get_provider()
+        if provider is None:
+            return None
+        prompt = (
+            "把下面的问题改写成更适合知识库关键词检索的问法"
+            "（保留原意，尽量使用文档中可能出现的术语，不要回答问题本身），"
+            "只输出改写后的问题：\n" + question
+        )
+        try:
+            resp = await provider.chat_completion(prompt, max_tokens=100, temperature=0.0)
+            text = (resp or "").strip().strip('"').strip("\u201c\u201d")
+            return text or None
+        except Exception as e:
+            logger.warning(f"Query rewrite failed: {e}")
+            return None
+
+    @staticmethod
+    def _filter_chunks(chunks: List[dict], relevant_ids: List[int]) -> List[dict]:
+        """按评估给出的编号保留相关块（编号从 1 开始）"""
+        if not relevant_ids:
+            return []
+        return [c for i, c in enumerate(chunks, 1) if i in set(relevant_ids)]
+
+    async def _generate_from_chunks(self, question: str, chunks: List[dict]) -> str:
+        """用给定块组装上下文并生成回答；无 provider 或失败时回退块级搜索结果"""
+        provider = self._get_provider()
+        if not provider:
+            return self._rag_search(question, top_k=6)
 
         context_parts = []
         for c in chunks:
@@ -270,14 +402,7 @@ class WikiTool(Tool):
             )
         context = "\n\n".join(context_parts)
 
-        try:
-            from backend.app import get_shared_provider
-            provider = get_shared_provider()
-
-            if not provider:
-                return self._rag_search(question, top_k=6)
-
-            prompt = f"""请根据以下 Wiki 知识库内容回答问题。引用时注明来源 [slug#section]。
+        prompt = f"""请根据以下 Wiki 知识库内容回答问题。引用时注明来源 [slug#section]。
 
 问题：{question}
 
@@ -288,6 +413,7 @@ class WikiTool(Tool):
 ---
 
 如果知识库中没有相关内容，请如实告知。"""
+        try:
             return await provider.chat_completion(prompt, max_tokens=2000, temperature=0.3)
         except Exception:
             return self._rag_search(question, top_k=6)
