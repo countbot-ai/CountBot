@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools._failure import format_failure, single_line
 from .service import WikiService
 
 
@@ -144,8 +145,14 @@ class WikiTool(Tool):
             else:
                 return f"Unknown action: {action}. Available: search, ask, get, batch_get, list, stats, create, update, delete, sync"
         except Exception as e:
-            logger.error(f"Wiki {action} failed: {e}")
-            return f"Wiki {action} failed: {e}"
+            detail = f"Wiki {action} failed: {e}"
+            logger.error(detail)
+            return format_failure(
+                kind="execution_error",
+                summary=f"Wiki {action} failed: {single_line(e)}",
+                next="check the wiki entry and arguments, then retry",
+                detail=detail,
+            )
 
     def _handle_search(self, query: Optional[str], top_k: int) -> str:
         """处理搜索请求（优化版：使用search_with_metadata减少文件读取）"""
