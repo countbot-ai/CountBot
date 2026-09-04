@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools._failure import format_failure, single_line
 from backend.modules.tools.monitoring import (
     MONITOR_PARAMETER_SCHEMA,
     build_default_monitor_config,
@@ -483,8 +484,14 @@ class ExecTool(Tool):
             return result
             
         except Exception as e:
-            logger.error(f"执行命令时发生异常: {e}")
-            return f"Error executing command: {str(e)}"
+            detail = f"执行命令时发生异常: {e}"
+            logger.error(detail)
+            return format_failure(
+                kind="execution_error",
+                summary=f"Command execution failed: {single_line(e)}",
+                next="check the command and environment, then retry",
+                detail=detail,
+            )
 
     def _decode_output(self, output: bytes) -> str:
         """解码命令输出，自动检测字符编码
@@ -576,7 +583,12 @@ class ExecTool(Tool):
                         f"(invalid denylist regex: {error})"
                     )
                 if matched:
-                    return "Error: Command blocked by safety guard (dangerous pattern detected)"
+                    return (
+                        "Error: Command blocked by safety guard "
+                        "(dangerous pattern detected). "
+                        "Next: rewrite the command without destructive operations "
+                        "(e.g. rm -rf) and retry."
+                    )
         
         # 工作空间路径限制
         if self.restrict_to_workspace:
@@ -622,7 +634,12 @@ class ExecTool(Tool):
                     try:
                         p.relative_to(self.workspace)
                     except ValueError:
-                        return f"Error: Command blocked by safety guard (path outside working dir: {raw})"
+                        return (
+                            f"Error: Command blocked by safety guard "
+                            f"(path outside working dir: {raw}). "
+                            f"Next: rewrite the command to use a path inside the "
+                            f"working directory and retry."
+                        )
         
         return None
 

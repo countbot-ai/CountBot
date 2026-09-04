@@ -574,6 +574,7 @@ class SubagentManager:
 
         except asyncio.CancelledError:
             task.status = TaskStatus.CANCELLED
+            task.error = "任务已被取消"
             task.completed_at = datetime.now()
             logger.info(f"Task {task.task_id} was cancelled")
             if handler:

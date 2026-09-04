@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Tuple
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools._failure import format_failure, single_line
 
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
@@ -291,8 +292,14 @@ class SendMediaTool(Tool):
             return result_msg
             
         except Exception as e:
-            logger.error(f"发送文件失败: {e}")
-            return f"发送文件失败: {str(e)}"
+            detail = f"发送文件失败: {e}"
+            logger.error(detail)
+            return format_failure(
+                kind="execution_error",
+                summary=f"发送文件失败: {single_line(e)}",
+                next="check the file paths are valid, then retry",
+                detail=detail,
+            )
 
     def _queue_wecom_longconn_media(
         self,

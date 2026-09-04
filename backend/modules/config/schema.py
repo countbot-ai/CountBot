@@ -155,6 +155,16 @@ class SecurityConfig(BaseModel):
     restrict_to_workspace: bool = Field(default=False, description="是否限制命令在工作空间内执行")
 
 
+class AgentConfig(BaseModel):
+    """Agent 行为配置"""
+    tool_timeout_seconds: int = Field(
+        default=60,
+        ge=5,
+        le=1800,
+        description="主循环工具调用超时（秒）：超时后返回模板错误并提示模型拆分任务",
+    )
+
+
 class ChannelAccountConfig(BaseModel):
     """支持多机器人实例的基础渠道配置。"""
 
@@ -348,6 +358,7 @@ class AppConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
     mcp: McpConfig = Field(default_factory=McpConfig)
