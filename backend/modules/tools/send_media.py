@@ -8,6 +8,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._path_resolver import resolve_path
 
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
@@ -56,10 +57,17 @@ class SendMediaTool(Tool):
         "required": ["file_paths"]
     }
     
-    def __init__(self, channel_manager=None, session_manager=None):
+    def __init__(self, channel_manager=None, session_manager=None, workspace=None):
         super().__init__()
         self.channel_manager = channel_manager
         self.session_manager = session_manager
+        # 初始工作空间（向后兼容）；相对路径的实际解析统一走 resolve_path
+        # （跟随运行期热切换），不在此冻结快照。
+        self.workspace = workspace.resolve() if workspace is not None else None
+
+    def _resolve_file_path(self, path: str) -> Path:
+        """解析文件路径：绝对路径直接返回，相对路径按当前工作空间解析。"""
+        return resolve_path(path)
 
     @property
     def _current_session_id(self) -> Optional[str]:
@@ -189,7 +197,7 @@ class SendMediaTool(Tool):
         invalid_files = []
         
         for path in file_paths:
-            file_path = Path(path)
+            file_path = self._resolve_file_path(path)
             if not file_path.exists():
                 invalid_files.append(f"{path} (不存在)")
         
@@ -213,30 +221,36 @@ class SendMediaTool(Tool):
             
             valid_paths = []
             invalid_files = []
+            results: List[Tuple[str, str]] = []
             image_count = 0
             file_count = 0
             
             for path in file_paths:
-                file_path = Path(path)
+                file_path = self._resolve_file_path(path)
                 if not file_path.exists():
                     invalid_files.append(f"{path} (不存在)")
+                    results.append((path, "文件不存在"))
                     continue
                 
                 if not self._is_supported_file(file_path):
                     invalid_files.append(f"{path} (格式不支持)")
+                    results.append((path, "格式不支持"))
                     continue
                 
                 file_size = file_path.stat().st_size
                 if file_size > 20 * 1024 * 1024:
                     invalid_files.append(f"{path} (超过 20MB)")
+                    results.append((path, "超过 20MB"))
                     continue
                 
                 processed_path = await self._prepare_media_path(file_path, channel)
                 if not processed_path:
                     invalid_files.append(f"{path} (预处理失败)")
+                    results.append((path, "预处理失败"))
                     continue
                 
                 valid_paths.append(processed_path)
+                results.append((path, "已发送"))
                 if self._is_image_file(file_path):
                     image_count += 1
                 else:
@@ -280,11 +294,15 @@ class SendMediaTool(Tool):
             
             logger.info(f"Successfully sent {len(valid_paths)} files to {channel}:{chat_id}")
             
-            if len(valid_paths) == 1:
+            success_count = sum(1 for _, status in results if status == "已发送")
+            if success_count == 1:
                 file_name = Path(valid_paths[0]).name
-                result_msg = f"成功发送文件: {file_name}"
+                summary = f"成功发送文件: {file_name}"
             else:
-                result_msg = f"成功发送 {len(valid_paths)} 个文件到 {channel}"
+                summary = f"成功发送 {success_count} 个文件到 {channel}"
+            
+            status_lines = "\n".join(f"  - {p}: {s}" for p, s in results)
+            result_msg = f"{summary}\n{status_lines}"
             
             if invalid_files:
                 result_msg += f"\n跳过 {len(invalid_files)} 个无效文件: {', '.join(invalid_files)}"
