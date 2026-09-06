@@ -10,6 +10,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._path_resolver import resolve_path
 from .service import WikiService
 
 
@@ -65,7 +66,19 @@ class WikiTool(Tool):
     """
 
     def __init__(self, wiki_dir: Optional[Path] = None):
-        self._wiki_dir = wiki_dir or Path("workspace/wiki")
+        # 显式目录（如独立知识库 / 测试临时目录）不跟随工作空间热切换；
+        # 默认 None = 跟随当前工作空间下的 wiki/ 目录（运行期热切换自动跟随）。
+        self._explicit_wiki_dir = wiki_dir
+        self._wiki_dir = self._resolve_wiki_dir(wiki_dir)
+        self._build_service()
+
+    def _resolve_wiki_dir(self, wiki_dir: Optional[Path]) -> Path:
+        if wiki_dir is not None:
+            return Path(wiki_dir).expanduser().resolve()
+        return resolve_path("wiki")
+
+    def _build_service(self) -> None:
+        """按当前 _wiki_dir 重建服务（目录切换后重建索引载体）。"""
         self._service = WikiService(self._wiki_dir)
         self._rag = None
         if _rag_chunks_enabled():
@@ -91,6 +104,18 @@ class WikiTool(Tool):
 
         self._grade_cache = _BoundedCache()
         self._rerank_cache = _BoundedCache()
+
+    def _sync_wiki_dir(self) -> None:
+        """工作空间热切换后，默认 wiki 目录跟随新工作空间（显式目录除外）。"""
+        if self._explicit_wiki_dir is not None:
+            return
+        current = resolve_path("wiki")
+        if current != self._wiki_dir:
+            logger.info(
+                f"Wiki directory follows workspace switch: {self._wiki_dir} -> {current}"
+            )
+            self._wiki_dir = current
+            self._build_service()
 
     @property
     def name(self) -> str:
@@ -169,6 +194,7 @@ class WikiTool(Tool):
     ) -> str:
         """执行 Wiki 操作"""
         try:
+            self._sync_wiki_dir()
             if action == "search":
                 return self._handle_search(query, top_k)
             elif action == "ask":
@@ -240,7 +266,10 @@ class WikiTool(Tool):
             lines.append(f"   {summary}")
             lines.append("")
 
-        return "\n".join(lines)
+        # 死胡同修复：检索结果带可精确取用的 slug 标识，
+        # 供 batch_get 等下游直接消费，无需重新猜测条目。
+        slugs = ", ".join(result["slug"] for result in results)
+        return "\n".join(lines) + f"\nSlugs: {slugs}"
 
     async def _handle_ask(self, question: Optional[str]) -> str:
         """处理问答请求"""

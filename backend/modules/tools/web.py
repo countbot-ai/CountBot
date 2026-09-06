@@ -12,6 +12,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._path_resolver import resolve_path
 
 # 尝试导入可选依赖
 try:
@@ -225,6 +226,10 @@ class WebFetchTool(Tool):
                     "minimum": 100,
                     "description": "Max chars.",
                 },
+                "output_path": {
+                    "type": "string",
+                    "description": "Optional. Relative (workspace) or absolute path to save the fetched content to. When provided, returns 'Saved: <path>' followed by the content.",
+                },
             },
             "required": ["url"],
         }
@@ -234,6 +239,7 @@ class WebFetchTool(Tool):
         mode = kwargs.get("mode", "basic")
         output_format = kwargs.get("outputFormat", "text")
         max_chars = kwargs.get("maxChars", self.max_chars)
+        output_path = kwargs.get("output_path") or kwargs.get("outputPath")
         
         if not url:
             return json.dumps({"error": "url parameter is required"})
@@ -256,17 +262,29 @@ class WebFetchTool(Tool):
             if output_format == "text":
                 # 纯文本模式：直接返回文本（默认，最适合AI）
                 logger.info(f"Fetched {url}: {len(result['text'])} chars (mode: {result.get('mode', 'httpx')}, format: text)")
-                return result["text"]
+                content = result["text"]
             
             elif output_format == "html":
                 # HTML模式：返回原始HTML
                 logger.info(f"Fetched {url}: {len(result['html'])} chars (mode: {result.get('mode', 'httpx')}, format: html)")
-                return result["html"]
+                content = result["html"]
             
             else:  # json
                 # JSON模式：返回完整的结构化数据
                 logger.info(f"Fetched {url}: {result['length']} chars (mode: {result.get('mode', 'httpx')}, format: json)")
-                return json.dumps(result, ensure_ascii=False)
+                content = json.dumps(result, ensure_ascii=False)
+            
+            # 可选落盘：output_path 提供后，抓取内容可被下游工具（read/send_media 等）消费，
+            # 不再只是「回给模型」的死胡同产出。
+            saved_prefix = ""
+            if output_path:
+                target = resolve_path(output_path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                logger.info(f"Saved fetched content to: {target}")
+                saved_prefix = f"Saved: {target}\n\n"
+            
+            return saved_prefix + content
             
         except Exception as e:
             detail = f"Web fetch error for {url}: {e}"
