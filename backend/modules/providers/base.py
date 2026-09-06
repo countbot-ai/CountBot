@@ -107,3 +107,59 @@ class LLMProvider(ABC):
     def get_default_model(self) -> str:
         """获取默认模型"""
         pass
+
+
+# ======================================================================
+# 错误分类（P2 B5）：曾散落在 anthropic_provider / openai_provider /
+# agent/loop / providers/runtime 共 5 处重复 hint 列表，统一收敛到此处，
+# 重试 / key 轮换 / 文案分发共享同一分类。
+# 注意：_format_error_message 的用户文案关键字不在合并范围（文案保持稳定）。
+# ======================================================================
+
+AUTH_ERROR_HINTS = (
+    "401", "403", "unauthorized", "invalid api key", "invalid_api_key",
+    "authentication", "invalid token", "token is unusable", "api key",
+    "apikey", "access denied", "forbidden", "insufficient_quota",
+    "account_deactivated",
+)
+
+RATE_LIMIT_HINTS = (
+    "429", "rate limit", "rate_limit", "too many requests", "quota",
+    "insufficient_quota", "capacity", "overloaded",
+)
+
+
+def _error_status_code(error: Exception) -> Optional[int]:
+    code = getattr(error, "status_code", None)
+    if not isinstance(code, int):
+        response = getattr(error, "response", None)
+        code = getattr(response, "status_code", None)
+    return code if isinstance(code, int) else None
+
+
+def _error_text(error: Exception) -> str:
+    return f"{type(error).__name__} {error}".lower()
+
+
+def is_auth_error(error: Exception) -> bool:
+    """认证/密钥错误：不应在 Provider 内部重试，可触发 key 轮换。"""
+    if _error_status_code(error) in (401, 403):
+        return True
+    text = _error_text(error)
+    return any(hint in text for hint in AUTH_ERROR_HINTS)
+
+
+def is_rate_limit_error(error: Exception) -> bool:
+    """限流/配额错误：可退避重试或触发 key 轮换。"""
+    if _error_status_code(error) == 429:
+        return True
+    text = _error_text(error)
+    return any(hint in text for hint in RATE_LIMIT_HINTS)
+
+
+# ======================================================================
+# 工具参数解析失败哨兵 key（P2 B6）：单一来源。
+# provider 层与 tools/registry 共用同一标识，避免出现两份字符串字面量漂移。
+# ======================================================================
+_TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
+_TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"

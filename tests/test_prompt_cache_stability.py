@@ -6,7 +6,8 @@
 2. build_messages()[0] 是纯静态 system 消息；动态内容
    （now / 用户信息 / session_summary / channel / chat_id / account_id）
    全部出现在 user 消息中。
-3. team_reminder（@ 团队提醒）维持注入 system 消息的既有行为（本次未动，独立议题）。
+3. team_reminder（@ 团队提醒）并入首条 user 消息，不再注入 system
+   （P2 Provider 缓存 issue ① 落地：含 @ 与不含 @ 的 system 字节级一致）。
 4. 历史消息顺序、附件路径提示、人格切换默认值等既有行为不回归。
 
 测试通过子类覆盖 DB 相关私有方法，运行无需数据库与环境变量。
@@ -165,18 +166,28 @@ def test_default_persona_user_info_in_user_message(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3) team_reminder 维持既有行为（本次未动，独立议题）
+# 3) team_reminder（@ 团队提醒）并入 user 消息，system 保持字节级静态（P2）
 # ---------------------------------------------------------------------------
 
-def test_team_reminder_still_injected_into_system_message(tmp_path):
+def test_team_reminder_merged_into_user_message_not_system(tmp_path):
     builder = make_builder(tmp_path)
-    messages = builder.build_messages(
+    with_at = builder.build_messages(
         history=[],
         current_message="大家看看 @数据分析 这个需求怎么拆",
         persona_config=PERSONA,
     )
-    assert "检测到 @ 符号" in messages[0]["content"]
-    assert "可用团队" not in messages[-1]["content"]
+    without_at = builder.build_messages(
+        history=[],
+        current_message="大家看看 这个需求怎么拆",
+        persona_config=PERSONA,
+    )
+    # 含 @ 与不含 @ 的 system 字节级一致（P2 ①：team_reminder 不再污染 system）
+    assert with_at[0]["content"] == without_at[0]["content"]
+    assert "💡" not in with_at[0]["content"]
+    assert "检测到 @ 符号" not in with_at[0]["content"]
+    # team_reminder 出现在首条 user 消息末尾
+    assert "💡 检测到 @ 符号" in with_at[-1]["content"]
+    assert "检测到 @ 符号" not in without_at[-1]["content"]
 
 
 # ---------------------------------------------------------------------------
