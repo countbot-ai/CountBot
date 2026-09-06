@@ -11,22 +11,16 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from loguru import logger
 from backend.modules.tools.conversation_history import get_conversation_history
 from backend.modules.tools._failure import RetryableToolError
+from backend.modules.providers.base import AUTH_ERROR_HINTS, RATE_LIMIT_HINTS
 
 
 def _is_key_rotation_eligible_error(error_text: str) -> bool:
-    """判断错误是否适合触发 key 轮换重试。"""
+    """判断错误是否适合触发 key 轮换重试。
+
+    分类 hint 已收敛到 providers/base.py 单一来源（P2 B5），此处直接引用。
+    """
     lower = (error_text or "").lower()
-    auth_hints = (
-        "401", "unauthorized", "invalid api key", "invalid_api_key",
-        "authentication", "invalid token", "token is unusable",
-        "api key", "apikey", "access denied",
-        "insufficient_quota", "account_deactivated",
-    )
-    rate_hints = (
-        "429", "rate limit", "rate_limit", "quota",
-        "too many requests", "capacity", "overloaded",
-    )
-    return any(hint in lower for hint in auth_hints + rate_hints)
+    return any(hint in lower for hint in AUTH_ERROR_HINTS + RATE_LIMIT_HINTS)
 
 
 class AgentLoop:
