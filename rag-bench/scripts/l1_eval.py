@@ -284,8 +284,15 @@ def build_chunk_run(
     run = Run()
     run.name = name
     min_ratio = 0.0 if bypass_threshold else 0.3
+    # max_per_doc=0：显式声明"不限单文档"的候选池口径。后端 search() 在
+    # #114 之后默认 max_per_doc=1（面向生产 top-6 注入的单文档截断），G1
+    # 对照 run 若沿用默认值，会随 #114 语义静默变成每文档 1 块，使 PR 引
+    # 用的基线数字（Hit@6 0.82 / 0.33，在无 #114 的基线上测得）不可复现。
+    # 评测对照的是"检索能力"（与 G3 候选池同口径），截断留给生产 top-6。
     for qid, query in queries.items():
-        for chunk_id, score in store.search(query, top_k=top_k, min_score_ratio=min_ratio):
+        for chunk_id, score in store.search(
+            query, top_k=top_k, min_score_ratio=min_ratio, max_per_doc=0
+        ):
             run.add_score(str(qid), str(chunk_id), float(score))
 
     return run
