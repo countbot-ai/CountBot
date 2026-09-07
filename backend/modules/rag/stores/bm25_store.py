@@ -78,13 +78,56 @@ class ChunkedBM25Index:
 
     # ---------- 检索 ----------
 
-    def search(self, query: str, top_k: int = 10, min_score_ratio: float = 0.3) -> List[Tuple[str, float]]:
-        """搜索块，返回 [(chunk_id, score)]"""
-        return self._bm25.search(query, top_k=top_k, min_score_ratio=min_score_ratio)
+    #: 超采样倍数：BM25Index.search 只返回按分数排序的前 N 块，
+    #: 若直接取 top_k，同一文档的高分块会把名额占满（实测凑齐 10 个不同文档
+    #: 平均需要扫过 25.3 个块）。超采样后在内存中按文档截断，代价可忽略。
+    OVERSAMPLE_FACTOR = 5
 
-    def search_chunks(self, query: str, top_k: int = 10, min_score_ratio: float = 0.3) -> List[dict]:
-        """搜索块，返回带元数据与正文的结果（注入用）"""
-        results = self.search(query, top_k=top_k, min_score_ratio=min_score_ratio)
+    def search(self, query: str, top_k: int = 10, min_score_ratio: float = 0.3,
+               max_per_doc: int = 1) -> List[Tuple[str, float]]:
+        """搜索块，返回 [(chunk_id, score)]
+
+        Args:
+            max_per_doc: 单篇文档在结果前排最多占的块数（<=0 表示不限制）。
+                防止同一文档的多个高分块挤占 top_k、饿死其他文档——
+                跨文档问题（如"定时任务 + 钉钉推送"）需要多个来源同时在场。
+                凑不满 top_k 时按分数回填被截断的块，小知识库不丢结果。
+
+        默认取 1 的依据（60 题评测，生产 top6 注入口径）：
+        跨文档源覆盖 0.500 -> 0.556，口语化命中 0.600 -> 0.700，
+        正样本总体命中 0.800 -> 0.829，单文档/精确题无回退。
+        """
+        if max_per_doc is None or max_per_doc <= 0:
+            return self._bm25.search(query, top_k=top_k, min_score_ratio=min_score_ratio)
+
+        oversampled = self._bm25.search(
+            query, top_k=top_k * self.OVERSAMPLE_FACTOR,
+            min_score_ratio=min_score_ratio,
+        )
+        per_doc: Dict[str, int] = defaultdict(int)
+        kept: List[Tuple[str, float]] = []
+        deferred: List[Tuple[str, float]] = []
+        for chunk_id, score in oversampled:
+            slug = self._chunk_slug.get(chunk_id)
+            if slug is None:
+                continue
+            if per_doc[slug] >= max_per_doc:
+                deferred.append((chunk_id, score))
+                continue
+            per_doc[slug] += 1
+            kept.append((chunk_id, score))
+            if len(kept) >= top_k:
+                break
+        if len(kept) < top_k and deferred:
+            # 知识库文档数不足时按分数回填，保证结果数不缩水
+            kept.extend(deferred[: top_k - len(kept)])
+        return kept
+
+    def search_chunks(self, query: str, top_k: int = 10, min_score_ratio: float = 0.3,
+                      max_per_doc: int = 1) -> List[dict]:
+        """搜索块，返回带元数据与正文的结果（注入用）；max_per_doc 语义同 search"""
+        results = self.search(query, top_k=top_k, min_score_ratio=min_score_ratio,
+                              max_per_doc=max_per_doc)
         out = []
         for chunk_id, score in results:
             meta = self._chunk_meta.get(chunk_id)
