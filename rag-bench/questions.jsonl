@@ -1,4 +1,4 @@
-{"id": "S1-01", "type": "single_doc", "semantic": false, "question": "CountBot 的长期记忆存储在哪里？是什么格式的文件？", "expected_points": ["工作空间中的单文件存储", "JSON 格式，可直接查看编辑"], "source_pages": ["core/memory.md"]}
+{"id": "S1-01", "type": "single_doc", "semantic": false, "question": "CountBot 的长期记忆存储在哪里？是什么格式的文件？", "expected_points": ["工作空间中的单文件存储（workspace/memory/MEMORY.md）", "行式记录：每行一条（日期|来源|内容），可直接查看编辑"], "source_pages": ["core/memory.md"]}
 {"id": "S1-02", "type": "single_doc", "semantic": false, "question": "CountBot 记忆条目的格式长什么样？包含哪些字段？", "expected_points": ["条目字段结构（id/时间戳/内容/来源等）"], "source_pages": ["core/memory.md"]}
 {"id": "S1-03", "type": "single_doc", "semantic": false, "question": "什么是 auto-overflow 记忆？什么情况下会产生？", "expected_points": ["会话历史超出窗口限制时", "旧消息被压缩写入记忆，来源标记为 auto-overflow"], "source_pages": ["core/memory.md"]}
 {"id": "S1-04", "type": "single_doc", "semantic": false, "question": "AI 模型是怎么读写长期记忆的？需要直接操作文件吗？", "expected_points": ["通过工具调用读写", "模型不直接操作文件"], "source_pages": ["core/memory.md"]}
@@ -44,7 +44,7 @@
 {"id": "S3-04", "type": "needle", "semantic": false, "question": "Wiki 知识库的 LRU 缓存容量是多少个文档？", "expected_points": ["128"], "source_pages": ["releases/v0.9.0.md"]}
 {"id": "S3-05", "type": "needle", "semantic": false, "question": "v0.9.0 的心跳问候优化把每次的 LLM 调用次数从几次降到了几次？", "expected_points": ["从 2 次降到 1 次"], "source_pages": ["releases/v0.9.0.md"]}
 {"id": "S3-06", "type": "needle", "semantic": false, "question": "API Key 轮换是在收到哪些 HTTP 状态码时触发的？", "expected_points": ["401 和 429"], "source_pages": ["releases/v0.9.0.md"]}
-{"id": "S3-07", "type": "needle", "semantic": false, "question": "CountBot 内置支持多少个模型 provider？", "expected_points": ["22 个"], "source_pages": ["core/providers.md"]}
+{"id": "S3-07", "type": "needle", "semantic": false, "question": "CountBot 内置支持多少个模型 provider？", "expected_points": ["22 个"], "source_pages": ["core/providers.md"], "dup_of": "S1-14"}
 {"id": "S3-08", "type": "needle", "semantic": false, "question": "SQLite 数据库文件叫什么名字？定时任务存在哪张表里？", "expected_points": ["countbot.db", "cron_jobs 表"], "source_pages": ["advanced/deployment.md"]}
 {"id": "S3-09", "type": "needle", "semantic": false, "question": "Telegram 的代理设置支持什么协议？", "expected_points": ["socks5://"], "source_pages": ["getting-started/troubleshooting.md"]}
 {"id": "S3-10", "type": "needle", "semantic": false, "question": "Linux 上安装桌面版需要额外装哪个系统依赖包？", "expected_points": ["libwebkit2gtk-4.0-37"], "source_pages": ["getting-started/installation.md"]}
