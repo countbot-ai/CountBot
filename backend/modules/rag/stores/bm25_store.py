@@ -76,6 +76,14 @@ class ChunkedBM25Index:
         """已索引文档的 slug 列表（公共 API）"""
         return list(self._slug_registry.keys())
 
+    def chunk_ids_of(self, slug: str) -> List[str]:
+        """该文档的全部 chunk_id（公共 API：向量同步按文档双写时用）"""
+        return list(self._slug_registry.get(slug, {}).get("chunk_ids", []))
+
+    def all_chunk_ids(self) -> List[str]:
+        """索引中全部 chunk_id（公共 API：向量索引漂移清理时用）"""
+        return list(self._chunk_meta.keys())
+
     # ---------- 检索 ----------
 
     #: 超采样倍数：BM25Index.search 只返回按分数排序的前 N 块，

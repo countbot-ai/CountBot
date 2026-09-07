@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
@@ -14,6 +15,37 @@ from .service import WikiService
 def _rag_chunks_enabled() -> bool:
     """M1 分块检索回滚开关：COUNTBOT_RAG_CHUNKS=1 启用，缺省关闭（零行为变化）"""
     return os.environ.get("COUNTBOT_RAG_CHUNKS", "").lower() in ("1", "true", "yes", "on")
+
+
+def _rerank_enabled() -> bool:
+    """Phase 2 精排开关：COUNTBOT_RAG_RERANK=1 启用，缺省关闭（零行为变化）"""
+    return os.environ.get("COUNTBOT_RAG_RERANK", "").lower() in ("1", "true", "yes", "on")
+
+
+class _BoundedCache:
+    """查询结果 LRU（implementation-plan §5 Phase 2 任务 2.5）。
+
+    grader/rerank 结果按 (query, chunk_ids) 缓存——生产实践：查询重复度
+    比想象高。get 用哨兵区分"未命中"与"缓存了 falsy 值"。
+    """
+
+    _MISS = object()
+
+    def __init__(self, capacity: int = 256):
+        self._d: "OrderedDict[tuple, object]" = OrderedDict()
+        self._cap = capacity
+
+    def get(self, key: tuple):
+        if key not in self._d:
+            return self._MISS
+        self._d.move_to_end(key)
+        return self._d[key]
+
+    def put(self, key: tuple, value) -> None:
+        self._d[key] = value
+        self._d.move_to_end(key)
+        if len(self._d) > self._cap:
+            self._d.popitem(last=False)
 
 
 class WikiTool(Tool):
@@ -43,6 +75,21 @@ class WikiTool(Tool):
             except Exception as e:
                 logger.warning(f"RAG chunk service unavailable, falling back to doc-level: {e}")
                 self._rag = None
+
+        # Phase 2 精排层（COUNTBOT_RAG_RERANK=1，缺省关闭 = M1/CRAG 行为不变）
+        self._reranker = None
+        if self._rag is not None and _rerank_enabled():
+            from backend.modules.rag.reranker import build_reranker
+            try:
+                self._reranker = build_reranker()
+                if self._reranker:
+                    logger.info("RAG rerank enabled (COUNTBOT_RAG_RERANK=1)")
+            except Exception as e:
+                logger.warning(f"Reranker unavailable, keeping retrieval order: {e}")
+                self._reranker = None
+
+        self._grade_cache = _BoundedCache()
+        self._rerank_cache = _BoundedCache()
 
     @property
     def name(self) -> str:
@@ -260,38 +307,84 @@ class WikiTool(Tool):
         return "\n".join(lines)
 
     async def _rag_ask(self, question: str) -> str:
-        """块级问答：检索 → LLM 评估相关性 → 三段路由（直接生成 / 过滤后生成 / 改写重试后拒答）。
+        """块级问答（Phase 2 形态）：检索 top-50 → rerank 精排 top-6 → grader（all/none 拒答判定）→ 生成。
 
-        评估不可用（无 provider / 调用失败 / 输出不可解析）时回退为
-        "全部注入直接生成"（即评估前的行为），保证零破坏。
+        - reranker 可用且 top-1 高置信时跳过 grader 直出生成（置信门控，
+          降单题 LLM 调用；Phase 2 验收 2.2 → ≤1.5 次的实现手段）；
+        - reranker 失败 → 回落检索排序（RRF/BM25）取 top-6，质量降级不中断；
+        - grader 判 none → 改写问题重试一次 → 仍 none → 如实拒答；
+        - 评估不可用（无 provider / 调用失败 / 输出不可解析）→ 全部注入
+          直接生成（M1 行为，零破坏降级链）。
         """
-        chunks = self._rag.search_chunks(question, top_k=6)
+        if self._reranker is not None:
+            chunks, confident = await self._retrieve_and_rerank(question)
+        else:
+            chunks = self._rag.search_chunks(question, top_k=6)
+            confident = False
+
         if not chunks:
             return "Wiki 知识库为空或没有找到相关内容。"
 
-        grade, relevant = await self._grade_chunks(question, chunks)
+        if confident:
+            # top-1 精排分数达置信阈值：跳过 grader，直接生成（省一次 LLM 调用）。
+            # 阈值默认 1.01 = 禁用（校准证据见 reranker.RERANK_CONFIDENT_SCORE 注释）
+            return await self._generate_from_chunks(question, chunks)
+
+        grade = await self._grade_chunks(question, chunks)
 
         if grade == "none":
             # 检索结果全不相关：改写问题重试一次，仍不相关则如实拒答
             rewritten = await self._rewrite_query(question)
             if rewritten and rewritten != question:
-                chunks2 = self._rag.search_chunks(rewritten, top_k=6)
+                if self._reranker is not None:
+                    chunks2, _ = await self._retrieve_and_rerank(rewritten)
+                else:
+                    chunks2 = self._rag.search_chunks(rewritten, top_k=6)
                 if chunks2:
-                    grade2, relevant2 = await self._grade_chunks(rewritten, chunks2)
+                    # 重试轮不走置信门控：首轮已判 none，矛盾信号下以 grader 为准
+                    grade2 = await self._grade_chunks(rewritten, chunks2)
                     if grade2 == "all":
                         return await self._generate_from_chunks(rewritten, chunks2)
-                    if grade2 == "partial":
-                        return await self._generate_from_chunks(
-                            rewritten, self._filter_chunks(chunks2, relevant2) or chunks2
-                        )
             return ("Wiki 知识库中没有找到与该问题相关的内容。"
                     "（已检索并逐条校验相关性，结果均与问题无关；"
                     "可以换个问法重试，或确认知识库中是否已有相关条目。）")
 
-        if grade == "partial" and relevant:
-            chunks = self._filter_chunks(chunks, relevant) or chunks
-
         return await self._generate_from_chunks(question, chunks)
+
+    async def _retrieve_and_rerank(self, query: str) -> Tuple[List[dict], bool]:
+        """检索 top-50 候选 → rerank 精排取 top-6。
+
+        Returns:
+            (top_chunks, top1_confident)。confident=True 表示 rerank top-1
+            分数达到置信阈值（reranker.RERANK_CONFIDENT_SCORE），调用方可
+            跳过 grader 直出。rerank 失败 → 回落检索排序前 6 个，
+            confident=False（降级路径必走 grader 把关）。
+
+        候选池取 min_score_ratio=0：相对阈值会让 top-50 常只剩个位数候选
+        （L1 评测实测的"阈值行为"）；候选质量由 reranker 精排把关。
+        max_per_doc=0：候选池不做单文档截断（#114 的截断面向最终注入的
+        top-6，候选阶段的多样性由 reranker 精排决定）。
+        """
+        candidates = self._rag.search_chunks(query, top_k=50, min_score_ratio=0.0, max_per_doc=0)
+        if not candidates:
+            return [], False
+
+        key = (query, tuple(c["chunk_id"] for c in candidates))
+        cached = self._rerank_cache.get(key)
+        if cached is not _BoundedCache._MISS:
+            return cached
+
+        try:
+            from backend.modules.rag.reranker import RERANK_CONFIDENT_SCORE
+            ranked = await self._reranker.rerank(query, candidates)
+        except Exception as e:
+            logger.warning(f"Rerank failed, falling back to retrieval order: {e}")
+            return candidates[:6], False
+
+        result = (ranked[:6],
+                  bool(ranked and ranked[0].get("rerank_score", 0.0) >= RERANK_CONFIDENT_SCORE))
+        self._rerank_cache.put(key, result)
+        return result
 
     # ---------- 块级问答的评估与路由组件（仅 COUNTBOT_RAG_CHUNKS=1 路径使用） ----------
 
@@ -304,65 +397,70 @@ class WikiTool(Tool):
         except Exception:
             return None
 
-    async def _grade_chunks(self, question: str, chunks: List[dict]) -> Tuple[Optional[str], Optional[List[int]]]:
-        """LLM 评估检索块与问题的相关性（单次轻量调用，约 200-400 token）。
+    async def _grade_chunks(self, question: str, chunks: List[dict]) -> Optional[str]:
+        """LLM 拒答判定（Phase 2 收缩后：只判 all/none，块过滤职责已移交 reranker）。
 
         Returns:
-            ("all"|"partial"|"none", relevant_ids)；评估不可用时 (None, None)。
+            "all" | "none"；评估不可用时 None（调用方回退全量生成，零破坏降级）。
             纯分数阈值无法做拒答：实测负样本 top1 分数与正样本重叠率 7/10。
         """
+        key = (question, tuple(c["chunk_id"] for c in chunks))
+        cached = self._grade_cache.get(key)
+        if cached is not _BoundedCache._MISS:
+            return cached
+
         provider = self._get_provider()
         if provider is None:
-            return None, None
+            return None
 
         lines = [
-            f"{i}. {c['doc_title']} › {c['section']}：{c['content'].strip()[:120]}"
+            f"{i}. {c['doc_title']} › {c['section']}：{c['content'].strip()[:300]}"
             for i, c in enumerate(chunks, 1)
         ]
         prompt = (
-            "你是知识库检索质量评估器。判断下面的检索结果能否支撑回答问题。\n\n"
+            "你是知识库检索质量评估器。判断检索结果中是否包含回答问题所需的"
+            "具体信息。\n\n"
             f"问题：{question}\n\n"
             "检索结果（编号. 文档 › 章节：内容摘录）：\n" + "\n".join(lines) + "\n\n"
             '只输出一行 JSON，不要输出其他内容：\n'
-            '{"grade": "all|partial|none", "relevant": [相关编号]}\n'
-            "- all：检索结果基本都与问题相关，足以回答\n"
-            "- partial：有任何一条结果可能包含与问题相关的信息"
-            "（哪怕只覆盖问题的一部分、或只提供部分线索），"
-            "relevant 列出这些结果的编号\n"
-            "- none：仅当所有结果谈论的都是与问题完全无关的主题时使用；"
-            "拿不准时优先 partial，不要轻易判 none"
+            '{"grade": "all|none"}\n'
+            "- all：至少一条结果包含与问题直接相关的具体信息"
+            "（事实/数字/命令/配置，或能支撑回答的内容；"
+            "跨文档问题允许各结果各覆盖一部分）\n"
+            "- none：所有结果只是话题相近、缺少回答所需的具体内容，"
+            "或与问题完全无关。问具体数字/名称/命令而结果中给不出该值时，"
+            "必须判 none——证据不足时宁可拒答，"
+            "不要让话题相近的块蒙混过关"
         )
         try:
             resp = await provider.chat_completion(prompt, max_tokens=200, temperature=0.0)
-            return self._parse_grade(resp, len(chunks))
+            grade = self._parse_grade(resp)
+            if grade is not None:
+                # 失败（None）不缓存：瞬时故障不该被 LRU 固化
+                self._grade_cache.put(key, grade)
+            return grade
         except Exception as e:
             logger.warning(f"Chunk grading failed, falling back to plain generation: {e}")
-            return None, None
+            return None
 
     @staticmethod
-    def _parse_grade(text: str, n_chunks: int) -> Tuple[Optional[str], Optional[List[int]]]:
-        """解析评估输出为 (grade, relevant_ids)；不可解析时返回 (None, None)"""
+    def _parse_grade(text: str) -> Optional[str]:
+        """解析评估输出为 "all"|"none"；不可解析时返回 None。
+
+        Phase 2 契约收缩：已废弃的 partial 输出按不可解析处理
+        （调用方回退全量生成，块过滤职责归 reranker）。
+        """
         if not text:
-            return None, None
+            return None
         m = re.search(r"\{[^{}]*\}", text, re.S)
         if not m:
-            return None, None
+            return None
         try:
             data = json.loads(m.group(0))
         except Exception:
-            return None, None
+            return None
         grade = str(data.get("grade", "")).strip().lower()
-        if grade not in ("all", "partial", "none"):
-            return None, None
-        ids = set()
-        for i in (data.get("relevant") or []):
-            try:
-                n = int(i)
-            except (TypeError, ValueError):
-                continue
-            if 1 <= n <= n_chunks:
-                ids.add(n)
-        return grade, sorted(ids)
+        return grade if grade in ("all", "none") else None
 
     async def _rewrite_query(self, question: str) -> Optional[str]:
         """全不相关时，让 LLM 把问题改写为更贴近知识库术语的检索词（一次机会）"""
@@ -381,13 +479,6 @@ class WikiTool(Tool):
         except Exception as e:
             logger.warning(f"Query rewrite failed: {e}")
             return None
-
-    @staticmethod
-    def _filter_chunks(chunks: List[dict], relevant_ids: List[int]) -> List[dict]:
-        """按评估给出的编号保留相关块（编号从 1 开始）"""
-        if not relevant_ids:
-            return []
-        return [c for i, c in enumerate(chunks, 1) if i in set(relevant_ids)]
 
     async def _generate_from_chunks(self, question: str, chunks: List[dict]) -> str:
         """用给定块组装上下文并生成回答；无 provider 或失败时回退块级搜索结果"""
@@ -414,7 +505,14 @@ class WikiTool(Tool):
 
 如果知识库中没有相关内容，请如实告知。"""
         try:
-            return await provider.chat_completion(prompt, max_tokens=2000, temperature=0.3)
+            answer = await provider.chat_completion(prompt, max_tokens=2000, temperature=0.3)
+            if not answer.strip():
+                # 推理模型可能把 max_tokens 全部耗在思考阶段，content 为空：
+                # 加大预算重试一次，仍为空则回退块级搜索结果（绝不返回空串）
+                logger.warning("Empty generation content (reasoning exhausted "
+                               "max_tokens?), retrying with larger budget")
+                answer = await provider.chat_completion(prompt, max_tokens=4000, temperature=0.3)
+            return answer if answer.strip() else self._rag_search(question, top_k=6)
         except Exception:
             return self._rag_search(question, top_k=6)
 

@@ -263,7 +263,9 @@ class TestRagAskGrading:
         assert GEN_MARK in provider.calls[1]
         assert "docker-compose" in provider.calls[1]  # 生成上下文含检索块
 
-    def test_grade_partial_filters_unrelated_chunks(self, wiki_dir, rag_env, monkeypatch):
+    def test_deprecated_partial_grade_degrades_to_full_generation(self, wiki_dir, rag_env, monkeypatch):
+        """Phase 2 契约收缩：partial 已废弃（块过滤职责移交 reranker）。
+        grader 输出 partial → 按不可解析处理 → 回退全量块生成，零破坏。"""
         provider = ScriptedProvider([
             '{"grade": "partial", "relevant": [1]}',
             "ANSWER_OK",
@@ -274,10 +276,8 @@ class TestRagAskGrading:
         out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
 
         assert out == "ANSWER_OK"
-        gen_prompt = provider.calls[1]
-        # 只注入编号 1 的块：无关文档（memory）不得进入生成上下文
-        assert "memory.md" not in gen_prompt
-        assert "检索" not in gen_prompt.split("问题")[0] or "Docker" in gen_prompt
+        assert len(provider.calls) == 2  # 评估 1 次 + 生成 1 次
+        assert GEN_MARK in provider.calls[1]
 
     def test_grade_none_refuses_after_one_rewrite(self, wiki_dir, rag_env, monkeypatch):
         provider = ScriptedProvider([
@@ -346,32 +346,170 @@ class TestRagAskGrading:
         assert len(provider.calls) == 0
 
 
-class TestParseGrade:
-    """_parse_grade：LLM 输出 → (grade, relevant_ids) 的解析契约"""
+class TestEmptyGenerationRecovery:
+    """空 content 防御：推理模型可能把 max_tokens 耗在思考阶段导致空输出，
+    生产 bug（Phase 1 任务 4 顺手修）：直接返回空串 → 加预算重试一次，
+    仍为空则回退块级搜索，绝不返回空串。"""
 
-    @pytest.mark.parametrize("text,grade,rel", [
-        ('{"grade": "all", "relevant": [1, 2]}', "all", [1, 2]),
-        ('好的，这是我的判断：\n{"grade": "partial", "relevant": [2]}', "partial", [2]),
-        ('{"grade": "NONE", "relevant": []}', "none", []),
-        ('{"grade": "none"}', "none", []),
+    def test_empty_content_retries_with_larger_budget(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            '{"grade": "all", "relevant": [1, 2]}',
+            "",                       # 第一次生成：思考耗尽 → 空
+            "ANSWER_RECOVERED",       # 加预算重试成功
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_RECOVERED"
+        assert len(provider.calls) == 3  # 评估 + 生成 + 重试
+
+    def test_empty_twice_falls_back_to_chunk_search(self, wiki_dir, rag_env, monkeypatch):
+        provider = ScriptedProvider([
+            '{"grade": "all", "relevant": [1, 2]}',
+            "",   # 生成空
+            "",   # 重试仍空 → 回退块级搜索
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out  # 绝不返回空串
+        assert "matching sections" in out
+        assert len(provider.calls) == 3
+
+
+class TestParseGrade:
+    """_parse_grade：LLM 输出 → all/none 的解析契约（Phase 2 收缩后）"""
+
+    @pytest.mark.parametrize("text,grade", [
+        ('{"grade": "all"}', "all"),
+        ('好的，这是我的判断：\n{"grade": "all"}', "all"),
+        ('{"grade": "NONE"}', "none"),
+        ('{"grade": "none", "relevant": [1]}', "none"),  # 多余字段被忽略
     ])
-    def test_valid(self, text, grade, rel):
-        assert WikiTool._parse_grade(text, 6) == (grade, rel)
+    def test_valid(self, text, grade):
+        assert WikiTool._parse_grade(text) == grade
 
     @pytest.mark.parametrize("text", [
         "",
         "完全没有 JSON",
         '{"grade": "maybe"}',
-        '{"grade": "partial", "relevant": "not-a-list"}',  # relevant 非列表 → 空编号
+        '{"grade": "partial", "relevant": [1]}',  # 已废弃的 partial → 不可解析
     ])
     def test_invalid_returns_none(self, text):
-        if "not-a-list" in text:
-            grade, rel = WikiTool._parse_grade(text, 6)
-            assert grade == "partial" and rel == []
-        else:
-            assert WikiTool._parse_grade(text, 6) == (None, None)
+        assert WikiTool._parse_grade(text) is None
 
-    def test_out_of_range_ids_dropped(self):
-        grade, rel = WikiTool._parse_grade('{"grade": "partial", "relevant": [0, 1, 9, "2"]}', 6)
-        assert grade == "partial"
-        assert rel == [1, 2]
+
+class FakeReranker:
+    """按脚本重排的假 reranker：直接返回带 rerank_score 的前 top_n 块"""
+
+    def __init__(self, scores):
+        self.scores = list(scores)  # 与候选顺序一一对应的相关性分数
+        self.calls = []
+
+    async def rerank(self, query, chunks):
+        self.calls.append((query, len(chunks)))
+        ranked = []
+        for chunk, score in zip(chunks, self.scores[:len(chunks)]):
+            c = dict(chunk)
+            c["rerank_score"] = score
+            ranked.append(c)
+        ranked.sort(key=lambda c: c["rerank_score"], reverse=True)
+        return ranked[:6]
+
+
+class TestRerankRouting:
+    """Phase 2 路由：rerank 精排 top-6 + 置信门控跳过 grader + 失败回落"""
+
+    def test_high_confidence_skips_grader(self, wiki_dir, rag_env, monkeypatch):
+        """rerank top-1 分数 ≥ 阈值 → 跳过 grader，仅 1 次生成调用（门控机制验证，
+        需显式降阈值——默认 1.01 已按校准结论禁用）"""
+        import backend.modules.rag.reranker as reranker_mod
+        monkeypatch.setattr(reranker_mod, "RERANK_CONFIDENT_SCORE", 0.7)
+        provider = ScriptedProvider(["ANSWER_DIRECT"])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+        tool._reranker = FakeReranker([0.95, 0.30, 0.10])
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_DIRECT"
+        assert len(provider.calls) == 1  # 无 grader 调用
+        assert GEN_MARK in provider.calls[0]
+
+    def test_default_threshold_disables_gate(self, wiki_dir, rag_env, monkeypatch):
+        """默认阈值 1.01 = 禁用：即使 top-1 打到 0.99 也必须走 grader。
+        校准依据：负样本话题匹配块可达 0.9933，分数门控无法区分可回答性。"""
+        provider = ScriptedProvider([
+            '{"grade": "all"}',
+            "ANSWER_STILL_GRADED",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+        tool._reranker = FakeReranker([0.99, 0.30])
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_STILL_GRADED"
+        assert len(provider.calls) == 2  # grader 照跑：门控默认禁用
+        assert GRADING_MARK in provider.calls[0]
+
+    def test_low_confidence_still_grades(self, wiki_dir, rag_env, monkeypatch):
+        """rerank top-1 分数低于阈值 → 照常走 grader 把关"""
+        provider = ScriptedProvider([
+            '{"grade": "all"}',
+            "ANSWER_GRADED",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+        tool._reranker = FakeReranker([0.40, 0.10])
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_GRADED"
+        assert len(provider.calls) == 2  # grader + 生成
+        assert GRADING_MARK in provider.calls[0]
+
+    def test_rerank_failure_falls_back_and_grades(self, wiki_dir, rag_env, monkeypatch):
+        """reranker 抛错 → 回落检索排序前 6 块，且必走 grader（降级不裸奔）"""
+
+        class ExplodingReranker:
+            async def rerank(self, query, chunks):
+                raise RuntimeError("rerank API down")
+
+        provider = ScriptedProvider([
+            '{"grade": "all"}',
+            "ANSWER_FALLBACK",
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+        tool._reranker = ExplodingReranker()
+
+        out = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out == "ANSWER_FALLBACK"
+        assert len(provider.calls) == 2  # grader 照跑，没有跳过
+        assert "docker-compose" in provider.calls[1]  # 生成上下文仍是检索块
+
+    def test_rerank_result_cached_per_query(self, wiki_dir, rag_env, monkeypatch):
+        """同一问题两次 ask：rerank 只调一次（LRU 缓存），grader 只调一次"""
+        provider = ScriptedProvider([
+            '{"grade": "all"}',   # 第一次 ask 的 grader
+            "ANSWER_1",           # 第一次 ask 的生成
+            "ANSWER_2",           # 第二次 ask：grader 缓存命中，只剩生成 1 次调用
+        ])
+        _install_provider(monkeypatch, provider)
+        tool = WikiTool(wiki_dir)
+        fake = FakeReranker([0.40, 0.10])
+        tool._reranker = fake
+
+        out1 = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+        out2 = asyncio.run(tool._handle_ask("如何用 Docker 部署"))
+
+        assert out1 == "ANSWER_1"
+        assert out2 == "ANSWER_2"
+        assert len(fake.calls) == 1  # rerank 走了缓存
+        assert len(provider.calls) == 3  # grader 1 次 + 生成 2 次
