@@ -115,3 +115,63 @@ class TestChunkedBM25Index:
         r = store2.search_chunks("Docker 部署", top_k=3)
         assert r and r[0]["slug"] == "deploy"
         assert store2.stats()["total_chunks"] == store.stats()["total_chunks"]
+
+
+class TestMaxPerDoc:
+    """max_per_doc：同一文档的多个高分块不得挤占前排（跨文档多样性），
+    且凑不满 top_k 时按分数回填（小知识库不丢结果）"""
+
+    LONG_DEPLOY = "# 部署指南\n\n" + "\n\n".join(
+        f"## 部署阶段{i}\n\nDocker 部署阶段{i}的完整流程：拉取镜像、配置环境变量、启动容器并验证服务健康。"
+        for i in range(1, 9)
+    )
+
+    def _build(self):
+        store = ChunkedBM25Index()
+        store.add_document("deploy", "部署指南", self.LONG_DEPLOY, ["ops"])
+        store.add_document("memory", "记忆系统", "# 记忆的部署\n\nDocker 部署完成后，记忆存储在本地文件中。\n", ["core"])
+        return store
+
+    @pytest.fixture(autouse=True)
+    def _no_abs_threshold(self, monkeypatch):
+        """本测试语料极小（9 块且多数含查询词），BM25 的 IDF 会塌缩，
+        绝对阈值 SCORE_THRESHOLD 会把所有块滤光。本组测试只关心
+        per-doc 截断逻辑，显式关闭绝对阈值。"""
+        from backend.modules.wiki.index import BM25Index
+        monkeypatch.setattr(BM25Index, "SCORE_THRESHOLD", 0.0)
+
+    def test_max_per_doc_caps_front_of_results(self):
+        """前排遵守 cap：结果前段中同一文档不超过 max_per_doc 块"""
+        store = self._build()
+        uncapped = store.search_chunks("Docker 部署", top_k=10, max_per_doc=0)
+        assert sum(1 for r in uncapped if r["slug"] == "deploy") > 2
+
+        capped = store.search_chunks("Docker 部署", top_k=10, max_per_doc=2)
+        assert capped, "截断后不应为空"
+        # 前排 = 每文档先各取 cap 块（deploy 2 + memory 1 = 3 个位置）
+        front = capped[:3]
+        assert sum(1 for r in front if r["slug"] == "deploy") <= 2
+
+    def test_backfill_keeps_result_count(self):
+        """文档数不足时回填：结果数不缩水（小知识库零损失）"""
+        store = ChunkedBM25Index()
+        store.add_document("deploy", "部署指南", self.LONG_DEPLOY, ["ops"])
+        results = store.search_chunks("Docker 部署", top_k=6, max_per_doc=1)
+        assert len(results) == 6, "单文档库也必须凑满 top_k"
+        # 首位是最高分块；其余为回填
+        assert results[0]["slug"] == "deploy"
+
+    def test_max_per_doc_zero_disables_cap(self):
+        """max_per_doc=0（或负数）= 完全回退到旧行为（不截断）"""
+        store = self._build()
+        legacy = store.search("Docker 部署", top_k=10, max_per_doc=0)
+        direct = store._bm25.search("Docker 部署", top_k=10, min_score_ratio=0.3)
+        assert [c for c, _ in legacy] == [c for c, _ in direct]
+
+    def test_top_k_respected_with_cap(self):
+        store = self._build()
+        results = store.search_chunks("Docker 部署", top_k=3, max_per_doc=2)
+        assert len(results) <= 3
+        # 分数仍按降序排列（截断与回填都不破坏排序语义）
+        scores = [r["score"] for r in results]
+        assert scores == sorted(scores, reverse=True)
