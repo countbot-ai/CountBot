@@ -192,7 +192,11 @@ def retrieval_signal(tool, question: str, top_k: int = 6) -> dict:
     if tool._rag is None:
         return {"retrieved_docs": [], "chunk_ids": [], "available": False}
     try:
-        chunks = tool._rag.search_chunks(question, top_k=top_k) or []
+        # max_per_doc=0：归因口径显式化——记录"检索能力"层面的首次命中
+        # （#114 之后生产 top-6 注入默认 max_per_doc=1，单文档截断会掩盖
+        # 检索缺口；归因要回答的是"第一次检索是否召回"，故不限单文档）
+        chunks = tool._rag.search_chunks(
+            question, top_k=top_k, max_per_doc=0) or []
     except Exception as e:
         print(f"  检索信号获取失败: {e}", file=sys.stderr)
         return {"retrieved_docs": [], "chunk_ids": [], "available": False}
