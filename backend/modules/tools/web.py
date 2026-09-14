@@ -11,6 +11,7 @@ import httpx
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools._failure import format_failure, single_line
 
 # 尝试导入可选依赖
 try:
@@ -268,8 +269,16 @@ class WebFetchTool(Tool):
                 return json.dumps(result, ensure_ascii=False)
             
         except Exception as e:
-            logger.error(f"Web fetch error for {url}: {e}")
-            return json.dumps({"error": str(e), "url": url})
+            detail = f"Web fetch error for {url}: {e}"
+            logger.error(detail)
+            error_message = format_failure(
+                kind="execution_error",
+                summary=f"Failed to fetch URL: {single_line(e)}",
+                next="verify the URL is reachable and network is available, then retry",
+                detail=detail,
+            )
+            # 保持 JSON 结构（输出格式 json 的调用方依赖），error 字段升级为模板文案
+            return json.dumps({"error": error_message, "url": url})
     
     async def _fetch_with_scrapling(self, url: str, mode: str, max_chars: int, output_format: str) -> dict:
         """使用 Scrapling 获取内容"""

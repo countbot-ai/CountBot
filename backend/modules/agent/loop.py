@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 from backend.modules.tools.conversation_history import get_conversation_history
+from backend.modules.tools._failure import RetryableToolError
 
 
 def _is_key_rotation_eligible_error(error_text: str) -> bool:
@@ -32,6 +33,12 @@ class AgentLoop:
     """Agent 主循环类 - 处理消息、调用 LLM、执行工具、生成响应"""
 
     MAX_KEY_ROTATION_RETRIES = 3
+
+    # 自管闹钟的长任务工具：内部自带超时等待与超时返回文案
+    # （spawn 等子代理至 subagent_timeout；workflow_run 驱动多子代理；
+    #  external_coding_agent 按 profile timeout 运行），
+    # 主循环外层 wait_for 对其豁免，避免被默认短超时误杀长任务。
+    _SELF_ALARMING_TOOLS = frozenset({"spawn", "workflow_run", "external_coding_agent"})
 
     def __init__(
         self,
@@ -76,6 +83,21 @@ class AgentLoop:
             tool_name = str(getattr(tool_call, "name", "") or "").strip() or "<unknown>"
             parts.append(f"{tool_name}#{tool_id}")
         return ", ".join(parts) if parts else "<none>"
+
+    def _resolve_tool_timeout_seconds(self) -> int:
+        """解析主循环工具调用超时（秒）。
+
+        来自 config.agent.tool_timeout_seconds，默认 60；解析失败时兜底默认值。
+        """
+        try:
+            from backend.modules.config.loader import config_loader
+
+            return config_loader.config.agent.tool_timeout_seconds
+        except Exception as e:
+            logger.warning(
+                f"Failed to resolve tool timeout config: {e}, using default: 60s"
+            )
+            return 60
 
     def _resolve_execution_runtime(
         self,
@@ -451,13 +473,49 @@ class AgentLoop:
                         
                         if self.tools:
                             self.tools.set_tool_event_handler(tool_event_handler)
+                        tool_timeout = self._resolve_tool_timeout_seconds()
+                        # 自管闹钟的长任务工具（spawn / workflow_run /
+                        # external_coding_agent）内部已有有界等待与超时返回文案，
+                        # 主循环不叠加外层 wait_for，避免长任务被默认短超时误杀。
+                        uses_outer_timeout = tool_name not in self._SELF_ALARMING_TOOLS
                         try:
                             for attempt in range(self.max_retries):
                                 try:
-                                    result = await self.execute_tool(tool_name, tool_args)
+                                    if uses_outer_timeout:
+                                        result = await asyncio.wait_for(
+                                            self.execute_tool(tool_name, tool_args),
+                                            timeout=tool_timeout,
+                                        )
+                                    else:
+                                        result = await self.execute_tool(
+                                            tool_name, tool_args
+                                        )
                                     logger.debug(f"Tool {tool_name} succeeded")
                                     break
+                                except asyncio.TimeoutError:
+                                    # 挂死工具重试无意义：超时不重试，直接以模板文案
+                                    # 返回给模型（事实 + 下一步建议）。
+                                    result = (
+                                        f"Error: Tool '{tool_name}' timed out after "
+                                        f"{tool_timeout}s. Next: try a smaller scope "
+                                        f"or split the work."
+                                    )
+                                    logger.error(
+                                        f"Tool {tool_name} timed out after "
+                                        f"{tool_timeout}s"
+                                    )
+                                    break
+                                except RetryableToolError as e:
+                                    # 可重试（网络/超时/连接类）：计入重试次数
+                                    last_error = e
+                                    logger.warning(
+                                        f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
+                                    )
+                                    if attempt < self.max_retries - 1:
+                                        await asyncio.sleep(self.retry_delay)
                                 except Exception as e:
+                                    # 兜底：防御 registry 意外上抛（正常契约下
+                                    # registry 会返回字符串，此处仅防异常路径）
                                     last_error = e
                                     logger.warning(
                                         f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
@@ -539,7 +597,16 @@ class AgentLoop:
                                 f"status=success, duration_ms={duration_ms}"
                             )
                         else:
-                            error_msg = f"Tool execution failed after {self.max_retries} attempts: {str(last_error)}"
+                            if isinstance(last_error, RetryableToolError):
+                                # RetryableToolError.__str__ 不含 "Error:" 前缀，
+                                # 最终文案使用带前缀的模型可见模板
+                                error_msg = last_error.to_model_message()
+                            else:
+                                error_msg = (
+                                    f"Error: Tool execution failed after "
+                                    f"{self.max_retries} attempts: {str(last_error)}. "
+                                    f"Next: check the tool arguments and retry."
+                                )
                             logger.error(f"Tool {tool_name} failed permanently: {error_msg}")
                             
                             try:
@@ -751,9 +818,19 @@ class AgentLoop:
         logger.debug(f"执行工具: {tool_name}")
         
         try:
-            result = await self.tools.execute(tool_name, arguments, auto_record=False)
+            result = await self.tools.execute(
+                tool_name,
+                arguments,
+                auto_record=False,
+                # 主循环对可重试异常（网络/超时/连接类）opt-in 上抛，
+                # 以便外层 for attempt 重试循环真正生效。
+                raise_on_retryable=True,
+            )
             return result
             
+        except RetryableToolError:
+            # registry 已记录失败细节并审计落盘，这里透传供主循环重试
+            raise
         except Exception as e:
             logger.error(f"Tool execution failed: {tool_name} - {e}")
             raise

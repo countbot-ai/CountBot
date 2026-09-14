@@ -160,7 +160,10 @@ class ReadFileTool(Tool):
 
             file_path = self.validator.validate_path(path_str)
             if not file_path.exists():
-                return f"Error: File not found: {path_str}"
+                return (
+                    f"Error: File not found: {path_str}. "
+                    f"Next: run list_dir to see existing files."
+                )
             if not file_path.is_file():
                 return f"Error: Not a file: {path_str}"
 
@@ -228,7 +231,10 @@ class ReadFileTool(Tool):
                 file_path = self.validator.validate_path(path_str)
                 
                 if not file_path.exists():
-                    results.append(f"[File: {path_str}]\nError: File not found")
+                    results.append(
+                        f"[File: {path_str}]\nError: File not found. "
+                        f"Next: run list_dir to see existing files."
+                    )
                     error_count += 1
                     continue
                 
@@ -431,7 +437,10 @@ class EditFileTool(Tool):
         try:
             file_path = self.validator.validate_path(path_str)
             if not file_path.exists():
-                return f"Error: File not found: {path_str}"
+                return (
+                    f"Error: File not found: {path_str}. "
+                    f"Next: run list_dir to see existing files."
+                )
 
             content = file_path.read_text(encoding="utf-8")
 
