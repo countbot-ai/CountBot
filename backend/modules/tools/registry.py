@@ -15,6 +15,12 @@ from backend.modules.tools.execution_context import (
     reset_tool_execution_context,
 )
 from backend.modules.tools.file_audit_logger import file_audit_logger
+from backend.modules.tools._failure import (
+    RetryableToolError,
+    format_failure,
+    is_retryable,
+    single_line,
+)
 
 # 使用 contextvars 实现异步安全的 session_id 存储
 # 每个异步任务都有独立的上下文，避免并发冲突
@@ -296,7 +302,13 @@ class ToolRegistry:
             logger.debug(f"Generated {len(self._definitions_cache)} tool definitions ({len(builtins)} builtin, {len(mcp_tools)} MCP)")
         return self._definitions_cache
 
-    async def execute(self, tool_name: str, arguments: Dict[str, Any], auto_record: bool = True) -> str:
+    async def execute(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        auto_record: bool = True,
+        raise_on_retryable: bool = False,
+    ) -> str:
         """
         执行工具
         
@@ -304,12 +316,16 @@ class ToolRegistry:
             tool_name: 工具名称
             arguments: 工具参数
             auto_record: 是否自动记录到工具对话历史（默认 True）
+            raise_on_retryable: 是否把可重试异常（网络/超时/连接类）以
+                RetryableToolError 重新抛出供上层重试（仅主循环 opt-in，默认
+                False 保持"不抛异常、返回字符串"契约）
             
         Returns:
             str: 工具执行结果（包括错误信息）
             
         Note:
-            此方法不会抛出异常，而是返回错误字符串
+            此方法默认不会抛出异常，而是返回错误字符串；仅当
+            raise_on_retryable=True 时，可重试异常会以 RetryableToolError 抛出。
         """
         tool = self.get_tool(tool_name)
         
@@ -437,16 +453,44 @@ class ToolRegistry:
             return result
             
         except Exception as e:
-            error_msg = f"Error executing {tool_name}: {str(e)}"
-            logger.error(error_msg)
-            
-            # 计算执行时间
+            # 失败隔离：失败细节给日志/审计（str(e) 全量），一句话模板给模型。
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-            
+
+            # 可重试（网络/超时/连接类）：仅当调用方显式 opt-in 时以
+            # RetryableToolError 上抛，供上层（主循环）捕获后重试。
+            if raise_on_retryable and is_retryable(e):
+                retryable_error = RetryableToolError(
+                    tool_name=tool_name,
+                    summary=f"Tool '{tool_name}' failed ({type(e).__name__}): "
+                    f"{single_line(e)}",
+                    next="retry the operation",
+                    detail=str(e),
+                )
+                logger.error(
+                    f"Tool '{tool_name}' failed with retryable error "
+                    f"({type(e).__name__}): {e}"
+                )
+                # 审计落盘完整细节后上抛；不写入对话历史——本次失败将被重试覆盖，
+                # 重试耗尽后的最终错误由主循环统一记录。
+                if self._audit_enabled:
+                    file_audit_logger.update_result(
+                        call_id, str(e), "error", error=str(e), duration_ms=duration_ms
+                    )
+                raise retryable_error from e
+
+            # 不可重试（参数/权限/文件类）或未 opt-in：以模板文案返回给模型。
+            error_msg = format_failure(
+                kind="execution_error",
+                summary=f"Tool '{tool_name}' failed: {single_line(e)}",
+                next="check the tool arguments and retry",
+                detail=str(e),
+            )
+            logger.error(f"Tool '{tool_name}' failed: {e}")
+
             # 更新审计日志
             if self._audit_enabled:
                 file_audit_logger.update_result(call_id, str(e), "error", error=str(e), duration_ms=duration_ms)
-            
+
             # 记录到工具对话历史（失败）
             if auto_record and self._session_id:
                 try:
@@ -461,7 +505,7 @@ class ToolRegistry:
                     )
                 except Exception as conv_err:
                     logger.warning(f"Failed to record tool conversation: {conv_err}")
-            
+
             return error_msg
 
     def get_stats(self) -> Dict[str, Any]:
