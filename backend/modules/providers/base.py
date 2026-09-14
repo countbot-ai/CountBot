@@ -80,6 +80,29 @@ class LLMProvider(ABC):
         """流式聊天补全"""
         pass
 
+    async def chat_completion(
+        self,
+        prompt: str,
+        max_tokens: int = 2000,
+        temperature: float = 0.3,
+    ) -> str:
+        """非流式便捷方法：包装 chat_stream，累积完整回答。
+
+        Wiki 检索链路（grader / 查询改写 / 块级生成）等单轮调用使用此方法。
+        prompt 会被包成单条 user 消息；流中出现的错误块（StreamChunk.error）
+        以 RuntimeError 抛出，由调用方的降级逻辑兜底。
+        """
+        messages = [{"role": "user", "content": prompt}]
+        parts: List[str] = []
+        async for chunk in self.chat_stream(
+            messages, max_tokens=max_tokens, temperature=temperature
+        ):
+            if chunk.is_error:
+                raise RuntimeError(chunk.error)
+            if chunk.content is not None:
+                parts.append(chunk.content)
+        return "".join(parts)
+
     @abstractmethod
     def get_default_model(self) -> str:
         """获取默认模型"""
