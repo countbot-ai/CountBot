@@ -7,7 +7,7 @@
    （now / 用户信息 / session_summary / channel / chat_id / account_id）
    全部出现在 user 消息中。
 3. team_reminder（@ 团队提醒）并入首条 user 消息，不再注入 system
-   （P2 Provider 缓存 issue ① 落地：含 @ 与不含 @ 的 system 字节级一致）。
+   （含 @ 与不含 @ 的请求 system 字节级一致，保障 prompt cache 前缀稳定）。
 4. 历史消息顺序、附件路径提示、人格切换默认值等既有行为不回归。
 
 测试通过子类覆盖 DB 相关私有方法，运行无需数据库与环境变量。
@@ -166,7 +166,7 @@ def test_default_persona_user_info_in_user_message(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3) team_reminder（@ 团队提醒）并入 user 消息，system 保持字节级静态（P2）
+# 3) team_reminder（@ 团队提醒）并入 user 消息，system 保持字节级静态
 # ---------------------------------------------------------------------------
 
 def test_team_reminder_merged_into_user_message_not_system(tmp_path):
@@ -181,7 +181,7 @@ def test_team_reminder_merged_into_user_message_not_system(tmp_path):
         current_message="大家看看 这个需求怎么拆",
         persona_config=PERSONA,
     )
-    # 含 @ 与不含 @ 的 system 字节级一致（P2 ①：team_reminder 不再污染 system）
+    # 含 @ 与不含 @ 的 system 字节级一致（team_reminder 不再污染 system）
     assert with_at[0]["content"] == without_at[0]["content"]
     assert "💡" not in with_at[0]["content"]
     assert "检测到 @ 符号" not in with_at[0]["content"]

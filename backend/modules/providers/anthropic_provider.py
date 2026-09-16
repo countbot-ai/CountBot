@@ -104,7 +104,7 @@ class AnthropicProvider(LLMProvider):
         if resolved_max_tokens is not None:
             request_params["max_tokens"] = resolved_max_tokens
 
-        # P1 后 system prompt 为纯静态前缀，以 content block + ephemeral cache point
+        # system prompt 为纯静态前缀，以 content block + ephemeral cache point
         # 打缓存断点：前缀稳定时整段命中 prompt cache，显著降低重复输入成本。
         if system_content:
             request_params["system"] = [
@@ -1058,7 +1058,7 @@ class AnthropicProvider(LLMProvider):
     def _is_auth_error(error: Exception) -> bool:
         """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。
 
-        分类逻辑已收敛到 providers/base.py 单一来源（P2 B5），此处仅转发。
+        分类逻辑统一维护在 providers/base.py（单一来源），此处仅转发。
         """
         return is_auth_error(error)
 
