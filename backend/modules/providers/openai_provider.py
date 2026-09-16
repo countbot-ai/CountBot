@@ -743,7 +743,7 @@ class OpenAIProvider(LLMProvider):
     def _is_auth_error(cls, error: Exception) -> bool:
         """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。
 
-        分类逻辑已收敛到 providers/base.py 单一来源（P2 B5），此处仅转发。
+        分类逻辑统一维护在 providers/base.py（单一来源），此处仅转发。
         """
         return is_auth_error(error)
 
