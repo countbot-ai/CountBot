@@ -553,8 +553,9 @@ class ContextBuilder:
                 user_content = dynamic_context
 
         # team_reminder 同样属于动态内容：并入首条 user 消息而非 system，
-        # 保证含 @ 与不含 @ 的请求 system 字段字节级一致
-        # （P1 缓存前缀稳定性修复的收尾：此前这条尾巴仍会污染 system）。
+        # 保证含 @ 与不含 @ 的请求 system 字段字节级一致。
+        # 其余动态内容（时间/用户资料/会话摘要/渠道信息）此前已迁出 system，
+        # 此处是最后一处仍写入 system 的动态内容，一并移出以保持 system 纯静态。
         if team_reminder:
             if user_content:
                 user_content = f"{user_content}\n\n{team_reminder}"
