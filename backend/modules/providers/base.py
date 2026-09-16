@@ -110,7 +110,7 @@ class LLMProvider(ABC):
 
 
 # ======================================================================
-# 错误分类（P2 B5）：曾散落在 anthropic_provider / openai_provider /
+# 错误分类（单一来源）：曾散落在 anthropic_provider / openai_provider /
 # agent/loop / providers/runtime 共 5 处重复 hint 列表，统一收敛到此处，
 # 重试 / key 轮换 / 文案分发共享同一分类。
 # 注意：_format_error_message 的用户文案关键字不在合并范围（文案保持稳定）。
@@ -158,7 +158,7 @@ def is_rate_limit_error(error: Exception) -> bool:
 
 
 # ======================================================================
-# 工具参数解析失败哨兵 key（P2 B6）：单一来源。
+# 工具参数解析失败哨兵 key（单一来源）。
 # provider 层与 tools/registry 共用同一标识，避免出现两份字符串字面量漂移。
 # ======================================================================
 _TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"

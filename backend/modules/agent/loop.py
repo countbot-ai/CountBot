@@ -17,7 +17,7 @@ from backend.modules.providers.base import AUTH_ERROR_HINTS, RATE_LIMIT_HINTS
 def _is_key_rotation_eligible_error(error_text: str) -> bool:
     """判断错误是否适合触发 key 轮换重试。
 
-    分类 hint 已收敛到 providers/base.py 单一来源（P2 B5），此处直接引用。
+    分类 hint 统一维护在 providers/base.py（单一来源），此处直接引用。
     """
     lower = (error_text or "").lower()
     return any(hint in lower for hint in AUTH_ERROR_HINTS + RATE_LIMIT_HINTS)
