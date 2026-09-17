@@ -21,6 +21,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._path_resolver import resolve_path
 from backend.modules.tools.monitoring import (
     MONITOR_PARAMETER_SCHEMA,
     build_default_monitor_config,
@@ -103,7 +104,9 @@ class ExecTool(Tool):
             else None
         )
 
-        self.workspace = workspace.resolve()
+        # 初始工作空间快照（用于日志与兜底）；运行时解析统一走 resolve_path /
+        # workspace property，跟随配置热切换，不冻结构造时的路径基准。
+        self._workspace = workspace.resolve()
         self.timeout = timeout
         self.max_output_length = max_output_length
         self.allow_dangerous = allow_dangerous
@@ -112,7 +115,7 @@ class ExecTool(Tool):
         self.restrict_to_workspace = restrict_to_workspace
         
         logger.debug(
-            f"ExecTool initialized: workspace={self.workspace}, "
+            f"ExecTool initialized: workspace={self._workspace}, "
             f"timeout={timeout}s, max_output={max_output_length}, "
             f"allow_dangerous={allow_dangerous}, restrict_to_workspace={restrict_to_workspace}"
         )
@@ -122,6 +125,15 @@ class ExecTool(Tool):
         self._message_context_ctx: contextvars.ContextVar[Optional[Dict[str, Any]]] = (
             contextvars.ContextVar("exec_tool_message_context", default=None)
         )
+
+    @property
+    def workspace(self) -> Path:
+        """当前工作空间（跟随运行期热切换，不冻结构造时快照）。
+
+        相对命令的 cwd / 危险命令校验 / 产出物路径检查均以此为基准；
+        与 filesystem 工具动态读 config 的行为保持一致。
+        """
+        return resolve_path(".")
 
     @property
     def _message_context(self) -> Optional[Dict[str, Any]]:

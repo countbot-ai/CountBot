@@ -155,7 +155,8 @@ def register_all_tools(
             
             send_media_tool = SendMediaTool(
                 channel_manager=channel_manager,
-                session_manager=session_manager
+                session_manager=session_manager,
+                workspace=workspace,
             )
             # 设置当前会话 ID
             if session_id:
@@ -203,11 +204,13 @@ def register_all_tools(
     try:
         from backend.modules.wiki.tool import WikiTool
 
+        # 初始化当前工作空间下的 wiki 目录；工具默认跟随工作空间热切换
+        # （WikiTool 不传目录 = 每次调用按当前 workspace 解析 wiki/）。
         wiki_dir = workspace / "wiki"
         wiki_dir.mkdir(parents=True, exist_ok=True)
-        wiki_tool = WikiTool(wiki_dir)
+        wiki_tool = WikiTool()
         tools.register(wiki_tool)
-        logger.debug("Registered wiki tool")
+        logger.debug("Registered wiki tool (follows current workspace wiki dir)")
     except Exception as e:
         logger.error(f"Failed to register wiki tool: {e}")
 

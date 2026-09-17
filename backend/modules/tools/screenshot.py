@@ -16,6 +16,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._path_resolver import resolve_path
 
 
 class ScreenshotTool(Tool):
@@ -193,8 +194,9 @@ class ScreenshotTool(Tool):
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     output_path = f"{self.default_output_dir}/desktop_{timestamp}.png"
                 
-                # 确保输出路径在工作空间内
-                full_path = (self.workspace / output_path).resolve()
+                # 统一路径解析：相对路径按当前工作空间解析（跟随运行期热切换），
+                # 绝对路径原样返回——不再依赖构造时冻结的 self.workspace 快照。
+                full_path = resolve_path(output_path)
                 
                 # 创建输出目录
                 full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,7 +211,7 @@ class ScreenshotTool(Tool):
                 
                 return (
                     f"Desktop screenshot captured successfully!\n"
-                    f"Path: {output_path}\n"
+                    f"Path: {full_path}\n"
                     f"Size: {screenshot.width}x{screenshot.height}\n"
                     f"File size: {file_size:,} bytes\n"
                     f"Monitor: {monitor_num}"
@@ -288,8 +290,8 @@ class ScreenshotTool(Tool):
                     domain = urlparse(url).netloc.replace(".", "_")
                     output_path = f"{self.default_output_dir}/webpage_{domain}_{timestamp}.png"
                 
-                # 确保输出路径在工作空间内
-                full_path = (self.workspace / output_path).resolve()
+                # 统一路径解析（同 desktop 模式）：相对路径按当前工作空间解析。
+                full_path = resolve_path(output_path)
                 
                 # 创建输出目录
                 full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -315,7 +317,7 @@ class ScreenshotTool(Tool):
                     f"Webpage screenshot captured successfully!\n"
                     f"URL: {url}\n"
                     f"Title: {page_title}\n"
-                    f"Path: {output_path}\n"
+                    f"Path: {full_path}\n"
                     f"Viewport: {viewport_width}x{viewport_height}\n"
                     f"Full page: {full_page}\n"
                     f"File size: {file_size:,} bytes"
