@@ -8,7 +8,14 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 
-from .base import LLMProvider, StreamChunk, ToolCall, is_auth_error
+from .base import (
+    LLMProvider,
+    StreamChunk,
+    ToolCall,
+    _TOOL_ARGUMENT_PARSE_ERROR_KEY,
+    _TOOL_ARGUMENT_RAW_KEY,
+    is_auth_error,
+)
 from .thinking_profiles import apply_reasoning_request_fields, clear_reasoning_request_fields
 
 

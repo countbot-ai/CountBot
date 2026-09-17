@@ -8,7 +8,14 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 import httpx
 from loguru import logger
 
-from .base import LLMProvider, StreamChunk, ToolCall, is_auth_error
+from .base import (
+    LLMProvider,
+    StreamChunk,
+    ToolCall,
+    _TOOL_ARGUMENT_PARSE_ERROR_KEY,
+    _TOOL_ARGUMENT_RAW_KEY,
+    is_auth_error,
+)
 
 
 class AnthropicProvider(LLMProvider):
