@@ -535,9 +535,6 @@ class ContextBuilder:
             team_list = "、".join(team_names) if team_names else "无"
             team_reminder = f"💡 检测到 @ 符号，可用团队：{team_list}"
         
-        if team_reminder:
-            messages[0]["content"] += f"\n\n{team_reminder}"
-        
         user_content = self._build_user_content(current_message, media)
 
         # 动态信息（当前时间/用户资料/会话摘要/渠道信息）统一注入首条 user 消息，
@@ -554,6 +551,16 @@ class ContextBuilder:
                 user_content = f"{user_content}\n\n{dynamic_context}"
             else:
                 user_content = dynamic_context
+
+        # team_reminder 同样属于动态内容：并入首条 user 消息而非 system，
+        # 保证含 @ 与不含 @ 的请求 system 字段字节级一致。
+        # 其余动态内容（时间/用户资料/会话摘要/渠道信息）此前已迁出 system，
+        # 此处是最后一处仍写入 system 的动态内容，一并移出以保持 system 纯静态。
+        if team_reminder:
+            if user_content:
+                user_content = f"{user_content}\n\n{team_reminder}"
+            else:
+                user_content = team_reminder
 
         messages.append({"role": "user", "content": user_content})
         
