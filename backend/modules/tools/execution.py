@@ -1,9 +1,8 @@
-"""Canonical, in-process Tool execution contract primitives.
+"""进程内 Tool 执行契约的基础类型。
 
-This module deliberately contains no retry policy and no persisted storage.  It
-provides the small process-local boundary used by ``ToolRegistry.execute_outcome``:
-an operation may have several physical attempts, while each attempt is finalized
-exactly once.
+本模块刻意不包含重试策略或持久化存储。它为
+``ToolRegistry.execute_outcome`` 提供最小的进程内边界：一个 operation 可以
+包含多个 physical attempt，但每个 attempt 只能完成一次。
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 
 class ExecutionState(str, Enum):
-    """Lifecycle states of one physical Tool execution attempt."""
+    """一次 physical Tool execution attempt 的生命周期状态。"""
 
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -30,7 +29,7 @@ class ExecutionState(str, Enum):
 
 
 class ErrorCategory(str, Enum):
-    """Stable, domain-level failure categories for the execution boundary."""
+    """执行边界使用的稳定、领域级 failure category。"""
 
     VALIDATION = "VALIDATION"
     PERMISSION = "PERMISSION"
@@ -43,7 +42,7 @@ class ErrorCategory(str, Enum):
 
 
 class RetrySafety(str, Enum):
-    """Safety of another execution of the same logical operation."""
+    """再次执行同一 logical operation 的安全性。"""
 
     SAFE = "SAFE"
     UNSAFE = "UNSAFE"
@@ -51,7 +50,7 @@ class RetrySafety(str, Enum):
 
 
 class SideEffectState(str, Enum):
-    """What the execution boundary knows about a possible side effect."""
+    """执行边界对可能产生的 side effect 所掌握的状态。"""
 
     NOT_APPLICABLE = "NOT_APPLICABLE"
     NOT_ATTEMPTED = "NOT_ATTEMPTED"
@@ -70,15 +69,15 @@ _TERMINAL_STATES = frozenset(
 
 
 class AttemptTransitionError(RuntimeError):
-    """Raised when an attempt lifecycle transition would violate the contract."""
+    """attempt 生命周期转换违反契约时抛出。"""
 
 
 class OperationIdentityCollisionError(ValueError):
-    """Raised when an operation ID is reused for a different invocation."""
+    """operation ID 被复用于不同 invocation 时抛出。"""
 
 
 def fingerprint_arguments(arguments: Mapping[str, Any]) -> str:
-    """Return a stable fingerprint without retaining raw arguments in the ledger."""
+    """生成稳定指纹，避免在 ledger 中保留原始 arguments。"""
 
     canonical = json.dumps(arguments, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -86,7 +85,7 @@ def fingerprint_arguments(arguments: Mapping[str, Any]) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ToolExecutionRequest:
-    """Request metadata shared by all attempts of one logical operation."""
+    """同一 logical operation 的所有 attempt 共用的请求元数据。"""
 
     tool_name: str
     operation_id: str
@@ -109,8 +108,8 @@ class ToolExecutionRequest:
             arguments_fingerprint = fingerprint_arguments(arguments)
             fingerprint_error = None
         except (TypeError, ValueError) as exc:
-            # Do not leak an argument serialization exception through the
-            # canonical boundary.  Registry turns this into a pre-body failure.
+            # 不让 arguments 序列化异常逃出 canonical boundary；Registry 会将其
+            # 转换为进入 Tool body 前的失败 outcome。
             arguments_fingerprint = f"invalid:{type(exc).__name__}"
             fingerprint_error = type(exc).__name__
 
@@ -124,7 +123,7 @@ class ToolExecutionRequest:
         )
 
     def matches_logical_invocation(self, other: "ToolExecutionRequest") -> bool:
-        """Compare only the fields that define a logical Tool invocation."""
+        """仅比较定义一次 logical Tool invocation 的字段。"""
 
         return (
             self.tool_name == other.tool_name
@@ -134,13 +133,12 @@ class ToolExecutionRequest:
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
-    """Explicit result returned by a Tool to the registry-owned attempt runner.
+    """Tool 返回给 Registry-owned attempt runner 的显式结果。
 
-    A ``ToolResult`` communicates facts to the runner; it does not mutate an
-    attempt itself.  The runner owns the only finalization call to the ledger.
-    ``UNKNOWN_OUTCOME`` remains an execution state, with an optional independent
-    error category describing why certainty was lost.
-    """
+``ToolResult`` 只向 runner 传递事实，不会直接修改 attempt。只有 runner 可以
+调用 ledger finalization。``UNKNOWN_OUTCOME`` 仍是 execution state；可选的独立
+error category 用于说明为什么无法确定结果。
+"""
 
     state: ExecutionState
     display_text: str
@@ -238,7 +236,7 @@ class ToolResult:
 
 @dataclass(frozen=True, slots=True)
 class ToolExecutionOutcome:
-    """Immutable, authoritative terminal outcome for one physical attempt."""
+    """一个 physical attempt 不可变且 authoritative 的 terminal outcome。"""
 
     operation_id: str
     attempt_id: str
@@ -283,7 +281,7 @@ class ToolExecutionOutcome:
 
 @dataclass(frozen=True, slots=True)
 class ToolExecutionAttempt:
-    """Read-only lifecycle view used for diagnostics and deterministic tests."""
+    """供诊断和 deterministic test 使用的只读生命周期视图。"""
 
     operation_id: str
     attempt_id: str
@@ -303,12 +301,11 @@ class _LedgerAttempt:
 
 
 class OperationLedger:
-    """Bounded, process-local attempt ledger.
+    """有界的进程内 attempt ledger。
 
-    It intentionally offers no process-restart recovery or distributed
-    idempotency.  Registry replay returns the existing terminal outcome rather
-    than executing a completed operation again.
-    """
+它刻意不提供进程重启恢复或 distributed idempotency。Registry replay 会返回已
+保存的 terminal outcome，而不是再次执行已完成的 operation。
+"""
 
     def __init__(self, *, max_completed_operations: int = 1024) -> None:
         if max_completed_operations < 0:
@@ -358,7 +355,7 @@ class OperationLedger:
         )
 
     def completed_outcome(self, request: ToolExecutionRequest) -> Optional[ToolExecutionOutcome]:
-        """Return a same-invocation replay outcome within the retention boundary."""
+        """在 retention boundary 内返回同一 invocation 的 replay outcome。"""
 
         attempt_ids = self._operation_attempt_ids.get(request.operation_id, [])
         if not attempt_ids:
@@ -401,8 +398,8 @@ class OperationLedger:
             side_effect_state=result.side_effect_state,
             correlation_id=attempt.request.correlation_id,
         )
-        # Construct and validate the immutable outcome before changing state so
-        # finalization cannot leave a terminal attempt without an outcome.
+        # 先构造并校验 immutable outcome，再修改 state，避免 finalization 留下
+        # 已进入 terminal state 但缺少 outcome 的 attempt。
         attempt.state = result.state
         attempt.outcome = outcome
         self._remember_completed_operation(attempt.request.operation_id)

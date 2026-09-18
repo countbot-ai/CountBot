@@ -245,7 +245,7 @@ class ToolRegistry:
         if parse_error:
             return str(parse_error), str(raw_arguments or "")
 
-        # Backward compatibility for older providers that returned {"raw": "..."}.
+        # 兼容旧 provider 返回的 {"raw": "..."} 格式。
         if set(arguments.keys()) == {"raw"}:
             return "Malformed JSON tool arguments", str(arguments.get("raw") or "")
 
@@ -318,11 +318,11 @@ class ToolRegistry:
 
     @staticmethod
     def _is_pre_execution_cancelled(cancellation_token: Any) -> bool:
-        """Read common cancellation primitives without relying on scheduling.
+        """无需依赖调度时序，读取常见 cancellation primitive 的状态。
 
-        PR1 only makes a decision before entering the Tool body.  In-progress
-        cancellation/effect certainty belongs to the later Tool migrations.
-        """
+PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effect certainty
+属于后续 Tool migration 的范围。
+"""
 
         if cancellation_token is None:
             return False
@@ -336,7 +336,7 @@ class ToolRegistry:
 
     @staticmethod
     def _identity_collision_outcome(request: ToolExecutionRequest) -> ToolExecutionOutcome:
-        """Return a pre-body rejection without corrupting an existing operation."""
+        """在不破坏已有 operation 的前提下，返回进入 body 前的拒绝 outcome。"""
 
         return ToolExecutionOutcome(
             operation_id=request.operation_id,
@@ -353,11 +353,11 @@ class ToolRegistry:
 
     @staticmethod
     def render_outcome(outcome: ToolExecutionOutcome) -> str:
-        """Render a canonical outcome for temporary text-only consumers.
+        """为临时 text-only consumer 渲染 canonical outcome。
 
-        This renderer makes no decision from text.  It can be removed once all
-        callers consume ``ToolExecutionOutcome`` directly.
-        """
+该 renderer 不会从文本推断任何状态。所有 caller 都直接消费
+``ToolExecutionOutcome`` 后即可移除。
+"""
 
         return outcome.display_text
 
@@ -373,19 +373,18 @@ class ToolRegistry:
         retry_authorized: bool = False,
         proven_safe_idempotency: bool = False,
     ) -> ToolExecutionOutcome:
-        """Produce the authoritative outcome for one canonical Tool attempt.
+        """为一次 canonical Tool attempt 生成 authoritative outcome。
 
-        Existing callers continue using ``execute`` during this migration.  New
-        callers must use this method and inspect ``outcome.state`` rather than a
-        rendered string or normal function return value.
-        """
+迁移期间，现有 caller 继续使用 ``execute``。新 caller 必须使用本方法，并检查
+``outcome.state``，而不是依据渲染后的字符串或普通函数返回值判断结果。
+"""
 
         request_arguments: Dict[str, Any]
         if isinstance(arguments, dict):
             request_arguments = arguments
         else:
-            # Keep the ledger free of raw malformed input while still assigning
-            # an operation identity to the rejected request.
+            # 不在 ledger 中保存原始 malformed input，同时仍为被拒绝的 request
+            # 分配 operation identity。
             request_arguments = {"__invalid_arguments_type__": type(arguments).__name__}
 
         request = ToolExecutionRequest.create(
@@ -494,8 +493,8 @@ class ToolRegistry:
         try:
             result = await tool.execute_outcome(**arguments)
         except asyncio.CancelledError:
-            # The body was entered and PR1 has no Tool-side effect marker yet;
-            # cancellation therefore cannot claim a known no-effect result.
+            # body 已经执行，而 PR1 尚未提供 Tool-side effect marker；因此
+            # cancellation 不能宣称已知未产生 effect。
             result = ToolResult.unknown_outcome(
                 ErrorCategory.CANCELLATION,
                 "Tool execution was cancelled after the body started.",
