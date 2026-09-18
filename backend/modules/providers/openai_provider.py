@@ -8,11 +8,15 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 
-from .base import LLMProvider, StreamChunk, ToolCall
+from .base import (
+    LLMProvider,
+    StreamChunk,
+    ToolCall,
+    _TOOL_ARGUMENT_PARSE_ERROR_KEY,
+    _TOOL_ARGUMENT_RAW_KEY,
+    is_auth_error,
+)
 from .thinking_profiles import apply_reasoning_request_fields, clear_reasoning_request_fields
-
-_TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
-_TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
 
 
 class OpenAIProvider(LLMProvider):
@@ -744,19 +748,11 @@ class OpenAIProvider(LLMProvider):
 
     @classmethod
     def _is_auth_error(cls, error: Exception) -> bool:
-        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。"""
-        status_code = cls._extract_status_code(error)
-        if status_code == 401:
-            return True
-        if status_code == 403:
-            return True
-        raw = cls._extract_error_text(error).lower()
-        auth_hints = (
-            "invalid api key", "invalid_api_key", "authentication",
-            "invalid token", "token is unusable", "apikey",
-            "account_deactivated", "insufficient_quota",
-        )
-        return any(hint in raw for hint in auth_hints)
+        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。
+
+        分类逻辑统一维护在 providers/base.py（单一来源），此处仅转发。
+        """
+        return is_auth_error(error)
 
     @classmethod
     def _is_invalid_params_error(cls, error: Exception) -> bool:

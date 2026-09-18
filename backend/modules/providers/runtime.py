@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from backend.modules.providers.base import is_auth_error, is_rate_limit_error
 from backend.modules.providers.registry import get_all_providers, get_provider_metadata
 
 
@@ -120,23 +121,11 @@ class KeyRotator:
 
     def is_auth_error(self, error: Exception) -> bool:
         """判断错误是否为认证/密钥相关错误。"""
-        error_text = f"{type(error).__name__} {str(error)}".lower()
-        auth_hints = (
-            "401", "unauthorized", "invalid api key", "invalid_api_key",
-            "authentication", "invalid token", "token is unusable",
-            "api key", "apikey", "access denied", "forbidden",
-            "insufficient_quota", "account_deactivated",
-        )
-        return any(hint in error_text for hint in auth_hints)
+        return is_auth_error(error)
 
     def is_rate_limit_error(self, error: Exception) -> bool:
         """判断错误是否为限流/配额错误。"""
-        error_text = f"{type(error).__name__} {str(error)}".lower()
-        rate_hints = (
-            "429", "rate limit", "rate_limit", "quota", "too many requests",
-            "insufficient_quota", "capacity", "overloaded",
-        )
-        return any(hint in error_text for hint in rate_hints)
+        return is_rate_limit_error(error)
 
 
 _PROVIDER_KEY_ROTATORS: dict[str, KeyRotator] = {}

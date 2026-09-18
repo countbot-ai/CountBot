@@ -8,10 +8,14 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 import httpx
 from loguru import logger
 
-from .base import LLMProvider, StreamChunk, ToolCall
-
-_TOOL_ARGUMENT_PARSE_ERROR_KEY = "__tool_argument_parse_error__"
-_TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
+from .base import (
+    LLMProvider,
+    StreamChunk,
+    ToolCall,
+    _TOOL_ARGUMENT_PARSE_ERROR_KEY,
+    _TOOL_ARGUMENT_RAW_KEY,
+    is_auth_error,
+)
 
 
 class AnthropicProvider(LLMProvider):
@@ -107,8 +111,16 @@ class AnthropicProvider(LLMProvider):
         if resolved_max_tokens is not None:
             request_params["max_tokens"] = resolved_max_tokens
 
+        # system prompt 为纯静态前缀，以 content block + ephemeral cache point
+        # 打缓存断点：前缀稳定时整段命中 prompt cache，显著降低重复输入成本。
         if system_content:
-            request_params["system"] = system_content
+            request_params["system"] = [
+                {
+                    "type": "text",
+                    "text": system_content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
 
         anthropic_tools = self._convert_tools(tools)
         if anthropic_tools:
@@ -265,7 +277,13 @@ class AnthropicProvider(LLMProvider):
                     }
                 )
             elif "name" in tool:
-                anthropic_tools.append(tool)
+                # 复制一份再附加 cache_control，避免污染调用方持有的原始 tool dict
+                anthropic_tools.append(dict(tool))
+
+        # 给最后一个 tool 打静态 cache point：工具定义在会话内不变，
+        # 配合 system 断点一起覆盖请求头部。
+        if anthropic_tools:
+            anthropic_tools[-1]["cache_control"] = {"type": "ephemeral"}
 
         return anthropic_tools or None
 
@@ -494,6 +512,8 @@ class AnthropicProvider(LLMProvider):
         stream_done = False
         input_tokens = 0
         output_tokens = 0
+        cache_read_input_tokens = 0
+        cache_creation_input_tokens = 0
         finish_reason = "stop"
 
         stream_retry = 0
@@ -509,6 +529,12 @@ class AnthropicProvider(LLMProvider):
                     if event.type == "message_start":
                         if hasattr(event, "message") and hasattr(event.message, "usage"):
                             input_tokens = getattr(event.message.usage, "input_tokens", 0)
+                            cache_read_input_tokens = getattr(
+                                event.message.usage, "cache_read_input_tokens", 0
+                            )
+                            cache_creation_input_tokens = getattr(
+                                event.message.usage, "cache_creation_input_tokens", 0
+                            )
 
                     elif event.type == "content_block_start":
                         block = getattr(event, "content_block", None)
@@ -592,6 +618,12 @@ class AnthropicProvider(LLMProvider):
                             finish_reason = event.delta.stop_reason or finish_reason
                         if hasattr(event, "usage"):
                             output_tokens = getattr(event.usage, "output_tokens", 0)
+                            cache_read_input_tokens = getattr(
+                                event.usage, "cache_read_input_tokens", cache_read_input_tokens
+                            )
+                            cache_creation_input_tokens = getattr(
+                                event.usage, "cache_creation_input_tokens", cache_creation_input_tokens
+                            )
 
                     elif event.type == "message_stop":
                         finalized_blocks = self._finalize_content_blocks(content_block_buffer)
@@ -605,7 +637,12 @@ class AnthropicProvider(LLMProvider):
                             yield chunk
                         yield StreamChunk(
                             finish_reason=finish_reason,
-                            usage=self._build_usage(input_tokens, output_tokens),
+                            usage=self._build_usage(
+                                input_tokens,
+                                output_tokens,
+                                cache_read_input_tokens,
+                                cache_creation_input_tokens,
+                            ),
                         )
                         stream_done = True
 
@@ -656,6 +693,8 @@ class AnthropicProvider(LLMProvider):
             content_yielded = False
             input_tokens = 0
             output_tokens = 0
+            cache_read_input_tokens = 0
+            cache_creation_input_tokens = 0
             finish_reason = "stop"
 
             try:
@@ -682,6 +721,12 @@ class AnthropicProvider(LLMProvider):
                             if event_type == "message_start":
                                 usage = (event.get("message") or {}).get("usage") or {}
                                 input_tokens = usage.get("input_tokens", input_tokens)
+                                cache_read_input_tokens = usage.get(
+                                    "cache_read_input_tokens", cache_read_input_tokens
+                                )
+                                cache_creation_input_tokens = usage.get(
+                                    "cache_creation_input_tokens", cache_creation_input_tokens
+                                )
 
                             elif event_type == "content_block_start":
                                 block = event.get("content_block") or {}
@@ -766,6 +811,12 @@ class AnthropicProvider(LLMProvider):
                                 finish_reason = delta.get("stop_reason") or finish_reason
                                 usage = event.get("usage") or {}
                                 output_tokens = usage.get("output_tokens", output_tokens)
+                                cache_read_input_tokens = usage.get(
+                                    "cache_read_input_tokens", cache_read_input_tokens
+                                )
+                                cache_creation_input_tokens = usage.get(
+                                    "cache_creation_input_tokens", cache_creation_input_tokens
+                                )
 
                             elif event_type == "message_stop":
                                 finalized_blocks = self._finalize_content_blocks(content_block_buffer)
@@ -779,7 +830,12 @@ class AnthropicProvider(LLMProvider):
                                     yield chunk
                                 yield StreamChunk(
                                     finish_reason=finish_reason,
-                                    usage=self._build_usage(input_tokens, output_tokens),
+                                    usage=self._build_usage(
+                                        input_tokens,
+                                        output_tokens,
+                                        cache_read_input_tokens,
+                                        cache_creation_input_tokens,
+                                    ),
                                 )
                                 return
 
@@ -977,16 +1033,25 @@ class AnthropicProvider(LLMProvider):
         return chunks
 
     def _build_usage(
-        self, input_tokens: int, output_tokens: int
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_input_tokens: int = 0,
+        cache_creation_input_tokens: int = 0,
     ) -> Optional[Dict[str, int]]:
-        """Build a common usage payload."""
+        """Build a common usage payload, including prompt cache metrics."""
         if not input_tokens and not output_tokens:
             return None
-        return {
+        usage: Dict[str, int] = {
             "prompt_tokens": input_tokens,
             "completion_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
         }
+        if cache_read_input_tokens:
+            usage["cache_read_input_tokens"] = cache_read_input_tokens
+        if cache_creation_input_tokens:
+            usage["cache_creation_input_tokens"] = cache_creation_input_tokens
+        return usage
 
     def _is_timeout_error(self, error: Exception) -> bool:
         """Detect timeout-like errors."""
@@ -998,20 +1063,11 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _is_auth_error(error: Exception) -> bool:
-        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。"""
-        status_code = getattr(error, "status_code", None)
-        if not isinstance(status_code, int):
-            response = getattr(error, "response", None)
-            status_code = getattr(response, "status_code", None)
-        if status_code in (401, 403):
-            return True
-        err_str = str(error).lower()
-        auth_hints = (
-            "invalid api key", "invalid_api_key", "authentication",
-            "invalid token", "token is unusable", "apikey",
-            "account_deactivated", "insufficient_quota",
-        )
-        return any(hint in err_str for hint in auth_hints)
+        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。
+
+        分类逻辑统一维护在 providers/base.py（单一来源），此处仅转发。
+        """
+        return is_auth_error(error)
 
     @staticmethod
     def _format_error_message(raw: str) -> str:
