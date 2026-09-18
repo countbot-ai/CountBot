@@ -1,8 +1,10 @@
 """Tool Registry - 工具注册表"""
 
+import asyncio
 import contextvars
 import re
 import uuid
+import time
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -17,9 +19,20 @@ from backend.modules.tools.execution_context import (
 from backend.modules.tools.file_audit_logger import file_audit_logger
 from backend.modules.tools._failure import (
     RetryableToolError,
+    classify_exception,
     format_failure,
     is_retryable,
     single_line,
+)
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    OperationLedger,
+    OperationIdentityCollisionError,
+    ExecutionState,
+    SideEffectState,
+    ToolExecutionOutcome,
+    ToolExecutionRequest,
+    ToolResult,
 )
 
 # 使用 contextvars 实现异步安全的 session_id 存储
@@ -58,14 +71,15 @@ _TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
 class ToolRegistry:
     """工具注册表 - 管理所有可用工具的注册、查询和执行"""
 
-    def __init__(self):
+    def __init__(self, ledger: Optional[OperationLedger] = None):
         """初始化工具注册表"""
         self._tools: Dict[str, Tool] = {}
         self._audit_enabled: bool = True
         self._definitions_cache: Optional[List[Dict[str, Any]]] = None
+        self._operation_ledger = ledger or OperationLedger()
         # 注意：不再使用实例变量存储 session_id，改用 contextvars
         logger.debug("ToolRegistry initialized (using contextvars for session isolation)")
-    
+
     def set_audit_enabled(self, enabled: bool) -> None:
         """设置是否启用审计日志"""
         self._audit_enabled = enabled
@@ -301,6 +315,208 @@ class ToolRegistry:
             self._definitions_cache = builtins + mcp_tools
             logger.debug(f"Generated {len(self._definitions_cache)} tool definitions ({len(builtins)} builtin, {len(mcp_tools)} MCP)")
         return self._definitions_cache
+
+    @staticmethod
+    def _is_pre_execution_cancelled(cancellation_token: Any) -> bool:
+        """Read common cancellation primitives without relying on scheduling.
+
+        PR1 only makes a decision before entering the Tool body.  In-progress
+        cancellation/effect certainty belongs to the later Tool migrations.
+        """
+
+        if cancellation_token is None:
+            return False
+        for attribute in ("is_cancelled", "is_set", "cancelled"):
+            value = getattr(cancellation_token, attribute, None)
+            if callable(value):
+                value = value()
+            if isinstance(value, bool):
+                return value
+        return isinstance(cancellation_token, bool) and cancellation_token
+
+    @staticmethod
+    def _identity_collision_outcome(request: ToolExecutionRequest) -> ToolExecutionOutcome:
+        """Return a pre-body rejection without corrupting an existing operation."""
+
+        return ToolExecutionOutcome(
+            operation_id=request.operation_id,
+            attempt_id=str(uuid.uuid4()),
+            attempt_ordinal=0,
+            tool_name=request.tool_name,
+            state=ExecutionState.FAILED,
+            display_text="operation_id is already bound to a different Tool invocation.",
+            duration_ms=0,
+            error_category=ErrorCategory.VALIDATION,
+            side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            correlation_id=request.correlation_id,
+        )
+
+    @staticmethod
+    def render_outcome(outcome: ToolExecutionOutcome) -> str:
+        """Render a canonical outcome for temporary text-only consumers.
+
+        This renderer makes no decision from text.  It can be removed once all
+        callers consume ``ToolExecutionOutcome`` directly.
+        """
+
+        return outcome.display_text
+
+    async def execute_outcome(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        *,
+        operation_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        cancellation_token: Any = None,
+        retry_ceiling: int = 0,
+        retry_authorized: bool = False,
+        proven_safe_idempotency: bool = False,
+    ) -> ToolExecutionOutcome:
+        """Produce the authoritative outcome for one canonical Tool attempt.
+
+        Existing callers continue using ``execute`` during this migration.  New
+        callers must use this method and inspect ``outcome.state`` rather than a
+        rendered string or normal function return value.
+        """
+
+        request_arguments: Dict[str, Any]
+        if isinstance(arguments, dict):
+            request_arguments = arguments
+        else:
+            # Keep the ledger free of raw malformed input while still assigning
+            # an operation identity to the rejected request.
+            request_arguments = {"__invalid_arguments_type__": type(arguments).__name__}
+
+        request = ToolExecutionRequest.create(
+            tool_name=tool_name,
+            arguments=request_arguments,
+            operation_id=operation_id,
+            correlation_id=correlation_id,
+            retry_ceiling=retry_ceiling,
+        )
+        try:
+            replay = self._operation_ledger.completed_outcome(request)
+        except OperationIdentityCollisionError:
+            return self._identity_collision_outcome(request)
+        if replay is not None:
+            if replay.state is ExecutionState.SUCCEEDED or not retry_authorized:
+                return replay
+            if replay.state is ExecutionState.UNKNOWN_OUTCOME and not proven_safe_idempotency:
+                return replay
+
+        try:
+            attempt = self._operation_ledger.create_attempt(request)
+        except OperationIdentityCollisionError:
+            return self._identity_collision_outcome(request)
+        started_at = time.monotonic()
+
+        def finalize(result: ToolResult) -> ToolExecutionOutcome:
+            duration_ms = int((time.monotonic() - started_at) * 1000)
+            return self._operation_ledger.finalize(
+                attempt.attempt_id,
+                result,
+                duration_ms=duration_ms,
+            )
+
+        if self._is_pre_execution_cancelled(cancellation_token):
+            return finalize(ToolResult.cancelled())
+
+        if request.fingerprint_error is not None:
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    "Tool arguments cannot be fingerprinted for operation identity.",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            )
+
+        if not isinstance(arguments, dict):
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    "Tool arguments must be an object.",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            )
+
+        tool = self.get_tool(tool_name)
+        if tool is None:
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    f"Tool '{tool_name}' is not registered.",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            )
+
+        parse_error, raw_arguments = self._extract_tool_argument_parse_failure(arguments)
+        if parse_error:
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    self._format_tool_argument_parse_error(
+                        tool_name,
+                        parse_error,
+                        raw_arguments,
+                    ),
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            )
+
+        try:
+            errors = tool.validate_params(arguments)
+        except Exception as exc:
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.INTERNAL,
+                    f"Tool '{tool_name}' parameter validation failed: {single_line(exc)}",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            )
+        if errors:
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    f"Invalid parameters for tool '{tool_name}': " + "; ".join(errors),
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            )
+
+        self._operation_ledger.start(attempt.attempt_id)
+        context_token = push_tool_execution_context(
+            ToolExecutionContext(
+                session_id=self._session_id,
+                tool_name=tool_name,
+                event_handler=_tool_event_handler_context.get(),
+            )
+        )
+        try:
+            result = await tool.execute_outcome(**arguments)
+        except asyncio.CancelledError:
+            # The body was entered and PR1 has no Tool-side effect marker yet;
+            # cancellation therefore cannot claim a known no-effect result.
+            result = ToolResult.unknown_outcome(
+                ErrorCategory.CANCELLATION,
+                "Tool execution was cancelled after the body started.",
+            )
+        except Exception as exc:
+            result = ToolResult.failure(
+                classify_exception(exc),
+                f"Tool '{tool_name}' failed: {single_line(exc)}",
+                retryable=is_retryable(exc),
+            )
+        finally:
+            reset_tool_execution_context(context_token)
+
+        if not isinstance(result, ToolResult):
+            return finalize(
+                ToolResult.failure(
+                    ErrorCategory.RESULT_CONTRACT,
+                    f"Tool '{tool_name}' did not return an explicit ToolResult.",
+                )
+            )
+        return finalize(result)
 
     async def execute(
         self,
