@@ -73,6 +73,21 @@ class Tool(ABC):
         """
         pass
 
+    async def execute_outcome(self, **kwargs: Any) -> Any:
+        """Return an explicit ``ToolResult`` for canonical execution.
+
+        This default preserves the legacy ``execute`` contract while PR1 is
+        landing.  The registry intentionally rejects its raw return value as a
+        ``RESULT_CONTRACT`` outcome; migrated Tools override this method and
+        return ``backend.modules.tools.execution.ToolResult`` explicitly.
+
+        Temporary compatibility removal condition: remove this adapter once all
+        registered Tools return explicit structured results and all callers use
+        canonical outcomes.
+        """
+
+        return await self.execute(**kwargs)
+
     def validate_params(self, params: Dict[str, Any]) -> List[str]:
         """验证工具参数是否符合 JSON Schema
 

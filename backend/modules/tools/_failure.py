@@ -14,6 +14,8 @@
 
 from typing import Tuple
 
+from backend.modules.tools.execution import ErrorCategory
+
 _SENTENCE_ENDINGS: Tuple[str, ...] = (".", "!", "?", "。", "！", "？")
 
 
@@ -123,3 +125,20 @@ def is_retryable(exc: BaseException) -> bool:
     if _is_httpx_request_error(exc):
         return True
     return False
+
+
+def classify_exception(exc: BaseException) -> ErrorCategory:
+    """Normalize implementation exceptions at the producer boundary.
+
+    Consumers receive this stable category, never the raw exception class.  The
+    separate ``is_retryable`` helper remains a compatibility helper for the
+    legacy text path and does not imply retry safety.
+    """
+
+    if isinstance(exc, PermissionError):
+        return ErrorCategory.PERMISSION
+    if isinstance(exc, TimeoutError):
+        return ErrorCategory.TIMEOUT
+    if isinstance(exc, (ConnectionError, RetryableToolError)) or _is_httpx_request_error(exc):
+        return ErrorCategory.DEPENDENCY
+    return ErrorCategory.EXECUTION
