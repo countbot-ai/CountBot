@@ -128,12 +128,11 @@ def is_retryable(exc: BaseException) -> bool:
 
 
 def classify_exception(exc: BaseException) -> ErrorCategory:
-    """Normalize implementation exceptions at the producer boundary.
+    """在 producer boundary 将 implementation exception 归一化。
 
-    Consumers receive this stable category, never the raw exception class.  The
-    separate ``is_retryable`` helper remains a compatibility helper for the
-    legacy text path and does not imply retry safety.
-    """
+consumer 接收稳定的 category，而不是原始 exception class。独立的
+``is_retryable`` 仍是 legacy text path 的兼容 helper，不代表 retry safety。
+"""
 
     if isinstance(exc, PermissionError):
         return ErrorCategory.PERMISSION

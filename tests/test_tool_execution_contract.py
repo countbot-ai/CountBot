@@ -1,4 +1,4 @@
-"""Deterministic PR1 coverage for the canonical Tool execution contract."""
+"""canonical Tool execution contract 的 deterministic PR1 coverage。"""
 
 import asyncio
 import sys
