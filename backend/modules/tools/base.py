@@ -73,6 +73,19 @@ class Tool(ABC):
         """
         pass
 
+    async def execute_outcome(self, **kwargs: Any) -> Any:
+        """为 canonical execution 返回显式 ``ToolResult``。
+
+PR1 落地期间，该默认实现保留 legacy ``execute`` contract。Registry 会刻意将
+它的原始返回值拒绝为 ``RESULT_CONTRACT`` outcome；已迁移的 Tool 应覆盖此方法，
+并显式返回 ``backend.modules.tools.execution.ToolResult``。
+
+临时兼容层的移除条件：所有已注册 Tool 都返回显式 structured result，且所有
+caller 都使用 canonical outcome 后，移除此 adapter。
+"""
+
+        return await self.execute(**kwargs)
+
     def validate_params(self, params: Dict[str, Any]) -> List[str]:
         """验证工具参数是否符合 JSON Schema
 
