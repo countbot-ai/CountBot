@@ -106,12 +106,12 @@ def _html_to_text(html: str) -> str:
 
 
 def _is_scrapling_timeout(exc: BaseException) -> bool:
-    """Recognize timeout types produced by Scrapling's supported fetchers."""
+    """识别 Scrapling 支持的抓取器产生的超时类型。"""
     if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
         return True
 
-    # StealthyFetcher is Patchright-backed; older supported configurations can
-    # surface Playwright's timeout type instead.
+    # StealthyFetcher 由 Patchright 驱动；较旧的受支持配置可能改为抛出
+    # Playwright 的超时类型。
     for module_name in ("patchright.async_api", "playwright.async_api"):
         try:
             timeout_type = getattr(import_module(module_name), "TimeoutError", None)
@@ -121,7 +121,7 @@ def _is_scrapling_timeout(exc: BaseException) -> bool:
             if isinstance(exc, timeout_type):
                 return True
 
-    # AsyncFetcher is curl-cffi-backed. libcurl's OPERATION_TIMEDOUT is code 28.
+    # AsyncFetcher 基于 curl-cffi；libcurl 的 OPERATION_TIMEDOUT 对应 code 28。
     try:
         from curl_cffi.const import CurlECode
         from curl_cffi.curl import CurlError
