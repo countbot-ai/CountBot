@@ -511,9 +511,8 @@ class WriteFileTool(Tool):
         effect_started = False
         try:
             file_path = self.validator.validate_path(path_str)
-            # Existing-file append first reads the current content.  That is
-            # preparation, not mutation; a read/permission failure here is a
-            # definite pre-effect failure.
+            # 已存在文件的追加先读取原内容。这属于准备而非修改；读取或权限失败时，
+            # 可以确定副作用尚未开始。
             existing = None
             if mode == "append" and file_path.exists():
                 existing = file_path.read_text(encoding="utf-8")

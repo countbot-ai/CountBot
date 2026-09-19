@@ -288,12 +288,10 @@ class FileSearchTool(Tool):
                         )
 
                 except (PermissionError, OSError) as e:
-                    # Root traversal defines the requested operation boundary.  It
-                    # cannot be silently represented as an empty successful search.
+                    # 根目录遍历定义了本次请求的操作边界，不能静默表示为空的成功搜索。
                     if current_depth == 0:
                         raise
-                    # Nested inaccessible entries are not authoritative for the
-                    # requested root traversal and retain legacy skip behavior.
+                    # 嵌套目录无权限不决定根目录遍历的权威结果，保持既有跳过行为。
                     logger.debug(f"Skipping {item}: {e}")
                     continue
 

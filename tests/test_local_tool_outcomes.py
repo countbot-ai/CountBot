@@ -1,4 +1,4 @@
-"""Deterministic PR2 coverage for migrated local Tool producers."""
+"""已迁移本地 Tool producer 的 PR2 确定性覆盖。"""
 
 import asyncio
 import sys
