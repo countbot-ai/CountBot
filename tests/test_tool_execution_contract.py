@@ -16,6 +16,7 @@ from backend.modules.tools.execution import (
     OperationLedger,
     RetrySafety,
     SideEffectState,
+    ToolExecutionInProgress,
     ToolExecutionRequest,
     ToolExecutionOutcome,
     ToolResult,
@@ -76,6 +77,34 @@ class _SequencedExplicitTool(_ExplicitTool):
         self.body_invocations += 1
         self.effect_marker = True
         return next(self._results)
+
+
+class _BlockingExplicitTool(_ExplicitTool):
+    def __init__(self, result: ToolResult) -> None:
+        super().__init__(result)
+        self.body_entered = asyncio.Event()
+        self.release_body = asyncio.Event()
+
+    async def execute_outcome(self, **kwargs):
+        self.body_invocations += 1
+        self.effect_marker = True
+        self.body_entered.set()
+        await self.release_body.wait()
+        return self.result
+
+
+class _RaisingExplicitTool(_ExplicitTool):
+    async def execute_outcome(self, **kwargs):
+        self.body_invocations += 1
+        self.effect_marker = True
+        raise RuntimeError("body exception after execution started")
+
+
+class _CancelledExplicitTool(_ExplicitTool):
+    async def execute_outcome(self, **kwargs):
+        self.body_invocations += 1
+        self.effect_marker = True
+        raise asyncio.CancelledError()
 
 
 class _ValidationErrorTool(_ExplicitTool):
@@ -239,25 +268,112 @@ def test_validation_exception_is_normalized_before_tool_body():
     assert tool.effect_marker is False
 
 
-def test_legacy_return_is_result_contract_failure_not_success():
+def test_legacy_return_is_result_contract_unknown_outcome_not_success():
     registry = ToolRegistry()
     registry.register(_LegacyStringTool())
 
     outcome = _run(registry.execute_outcome("legacy", {}))
 
-    assert outcome.state is ExecutionState.FAILED
+    assert outcome.state is ExecutionState.UNKNOWN_OUTCOME
     assert outcome.error_category is ErrorCategory.RESULT_CONTRACT
     assert outcome.output is None
+    assert outcome.side_effect_state is SideEffectState.UNKNOWN
 
 
-def test_unexpected_legacy_dict_is_result_contract_failure_not_success():
+def test_unexpected_legacy_dict_is_result_contract_unknown_outcome_not_success():
     registry = ToolRegistry()
     registry.register(_LegacyDictTool())
 
     outcome = _run(registry.execute_outcome("legacy_dict", {}))
 
-    assert outcome.state is ExecutionState.FAILED
+    assert outcome.state is ExecutionState.UNKNOWN_OUTCOME
     assert outcome.error_category is ErrorCategory.RESULT_CONTRACT
+    assert outcome.side_effect_state is SideEffectState.UNKNOWN
+
+
+def test_overlapping_operation_returns_in_progress_without_creating_attempt():
+    async def run_overlap():
+        ledger = OperationLedger()
+        registry = ToolRegistry(ledger=ledger)
+        tool = _BlockingExplicitTool(ToolResult.success("completed"))
+        registry.register(tool)
+
+        first_task = asyncio.create_task(
+            registry.execute_outcome(
+                "explicit",
+                {},
+                operation_id="operation-1",
+                correlation_id="correlation-1",
+            )
+        )
+        await tool.body_entered.wait()
+
+        active_attempt = ledger.attempts_for_operation("operation-1")[0]
+        assert active_attempt.state is ExecutionState.RUNNING
+
+        second = await registry.execute_outcome(
+            "explicit",
+            {},
+            operation_id="operation-1",
+            correlation_id="correlation-1",
+        )
+
+        assert isinstance(second, ToolExecutionInProgress)
+        assert second.operation_id == "operation-1"
+        assert second.active_attempt_id == active_attempt.attempt_id
+        assert second.tool_name == "explicit"
+        assert second.correlation_id == "correlation-1"
+        assert len(ledger.attempts_for_operation("operation-1")) == 1
+        assert ledger.get_attempt(active_attempt.attempt_id).state is ExecutionState.RUNNING
+        assert tool.body_invocations == 1
+
+        tool.release_body.set()
+        first = await first_task
+        replay = await registry.execute_outcome(
+            "explicit",
+            {},
+            operation_id="operation-1",
+            correlation_id="correlation-1",
+        )
+
+        assert first.state is ExecutionState.SUCCEEDED
+        assert replay == first
+        assert replay.attempt_id == active_attempt.attempt_id
+        assert len(ledger.attempts_for_operation("operation-1")) == 1
+        assert tool.body_invocations == 1
+
+    _run(run_overlap())
+
+
+def test_post_body_exception_preserves_unknown_effect_certainty():
+    registry = ToolRegistry()
+    tool = _RaisingExplicitTool(ToolResult.success("unused"))
+    registry.register(tool)
+
+    outcome = _run(registry.execute_outcome("explicit", {}))
+
+    assert tool.body_invocations == 1
+    assert tool.effect_marker is True
+    assert outcome.state is ExecutionState.UNKNOWN_OUTCOME
+    assert outcome.error_category is ErrorCategory.EXECUTION
+    assert outcome.side_effect_state is SideEffectState.UNKNOWN
+    assert outcome.retryable is False
+    assert outcome.retry_safety is RetrySafety.UNKNOWN
+
+
+def test_post_body_cancellation_preserves_unknown_effect_certainty():
+    registry = ToolRegistry()
+    tool = _CancelledExplicitTool(ToolResult.success("unused"))
+    registry.register(tool)
+
+    outcome = _run(registry.execute_outcome("explicit", {}))
+
+    assert tool.body_invocations == 1
+    assert tool.effect_marker is True
+    assert outcome.state is ExecutionState.UNKNOWN_OUTCOME
+    assert outcome.error_category is ErrorCategory.CANCELLATION
+    assert outcome.side_effect_state is SideEffectState.UNKNOWN
+    assert outcome.retry_safety is RetrySafety.UNKNOWN
 
 
 def test_completed_operation_replay_is_deduplicated_without_running_body_again():
