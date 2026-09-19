@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from importlib import import_module
 from contextlib import redirect_stdout
 from typing import Any, Dict, Tuple
 from urllib.parse import urlparse
@@ -11,7 +12,8 @@ import httpx
 from loguru import logger
 
 from backend.modules.tools.base import Tool
-from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._failure import format_failure, is_retryable, single_line
+from backend.modules.tools.execution import ErrorCategory, RetrySafety, SideEffectState, ToolResult
 from backend.modules.tools._path_resolver import resolve_path
 
 # 尝试导入可选依赖
@@ -103,6 +105,34 @@ def _html_to_text(html: str) -> str:
         return _html_to_text_regex(html)
 
 
+def _is_scrapling_timeout(exc: BaseException) -> bool:
+    """Recognize timeout types produced by Scrapling's supported fetchers."""
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        return True
+
+    # StealthyFetcher is Patchright-backed; older supported configurations can
+    # surface Playwright's timeout type instead.
+    for module_name in ("patchright.async_api", "playwright.async_api"):
+        try:
+            timeout_type = getattr(import_module(module_name), "TimeoutError", None)
+        except ImportError:
+            continue
+        if isinstance(timeout_type, type) and issubclass(timeout_type, BaseException):
+            if isinstance(exc, timeout_type):
+                return True
+
+    # AsyncFetcher is curl-cffi-backed. libcurl's OPERATION_TIMEDOUT is code 28.
+    try:
+        from curl_cffi.const import CurlECode
+        from curl_cffi.curl import CurlError
+    except ImportError:
+        return False
+    return (
+        isinstance(exc, CurlError)
+        and getattr(exc, "code", None) == CurlECode.OPERATION_TIMEDOUT
+    )
+
+
 async def _fetch_with_scrapling(url: str, mode: str = "basic") -> dict:
     """使用 Scrapling 获取网页内容
     
@@ -120,7 +150,7 @@ async def _fetch_with_scrapling(url: str, mode: str = "basic") -> dict:
         
         if mode == "basic":
             # 快速模式：使用 curl-cffi + 伪装 headers (1-2秒)
-            response = await AsyncFetcher.get(url, stealthy_headers=True)
+            response = await AsyncFetcher.get(url, stealthy_headers=True, retries=0)
             return {
                 "html": response.html_content,
                 "status": response.status,
@@ -133,7 +163,8 @@ async def _fetch_with_scrapling(url: str, mode: str = "basic") -> dict:
             response = await StealthyFetcher.async_fetch(
                 url, 
                 headless=True, 
-                network_idle=True
+                network_idle=True,
+                retries=0,
             )
             return {
                 "html": response.html_content,
@@ -151,6 +182,7 @@ async def _fetch_with_scrapling(url: str, mode: str = "basic") -> dict:
                 network_idle=True,
                 disable_resources=False,
                 block_images=False,
+                retries=0,
             )
             return {
                 "html": response.html_content,
@@ -297,6 +329,95 @@ class WebFetchTool(Tool):
             )
             # 保持 JSON 结构（输出格式 json 的调用方依赖），error 字段升级为模板文案
             return json.dumps({"error": error_message, "url": url})
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        url = kwargs.get("url")
+        mode = kwargs.get("mode", "basic")
+        output_format = kwargs.get("outputFormat", "text")
+        max_chars = kwargs.get("maxChars", self.max_chars)
+        output_path = kwargs.get("output_path") or kwargs.get("outputPath")
+        retry_safety = RetrySafety.UNSAFE if output_path else RetrySafety.SAFE
+        no_effect = SideEffectState.NOT_ATTEMPTED if output_path else SideEffectState.NOT_APPLICABLE
+        if not url:
+            return ToolResult.failure(ErrorCategory.VALIDATION, json.dumps({"error": "url parameter is required"}), retry_safety=retry_safety, side_effect_state=no_effect)
+        is_valid, error_msg = _validate_url(url)
+        if not is_valid:
+            return ToolResult.failure(ErrorCategory.VALIDATION, json.dumps({"error": f"Invalid URL: {error_msg}", "url": url}), retry_safety=retry_safety, side_effect_state=no_effect)
+        effect_started = False
+        try:
+            if self.scrapling_available and mode in ["basic", "stealth", "max-stealth"]:
+                result = await self._fetch_with_scrapling(url, mode, max_chars, output_format)
+            else:
+                result = await self._fetch_with_httpx(url, max_chars, output_format)
+            if output_format == "text":
+                content = result["text"]
+            elif output_format == "html":
+                content = result["html"]
+            else:
+                content = json.dumps(result, ensure_ascii=False)
+            prefix = ""
+            if output_path:
+                target = resolve_path(output_path)
+                effect_started = True
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                prefix = f"Saved: {target}\n\n"
+            return ToolResult.success(
+                prefix + content,
+                retry_safety=retry_safety,
+                side_effect_state=SideEffectState.COMMITTED if output_path else SideEffectState.NOT_APPLICABLE,
+            )
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            display = json.dumps(
+                {
+                    "error": format_failure(
+                        kind="execution_error",
+                        summary=f"Failed to fetch URL: {single_line(exc)}",
+                        next="verify the URL is reachable and network is available, then retry",
+                        detail=f"Web fetch error for {url}: {exc}",
+                    ),
+                    "url": url,
+                }
+            )
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.TIMEOUT, display, retryable=True, retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(
+                ErrorCategory.TIMEOUT,
+                display,
+                retryable=True,
+                retry_safety=retry_safety,
+                side_effect_state=no_effect,
+            )
+        except Exception as exc:
+            display = json.dumps(
+                {
+                    "error": format_failure(
+                        kind="execution_error",
+                        summary=f"Failed to fetch URL: {single_line(exc)}",
+                        next="verify the URL is reachable and network is available, then retry",
+                        detail=f"Web fetch error for {url}: {exc}",
+                    ),
+                    "url": url,
+                }
+            )
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, display, retry_safety=RetrySafety.UNSAFE)
+            if isinstance(exc, (ConnectionError, httpx.RequestError)):
+                category = ErrorCategory.DEPENDENCY
+                retryable = is_retryable(exc)
+            elif isinstance(exc, PermissionError):
+                category = ErrorCategory.PERMISSION
+                retryable = False
+            else:
+                category = ErrorCategory.EXECUTION
+                retryable = False
+            return ToolResult.failure(
+                category,
+                display,
+                retryable=retryable,
+                retry_safety=retry_safety,
+                side_effect_state=no_effect,
+            )
     
     async def _fetch_with_scrapling(self, url: str, mode: str, max_chars: int, output_format: str) -> dict:
         """使用 Scrapling 获取内容"""
@@ -333,6 +454,8 @@ class WebFetchTool(Tool):
             logger.warning(f"Scrapling import error: {e}, falling back to httpx")
             return await self._fetch_with_httpx(url, max_chars, output_format)
         except Exception as e:
+            if _is_scrapling_timeout(e):
+                raise TimeoutError(str(e)) from e
             raise Exception(f"Scrapling fetch failed: {e}")
     
     async def _fetch_with_httpx(self, url: str, max_chars: int, output_format: str) -> dict:

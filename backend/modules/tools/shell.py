@@ -21,6 +21,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools.execution import ErrorCategory, RetrySafety, SideEffectState, ToolResult
 from backend.modules.tools._path_resolver import resolve_path
 from backend.modules.tools.monitoring import (
     MONITOR_PARAMETER_SCHEMA,
@@ -504,6 +505,82 @@ class ExecTool(Tool):
                 next="check the command and environment, then retry",
                 detail=detail,
             )
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        command = kwargs.get("command", "")
+        working_dir = kwargs.get("working_dir")
+        requested_timeout = kwargs.get("timeout")
+        no_effect = {"retry_safety": RetrySafety.UNSAFE, "side_effect_state": SideEffectState.NOT_ATTEMPTED}
+        if not command:
+            return ToolResult.failure(ErrorCategory.VALIDATION, "Error: Command parameter is required", **no_effect)
+        try:
+            monitor = parse_monitor_config(kwargs.get("monitor"))
+        except ValueError as exc:
+            return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: {exc}", **no_effect)
+        timeout = self.timeout
+        if requested_timeout is not None:
+            try:
+                timeout = int(requested_timeout)
+            except (TypeError, ValueError):
+                return ToolResult.failure(ErrorCategory.VALIDATION, "Error: timeout must be an integer", **no_effect)
+            if timeout <= 0:
+                return ToolResult.failure(ErrorCategory.VALIDATION, "Error: timeout must be greater than 0", **no_effect)
+        if monitor is None:
+            monitor = build_default_monitor_config(tool_name=self.name, timeout_sec=timeout, command=command)
+        if working_dir:
+            try:
+                cwd = (self.workspace / working_dir).resolve()
+                if not str(cwd).startswith(str(self.workspace)):
+                    return ToolResult.failure(ErrorCategory.PERMISSION, f"Error: Working directory outside workspace: {working_dir}", **no_effect)
+            except Exception as exc:
+                return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: Invalid working directory: {exc}", **no_effect)
+        else:
+            cwd = self.workspace
+        guard_error = self._guard_command(command, str(cwd))
+        if guard_error:
+            return ToolResult.failure(ErrorCategory.PERMISSION, guard_error, **no_effect)
+        try:
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(cwd),
+                env=self._build_subprocess_env(),
+            )
+        except PermissionError as exc:
+            return ToolResult.failure(ErrorCategory.PERMISSION, f"Error: Permission denied: {exc}", **no_effect)
+        except (NotImplementedError, OSError) as exc:
+            return ToolResult.failure(ErrorCategory.EXECUTION, f"Error: Failed to create subprocess: {exc}", **no_effect)
+        try:
+            stdout, stderr = await run_with_monitoring(
+                self._collect_process_output(process=process, timeout=timeout, stdout_preview_lines=[], stderr_preview_lines=[]),
+                monitor,
+                details_provider=lambda: None,
+            )
+        except asyncio.TimeoutError:
+            return ToolResult.unknown_outcome(ErrorCategory.TIMEOUT, f"Error: Command timed out after {timeout} seconds", retryable=True, retry_safety=RetrySafety.UNSAFE)
+        except Exception as exc:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.EXECUTION,
+                format_failure(kind="execution_error", summary=f"Command execution failed: {single_line(exc)}", next="check the command and environment, then retry", detail=f"执行命令时发生异常: {exc}"),
+                retry_safety=RetrySafety.UNSAFE,
+            )
+        output_parts: List[str] = []
+        if stdout:
+            output_parts.append(self._normalize_output_text(self._decode_output(stdout)))
+        if stderr:
+            decoded_stderr = self._normalize_output_text(self._decode_output(stderr))
+            if decoded_stderr.strip():
+                output_parts.append(f"STDERR:\n{decoded_stderr}")
+        if process.returncode != 0:
+            output_parts.insert(0, f"COMMAND FAILED (exit code {process.returncode})\n")
+            output_parts.append(f"\nExit code: {process.returncode}")
+        result = "\n".join(output_parts) if output_parts else "(no output)"
+        if len(result) > self.max_output_length:
+            result = result[: self.max_output_length] + f"\n... (输出已截断，还有 {len(result) - self.max_output_length} 个字符)"
+        if process.returncode != 0:
+            return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, result, retry_safety=RetrySafety.UNSAFE)
+        return ToolResult.success(result, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
 
     def _decode_output(self, output: bytes) -> str:
         """解码命令输出，自动检测字符编码

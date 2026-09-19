@@ -6,6 +6,30 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    RetrySafety,
+    SideEffectState,
+    ToolResult,
+)
+
+
+def _read_success(text: str) -> ToolResult:
+    return ToolResult.success(
+        text,
+        retry_safety=RetrySafety.SAFE,
+        side_effect_state=SideEffectState.NOT_APPLICABLE,
+    )
+
+
+def _read_failure(category: ErrorCategory, text: str) -> ToolResult:
+    return ToolResult.failure(
+        category,
+        text,
+        retry_safety=RetrySafety.SAFE,
+        side_effect_state=SideEffectState.NOT_APPLICABLE,
+    )
 
 
 class WorkspaceValidator:
@@ -131,6 +155,105 @@ class ReadFileTool(Tool):
         
         # 单文件模式：保持原有逻辑
         return await self._read_single_file(path_str, start_line, end_line, show_line_numbers)
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        path_str = kwargs.get("path")
+        paths_list = kwargs.get("paths")
+        start_line = kwargs.get("start_line")
+        end_line = kwargs.get("end_line")
+        show_line_numbers = kwargs.get("show_line_numbers", True)
+
+        if not path_str and not paths_list:
+            return _read_failure(ErrorCategory.VALIDATION, "Error: Either 'path' or 'paths' parameter is required")
+        if path_str and paths_list:
+            return _read_failure(ErrorCategory.VALIDATION, "Error: Provide either 'path' or 'paths', not both")
+        if paths_list:
+            if not isinstance(paths_list, list):
+                return _read_failure(ErrorCategory.VALIDATION, "Error: 'paths' must be an array of strings")
+            if not paths_list:
+                return _read_failure(ErrorCategory.VALIDATION, "Error: 'paths' array is empty")
+            if start_line is not None or end_line is not None:
+                return _read_failure(
+                    ErrorCategory.VALIDATION,
+                    "Error: Line range parameters (start_line/end_line) are not supported in batch mode",
+                )
+            return await self._read_multiple_files_outcome(paths_list, show_line_numbers)
+        return await self._read_single_file_outcome(path_str, start_line, end_line, show_line_numbers)
+
+    async def _read_single_file_outcome(
+        self,
+        path_str: str,
+        start_line: Optional[int],
+        end_line: Optional[int],
+        show_line_numbers: bool,
+    ) -> ToolResult:
+        if not path_str:
+            return _read_failure(ErrorCategory.VALIDATION, "Error: Path parameter is required")
+        try:
+            if self.skills_loader:
+                check_path = Path(path_str)
+                check_path = (
+                    (self.validator.workspace / check_path).resolve()
+                    if not check_path.is_absolute()
+                    else check_path.resolve()
+                )
+                if check_path.name == "SKILL.md":
+                    skill = self.skills_loader.get_skill(check_path.parent.name)
+                    if skill and not skill.enabled:
+                        return _read_failure(
+                            ErrorCategory.PERMISSION,
+                            f"Error: Skill '{check_path.parent.name}' is disabled. Enable it first.",
+                        )
+            file_path = self.validator.validate_path(path_str)
+            if not file_path.exists():
+                return _read_failure(
+                    ErrorCategory.VALIDATION,
+                    f"Error: File not found: {path_str}. Next: run list_dir to see existing files.",
+                )
+            if not file_path.is_file():
+                return _read_failure(ErrorCategory.VALIDATION, f"Error: Not a file: {path_str}")
+            content = self._read_text_content(file_path, path_str)
+            lines = content.splitlines()
+            total = len(lines)
+            start = max(1, int(start_line)) if start_line is not None else 1
+            end = min(total, int(end_line)) if end_line is not None else total
+            if start > total:
+                return _read_failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) exceeds total lines ({total})")
+            if start > end:
+                return _read_failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) > end_line ({end})")
+            if show_line_numbers:
+                width = len(str(end))
+                output_lines = [f"{start + i:>{width}}| {line}" for i, line in enumerate(lines[start - 1:end])]
+            else:
+                output_lines = lines[start - 1:end]
+            header = f"[File: {path_str} | Lines: {total}"
+            if start != 1 or end != total:
+                header += f" | Showing: {start}-{end}"
+            return _read_success(header + "]\n" + "\n".join(output_lines))
+        except PermissionError as exc:
+            return _read_failure(ErrorCategory.PERMISSION, f"Error: {exc}")
+        except ValueError as exc:
+            return _read_failure(ErrorCategory.VALIDATION, f"Error: {exc}")
+        except Exception as exc:
+            return _read_failure(ErrorCategory.EXECUTION, f"Error reading file: {exc}")
+
+    async def _read_multiple_files_outcome(self, paths_list: List[str], show_line_numbers: bool) -> ToolResult:
+        rendered: List[str] = []
+        failures: List[ErrorCategory] = []
+        for path_str in paths_list:
+            item = await self._read_single_file_outcome(path_str, None, None, show_line_numbers)
+            rendered.append(item.display_text)
+            if item.state is not ExecutionState.SUCCEEDED:
+                failures.append(item.error_category or ErrorCategory.EXECUTION)
+        summary = (
+            f"\n{'=' * 60}\n[Batch Read Summary: {len(paths_list) - len(failures)} succeeded, "
+            f"{len(failures)} failed]\n{'=' * 60}"
+        )
+        display_text = "\n\n".join(rendered) + summary
+        if not failures:
+            return _read_success(display_text)
+        category = ErrorCategory.PERMISSION if ErrorCategory.PERMISSION in failures else failures[0]
+        return _read_failure(category, display_text)
 
     async def _read_single_file(
         self, 
@@ -374,6 +497,74 @@ class WriteFileTool(Tool):
             logger.error(f"Unexpected error writing file '{path_str}': {ex}")
             return f"Error writing file: {str(ex)}"
 
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        path_str = kwargs.get("path", "")
+        content = kwargs.get("content", "")
+        mode = kwargs.get("mode", "overwrite")
+        if not path_str:
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                "Error: Path parameter is required",
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+        effect_started = False
+        try:
+            file_path = self.validator.validate_path(path_str)
+            # Existing-file append first reads the current content.  That is
+            # preparation, not mutation; a read/permission failure here is a
+            # definite pre-effect failure.
+            existing = None
+            if mode == "append" and file_path.exists():
+                existing = file_path.read_text(encoding="utf-8")
+            effect_started = True
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            if existing is not None:
+                file_path.write_text(existing + content, encoding="utf-8")
+                display = f"Appended {len(content)} chars to {path_str} (total: {len(existing) + len(content)})"
+            elif mode == "append":
+                file_path.write_text(content, encoding="utf-8")
+                display = f"Created {path_str} with {len(content)} chars (file was new)"
+            else:
+                file_path.write_text(content, encoding="utf-8")
+                display = f"Wrote {len(content)} chars to {path_str}"
+            return ToolResult.success(
+                display,
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.COMMITTED,
+            )
+        except PermissionError as exc:
+            if not effect_started:
+                return ToolResult.failure(
+                    ErrorCategory.PERMISSION,
+                    f"Error: {exc}",
+                    retry_safety=RetrySafety.UNSAFE,
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: {exc}", retry_safety=RetrySafety.UNSAFE)
+        except ValueError as exc:
+            if not effect_started:
+                return ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    f"Error: {exc}",
+                    retry_safety=RetrySafety.UNSAFE,
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: {exc}", retry_safety=RetrySafety.UNSAFE)
+        except Exception as exc:
+            if effect_started:
+                return ToolResult.unknown_outcome(
+                    ErrorCategory.EXECUTION,
+                    f"Error writing file: {exc}",
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            return ToolResult.failure(
+                ErrorCategory.EXECUTION,
+                f"Error writing file: {exc}",
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+
 
 class EditFileTool(Tool):
     """编辑文件工具 - 支持文本替换和按行号编辑"""
@@ -462,6 +653,82 @@ class EditFileTool(Tool):
         except Exception as ex:
             logger.error(f"Unexpected error editing file '{path_str}': {ex}")
             return f"Error editing file: {str(ex)}"
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        path_str = kwargs.get("path", "")
+        old_text = kwargs.get("old_text")
+        new_text = kwargs.get("new_text", "")
+        start_line = kwargs.get("start_line")
+        end_line = kwargs.get("end_line")
+        insert_mode = kwargs.get("insert", False)
+        if not path_str:
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                "Error: Path parameter is required",
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+        effect_started = False
+        try:
+            file_path = self.validator.validate_path(path_str)
+            if not file_path.exists():
+                return ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    f"Error: File not found: {path_str}. Next: run list_dir to see existing files.",
+                    retry_safety=RetrySafety.UNSAFE,
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            content = file_path.read_text(encoding="utf-8")
+            if start_line is None and old_text is None:
+                return ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    "Error: Provide 'old_text' (text mode) or 'start_line' (line mode)",
+                    retry_safety=RetrySafety.UNSAFE,
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            if start_line is None:
+                if not old_text:
+                    return ToolResult.failure(ErrorCategory.VALIDATION, "Error: old_text is required for text replace mode", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                if old_text not in content:
+                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: old_text not found in file ({len(content.splitlines())} lines, {len(content)} chars). Use read_file to check exact content.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                count = content.count(old_text)
+                if count > 1:
+                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Warning: old_text found {count} times. Add more context to make it unique.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                effect_started = True
+                file_path.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
+                display = f"Edited {path_str} (replaced 1 occurrence)"
+            else:
+                lines = content.splitlines(keepends=True)
+                total = len(lines)
+                start = int(start_line)
+                end = int(end_line) if end_line is not None else start
+                if start < 1 or start > total + 1:
+                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) out of range (1-{total})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                if not insert_mode and end < start:
+                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: end_line ({end}) < start_line ({start})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                if not insert_mode and end > total:
+                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: end_line ({end}) exceeds total lines ({total})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                new_lines = new_text.splitlines(keepends=True) if new_text else []
+                if new_lines and not new_lines[-1].endswith("\n"):
+                    new_lines[-1] += "\n"
+                if insert_mode:
+                    result = lines[: start - 1] + new_lines + lines[start - 1 :]
+                    display = f"Inserted {len(new_lines)} lines before line {start} in {path_str}"
+                else:
+                    result = lines[: start - 1] + new_lines + lines[end:]
+                    action = f"Deleted lines {start}-{end}" if not new_text else f"Replaced lines {start}-{end} with {len(new_lines)} lines"
+                    display = f"Edited {path_str}: {action}"
+                effect_started = True
+                file_path.write_text("".join(result), encoding="utf-8")
+            return ToolResult.success(display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except (ValueError, PermissionError) as exc:
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: {exc}", retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(ErrorCategory.PERMISSION if isinstance(exc, PermissionError) else ErrorCategory.VALIDATION, f"Error: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        except Exception as exc:
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error editing file: {exc}", retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(ErrorCategory.EXECUTION, f"Error editing file: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
     def _edit_by_text(self, file_path: Path, path_str: str, content: str,
                       old_text: str, new_text: str) -> str:
@@ -579,3 +846,24 @@ class ListDirTool(Tool):
         except Exception as e:
             logger.error(f"Unexpected error listing directory '{path_str}': {e}")
             raise
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        path_str = kwargs.get("path", ".")
+        try:
+            dir_path = self.validator.validate_path(path_str)
+            if not dir_path.exists():
+                return _read_failure(ErrorCategory.VALIDATION, f"Directory not found: {path_str}")
+            if not dir_path.is_dir():
+                return _read_failure(ErrorCategory.VALIDATION, f"Not a directory: {path_str}")
+            items = []
+            for item in sorted(dir_path.iterdir()):
+                item_type = "dir" if item.is_dir() else "file"
+                size = item.stat().st_size if item.is_file() else 0
+                items.append(f"{item_type:4} {item.name:40} {size:>10} bytes")
+            return _read_success(f"Contents of {path_str}:\n" + "\n".join(items))
+        except PermissionError as exc:
+            return _read_failure(ErrorCategory.PERMISSION, f"Failed to list directory '{path_str}': {exc}")
+        except ValueError as exc:
+            return _read_failure(ErrorCategory.VALIDATION, f"Failed to list directory '{path_str}': {exc}")
+        except Exception as exc:
+            return _read_failure(ErrorCategory.EXECUTION, f"Unexpected error listing directory '{path_str}': {exc}")

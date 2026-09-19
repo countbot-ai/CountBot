@@ -16,6 +16,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools.execution import ErrorCategory, RetrySafety, SideEffectState, ToolResult
 from backend.modules.tools._path_resolver import resolve_path
 
 
@@ -141,6 +142,100 @@ class ScreenshotTool(Tool):
             return await self._capture_webpage(**kwargs)
         else:
             return f"Error: Invalid mode '{mode}'. Must be 'desktop' or 'webpage'"
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        mode = kwargs.get("mode", "")
+        if not mode:
+            return ToolResult.failure(ErrorCategory.VALIDATION, "Error: mode parameter is required (desktop or webpage)", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        if mode == "desktop":
+            return await self._capture_desktop_outcome(**kwargs)
+        if mode == "webpage":
+            return await self._capture_webpage_outcome(**kwargs)
+        return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: Invalid mode '{mode}'. Must be 'desktop' or 'webpage'", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+
+    async def _capture_desktop_outcome(self, **kwargs: Any) -> ToolResult:
+        try:
+            import mss
+            import mss.tools
+        except ImportError:
+            return ToolResult.failure(ErrorCategory.DEPENDENCY, "Error: mss library not installed. Install it with: pip install mss", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        monitor_num = kwargs.get("monitor", 0)
+        output_path = kwargs.get("output_path")
+        effect_started = False
+        try:
+            with mss.mss() as sct:
+                monitors = sct.monitors
+                if monitor_num < 0 or monitor_num >= len(monitors):
+                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: Invalid monitor number {monitor_num}. Available monitors: 0-{len(monitors) - 1}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                monitor = monitors[monitor_num]
+                screenshot = sct.grab(monitor)
+                if not output_path:
+                    from datetime import datetime
+                    output_path = f"{self.default_output_dir}/desktop_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                full_path = resolve_path(output_path)
+                effect_started = True
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                mss.tools.to_png(screenshot.rgb, screenshot.size, output=str(full_path))
+                file_size = full_path.stat().st_size
+                display = f"Desktop screenshot captured successfully!\nPath: {full_path}\nSize: {screenshot.width}x{screenshot.height}\nFile size: {file_size:,} bytes\nMonitor: {monitor_num}"
+                return ToolResult.success(display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except Exception as exc:
+            display = format_failure(kind="execution_error", summary=f"Failed to capture desktop screenshot: {single_line(exc)}", next="check the screen/monitor is available, then retry", detail=f"桌面截图失败: {exc}")
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, display, retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(ErrorCategory.EXECUTION, display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+
+    async def _capture_webpage_outcome(self, **kwargs: Any) -> ToolResult:
+        try:
+            from playwright.async_api import (
+                TimeoutError as PlaywrightTimeoutError,
+                async_playwright,
+            )
+        except ImportError:
+            return ToolResult.failure(ErrorCategory.DEPENDENCY, "Error: playwright library not installed. Install it with: pip install playwright && playwright install chromium", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        url = kwargs.get("url", "")
+        if not url:
+            return ToolResult.failure(ErrorCategory.VALIDATION, "Error: url parameter is required for webpage mode", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        if not url.startswith(("http://", "https://")):
+            return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: Invalid URL '{url}'. Must start with http:// or https://", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        output_path = kwargs.get("output_path")
+        full_page = kwargs.get("full_page", False)
+        viewport_width = kwargs.get("viewport_width", 1280)
+        viewport_height = kwargs.get("viewport_height", 720)
+        wait_time = kwargs.get("wait_time", 1000)
+        timeout = kwargs.get("timeout", 30000)
+        effect_started = False
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(viewport={"width": viewport_width, "height": viewport_height})
+                page = await context.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=timeout)
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time / 1000)
+                if not output_path:
+                    from datetime import datetime
+                    from urllib.parse import urlparse
+                    output_path = f"{self.default_output_dir}/webpage_{urlparse(url).netloc.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                full_path = resolve_path(output_path)
+                effect_started = True
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                await page.screenshot(path=str(full_path), full_page=full_page)
+                page_title = await page.title()
+                await browser.close()
+                file_size = full_path.stat().st_size
+                display = f"Webpage screenshot captured successfully!\nURL: {url}\nTitle: {page_title}\nPath: {full_path}\nViewport: {viewport_width}x{viewport_height}\nFull page: {full_page}\nFile size: {file_size:,} bytes"
+                return ToolResult.success(display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except (asyncio.TimeoutError, PlaywrightTimeoutError) as exc:
+            display = format_failure(kind="execution_error", summary=f"Failed to capture webpage screenshot: {single_line(exc)}", next="verify the URL is reachable and playwright browsers are installed, then retry", detail=f"网页截图超时: {exc}")
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.TIMEOUT, display, retryable=True, retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(ErrorCategory.TIMEOUT, display, retryable=True, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        except Exception as exc:
+            display = format_failure(kind="execution_error", summary=f"Failed to capture webpage screenshot: {single_line(exc)}", next="verify the URL is reachable and playwright browsers are installed, then retry", detail=f"网页截图失败: {exc}")
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, display, retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(ErrorCategory.EXECUTION, display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
     async def _capture_desktop(self, **kwargs: Any) -> str:
         """

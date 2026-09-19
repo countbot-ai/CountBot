@@ -13,6 +13,7 @@ from datetime import datetime
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import ErrorCategory, RetrySafety, SideEffectState, ToolResult
 from backend.modules.tools.filesystem import WorkspaceValidator
 
 
@@ -173,6 +174,47 @@ class FileSearchTool(Tool):
             logger.error(error_msg)
             return error_msg
 
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        search_path = kwargs.get("path", "")
+        pattern = kwargs.get("pattern", "*")
+        file_type = kwargs.get("type", "all")
+        max_depth = kwargs.get("max_depth", -1)
+        limit = kwargs.get("limit", self.default_max_results)
+        metadata = {
+            "retry_safety": RetrySafety.SAFE,
+            "side_effect_state": SideEffectState.NOT_APPLICABLE,
+        }
+        if not search_path:
+            return ToolResult.failure(ErrorCategory.VALIDATION, "Error: path parameter is required", **metadata)
+        try:
+            search_dir = self.validator.validate_path(search_path)
+            if not search_dir.exists():
+                return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: Path does not exist: {search_path}", **metadata)
+            if not search_dir.is_dir():
+                return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: Path is not a directory: {search_path}", **metadata)
+            results = []
+            total_found = 0
+            for result in self._search_files(search_dir, pattern, file_type, max_depth, 0):
+                total_found += 1
+                if len(results) < limit:
+                    results.append(result)
+            if not results:
+                return ToolResult.success(f"No files found matching pattern '{pattern}' in: {search_path}", **metadata)
+            lines = [f"Found {len(results)} file(s) matching '{pattern}' in: {search_path}"]
+            if total_found > len(results):
+                lines.append(f"(Showing first {len(results)} of {total_found} results. Use 'limit' parameter to see more)")
+            lines.append("")
+            for item in results:
+                size = self._format_size(item["size"]) if item["size"] >= 0 else ""
+                lines.append(f"[{item['type']}] {item['path']}" + (f" ({size})" if size else ""))
+            return ToolResult.success("\n".join(lines), **metadata)
+        except PermissionError as exc:
+            return ToolResult.failure(ErrorCategory.PERMISSION, f"Error: Permission denied accessing: {search_path}", **metadata)
+        except ValueError as exc:
+            return ToolResult.failure(ErrorCategory.VALIDATION, f"Error during file search: {exc}", **metadata)
+        except Exception as exc:
+            return ToolResult.failure(ErrorCategory.EXECUTION, f"Error during file search: {exc}", **metadata)
+
     def _search_files(
         self,
         directory: Path,
@@ -246,11 +288,18 @@ class FileSearchTool(Tool):
                         )
 
                 except (PermissionError, OSError) as e:
-                    # 跳过无权限访问的文件/目录
+                    # Root traversal defines the requested operation boundary.  It
+                    # cannot be silently represented as an empty successful search.
+                    if current_depth == 0:
+                        raise
+                    # Nested inaccessible entries are not authoritative for the
+                    # requested root traversal and retain legacy skip behavior.
                     logger.debug(f"Skipping {item}: {e}")
                     continue
 
         except (PermissionError, OSError) as e:
+            if current_depth == 0:
+                raise
             logger.debug(f"Cannot access directory {directory}: {e}")
 
     def _format_size(self, size_bytes: int) -> str:
