@@ -14,7 +14,7 @@ import json
 import time
 import uuid
 from collections import OrderedDict
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
 
 class ExecutionState(str, Enum):
@@ -280,6 +280,25 @@ class ToolExecutionOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolExecutionInProgress:
+    """Read-only admission result for a matching operation already in flight.
+
+    This is deliberately not a physical execution attempt or a terminal
+    ``ToolExecutionOutcome``.  It lets a duplicate caller observe the real
+    active attempt without creating, changing, or finalizing an attempt.
+    """
+
+    operation_id: str
+    active_attempt_id: str
+    tool_name: str
+    correlation_id: Optional[str]
+    display_text: str
+
+
+CanonicalToolExecutionResult = Union[ToolExecutionOutcome, ToolExecutionInProgress]
+
+
+@dataclass(frozen=True, slots=True)
 class ToolExecutionAttempt:
     """供诊断和 deterministic test 使用的只读生命周期视图。"""
 
@@ -367,6 +386,26 @@ class OperationLedger:
             )
         latest = self._attempts[attempt_ids[-1]]
         return latest.outcome
+
+    def active_attempt_for_operation(
+        self,
+        request: ToolExecutionRequest,
+    ) -> Optional[ToolExecutionAttempt]:
+        """Return the matching non-terminal attempt without mutating the ledger."""
+
+        attempt_ids = self._operation_attempt_ids.get(request.operation_id, [])
+        if not attempt_ids:
+            return None
+        bound_request = self._attempts[attempt_ids[0]].request
+        if not bound_request.matches_logical_invocation(request):
+            raise OperationIdentityCollisionError(
+                "operation_id is already bound to a different Tool invocation"
+            )
+        for attempt_id in reversed(attempt_ids):
+            attempt = self._attempts[attempt_id]
+            if attempt.state not in _TERMINAL_STATES:
+                return self.get_attempt(attempt_id)
+        return None
 
     def start(self, attempt_id: str) -> ToolExecutionAttempt:
         attempt = self._attempts[attempt_id]

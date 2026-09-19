@@ -26,10 +26,13 @@ from backend.modules.tools._failure import (
 )
 from backend.modules.tools.execution import (
     ErrorCategory,
+    AttemptTransitionError,
+    CanonicalToolExecutionResult,
     OperationLedger,
     OperationIdentityCollisionError,
     ExecutionState,
     SideEffectState,
+    ToolExecutionInProgress,
     ToolExecutionOutcome,
     ToolExecutionRequest,
     ToolResult,
@@ -352,6 +355,21 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
         )
 
     @staticmethod
+    def _in_progress_result(
+        request: ToolExecutionRequest,
+        active_attempt_id: str,
+    ) -> ToolExecutionInProgress:
+        """Describe a matching active operation without creating an attempt."""
+
+        return ToolExecutionInProgress(
+            operation_id=request.operation_id,
+            active_attempt_id=active_attempt_id,
+            tool_name=request.tool_name,
+            correlation_id=request.correlation_id,
+            display_text="Tool operation is already in progress.",
+        )
+
+    @staticmethod
     def render_outcome(outcome: ToolExecutionOutcome) -> str:
         """为临时 text-only consumer 渲染 canonical outcome。
 
@@ -372,7 +390,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
         retry_ceiling: int = 0,
         retry_authorized: bool = False,
         proven_safe_idempotency: bool = False,
-    ) -> ToolExecutionOutcome:
+    ) -> CanonicalToolExecutionResult:
         """为一次 canonical Tool attempt 生成 authoritative outcome。
 
 迁移期间，现有 caller 继续使用 ``execute``。新 caller 必须使用本方法，并检查
@@ -396,6 +414,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
         )
         try:
             replay = self._operation_ledger.completed_outcome(request)
+            active_attempt = self._operation_ledger.active_attempt_for_operation(request)
         except OperationIdentityCollisionError:
             return self._identity_collision_outcome(request)
         if replay is not None:
@@ -403,11 +422,21 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
                 return replay
             if replay.state is ExecutionState.UNKNOWN_OUTCOME and not proven_safe_idempotency:
                 return replay
+        if active_attempt is not None:
+            return self._in_progress_result(request, active_attempt.attempt_id)
 
         try:
             attempt = self._operation_ledger.create_attempt(request)
         except OperationIdentityCollisionError:
             return self._identity_collision_outcome(request)
+        except AttemptTransitionError:
+            # ``create_attempt`` remains the ledger authority.  A matching
+            # active attempt discovered after admission is an overlapping
+            # duplicate, not a new physical attempt or an unknown outcome.
+            active_attempt = self._operation_ledger.active_attempt_for_operation(request)
+            if active_attempt is not None:
+                return self._in_progress_result(request, active_attempt.attempt_id)
+            raise
         started_at = time.monotonic()
 
         def finalize(result: ToolResult) -> ToolExecutionOutcome:
@@ -500,7 +529,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
                 "Tool execution was cancelled after the body started.",
             )
         except Exception as exc:
-            result = ToolResult.failure(
+            result = ToolResult.unknown_outcome(
                 classify_exception(exc),
                 f"Tool '{tool_name}' failed: {single_line(exc)}",
                 retryable=is_retryable(exc),
@@ -510,7 +539,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
 
         if not isinstance(result, ToolResult):
             return finalize(
-                ToolResult.failure(
+                ToolResult.unknown_outcome(
                     ErrorCategory.RESULT_CONTRACT,
                     f"Tool '{tool_name}' did not return an explicit ToolResult.",
                 )
