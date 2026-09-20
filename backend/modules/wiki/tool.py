@@ -10,6 +10,7 @@ from loguru import logger
 
 from backend.modules.tools.base import Tool
 from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools.execution import ErrorCategory, RetrySafety, SideEffectState, ToolResult
 from backend.modules.tools._path_resolver import resolve_path
 from .service import WikiService
 
@@ -226,6 +227,167 @@ class WikiTool(Tool):
                 next="check the wiki entry and arguments, then retry",
                 detail=detail,
             )
+
+    async def execute_outcome(
+        self,
+        action: str,
+        query: Optional[str] = None,
+        slug: Optional[str] = None,
+        slugs: Optional[list] = None,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+        tags: Optional[list] = None,
+        tag: Optional[str] = None,
+        top_k: int = 10,
+        **kwargs,
+    ) -> ToolResult:
+        try:
+            self._sync_wiki_dir()
+        except Exception as exc:
+            return self._wiki_failure(
+                ErrorCategory.EXECUTION,
+                f"Wiki workspace synchronization failed: {single_line(exc)}",
+                RetrySafety.SAFE,
+            )
+        read_actions = {"search", "get", "list", "stats", "ask"}
+        if action in read_actions:
+            return await self._read_outcome(action, query, slug, tag, top_k)
+        if action == "batch_get":
+            if not slugs:
+                return self._wiki_failure(ErrorCategory.VALIDATION, "Error: batch_get action requires 'slugs' parameter", RetrySafety.SAFE)
+            articles = self._service.batch_get_documents(slugs)
+            if not any(articles):
+                return self._wiki_failure(ErrorCategory.VALIDATION, "No wiki entries found for the provided slugs", RetrySafety.SAFE)
+            return self._wiki_success(self._handle_batch_get(slugs), RetrySafety.SAFE)
+        if action == "create":
+            return self._create_outcome(title, content, tags)
+        if action == "update":
+            return self._update_outcome(slug, title, content, tags)
+        if action == "delete":
+            return self._delete_outcome(slug)
+        if action == "sync":
+            return self._sync_outcome()
+        return self._wiki_failure(
+            ErrorCategory.VALIDATION,
+            f"Unknown action: {action}. Available: search, ask, get, batch_get, list, stats, create, update, delete, sync",
+            RetrySafety.SAFE,
+        )
+
+    @staticmethod
+    def _wiki_success(text: str, retry_safety: RetrySafety) -> ToolResult:
+        return ToolResult.success(text, retry_safety=retry_safety, side_effect_state=SideEffectState.NOT_APPLICABLE if retry_safety is RetrySafety.SAFE else SideEffectState.COMMITTED)
+
+    @staticmethod
+    def _wiki_failure(category: ErrorCategory, text: str, retry_safety: RetrySafety, *, side_effect_state: SideEffectState = SideEffectState.NOT_APPLICABLE) -> ToolResult:
+        return ToolResult.failure(category, text, retry_safety=retry_safety, side_effect_state=side_effect_state)
+
+    async def _read_outcome(self, action: str, query: Optional[str], slug: Optional[str], tag: Optional[str], top_k: int) -> ToolResult:
+        try:
+            if action in {"search", "ask"} and not query:
+                return self._wiki_failure(ErrorCategory.VALIDATION, f"Error: {action} action requires 'query' parameter", RetrySafety.SAFE)
+            if action == "get":
+                if not slug:
+                    return self._wiki_failure(ErrorCategory.VALIDATION, "Error: get action requires 'slug' parameter", RetrySafety.SAFE)
+                if not self._service.get_document(slug):
+                    return self._wiki_failure(ErrorCategory.VALIDATION, f"Wiki entry not found: {slug}", RetrySafety.SAFE)
+                return self._wiki_success(self._handle_get(slug), RetrySafety.SAFE)
+            if action == "search":
+                return self._wiki_success(self._handle_search(query, top_k), RetrySafety.SAFE)
+            if action == "ask":
+                return self._wiki_success(await self._handle_ask(query), RetrySafety.SAFE)
+            if action == "list":
+                return self._wiki_success(self._handle_list(tag), RetrySafety.SAFE)
+            return self._wiki_success(self._handle_stats(), RetrySafety.SAFE)
+        except Exception as exc:
+            return self._wiki_failure(ErrorCategory.EXECUTION, f"Wiki {action} failed: {single_line(exc)}", RetrySafety.SAFE)
+
+    def _create_outcome(self, title: Optional[str], content: Optional[str], tags: Optional[list]) -> ToolResult:
+        if not title:
+            return self._wiki_failure(ErrorCategory.VALIDATION, "Error: create action requires 'title' parameter", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        if not content:
+            return self._wiki_failure(ErrorCategory.VALIDATION, "Error: create action requires 'content' parameter", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        safe_slug = re.sub(r"[\s_-]+", "-", re.sub(r"[^\w\s一-鿿-]", "", title.lower().strip()))[:100] or "untitled"
+        md_file = self._service._concepts_dir / f"{safe_slug}.md"
+        if md_file.exists():
+            return self._wiki_failure(ErrorCategory.VALIDATION, f"Error: Wiki entry '{safe_slug}' already exists. Use 'update' action to modify it.", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        effect_started = False
+        try:
+            import frontmatter
+            from datetime import datetime
+            post = frontmatter.Post(content)
+            now = datetime.now().isoformat()
+            post.metadata.update({"title": title, "tags": tags or [], "summary": content[:200].strip(), "created": now, "updated": now})
+            effect_started = True
+            md_file.write_text(frontmatter.dumps(post, encoding="utf-8"), encoding="utf-8")
+            self._service.add_document(safe_slug, title, content, tags or [])
+            if self._rag:
+                self._rag.on_document_added(safe_slug)
+            return ToolResult.success(f"✓ Created wiki entry: **{title}** (slug: {safe_slug})\nTags: {', '.join(tags or [])}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except Exception as exc:
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: Failed to create wiki entry: {exc}", retry_safety=RetrySafety.UNSAFE)
+            return self._wiki_failure(ErrorCategory.EXECUTION, f"Error: Failed to create wiki entry: {exc}", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+
+    def _update_outcome(self, slug: Optional[str], title: Optional[str], content: Optional[str], tags: Optional[list]) -> ToolResult:
+        if not slug:
+            return self._wiki_failure(ErrorCategory.VALIDATION, "Error: update action requires 'slug' parameter", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        md_file = self._service._concepts_dir / f"{slug}.md"
+        if not md_file.exists():
+            return self._wiki_failure(ErrorCategory.VALIDATION, f"Error: Wiki entry '{slug}' not found. Use 'create' action to create it.", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        effect_started = False
+        try:
+            import frontmatter
+            from datetime import datetime
+            post = frontmatter.load(str(md_file))
+            fields = []
+            if title:
+                post.metadata["title"] = title; fields.append("title")
+            if content is not None:
+                post.content = content; fields.append("content")
+            if tags is not None:
+                post.metadata["tags"] = tags; fields.append("tags")
+            post.metadata["updated"] = datetime.now().isoformat()
+            effect_started = True
+            md_file.write_text(frontmatter.dumps(post, encoding="utf-8"), encoding="utf-8")
+            self._service.add_document(slug, post.metadata.get("title", slug), post.content, post.metadata.get("tags", []))
+            if self._rag:
+                self._rag.on_document_added(slug)
+            return ToolResult.success(f"✓ Updated wiki entry: **{post.metadata.get('title', slug)}** (slug: {slug})\nUpdated fields: {', '.join(fields)}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except Exception as exc:
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: Failed to update wiki entry: {exc}", retry_safety=RetrySafety.UNSAFE)
+            return self._wiki_failure(ErrorCategory.EXECUTION, f"Error: Failed to update wiki entry: {exc}", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+
+    def _delete_outcome(self, slug: Optional[str]) -> ToolResult:
+        if not slug:
+            return self._wiki_failure(ErrorCategory.VALIDATION, "Error: delete action requires 'slug' parameter", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        md_file = self._service._concepts_dir / f"{slug}.md"
+        if not md_file.exists():
+            return self._wiki_failure(ErrorCategory.VALIDATION, f"Error: Wiki entry '{slug}' not found", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        effect_started = False
+        try:
+            import frontmatter
+            title = frontmatter.load(str(md_file)).metadata.get("title", slug)
+            effect_started = True
+            md_file.unlink()
+            self._service.remove_document(slug)
+            if self._rag:
+                self._rag.on_document_removed(slug)
+            return ToolResult.success(f"✓ Deleted wiki entry: **{title}** (slug: {slug})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except Exception as exc:
+            if effect_started:
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: Failed to delete wiki entry: {exc}", retry_safety=RetrySafety.UNSAFE)
+            return self._wiki_failure(ErrorCategory.EXECUTION, f"Error: Failed to delete wiki entry: {exc}", RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+
+    def _sync_outcome(self) -> ToolResult:
+        try:
+            stats = self._service.force_sync()
+            if self._rag:
+                rag_stats = self._rag.sync()
+                stats = {key: stats[key] + rag_stats[key] for key in ("added", "updated", "deleted")}
+            return ToolResult.success(f"✓ Index synchronized:\n• Added: {stats['added']} new entries\n• Updated: {stats['updated']} modified entries\n• Deleted: {stats['deleted']} removed entries", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+        except Exception as exc:
+            return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: Failed to sync index: {exc}", retry_safety=RetrySafety.UNSAFE)
 
     def _handle_search(self, query: Optional[str], top_k: int) -> str:
         """处理搜索请求（优化版：使用search_with_metadata减少文件读取）"""
