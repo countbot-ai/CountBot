@@ -7,6 +7,12 @@
 from typing import Any, Dict
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    RetrySafety,
+    SideEffectState,
+    ToolResult,
+)
 
 
 class XiaozhiMessageTool(Tool):
@@ -34,10 +40,35 @@ class XiaozhiMessageTool(Tool):
                     "description": "Alias of `text`."
                 }
             },
-            "required": ["text"],
+            "oneOf": [
+                {"required": ["text"]},
+                {"required": ["message"]},
+            ],
             "additionalProperties": False
         }
 
-    async def execute(self, message: str = "", **kwargs) -> Any:
+    @staticmethod
+    def _normalized_message(message: str = "", **kwargs: Any) -> str:
+        return str(message or kwargs.get("text", "") or "").strip()
+
+    async def execute(self, message: str = "", **kwargs: Any) -> Any:
         # 实际响应由 XiaozhiChannel._handle_tool_call 通过 Future 机制处理
-        return {"status": "received", "user_message": message}
+        normalized = self._normalized_message(message, **kwargs)
+        return {"status": "received", "user_message": normalized}
+
+    async def execute_outcome(self, message: str = "", **kwargs: Any) -> ToolResult:
+        """Acknowledge producer input only; channel execution remains a PR5 concern."""
+
+        normalized = self._normalized_message(message, **kwargs)
+        if not normalized:
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                "Error: text or message is required.",
+                retry_safety=RetrySafety.SAFE,
+                side_effect_state=SideEffectState.NOT_APPLICABLE,
+            )
+        return ToolResult.success(
+            normalized,
+            retry_safety=RetrySafety.SAFE,
+            side_effect_state=SideEffectState.NOT_APPLICABLE,
+        )

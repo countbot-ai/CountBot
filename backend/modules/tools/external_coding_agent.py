@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -9,6 +10,14 @@ from typing import Any, Dict, List, Optional
 from backend.modules.external_agents.base import ExternalAgentRequest
 from backend.modules.external_agents.registry import ExternalAgentRegistry
 from backend.modules.tools.base import Tool
+from backend.modules.tools._failure import classify_exception, is_retryable
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    RetrySafety,
+    SideEffectState,
+    ToolResult,
+)
 from backend.modules.tools.monitoring import (
     MONITOR_PARAMETER_SCHEMA,
     build_default_monitor_config,
@@ -111,6 +120,9 @@ class ExternalCodingAgentTool(Tool):
         }
 
     async def execute(self, **kwargs: Any) -> str:
+        return (await self.execute_outcome(**kwargs)).display_text
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
         task = str(kwargs.get("task", "")).strip()
         profile_name = kwargs.get("profile")
         mode = str(kwargs.get("mode", "run") or "run")
@@ -118,19 +130,37 @@ class ExternalCodingAgentTool(Tool):
         context_files = list(kwargs.get("context_files") or [])
         extra_instructions = str(kwargs.get("extra_instructions", "") or "").strip()
         timeout = kwargs.get("timeout")
+        not_attempted = {
+            "retry_safety": RetrySafety.UNSAFE,
+            "side_effect_state": SideEffectState.NOT_ATTEMPTED,
+        }
 
         if not task:
-            return "Error: 'task' is required."
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                "Error: 'task' is required.",
+                **not_attempted,
+            )
 
         try:
             monitor = parse_monitor_config(kwargs.get("monitor"))
         except ValueError as exc:
-            return f"Error: {exc}"
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                f"Error: {exc}",
+                **not_attempted,
+            )
 
         try:
             cancel_token = self._cancel_token_context.get()
             if cancel_token is not None and getattr(cancel_token, "is_cancelled", False):
-                return "Error: external coding task cancelled."
+                return ToolResult(
+                    state=ExecutionState.CANCELLED,
+                    display_text="Error: external coding task cancelled.",
+                    error_category=ErrorCategory.CANCELLATION,
+                    retry_safety=RetrySafety.UNSAFE,
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
 
             profile = self.registry.resolve_profile(
                 str(profile_name).strip() if profile_name else None
@@ -175,10 +205,57 @@ class ExternalCodingAgentTool(Tool):
                 monitor,
             )
             if cancel_token is not None and getattr(cancel_token, "is_cancelled", False):
-                return "Error: external coding task cancelled."
-            return result.to_text()
+                return ToolResult.unknown_outcome(
+                    ErrorCategory.CANCELLATION,
+                    "Error: external coding task cancelled after the process started.",
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            display_text = result.to_text()
+            if result.timed_out:
+                return ToolResult.unknown_outcome(
+                    ErrorCategory.TIMEOUT,
+                    display_text,
+                    retryable=True,
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            if result.cancelled:
+                return ToolResult.unknown_outcome(
+                    ErrorCategory.CANCELLATION,
+                    display_text,
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            if not result.success:
+                return ToolResult.unknown_outcome(
+                    ErrorCategory.EXECUTION,
+                    display_text,
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            return ToolResult.success(
+                display_text,
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.COMMITTED,
+            )
+        except asyncio.CancelledError:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.CANCELLATION,
+                "Error: external coding task was cancelled after dispatch.",
+                retry_safety=RetrySafety.UNSAFE,
+            )
+        except ValueError as exc:
+            display_text = str(exc) if str(exc).startswith("Error:") else f"Error: {exc}"
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                display_text,
+                **not_attempted,
+            )
         except Exception as exc:
-            return str(exc) if str(exc).startswith("Error:") else f"Error: {exc}"
+            display_text = str(exc) if str(exc).startswith("Error:") else f"Error: {exc}"
+            return ToolResult.unknown_outcome(
+                classify_exception(exc),
+                display_text,
+                retryable=is_retryable(exc),
+                retry_safety=RetrySafety.UNSAFE,
+            )
 
     def _resolve_working_dir(self, working_dir: str, default_working_dir: str = "") -> Path:
         target_dir = working_dir or default_working_dir

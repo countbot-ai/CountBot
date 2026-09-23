@@ -9,6 +9,13 @@ from loguru import logger
 
 from backend.modules.config.schema import McpServerConfig
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    RetrySafety,
+    SideEffectState,
+    ToolResult,
+)
 from backend.modules.tools.registry import ToolRegistry
 
 _TRANSIENT_EXC_NAMES: frozenset[str] = frozenset((
@@ -100,32 +107,69 @@ def _normalize_schema_for_openai(schema: dict) -> dict:
     return schema
 
 
-async def _execute_with_retry(coro_factory, timeout: int, label: str) -> str:
-    for attempt in range(2):
-        try:
-            result = await asyncio.wait_for(coro_factory(), timeout=timeout)
-            return result
-        except asyncio.TimeoutError:
-            return f"({label} timed out after {timeout}s)"
-        except asyncio.CancelledError:
-            task = asyncio.current_task()
-            if task is not None and task.cancelling() > 0:
-                raise
-            return f"({label} was cancelled)"
-        except Exception as exc:
-            exc_name = type(exc).__name__
-            if exc_name == "McpError":
-                err = getattr(exc, "error", None)
-                code = getattr(err, "code", "?") if err else "?"
-                msg = getattr(err, "message", str(exc)) if err else str(exc)
-                return f"({label} failed: MCP error {code}: {msg})"
-            if _is_transient(exc):
-                if attempt == 0:
-                    await asyncio.sleep(1)
-                    continue
-                return f"({label} failed after retry: {exc_name})"
-            return f"({label} failed: {exc_name}: {exc})"
-    return f"({label} unexpected retry exhaustion)"
+def _mcp_error_text(exc: BaseException, label: str) -> str:
+    """Render an MCP exception without using the text as outcome authority."""
+
+    if type(exc).__name__ == "McpError":
+        err = getattr(exc, "error", None)
+        code = getattr(err, "code", "?") if err else "?"
+        message = getattr(err, "message", str(exc)) if err else str(exc)
+        return f"({label} failed: MCP error {code}: {message})"
+    return f"({label} failed: {type(exc).__name__}: {exc})"
+
+
+async def _execute_once(coro_factory, timeout: int):
+    """Perform exactly one MCP SDK operation invocation.
+
+    A second call to ``coro_factory`` is a new physical execution and must enter
+    the registry's canonical attempt boundary instead of being hidden here.
+    """
+
+    return await asyncio.wait_for(coro_factory(), timeout=timeout)
+
+
+def _remote_failure_result(
+    exc: BaseException,
+    *,
+    label: str,
+    retry_safety: RetrySafety,
+    side_effecting: bool,
+) -> ToolResult:
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        category = ErrorCategory.TIMEOUT
+        retryable = True
+        display = f"({label} timed out)"
+    elif isinstance(exc, asyncio.CancelledError):
+        category = ErrorCategory.CANCELLATION
+        retryable = False
+        display = f"({label} was cancelled)"
+    else:
+        category = ErrorCategory.DEPENDENCY
+        retryable = _is_transient(exc)
+        display = _mcp_error_text(exc, label)
+
+    if side_effecting:
+        return ToolResult.unknown_outcome(
+            category,
+            display,
+            retryable=retryable,
+            retry_safety=retry_safety,
+        )
+    if category is ErrorCategory.CANCELLATION:
+        return ToolResult(
+            state=ExecutionState.CANCELLED,
+            display_text=display,
+            error_category=category,
+            retry_safety=retry_safety,
+            side_effect_state=SideEffectState.NOT_APPLICABLE,
+        )
+    return ToolResult.failure(
+        category,
+        display,
+        retryable=retryable,
+        retry_safety=retry_safety,
+        side_effect_state=SideEffectState.NOT_APPLICABLE,
+    )
 
 
 class MCPToolWrapper(Tool):
@@ -151,20 +195,67 @@ class MCPToolWrapper(Tool):
         return self._parameters
 
     async def execute(self, **kwargs: Any) -> str:
-        result = await _execute_with_retry(
-            lambda: self._session.call_tool(self._original_name, arguments=kwargs),
-            self._tool_timeout,
-            "MCP tool call",
+        return (await self.execute_outcome(**kwargs)).display_text
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        try:
+            result = await _execute_once(
+                lambda: self._session.call_tool(self._original_name, arguments=kwargs),
+                self._tool_timeout,
+            )
+        except asyncio.CancelledError as exc:
+            task = asyncio.current_task()
+            if task is not None and task.cancelling() > 0:
+                raise
+            return _remote_failure_result(
+                exc,
+                label="MCP tool call",
+                retry_safety=RetrySafety.UNKNOWN,
+                side_effecting=True,
+            )
+        except Exception as exc:
+            return _remote_failure_result(
+                exc,
+                label="MCP tool call",
+                retry_safety=RetrySafety.UNKNOWN,
+                side_effecting=True,
+            )
+
+        if result is None or not hasattr(result, "content"):
+            return ToolResult.unknown_outcome(
+                ErrorCategory.RESULT_CONTRACT,
+                "(MCP tool returned a malformed result)",
+                retry_safety=RetrySafety.UNKNOWN,
+            )
+        parts = self._content_parts(result.content)
+        if bool(getattr(result, "isError", False)):
+            return ToolResult.unknown_outcome(
+                ErrorCategory.EXECUTION,
+                "\n".join(parts) if parts else "(MCP tool reported an error)",
+                retry_safety=RetrySafety.UNKNOWN,
+            )
+        if not parts:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.RESULT_CONTRACT,
+                "(MCP tool returned an empty result)",
+                retry_safety=RetrySafety.UNKNOWN,
+            )
+        output = "\n".join(parts)
+        return ToolResult.success(
+            output,
+            retry_safety=RetrySafety.UNKNOWN,
+            side_effect_state=SideEffectState.COMMITTED,
         )
-        if isinstance(result, str):
-            return result
-        parts = []
-        for content in (result.content or []):
-            if hasattr(content, "text"):
-                parts.append(content.text)
-            else:
-                parts.append(str(content))
-        return "\n".join(parts) if parts else "(MCP tool returned empty result)"
+
+    @staticmethod
+    def _content_parts(contents: Any) -> List[str]:
+        if not isinstance(contents, (list, tuple)):
+            return []
+        parts: List[str] = []
+        for content in contents:
+            text = getattr(content, "text", None)
+            parts.append(str(text) if text is not None else str(content))
+        return parts
 
 
 class MCPResourceWrapper(Tool):
@@ -190,20 +281,49 @@ class MCPResourceWrapper(Tool):
         return self._parameters
 
     async def execute(self, **kwargs: Any) -> str:
-        result = await _execute_with_retry(
-            lambda: self._session.read_resource(self._uri),
-            self._resource_timeout,
-            "MCP resource read",
+        return (await self.execute_outcome(**kwargs)).display_text
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        try:
+            result = await _execute_once(
+                lambda: self._session.read_resource(self._uri),
+                self._resource_timeout,
+            )
+        except asyncio.CancelledError as exc:
+            return _remote_failure_result(
+                exc,
+                label="MCP resource read",
+                retry_safety=RetrySafety.SAFE,
+                side_effecting=False,
+            )
+        except Exception as exc:
+            return _remote_failure_result(
+                exc,
+                label="MCP resource read",
+                retry_safety=RetrySafety.SAFE,
+                side_effecting=False,
+            )
+
+        contents = getattr(result, "contents", None)
+        if not isinstance(contents, (list, tuple)) or not contents:
+            return ToolResult.failure(
+                ErrorCategory.RESULT_CONTRACT,
+                "(MCP resource returned an empty or malformed result)",
+                retry_safety=RetrySafety.SAFE,
+                side_effect_state=SideEffectState.NOT_APPLICABLE,
+            )
+        parts = [
+            str(getattr(content, "text", None))
+            if getattr(content, "text", None) is not None
+            else str(content)
+            for content in contents
+        ]
+        output = "\n".join(parts)
+        return ToolResult.success(
+            output,
+            retry_safety=RetrySafety.SAFE,
+            side_effect_state=SideEffectState.NOT_APPLICABLE,
         )
-        if isinstance(result, str):
-            return result
-        parts = []
-        for content in (result.contents or []):
-            if hasattr(content, "text"):
-                parts.append(content.text)
-            else:
-                parts.append(str(content))
-        return "\n".join(parts) if parts else "(MCP resource returned empty)"
 
 
 class MCPPromptWrapper(Tool):
@@ -241,20 +361,51 @@ class MCPPromptWrapper(Tool):
         return self._parameters
 
     async def execute(self, **kwargs: Any) -> str:
-        result = await _execute_with_retry(
-            lambda: self._session.get_prompt(self._prompt_name, arguments=kwargs),
-            self._prompt_timeout,
-            "MCP prompt",
+        return (await self.execute_outcome(**kwargs)).display_text
+
+    async def execute_outcome(self, **kwargs: Any) -> ToolResult:
+        try:
+            result = await _execute_once(
+                lambda: self._session.get_prompt(
+                    self._prompt_name,
+                    arguments=kwargs,
+                ),
+                self._prompt_timeout,
+            )
+        except asyncio.CancelledError as exc:
+            return _remote_failure_result(
+                exc,
+                label="MCP prompt",
+                retry_safety=RetrySafety.SAFE,
+                side_effecting=False,
+            )
+        except Exception as exc:
+            return _remote_failure_result(
+                exc,
+                label="MCP prompt",
+                retry_safety=RetrySafety.SAFE,
+                side_effecting=False,
+            )
+
+        messages = getattr(result, "messages", None)
+        if not isinstance(messages, (list, tuple)) or not messages:
+            return ToolResult.failure(
+                ErrorCategory.RESULT_CONTRACT,
+                "(MCP prompt returned an empty or malformed result)",
+                retry_safety=RetrySafety.SAFE,
+                side_effect_state=SideEffectState.NOT_APPLICABLE,
+            )
+        parts: List[str] = []
+        for message in messages:
+            content = getattr(message, "content", None)
+            text = getattr(content, "text", None)
+            parts.append(str(text) if text is not None else str(message))
+        output = "\n".join(parts)
+        return ToolResult.success(
+            output,
+            retry_safety=RetrySafety.SAFE,
+            side_effect_state=SideEffectState.NOT_APPLICABLE,
         )
-        if isinstance(result, str):
-            return result
-        parts = []
-        for msg in (result.messages or []):
-            if hasattr(msg, "content") and hasattr(msg.content, "text"):
-                parts.append(msg.content.text)
-            else:
-                parts.append(str(msg))
-        return "\n".join(parts) if parts else "(MCP prompt returned empty)"
 
 
 async def connect_mcp_server(

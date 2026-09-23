@@ -1,5 +1,6 @@
 """发送媒体文件工具"""
 
+import asyncio
 import contextvars
 import json
 from pathlib import Path
@@ -7,8 +8,20 @@ from typing import Any, List, Optional, Tuple
 from loguru import logger
 
 from backend.modules.tools.base import Tool
-from backend.modules.tools._failure import format_failure, single_line
+from backend.modules.tools._failure import (
+    classify_exception,
+    format_failure,
+    is_retryable,
+    single_line,
+)
 from backend.modules.tools._path_resolver import resolve_path
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    RetrySafety,
+    SideEffectState,
+    ToolResult,
+)
 
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
@@ -317,6 +330,188 @@ class SendMediaTool(Tool):
                 summary=f"发送文件失败: {single_line(e)}",
                 next="check the file paths are valid, then retry",
                 detail=detail,
+            )
+
+    async def execute_outcome(
+        self,
+        file_paths: List[str],
+        message: str = "",
+    ) -> ToolResult:
+        """Return truthful send certainty without treating local return as delivery ACK."""
+
+        not_attempted = {
+            "retry_safety": RetrySafety.UNSAFE,
+            "side_effect_state": SideEffectState.NOT_ATTEMPTED,
+        }
+        dispatch_started = False
+        try:
+            if not self.channel_manager:
+                return ToolResult.failure(
+                    ErrorCategory.DEPENDENCY,
+                    "错误：频道管理器未初始化",
+                    **not_attempted,
+                )
+
+            session_info = await self._parse_session_info()
+            if not session_info:
+                invalid_files = [
+                    path
+                    for path in file_paths
+                    if not self._resolve_file_path(path).exists()
+                ]
+                display_text = self._handle_web_mode(file_paths, message)
+                if invalid_files:
+                    return ToolResult.failure(
+                        ErrorCategory.VALIDATION,
+                        display_text,
+                        **not_attempted,
+                    )
+                return ToolResult.success(
+                    display_text,
+                    retry_safety=RetrySafety.UNSAFE,
+                    side_effect_state=SideEffectState.NOT_APPLICABLE,
+                )
+
+            channel, chat_id, metadata = session_info
+            logger.info(f"Sending media to {channel}:{chat_id}")
+
+            valid_paths: List[str] = []
+            invalid_files: List[str] = []
+            results: List[Tuple[str, str]] = []
+            image_count = 0
+            file_count = 0
+            for path in file_paths:
+                file_path = self._resolve_file_path(path)
+                if not file_path.exists():
+                    invalid_files.append(f"{path} (不存在)")
+                    results.append((path, "文件不存在"))
+                    continue
+                if not self._is_supported_file(file_path):
+                    invalid_files.append(f"{path} (格式不支持)")
+                    results.append((path, "格式不支持"))
+                    continue
+                if file_path.stat().st_size > 20 * 1024 * 1024:
+                    invalid_files.append(f"{path} (超过 20MB)")
+                    results.append((path, "超过 20MB"))
+                    continue
+                processed_path = await self._prepare_media_path(file_path, channel)
+                if not processed_path:
+                    invalid_files.append(f"{path} (预处理失败)")
+                    results.append((path, "预处理失败"))
+                    continue
+                valid_paths.append(processed_path)
+                results.append((path, "已提交发送"))
+                if self._is_image_file(file_path):
+                    image_count += 1
+                else:
+                    file_count += 1
+
+            if not valid_paths:
+                display_text = "没有有效的文件"
+                if invalid_files:
+                    display_text += f"。无效文件: {', '.join(invalid_files)}"
+                return ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    display_text,
+                    **not_attempted,
+                )
+
+            if channel == "wecom":
+                message_context = _message_context_var.get() or {}
+                metadata_context = message_context.get("metadata") or {}
+                pending_before = len(metadata_context.get("_wecom_pending_media_paths", []))
+                has_stream_handler = bool(metadata_context.get("_stream_handler"))
+                display_text = self._queue_wecom_longconn_media(
+                    valid_paths,
+                    invalid_files,
+                    message,
+                )
+                pending_after = len(metadata_context.get("_wecom_pending_media_paths", []))
+                if pending_after > pending_before:
+                    return ToolResult.unknown_outcome(
+                        ErrorCategory.DEPENDENCY,
+                        display_text,
+                        retry_safety=RetrySafety.UNSAFE,
+                    )
+                return ToolResult.failure(
+                    ErrorCategory.VALIDATION if has_stream_handler else ErrorCategory.DEPENDENCY,
+                    display_text,
+                    **not_attempted,
+                )
+
+            from backend.modules.channels.base import OutboundMessage
+
+            if not message:
+                if image_count > 0 and file_count == 0:
+                    message = f"发送 {image_count} 个文件"
+                elif file_count > 0 and image_count == 0:
+                    message = f"发送 {file_count} 个文件"
+                else:
+                    message = f"发送 {len(valid_paths)} 个文件"
+            outbound_msg = OutboundMessage(
+                channel=channel,
+                chat_id=chat_id,
+                content=message,
+                media=valid_paths,
+                metadata=metadata,
+            )
+            direct_channel = self.channel_manager.get_channel(
+                channel,
+                account_id=str(metadata.get("account_id") or "") or None,
+            )
+            dispatch_started = True
+            if direct_channel:
+                await direct_channel.send(outbound_msg)
+            else:
+                await self.channel_manager.send_message(outbound_msg)
+
+            status_lines = "\n".join(f"  - {path}: {status}" for path, status in results)
+            display_text = (
+                "发送请求已提交，但当前频道未提供可验证的外部送达确认，无法确认是否送达。"
+                f"\n{status_lines}"
+            )
+            if invalid_files:
+                display_text += f"\n跳过 {len(invalid_files)} 个无效文件: {', '.join(invalid_files)}"
+            return ToolResult.unknown_outcome(
+                ErrorCategory.DEPENDENCY,
+                display_text,
+                retry_safety=RetrySafety.UNSAFE,
+            )
+        except asyncio.CancelledError:
+            if dispatch_started:
+                return ToolResult.unknown_outcome(
+                    ErrorCategory.CANCELLATION,
+                    "发送操作在 dispatch 后被取消，外部送达状态未知。",
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            return ToolResult(
+                state=ExecutionState.CANCELLED,
+                display_text="发送操作在 dispatch 前被取消。",
+                error_category=ErrorCategory.CANCELLATION,
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+        except Exception as exc:
+            detail = f"发送文件失败: {exc}"
+            logger.error(detail)
+            display_text = format_failure(
+                kind="execution_error",
+                summary=f"发送文件失败: {single_line(exc)}",
+                next="check the file paths are valid, then retry",
+                detail=detail,
+            )
+            if dispatch_started:
+                return ToolResult.unknown_outcome(
+                    classify_exception(exc),
+                    display_text,
+                    retryable=is_retryable(exc),
+                    retry_safety=RetrySafety.UNSAFE,
+                )
+            return ToolResult.failure(
+                classify_exception(exc),
+                display_text,
+                retryable=is_retryable(exc),
+                **not_attempted,
             )
 
     def _queue_wecom_longconn_media(
