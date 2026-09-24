@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.agent.skills import SkillsLoader
 from backend.modules.agent.team_commands import (
@@ -993,6 +994,7 @@ async def send_message(
             """SSE 事件流生成器"""
             assistant_content = ""
             assistant_reasoning = ""
+            direct_workflow_non_success = False
             
             try:
                 # 发送开始事件
@@ -1035,15 +1037,38 @@ async def send_message(
                             "Routing web chat directly to workflow_run: "
                             f"team={team_name}, session={request.session_id}"
                         )
-                        assistant_content = await agent_loop.tools.execute(
+                        # 此直连路径绕过 AgentLoop，直接消费 Registry 的结构化结果；
+                        # display_text 只用于 SSE 展示及既有助手消息记录。
+                        workflow_outcome = await agent_loop.tools.execute_outcome(
                             tool_name="workflow_run",
                             arguments={
                                 "team_name": team_name,
                                 "goal": goal,
                             },
+                            cancellation_token=cancel_token,
                         )
+                        assistant_content = workflow_outcome.display_text
+                        if isinstance(workflow_outcome, ToolExecutionInProgress):
+                            # 准入结果表示原 operation 仍在运行，不发送完成事件。
+                            direct_workflow_non_success = True
+                            yield (
+                                "event: tool_progress\n"
+                                f"data: {json.dumps({'content': assistant_content}, ensure_ascii=False)}\n\n"
+                            )
+                        elif workflow_outcome.state is not ExecutionState.SUCCEEDED:
+                            direct_workflow_non_success = True
+                            if workflow_outcome.state is ExecutionState.UNKNOWN_OUTCOME:
+                                assistant_content = (
+                                    "Tool outcome is unknown; side effects may have occurred. "
+                                    + assistant_content
+                                )
+                            yield (
+                                "event: error\n"
+                                f"data: {json.dumps({'error': assistant_content, 'type': workflow_outcome.state.value}, ensure_ascii=False)}\n\n"
+                            )
 
-                    yield f"event: message\ndata: {json.dumps({'content': assistant_content})}\n\n"
+                    if not direct_workflow_non_success:
+                        yield f"event: message\ndata: {json.dumps({'content': assistant_content})}\n\n"
                     await asyncio.sleep(0)
                 else:
                     prefer_direct_workflow_result = False
@@ -1143,10 +1168,12 @@ async def send_message(
                     )
                     
                     # 发送完成事件
-                    yield f"event: done\ndata: {json.dumps({'message_id': str(assistant_message.id)})}\n\n"
+                    if not direct_workflow_non_success:
+                        yield f"event: done\ndata: {json.dumps({'message_id': str(assistant_message.id)})}\n\n"
                 else:
                     # 没有内容，发送空完成事件
-                    yield f"event: done\ndata: {json.dumps({'message_id': None})}\n\n"
+                    if not direct_workflow_non_success:
+                        yield f"event: done\ndata: {json.dumps({'message_id': None})}\n\n"
                 
             except asyncio.CancelledError:
                 cancel_token.cancel()

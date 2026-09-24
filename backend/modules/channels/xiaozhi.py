@@ -23,6 +23,7 @@ import websockets
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
 
 
 class XiaozhiChannel(BaseChannel):
@@ -349,11 +350,33 @@ class XiaozhiChannel(BaseChannel):
                 tool_registry = get_tool_registry()
                 if not tool_registry:
                     raise RuntimeError("Tool registry not available")
-                result = await tool_registry.execute(tool_name, arguments, auto_record=False)
-                response = {
-                    "jsonrpc": "2.0", "id": msg_id,
-                    "result": {"content": [{"type": "text", "text": str(result)}]},
-                }
+                # 直连工具调用绕过 AgentLoop，由 Registry 返回权威执行状态。
+                outcome = await tool_registry.execute_outcome(tool_name, arguments)
+                if isinstance(outcome, ToolExecutionInProgress):
+                    # 准入结果不属于物理尝试终态，使用协议层响应告知仍在执行。
+                    response = {
+                        "jsonrpc": "2.0", "id": msg_id,
+                        "error": {
+                            "code": -32001,
+                            "message": outcome.display_text,
+                            "data": {"operation_id": outcome.operation_id},
+                        },
+                    }
+                else:
+                    # 文本供小智展示；Tool 是否成功只取决于结构化状态。
+                    display_text = outcome.display_text
+                    if outcome.state is ExecutionState.UNKNOWN_OUTCOME:
+                        display_text = (
+                            "Tool outcome is unknown; side effects may have occurred. "
+                            + display_text
+                        )
+                    response = {
+                        "jsonrpc": "2.0", "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": display_text}],
+                            "isError": outcome.state is not ExecutionState.SUCCEEDED,
+                        },
+                    }
 
         except Exception as e:
             logger.error(f"Tool execution error: {e}")
@@ -535,4 +558,3 @@ class XiaozhiChannel(BaseChannel):
     @property
     def display_name(self) -> str:
         return "小智AI"
-

@@ -9,9 +9,14 @@
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from loguru import logger
+from backend.modules.tools.execution import (
+    CanonicalToolExecutionResult,
+    ExecutionState,
+    ToolExecutionInProgress,
+)
 
 from backend.ws.connection import (
     connection_manager,
@@ -162,7 +167,7 @@ class ToolNotificationHandler:
         duration_ms = (time.time() - self.start_time) * 1000
 
         logger.error(
-            f"工具执行失败: {self.tool_name} - {error} (耗时 {duration_ms:.2f}ms)"
+            f"工具执行未成功: {self.tool_name} - {error} (耗时 {duration_ms:.2f}ms)"
         )
 
         message = ToolErrorMessage(
@@ -192,8 +197,8 @@ async def execute_tool_with_notifications(
     tool_name: str,
     arguments: Dict[str, Any],
     executor: callable,
-) -> str:
-    """执行工具并发送通知
+) -> CanonicalToolExecutionResult:
+    """依据 Registry 结构化结果发送完成、错误或进度通知。
 
     Args:
         session_id: 会话 ID
@@ -202,10 +207,10 @@ async def execute_tool_with_notifications(
         executor: 工具执行函数
 
     Returns:
-        str: 执行结果
+        CanonicalToolExecutionResult: 物理尝试终态或进行中准入结果
 
     Raises:
-        Exception: 工具执行失败
+        Exception: 执行边界意外上抛
     """
     handler = ToolNotificationHandler(session_id, tool_name)
 
@@ -213,16 +218,23 @@ async def execute_tool_with_notifications(
         # 通知开始
         await handler.notify_start(arguments)
 
-        # 执行工具
-        result = await executor(tool_name, arguments)
+        # executor 返回权威状态；展示文本只进入对应通知。
+        outcome = await executor(tool_name, arguments)
+        if isinstance(outcome, ToolExecutionInProgress):
+            await handler.notify_progress(0, outcome.display_text)
+            return outcome
+        if outcome.state is ExecutionState.SUCCEEDED:
+            await handler.notify_complete(outcome.display_text)
+        else:
+            error_text = outcome.display_text
+            if outcome.state is ExecutionState.UNKNOWN_OUTCOME:
+                error_text = "Tool outcome is unknown; side effects may have occurred. " + error_text
+            await handler.notify_error(error_text)
 
-        # 通知完成
-        await handler.notify_complete(result)
-
-        return result
+        return outcome
 
     except Exception as e:
-        # 通知错误
+        # 边界异常没有可消费的结构化终态，按错误通知并继续抛出。
         await handler.notify_error(str(e))
         raise
 
@@ -306,6 +318,7 @@ async def notify_tool_execution(
     arguments: Dict[str, Any],
     result: Optional[str] = None,
     error: Optional[str] = None,
+    phase: Literal["start", "success", "non_success"] = "start",
 ) -> None:
     """发送工具执行通知（便捷函数）
 
@@ -315,13 +328,14 @@ async def notify_tool_execution(
         arguments: 工具参数
         result: 执行结果（可选）
         error: 错误信息（可选）
+        phase: 上游依据结构化状态选定的通知阶段
     """
-    if error:
+    if phase == "non_success":
         # 错误通知
-        await send_error(session_id, f"Tool '{tool_name}' failed: {error}", "TOOL_ERROR")
-    elif result:
+        await send_error(session_id, f"Tool '{tool_name}' did not succeed: {error or ''}", "TOOL_ERROR")
+    elif phase == "success":
         # 仅发送结果（tool_call 已在开始时发送，避免重复）
-        await send_tool_result(session_id, tool_name, result)
+        await send_tool_result(session_id, tool_name, result or "")
     else:
         # 工具开始执行：发送调用通知
         await send_tool_call(session_id, tool_name, arguments)
