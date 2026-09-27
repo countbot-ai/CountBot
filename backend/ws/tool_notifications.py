@@ -16,6 +16,7 @@ from backend.modules.tools.execution import (
     CanonicalToolExecutionResult,
     ExecutionState,
     ToolExecutionInProgress,
+    ToolExecutionRejected,
 )
 
 from backend.ws.connection import (
@@ -222,6 +223,9 @@ async def execute_tool_with_notifications(
         outcome = await executor(tool_name, arguments)
         if isinstance(outcome, ToolExecutionInProgress):
             await handler.notify_progress(0, outcome.display_text)
+            return outcome
+        if isinstance(outcome, ToolExecutionRejected):
+            await handler.notify_error(outcome.display_text)
             return outcome
         if outcome.state is ExecutionState.SUCCEEDED:
             await handler.notify_complete(outcome.display_text)

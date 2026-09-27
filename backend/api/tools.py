@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from backend.modules.config.loader import config_loader
 from backend.modules.tools.registry import ToolRegistry
-from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress, ToolExecutionRejected
 from backend.modules.tools.conversation_history import get_conversation_history
 from backend.modules.tools.file_audit_logger import file_audit_logger
 
@@ -150,13 +150,15 @@ async def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
             tool_name=request.tool,
             arguments=request.arguments,
         )
-        if isinstance(outcome, ToolExecutionInProgress):
+        if isinstance(outcome, (ToolExecutionInProgress, ToolExecutionRejected)):
             # 进行中是 operation 准入状态，不是成功或失败的物理尝试。
             return ExecuteToolResponse(
                 result="",
                 success=False,
                 error=outcome.display_text,
             )
+        # Direct API 只投影 Registry 终态；响应文案不参与状态判断。
+        file_audit_logger.record_outcome(outcome, source="direct_api")
         if outcome.state is not ExecutionState.SUCCEEDED:
             error_text = outcome.display_text
             if outcome.state is ExecutionState.UNKNOWN_OUTCOME:

@@ -17,6 +17,7 @@ from dataclasses import dataclass, asdict
 import json
 import asyncio
 from loguru import logger
+from backend.modules.tools.outcome_projection import conversation_succeeded
 
 
 @dataclass
@@ -33,10 +34,15 @@ class ToolConversation:
     result: Optional[str] = None  # 工具执行结果
     error: Optional[str] = None  # 错误信息（如果有）
     duration_ms: Optional[int] = None  # 执行耗时（毫秒）
+    outcome_projection: Optional[Dict[str, Any]] = None  # Preserve present unsupported data for readers.
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        return asdict(self)
+        from backend.modules.tools.outcome_projection import projection_state, read_stored_projection
+        data = asdict(self)
+        data["outcome_projection_state"] = projection_state(self.outcome_projection).value
+        data["outcome_projection"] = read_stored_projection(self.outcome_projection)
+        return data
 
 
 class ToolConversationHistory:
@@ -75,8 +81,11 @@ class ToolConversationHistory:
         result: Optional[str] = None,
         error: Optional[str] = None,
         duration_ms: Optional[int] = None,
+        outcome_projection: Optional[Dict[str, Any]] = None,
     ) -> str:
         """添加一条工具调用对话记录
+
+        outcome_projection 只承载结构化执行元数据；旧展示字段继续供历史界面读取。
         
         Args:
             session_id: 会话 ID
@@ -105,6 +114,7 @@ class ToolConversationHistory:
             result=result,
             error=error,
             duration_ms=duration_ms,
+            outcome_projection=outcome_projection,
         )
         
         # 内存存储
@@ -145,6 +155,10 @@ class ToolConversationHistory:
                     result=conversation.result,
                     error=conversation.error,
                     duration_ms=conversation.duration_ms,
+                    outcome_projection=(
+                        json.dumps(conversation.outcome_projection)
+                        if conversation.outcome_projection is not None else None
+                    ),
                 )
                 
                 db.add(db_conv)
@@ -470,7 +484,10 @@ class ToolConversationHistory:
             by_session[conv.session_id] = by_session.get(conv.session_id, 0) + 1
         
         # 成功率
-        success_count = sum(1 for conv in self._history if conv.error is None)
+        success_count = sum(
+            conversation_succeeded(conv.outcome_projection, conv.error)
+            for conv in self._history
+        )
         success_rate = success_count / len(self._history) * 100
         
         return {
@@ -513,12 +530,12 @@ class ToolConversationHistory:
             )
             by_session = {row[0]: row[1] for row in session_result}
             
-            # 成功率
-            success_result = await db.execute(
-                select(func.count(DBToolConversation.id))
-                .where(DBToolConversation.error.is_(None))
+            # Canonical rows use structured state; legacy rows retain old display semantics.
+            rows = (await db.execute(select(DBToolConversation))).scalars().all()
+            success_count = sum(
+                conversation_succeeded(row.outcome_projection, row.error)
+                for row in rows
             )
-            success_count = success_result.scalar() or 0
             success_rate = (success_count / total * 100) if total > 0 else 0.0
             
             return {

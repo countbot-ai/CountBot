@@ -20,6 +20,7 @@ from backend.modules.tools.execution import (
     ExecutionState,
     SideEffectState,
     ToolExecutionOutcome,
+    ToolExecutionRejected,
     ToolResult,
 )
 
@@ -200,6 +201,15 @@ class WorkflowEngine:
                     tool=tool_name,
                     arguments=data if isinstance(data, dict) else {},
                 )
+            elif event == "tool_rejected":
+                if not isinstance(data, ToolExecutionRejected):
+                    raise TypeError("Workflow rejection requires operation-level result")
+                calls = self._execution_data[aid]["toolCalls"]
+                for call in reversed(calls):
+                    if call["tool"] == tool_name and call["status"] == "running":
+                        call.update({"status": "rejected", "reason": data.reason,
+                                     "operation_id": data.operation_id})
+                        break
             elif event == "tool_result":
                 if not isinstance(data, ToolExecutionOutcome):
                     raise TypeError("Workflow tool result requires structured child outcome")

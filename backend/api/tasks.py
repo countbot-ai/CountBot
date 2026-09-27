@@ -31,6 +31,8 @@ class TaskResponse(BaseModel):
     started_at: Optional[str]
     completed_at: Optional[str]
     tool_call_records: List[dict] = []
+    outcome_projection: Optional[dict] = None
+    outcome_projection_state: str = "absent"
 
 
 class TaskStatsResponse(BaseModel):
@@ -104,23 +106,7 @@ async def list_tasks(
         tasks = manager.list_tasks(status=status_enum, session_id=session_id)
         
         # 转换为响应模型
-        return [
-            TaskResponse(
-                task_id=task.task_id,
-                label=task.label,
-                message=task.message,
-                session_id=task.session_id,
-                status=task.status.value,
-                progress=task.progress,
-                result=task.result,
-                error=task.error,
-                created_at=task.created_at.isoformat(),
-                started_at=task.started_at.isoformat() if task.started_at else None,
-                completed_at=task.completed_at.isoformat() if task.completed_at else None,
-                tool_call_records=task.tool_call_records,
-            )
-            for task in tasks
-        ]
+        return [TaskResponse(**task.to_dict()) for task in tasks]
         
     except HTTPException:
         raise
@@ -201,13 +187,17 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResp
                     tool_call_records = json.loads(db_task.tool_call_records)
                 except json.JSONDecodeError:
                     pass
+            from backend.modules.tools.outcome_projection import task_read_view
+            task_status, projection_state, projection = task_read_view(
+                db_task.status, db_task.outcome_projection,
+            )
             
             return TaskResponse(
                 task_id=db_task.id,
                 label=db_task.label,
                 message=db_task.message,
                 session_id=db_task.session_id,
-                status=db_task.status,
+                status=task_status,
                 progress=db_task.progress,
                 result=db_task.result,
                 error=db_task.error,
@@ -215,15 +205,21 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResp
                 started_at=db_task.started_at.isoformat() if db_task.started_at else None,
                 completed_at=db_task.completed_at.isoformat() if db_task.completed_at else None,
                 tool_call_records=tool_call_records,
+                outcome_projection=projection,
+                outcome_projection_state=projection_state,
             )
         
         # 从内存任务返回
+        from backend.modules.tools.outcome_projection import task_read_view
+        task_status, projection_state, projection = task_read_view(
+            task.status.value, task.outcome_projection(),
+        )
         return TaskResponse(
             task_id=task.task_id,
             label=task.label,
             message=task.message,
             session_id=task.session_id,
-            status=task.status.value,
+            status=task_status,
             progress=task.progress,
             result=task.result,
             error=task.error,
@@ -231,6 +227,8 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResp
             started_at=task.started_at.isoformat() if task.started_at else None,
             completed_at=task.completed_at.isoformat() if task.completed_at else None,
             tool_call_records=task.tool_call_records,
+            outcome_projection=projection,
+            outcome_projection_state=projection_state,
         )
         
     except HTTPException:

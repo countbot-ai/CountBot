@@ -10,11 +10,14 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 from backend.modules.tools.conversation_history import get_conversation_history
+from backend.modules.tools.outcome_projection import project_attempt
 from backend.modules.tools.execution import (
     ExecutionState,
     RetrySafety,
     SideEffectState,
     ToolExecutionInProgress,
+    ToolExecutionOutcome,
+    ToolExecutionRejected,
 )
 from backend.modules.providers.base import AUTH_ERROR_HINTS, RATE_LIMIT_HINTS
 
@@ -472,6 +475,7 @@ class AgentLoop:
                         operation_id = str(uuid.uuid4())
                         outcome = None
                         last_error = None
+                        attempt_source = "agent_initial"
                         
                         if self.tools:
                             self.tools.set_tool_event_handler(tool_event_handler)
@@ -506,8 +510,25 @@ class AgentLoop:
                                             retry_authorized=attempt > 0,
                                             cancellation_token=cancel_token,
                                         )
-                                    if isinstance(outcome, ToolExecutionInProgress):
+                                    if isinstance(outcome, (ToolExecutionInProgress, ToolExecutionRejected)):
                                         break
+                                    attempt_source = (
+                                        "mcp_safe_retry"
+                                        if attempt > 0 and tool_name.startswith("mcp_")
+                                        and outcome.retry_safety is RetrySafety.SAFE
+                                        else "agent_retry" if attempt > 0 else "agent_initial"
+                                    )
+                                    # outcome 来自 Registry；每次获准重试返回后分别投影，
+                                    # 让同一 operation 下的各 attempt 保持独立审计记录。
+                                    try:
+                                        from backend.modules.tools.file_audit_logger import file_audit_logger
+                                        file_audit_logger.record_outcome(
+                                            outcome,
+                                            source=attempt_source,
+                                            session_id=session_id,
+                                        )
+                                    except Exception as exc:
+                                        logger.warning(f"Failed to record Tool outcome: {exc}")
                                     if outcome.state is ExecutionState.SUCCEEDED:
                                         logger.debug(f"Tool {tool_name} succeeded")
                                         break
@@ -565,7 +586,7 @@ class AgentLoop:
                             logger.info(
                                 f"Tool {tool_name} is still in progress: operation={operation_id}"
                             )
-                        elif outcome is not None and outcome.state is ExecutionState.SUCCEEDED:
+                        elif isinstance(outcome, ToolExecutionOutcome) and outcome.state is ExecutionState.SUCCEEDED:
                             result = outcome.display_text
                             try:
                                 conversation_history = get_conversation_history()
@@ -575,7 +596,11 @@ class AgentLoop:
                                     arguments=tool_args,
                                     user_message=message,
                                     result=result,
-                                    duration_ms=duration_ms
+                                    duration_ms=duration_ms,
+                                    outcome_projection=project_attempt(
+                                        outcome, source=attempt_source,
+                                        session_id=session_id,
+                                    ),
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to record tool conversation: {e}")
@@ -641,7 +666,8 @@ class AgentLoop:
                         else:
                             if outcome is not None:
                                 error_msg = outcome.display_text
-                                if outcome.state is ExecutionState.UNKNOWN_OUTCOME:
+                                if (not isinstance(outcome, ToolExecutionRejected)
+                                        and outcome.state is ExecutionState.UNKNOWN_OUTCOME):
                                     error_msg = (
                                         "Tool outcome is unknown; side effects may have occurred. "
                                         + error_msg
@@ -650,18 +676,25 @@ class AgentLoop:
                                 error_msg = str(last_error or "Tool execution produced no outcome.")
                             logger.error(f"Tool {tool_name} did not succeed: {error_msg}")
                             
-                            try:
-                                conversation_history = get_conversation_history()
-                                conversation_history.add_conversation(
-                                    session_id=session_id,
-                                    tool_name=tool_name,
-                                    arguments=tool_args,
-                                    user_message=message,
-                                    error=error_msg,
-                                    duration_ms=duration_ms
-                                )
-                            except Exception as e:
-                                logger.warning(f"Failed to record tool conversation: {e}")
+                            if not isinstance(outcome, ToolExecutionRejected):
+                                try:
+                                    conversation_history = get_conversation_history()
+                                    conversation_history.add_conversation(
+                                        session_id=session_id,
+                                        tool_name=tool_name,
+                                        arguments=tool_args,
+                                        user_message=message,
+                                        error=error_msg,
+                                        duration_ms=duration_ms,
+                                        outcome_projection=(
+                                            project_attempt(
+                                                outcome, source=attempt_source,
+                                                session_id=session_id,
+                                            ) if isinstance(outcome, ToolExecutionOutcome) else None
+                                        ),
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Failed to record tool conversation: {e}")
                             
                             try:
                                 from backend.ws.tool_notifications import notify_tool_execution
@@ -677,18 +710,25 @@ class AgentLoop:
 
                             if tool_event_handler:
                                 try:
+                                    error_event = {
+                                        "tool_name": tool_name,
+                                        "arguments": tool_args,
+                                        "error": error_msg,
+                                        "session_id": session_id,
+                                        "duration_ms": duration_ms,
+                                        "operation_id": outcome.operation_id if outcome else operation_id,
+                                    }
+                                    if isinstance(outcome, ToolExecutionOutcome):
+                                        error_event["execution_state"] = outcome.state.value
+                                        error_event["attempt_id"] = outcome.attempt_id
+                                    elif isinstance(outcome, ToolExecutionRejected):
+                                        error_event["rejection_reason"] = outcome.reason
+                                    else:
+                                        error_event["execution_state"] = None
+                                        error_event["attempt_id"] = None
                                     maybe_result = tool_event_handler(
                                         "tool_error",
-                                        {
-                                            "tool_name": tool_name,
-                                            "arguments": tool_args,
-                                            "error": error_msg,
-                                            "session_id": session_id,
-                                            "duration_ms": duration_ms,
-                                            "execution_state": outcome.state.value if outcome else None,
-                                            "operation_id": outcome.operation_id if outcome else operation_id,
-                                            "attempt_id": outcome.attempt_id if outcome else None,
-                                        },
+                                        error_event,
                                     )
                                     if inspect.isawaitable(maybe_result):
                                         await maybe_result
