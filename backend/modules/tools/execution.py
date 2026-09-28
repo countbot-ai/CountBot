@@ -295,7 +295,20 @@ class ToolExecutionInProgress:
     display_text: str
 
 
-CanonicalToolExecutionResult = Union[ToolExecutionOutcome, ToolExecutionInProgress]
+@dataclass(frozen=True, slots=True)
+class ToolExecutionRejected:
+    """Operation-level refusal before any physical attempt is admitted."""
+
+    operation_id: str
+    reason: str
+    tool_name: str
+    correlation_id: Optional[str]
+    display_text: str
+
+
+CanonicalToolExecutionResult = Union[
+    ToolExecutionOutcome, ToolExecutionInProgress, ToolExecutionRejected,
+]
 
 
 @dataclass(frozen=True, slots=True)

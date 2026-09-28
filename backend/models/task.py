@@ -23,6 +23,7 @@ class Task(Base):
     result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tool_call_records: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON 序列化
+    outcome_projection: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # v1 task/attempt 投影 JSON；旧任务为 NULL
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
-from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress, ToolExecutionRejected
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.agent.skills import SkillsLoader
 from backend.modules.agent.team_commands import (
@@ -382,12 +382,16 @@ async def _load_spawn_task_detail(
         except json.JSONDecodeError as exc:
             logger.warning(f"Failed to parse tool_call_records: {exc}")
 
+    from backend.modules.tools.outcome_projection import task_read_view
+    task_status, projection_state, projection = task_read_view(
+        db_task.status, db_task.outcome_projection,
+    )
     return {
         "task_id": db_task.id,
         "label": db_task.label,
         "message": db_task.message,
         "session_id": db_task.session_id,
-        "status": db_task.status,
+        "status": task_status,
         "progress": db_task.progress,
         "result": db_task.result,
         "error": db_task.error,
@@ -395,6 +399,8 @@ async def _load_spawn_task_detail(
         "started_at": to_utc_iso(db_task.started_at),
         "completed_at": to_utc_iso(db_task.completed_at),
         "tool_call_records": tool_call_records,
+        "outcome_projection": projection,
+        "outcome_projection_state": projection_state,
     }
 
 
@@ -408,7 +414,18 @@ async def _build_tool_call_response(
 ) -> ToolCallResponse:
     arguments = _parse_tool_arguments(tc.arguments)
 
-    status_value = "error" if tc.error else "success"
+    # 新历史优先读结构化 state；旧行继续按原 error 文本呈现。
+    from backend.modules.tools.outcome_projection import (
+        ProjectionState, projection_state, read_stored_projection,
+    )
+    stored_projection = getattr(tc, "outcome_projection", None)
+    projection = read_stored_projection(stored_projection)
+    state = projection_state(stored_projection)
+    status_value = (
+        "success" if projection["state"] == "SUCCEEDED" else "error"
+    ) if state is ProjectionState.RECOGNIZED else (
+        "error" if tc.error else "success"
+    ) if state is ProjectionState.ABSENT else "unknown"
     use_full_payload = tool_mode == "full" or tc.tool_name in SPECIAL_HISTORY_TOOL_NAMES
 
     result_text = tc.result
@@ -1047,6 +1064,13 @@ async def send_message(
                             },
                             cancellation_token=cancel_token,
                         )
+                        if not isinstance(workflow_outcome, (ToolExecutionInProgress, ToolExecutionRejected)):
+                            # SSE 直连路径绕过 AgentLoop，收到 Registry 终态后补记同一投影。
+                            from backend.modules.tools.file_audit_logger import file_audit_logger
+                            file_audit_logger.record_outcome(
+                                workflow_outcome, source="sse_workflow",
+                                session_id=request.session_id,
+                            )
                         assistant_content = workflow_outcome.display_text
                         if isinstance(workflow_outcome, ToolExecutionInProgress):
                             # 准入结果表示原 operation 仍在运行，不发送完成事件。
@@ -1054,6 +1078,12 @@ async def send_message(
                             yield (
                                 "event: tool_progress\n"
                                 f"data: {json.dumps({'content': assistant_content}, ensure_ascii=False)}\n\n"
+                            )
+                        elif isinstance(workflow_outcome, ToolExecutionRejected):
+                            direct_workflow_non_success = True
+                            yield (
+                                "event: error\n"
+                                f"data: {json.dumps({'error': assistant_content, 'type': workflow_outcome.reason}, ensure_ascii=False)}\n\n"
                             )
                         elif workflow_outcome.state is not ExecutionState.SUCCEEDED:
                             direct_workflow_non_success = True

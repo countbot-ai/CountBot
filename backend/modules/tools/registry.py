@@ -34,6 +34,7 @@ from backend.modules.tools.execution import (
     SideEffectState,
     ToolExecutionInProgress,
     ToolExecutionOutcome,
+    ToolExecutionRejected,
     ToolExecutionRequest,
     ToolResult,
 )
@@ -338,19 +339,14 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
         return isinstance(cancellation_token, bool) and cancellation_token
 
     @staticmethod
-    def _identity_collision_outcome(request: ToolExecutionRequest) -> ToolExecutionOutcome:
-        """在不破坏已有 operation 的前提下，返回进入 body 前的拒绝 outcome。"""
+    def _identity_collision_outcome(request: ToolExecutionRequest) -> ToolExecutionRejected:
+        """Reject a mismatched retained operation without inventing an attempt."""
 
-        return ToolExecutionOutcome(
+        return ToolExecutionRejected(
             operation_id=request.operation_id,
-            attempt_id=str(uuid.uuid4()),
-            attempt_ordinal=0,
+            reason="OPERATION_IDENTITY_CONFLICT",
             tool_name=request.tool_name,
-            state=ExecutionState.FAILED,
             display_text="operation_id is already bound to a different Tool invocation.",
-            duration_ms=0,
-            error_category=ErrorCategory.VALIDATION,
-            side_effect_state=SideEffectState.NOT_ATTEMPTED,
             correlation_id=request.correlation_id,
         )
 

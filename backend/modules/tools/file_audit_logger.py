@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
+from backend.modules.tools.execution import ToolExecutionOutcome
+from backend.modules.tools.outcome_projection import (
+    ProjectionState, project_attempt, projection_state, read_projection,
+)
+
 
 class FileAuditLogger:
     """文件审计日志记录器"""
@@ -35,6 +40,7 @@ class FileAuditLogger:
         # 当前日志文件
         self._current_log_file: Optional[Path] = None
         self._current_date: Optional[str] = None
+        self._recorded_attempt_ids: Optional[set[str]] = None
         
         logger.debug(f"FileAuditLogger initialized: {self.log_dir}")
     
@@ -42,6 +48,45 @@ class FileAuditLogger:
         """设置是否启用审计日志"""
         self.enabled = enabled
         logger.debug(f"File audit logging {'enabled' if enabled else 'disabled'}")
+
+    def record_outcome(
+        self, outcome: ToolExecutionOutcome, *, source: str,
+        session_id: Optional[str] = None, task_id: Optional[str] = None,
+    ) -> bool:
+        """追加脱敏 outcome 投影，并按 attempt_id 抑制重复写入。
+
+        投影只接受真实 terminal physical attempt；不从旧 audit 文本推断状态。
+        """
+        if not self.enabled:
+            return False
+        projection = project_attempt(
+            outcome, source=source, session_id=session_id, task_id=task_id,
+        )
+        try:
+            if self._recorded_attempt_ids is None:
+                self._recorded_attempt_ids = set()
+                for path in self.log_dir.glob("audit_*.log"):
+                    with path.open("r", encoding="utf-8") as stream:
+                        for line in stream:
+                            try:
+                                saved = read_projection(json.loads(line).get("projection"))
+                            except (ValueError, AttributeError):
+                                continue
+                            if saved is not None:
+                                self._recorded_attempt_ids.add(saved["attempt_id"])
+            if outcome.attempt_id in self._recorded_attempt_ids:
+                return False
+            record = {
+                "timestamp": datetime.now().isoformat(),
+                "projection": projection,
+            }
+            with self._get_log_file().open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self._recorded_attempt_ids.add(outcome.attempt_id)
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to record canonical audit outcome: {exc}")
+            return False
     
     def _get_log_file(self) -> Path:
         """获取当前日志文件路径
@@ -274,9 +319,17 @@ class FileAuditLogger:
                                 if record.get("type") != "result":
                                     total_records += 1
                                 
-                                if record.get("status") == "success":
+                                projection = read_projection(record.get("projection"))
+                                if projection is not None:
+                                    if projection["state"] == "SUCCEEDED":
+                                        success_count += 1
+                                    elif projection["state"] in ("FAILED", "CANCELLED", "UNKNOWN_OUTCOME"):
+                                        error_count += 1
+                                elif (projection_state(record.get("projection")) is ProjectionState.ABSENT
+                                      and record.get("status") == "success"):
                                     success_count += 1
-                                elif record.get("status") == "error":
+                                elif (projection_state(record.get("projection")) is ProjectionState.ABSENT
+                                      and record.get("status") == "error"):
                                     error_count += 1
                             
                             except json.JSONDecodeError:
@@ -358,6 +411,7 @@ class FileAuditLogger:
                     logger.warning(f"Failed to delete log file {log_file}: {e}")
             
             logger.info(f"Cleared {deleted_count} audit log files")
+            self._recorded_attempt_ids = set()
             return deleted_count
         
         except Exception as e:

@@ -19,6 +19,7 @@ from backend.modules.tools.execution import (
     ToolExecutionInProgress,
     ToolExecutionRequest,
     ToolExecutionOutcome,
+    ToolExecutionRejected,
     ToolResult,
 )
 from backend.modules.tools.registry import ToolRegistry
@@ -401,8 +402,10 @@ def test_operation_id_collision_with_different_tool_is_rejected_before_body():
     )
 
     assert first.state is ExecutionState.SUCCEEDED
-    assert collision.state is ExecutionState.FAILED
-    assert collision.error_category is ErrorCategory.VALIDATION
+    assert isinstance(collision, ToolExecutionRejected)
+    assert collision.reason == "OPERATION_IDENTITY_CONFLICT"
+    assert not hasattr(collision, "attempt_id")
+    assert not hasattr(collision, "attempt_ordinal")
     assert collision.tool_name == "other_explicit"
     assert first_tool.body_invocations == 1
     assert wrong_tool.body_invocations == 0
@@ -421,8 +424,10 @@ def test_operation_id_collision_with_different_arguments_is_rejected_before_body
     )
 
     assert first.state is ExecutionState.SUCCEEDED
-    assert collision.state is ExecutionState.FAILED
-    assert collision.error_category is ErrorCategory.VALIDATION
+    assert isinstance(collision, ToolExecutionRejected)
+    assert collision.reason == "OPERATION_IDENTITY_CONFLICT"
+    assert not hasattr(collision, "attempt_id")
+    assert not hasattr(collision, "attempt_ordinal")
     assert tool.body_invocations == 1
 
 

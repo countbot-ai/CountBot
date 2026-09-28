@@ -23,7 +23,7 @@ import websockets
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
-from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress, ToolExecutionRejected
 
 
 class XiaozhiChannel(BaseChannel):
@@ -352,18 +352,21 @@ class XiaozhiChannel(BaseChannel):
                     raise RuntimeError("Tool registry not available")
                 # 直连工具调用绕过 AgentLoop，由 Registry 返回权威执行状态。
                 outcome = await tool_registry.execute_outcome(tool_name, arguments)
-                if isinstance(outcome, ToolExecutionInProgress):
+                if isinstance(outcome, (ToolExecutionInProgress, ToolExecutionRejected)):
                     # 准入结果不属于物理尝试终态，使用协议层响应告知仍在执行。
                     response = {
                         "jsonrpc": "2.0", "id": msg_id,
                         "error": {
-                            "code": -32001,
+                            "code": -32002 if isinstance(outcome, ToolExecutionRejected) else -32001,
                             "message": outcome.display_text,
                             "data": {"operation_id": outcome.operation_id},
                         },
                     }
                 else:
                     # 文本供小智展示；Tool 是否成功只取决于结构化状态。
+                    # 这里仅为收到的终态补记投影，不把展示文本写入 canonical metadata。
+                    from backend.modules.tools.file_audit_logger import file_audit_logger
+                    file_audit_logger.record_outcome(outcome, source="xiaozhi")
                     display_text = outcome.display_text
                     if outcome.state is ExecutionState.UNKNOWN_OUTCOME:
                         display_text = (

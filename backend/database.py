@@ -113,6 +113,16 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
             ),
         ),
     ),
+    CompatibilityTableMigration(
+        table_name="tool_conversations",
+        # 旧行不回填：读者只在该列含完整 kind/version 时按 canonical 投影解释。
+        columns=(CompatibilityColumnMigration("outcome_projection", "outcome_projection TEXT"),),
+    ),
+    CompatibilityTableMigration(
+        table_name="tasks",
+        # 与 ToolConversation 一样只加 nullable 列，保持旧任务记录可读。
+        columns=(CompatibilityColumnMigration("outcome_projection", "outcome_projection TEXT"),),
+    ),
 )
 
 

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.loop import AgentLoop
-from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress, ToolExecutionRejected
 from backend.modules.config.loader import config_loader
 from backend.modules.external_agents.conversation import (
     build_history_prompt,
@@ -486,8 +486,17 @@ async def handle_tool_execution(
             executor=agent_loop.execute_tool,
         )
 
+        if not isinstance(result, (ToolExecutionInProgress, ToolExecutionRejected)):
+            # 通知层返回 Registry 终态后记录元数据；准入中的 attempt 不写终态审计。
+            from backend.modules.tools.file_audit_logger import file_audit_logger
+            file_audit_logger.record_outcome(
+                result, source="websocket", session_id=session_id,
+            )
+
         if isinstance(result, ToolExecutionInProgress):
             logger.info(f"工具仍在执行: {tool_name}")
+        elif isinstance(result, ToolExecutionRejected):
+            logger.warning(f"工具请求被拒绝: {tool_name}, reason={result.reason}")
         elif result.state is ExecutionState.SUCCEEDED:
             logger.info(f"工具执行完成: {tool_name}")
         else:

@@ -15,6 +15,7 @@ from backend.modules.tools.execution import (
     SideEffectState,
     ToolExecutionInProgress,
     ToolExecutionOutcome,
+    ToolExecutionRejected,
     ToolResult,
 )
 
@@ -72,12 +73,16 @@ class SubagentTask:
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
+        from backend.modules.tools.outcome_projection import task_read_view
+        status, projection_state, projection = task_read_view(
+            self.status.value, self.outcome_projection(),
+        )
         return {
             "task_id": self.task_id,
             "label": self.label,
             "message": self.message,
             "session_id": self.session_id,
-            "status": self.status.value,
+            "status": status,
             "progress": self.progress,
             "result": self.result,
             "error": self.error,
@@ -85,6 +90,37 @@ class SubagentTask:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "tool_call_records": self.tool_call_records,
+            "outcome_projection": projection,
+            "outcome_projection_state": projection_state,
+        }
+
+    def outcome_projection(self) -> Optional[Dict[str, Any]]:
+        """分开投影 task 处置与已返回的 Tool outcome 列表。
+
+        disposition 描述 child 任务结果，不是 physical attempt；没有 Registry
+        返回值时不合成 attempt identity。
+        """
+        if self.outcome is None and not self.tool_outcomes:
+            return None
+        from backend.modules.tools.outcome_projection import (
+            project_attempt, project_child_disposition,
+        )
+
+        attempts = {}
+        for outcome in self.tool_outcomes:
+            attempts.setdefault(
+                outcome.attempt_id,
+                project_attempt(
+                    outcome, source="child", session_id=self.session_id,
+                    task_id=self.task_id,
+                ),
+            )
+        return {
+            "disposition": (
+                project_child_disposition(self.task_id, self.outcome)
+                if self.outcome is not None else None
+            ),
+            "attempts": list(attempts.values()),
         }
 
 
@@ -576,7 +612,28 @@ class SubagentManager:
                             )
                             raise RuntimeError(outcome.display_text)
 
+                        if isinstance(outcome, ToolExecutionRejected):
+                            # No physical child attempt exists at this boundary.
+                            task.outcome = ToolResult.failure(
+                                ErrorCategory.RESULT_CONTRACT, outcome.display_text,
+                                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                            )
+                            record.update({"status": "rejected", "reason": outcome.reason,
+                                           "operation_id": outcome.operation_id,
+                                           "result": outcome.display_text})
+                            if task.event_callback:
+                                await task.event_callback("tool_rejected", tool_call.name, outcome)
+                            raise RuntimeError(outcome.display_text)
+
                         task.tool_outcomes.append(outcome)
+                        try:
+                            from backend.modules.tools.file_audit_logger import file_audit_logger
+                            file_audit_logger.record_outcome(
+                                outcome, source="child", session_id=task.session_id,
+                                task_id=task.task_id,
+                            )
+                        except Exception as exc:
+                            logger.warning(f"Failed to record child Tool outcome: {exc}")
                         if not outcome.succeeded:
                             candidate = self._result_from_tool_outcome(outcome)
                             if (tool_deadline.expired() and
@@ -828,6 +885,8 @@ class SubagentManager:
                     select(Task).where(Task.id == task.task_id)
                 )
                 db_task = result.scalar_one_or_none()
+                projected = task.outcome_projection()
+                stored_projection = json.dumps(projected) if projected is not None else None
                 
                 if db_task:
                     # 更新现有任务
@@ -841,6 +900,7 @@ class SubagentManager:
                     db_task.started_at = task.started_at
                     db_task.completed_at = task.completed_at
                     db_task.tool_call_records = json.dumps(task.tool_call_records)
+                    db_task.outcome_projection = stored_projection
                 else:
                     # 创建新任务
                     db_task = Task(
@@ -856,6 +916,7 @@ class SubagentManager:
                         started_at=task.started_at,
                         completed_at=task.completed_at,
                         tool_call_records=json.dumps(task.tool_call_records),
+                        outcome_projection=stored_projection,
                     )
                     db.add(db_task)
                 

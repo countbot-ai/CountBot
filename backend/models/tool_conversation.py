@@ -21,11 +21,13 @@ class ToolConversation(Base):
     result = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     duration_ms = Column(Integer, nullable=True)
+    outcome_projection = Column(Text, nullable=True)  # 新增可空列；旧行保留 NULL
     created_at = Column(DateTime, default=datetime.utcnow)
     
     def to_dict(self):
         """转换为字典"""
         import json
+        from backend.modules.tools.outcome_projection import projection_state, read_stored_projection
         
         return {
             "id": self.id,
@@ -38,4 +40,6 @@ class ToolConversation(Base):
             "result": self.result,
             "error": self.error,
             "duration_ms": self.duration_ms,
+            "outcome_projection": read_stored_projection(self.outcome_projection),
+            "outcome_projection_state": projection_state(self.outcome_projection).value,
         }
