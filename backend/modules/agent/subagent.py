@@ -9,6 +9,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from loguru import logger
 
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    SideEffectState,
+    ToolExecutionInProgress,
+    ToolExecutionOutcome,
+    ToolResult,
+)
+
 
 class TaskStatus(Enum):
     """任务状态枚举"""
@@ -51,6 +60,14 @@ class SubagentTask:
         self.started_at: Optional[datetime] = None
         self.completed_at: Optional[datetime] = None
         self.tool_call_records: List[Dict[str, Any]] = []
+        # Immutable Tool attempts are distinct from the task's propagation result.
+        # Without an explicit recovery acknowledgement, later success cannot erase
+        # an earlier non-success attempt.
+        self.tool_outcomes: List[ToolExecutionOutcome] = []
+        self.outcome: Optional[ToolResult] = None
+        self.propagated_failure: Optional[ToolResult] = None
+        self.active_tool_call = False
+        self.task_deadline = None
         self.done_event = asyncio.Event()  # set when task reaches a terminal state
 
     def to_dict(self) -> Dict[str, Any]:
@@ -210,25 +227,47 @@ class SubagentManager:
             except Exception as e:
                 logger.warning(f"Failed to get subagent_timeout from config: {e}, using default: 1200s")
         
+        task_deadline = asyncio.timeout(timeout_seconds)
+        task.task_deadline = task_deadline
         try:
-            await asyncio.wait_for(
-                self._run_task_impl(task, handler),
-                timeout=timeout_seconds
-            )
-        except asyncio.TimeoutError:
-            task.status = TaskStatus.FAILED
-            task.error = f"任务超时（超过{timeout_seconds}秒）"
-            task.completed_at = datetime.now()
-            logger.error(f"Task {task.task_id} timed out after {timeout_seconds}s")
-            
-            if handler:
-                try:
-                    await handler.notify_failed(task.error)
-                except Exception:
-                    pass
-            
-            await self._save_task_to_db(task)
+            try:
+                async with task_deadline:
+                    await self._run_task_impl(task, handler)
+                timed_out = task_deadline.expired()
+            except asyncio.TimeoutError:
+                timed_out = True
+            if timed_out and (
+                task.outcome is None or task.outcome.error_category is not ErrorCategory.TIMEOUT
+            ):
+                possible_effect = task.active_tool_call or any(
+                    item.side_effect_state is not SideEffectState.NOT_ATTEMPTED
+                    for item in task.tool_outcomes
+                )
+                task.outcome = (
+                    ToolResult.unknown_outcome(
+                        ErrorCategory.TIMEOUT,
+                        f"子 Agent 任务超时（超过{timeout_seconds}秒），执行结果无法确认。",
+                    )
+                    if possible_effect else ToolResult.failure(
+                        ErrorCategory.TIMEOUT,
+                        f"子 Agent 任务超时（超过{timeout_seconds}秒）。",
+                        side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                    )
+                )
+                task.status = TaskStatus.FAILED
+                task.error = task.outcome.display_text
+                task.completed_at = datetime.now()
+                logger.error(f"Task {task.task_id} timed out after {timeout_seconds}s")
+
+                if handler:
+                    try:
+                        await handler.notify_failed(task.error)
+                    except Exception:
+                        pass
+
+                await self._save_task_to_db(task)
         finally:
+            task.task_deadline = None
             if task.task_id in self.running_tasks:
                 del self.running_tasks[task.task_id]
             task.done_event.set()
@@ -506,19 +545,72 @@ class SubagentManager:
                             except Exception as e:
                                 logger.warning(f"Failed to call event_callback for tool_call: {e}")
 
+                        operation_id = str(uuid.uuid4())
+                        task.active_tool_call = True
+                        tool_deadline = asyncio.timeout(tool_timeout)
                         try:
-                            result = await asyncio.wait_for(
-                                tools.execute(
+                            async with tool_deadline:
+                                outcome = await tools.execute_outcome(
                                     tool_name=tool_call.name,
-                                    arguments=tool_call.arguments
-                                ),
-                                timeout=tool_timeout
-                            )
-                            record["status"] = "success"
+                                    arguments=tool_call.arguments,
+                                    operation_id=operation_id,
+                                    correlation_id=tool_call.id,
+                                    cancellation_token=task.cancel_token,
+                                )
                         except asyncio.TimeoutError:
-                            result = f"Error: Tool '{tool_call.name}' execution timed out after {tool_timeout} seconds. The tool may be stuck or the operation is taking too long."
-                            logger.error(f"Tool {tool_call.name} timed out after {tool_timeout}s")
-                            record["status"] = "timeout"
+                            # The Registry owns attempt finalization. A timeout before
+                            # it returns cannot be represented as a fabricated attempt.
+                            task.outcome = ToolResult.unknown_outcome(
+                                ErrorCategory.TIMEOUT,
+                                f"Tool '{tool_call.name}' timed out; its effect is uncertain.",
+                            )
+                            raise
+                        # Keep the boundary marked active if cancellation escapes
+                        # before Registry can return its canonical outcome.
+                        task.active_tool_call = False
+
+                        if isinstance(outcome, ToolExecutionInProgress):
+                            task.outcome = ToolResult.unknown_outcome(
+                                ErrorCategory.RESULT_CONTRACT,
+                                outcome.display_text,
+                            )
+                            raise RuntimeError(outcome.display_text)
+
+                        task.tool_outcomes.append(outcome)
+                        if not outcome.succeeded:
+                            candidate = self._result_from_tool_outcome(outcome)
+                            if (tool_deadline.expired() and
+                                    outcome.state is ExecutionState.UNKNOWN_OUTCOME):
+                                # The Registry's immutable attempt may report the
+                                # cancellation used to enforce this deadline. The
+                                # child-owned projection records the actual cause.
+                                candidate = ToolResult.unknown_outcome(
+                                    ErrorCategory.TIMEOUT, outcome.display_text,
+                                    retryable=outcome.retryable,
+                                    retry_safety=outcome.retry_safety,
+                                )
+                            priority = {
+                                ExecutionState.UNKNOWN_OUTCOME: 0,
+                                ExecutionState.CANCELLED: 1,
+                                ExecutionState.FAILED: 2,
+                            }
+                            if (task.propagated_failure is None or
+                                    priority[candidate.state] < priority[task.propagated_failure.state]):
+                                task.propagated_failure = candidate
+                            task.outcome = task.propagated_failure
+                        result = outcome.display_text
+                        record.update({
+                            "status": "success" if outcome.succeeded else outcome.state.value.lower(),
+                            "state": outcome.state.value,
+                            "error_category": outcome.error_category.value if outcome.error_category else None,
+                            "side_effect_state": outcome.side_effect_state.value,
+                            "operation_id": outcome.operation_id,
+                            "attempt_id": outcome.attempt_id,
+                            "correlation_id": outcome.correlation_id,
+                        })
+                        if (tool_deadline.expired() and
+                                outcome.state is ExecutionState.UNKNOWN_OUTCOME):
+                            record["projection_error_category"] = ErrorCategory.TIMEOUT.value
 
                         record["result"] = result[:500] if result else ""
                         record["duration_ms"] = round((_time.time() - _tc_start) * 1000)
@@ -540,7 +632,7 @@ class SubagentManager:
                         # 通知 event_callback（用于 workflow）
                         if task.event_callback:
                             try:
-                                await task.event_callback("tool_result", tool_call.name, result)
+                                await task.event_callback("tool_result", tool_call.name, outcome)
                             except Exception as e:
                                 logger.warning(f"Failed to call event_callback for tool_result: {e}")
 
@@ -553,19 +645,29 @@ class SubagentManager:
                         
                         # 每次工具调用后保存到数据库
                         await self._save_task_to_db(task)
+                        if outcome.state in (ExecutionState.CANCELLED, ExecutionState.UNKNOWN_OUTCOME):
+                            raise asyncio.CancelledError("Child Tool did not complete with a known result")
                 else:
                     break
 
             task.result = "".join(response_chunks)
             task.status = TaskStatus.COMPLETED
+            if task.propagated_failure:
+                task.outcome = task.propagated_failure
+                task.error = task.outcome.display_text
+            else:
+                task.outcome = ToolResult.success(task.result)
             task.progress = 100
             task.completed_at = datetime.now()
 
-            logger.info(f"Task {task.task_id} completed successfully")
+            logger.info(f"Task {task.task_id} finished with {task.outcome.state.value}")
 
             if handler:
                 try:
-                    await handler.notify_complete(task.result)
+                    if task.outcome.state is ExecutionState.SUCCEEDED:
+                        await handler.notify_complete(task.result)
+                    else:
+                        await handler.notify_failed(task.error)
                 except Exception:
                     pass
             
@@ -573,13 +675,44 @@ class SubagentManager:
             await self._save_task_to_db(task)
 
         except asyncio.CancelledError:
-            task.status = TaskStatus.CANCELLED
-            task.error = "任务已被取消"
+            deadline_expired = bool(task.task_deadline and task.task_deadline.expired())
+            possible_effect = task.active_tool_call or any(
+                item.side_effect_state is not SideEffectState.NOT_ATTEMPTED
+                for item in task.tool_outcomes
+            )
+            if deadline_expired:
+                task.outcome = (
+                    ToolResult.unknown_outcome(
+                        ErrorCategory.TIMEOUT,
+                        "Child task timed out after Tool execution may have started.",
+                    ) if possible_effect else ToolResult.failure(
+                        ErrorCategory.TIMEOUT,
+                        "Child task timed out before Tool execution.",
+                        side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                    )
+                )
+            elif task.outcome is None or task.outcome.state in (
+                ExecutionState.FAILED, ExecutionState.SUCCEEDED
+            ):
+                task.outcome = (
+                    ToolResult.unknown_outcome(
+                        ErrorCategory.CANCELLATION,
+                        "Child task was cancelled after Tool execution may have started.",
+                    ) if possible_effect else ToolResult.cancelled("Child task was cancelled.")
+                )
+            task.status = (
+                TaskStatus.CANCELLED if task.outcome.state is ExecutionState.CANCELLED
+                else TaskStatus.FAILED
+            )
+            task.error = (
+                "任务已被取消" if task.outcome.state is ExecutionState.CANCELLED
+                else task.outcome.display_text
+            )
             task.completed_at = datetime.now()
-            logger.info(f"Task {task.task_id} was cancelled")
+            logger.info(f"Task {task.task_id} stopped with {task.outcome.state.value}")
             if handler:
                 try:
-                    await handler.notify_failed("任务已取消")
+                    await handler.notify_failed(task.error)
                 except Exception:
                     pass
             
@@ -588,7 +721,9 @@ class SubagentManager:
 
         except Exception as e:
             task.status = TaskStatus.FAILED
-            task.error = str(e)
+            if task.outcome is None:
+                task.outcome = ToolResult.failure(ErrorCategory.INTERNAL, str(e))
+            task.error = task.outcome.display_text
             task.completed_at = datetime.now()
             logger.error(f"Task {task.task_id} failed: {e}")
 
@@ -600,6 +735,18 @@ class SubagentManager:
             
             # 任务失败时保存到数据库
             await self._save_task_to_db(task)
+
+    @staticmethod
+    def _result_from_tool_outcome(outcome: ToolExecutionOutcome) -> ToolResult:
+        return ToolResult(
+            state=outcome.state,
+            display_text=outcome.display_text,
+            output=outcome.output,
+            error_category=outcome.error_category,
+            retryable=outcome.retryable,
+            retry_safety=outcome.retry_safety,
+            side_effect_state=outcome.side_effect_state,
+        )
 
     def _build_subagent_prompt(self, task: str, enable_skills: bool = False) -> str:
         """

@@ -15,6 +15,22 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from loguru import logger
 
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    SideEffectState,
+    ToolExecutionOutcome,
+    ToolResult,
+)
+
+
+class ChildOutcomeError(RuntimeError):
+    """A child completed with a structured non-success outcome."""
+
+    def __init__(self, result: ToolResult):
+        super().__init__(result.display_text)
+        self.result = result
+
 
 class WorkflowMode(Enum):
     PIPELINE = "pipeline"
@@ -63,6 +79,41 @@ class WorkflowEngine:
         self._team_model_config = team_model_config  # 团队模型配置
         self._event_callback = event_callback
         self._execution_data: Dict[str, dict] = {}
+        self._child_failures: List[ToolResult] = []
+
+    @staticmethod
+    def _with_display(result: ToolResult, display_text: str) -> ToolResult:
+        return ToolResult(
+            state=result.state,
+            display_text=display_text,
+            output=result.output,
+            error_category=result.error_category,
+            retryable=result.retryable,
+            retry_safety=result.retry_safety,
+            side_effect_state=result.side_effect_state,
+        )
+
+    async def run_outcome(self, mode: str, goal: str, agents: List[dict], *,
+                          cross_review: bool = True, enable_skills: bool = False) -> ToolResult:
+        """Bridge a workflow's structured child state to its parent Tool."""
+        try:
+            if mode == "pipeline":
+                text = await self.run_pipeline(goal, agents, enable_skills=enable_skills)
+            elif mode == "graph":
+                text = await self.run_graph(goal, agents, enable_skills=enable_skills)
+            else:
+                text = await self.run_council(
+                    goal, agents, cross_review=cross_review, enable_skills=enable_skills
+                )
+        except ChildOutcomeError as exc:
+            return exc.result
+        if self._child_failures:
+            # Uncertainty has priority over a known failure in concurrent graph slots.
+            priority = {ExecutionState.UNKNOWN_OUTCOME: 0,
+                        ExecutionState.CANCELLED: 1, ExecutionState.FAILED: 2}
+            result = min(self._child_failures, key=lambda item: priority[item.state])
+            return self._with_display(result, text)
+        return ToolResult.success(text)
 
     # ------------------------------------------------------------------
     # 内部方法
@@ -150,11 +201,17 @@ class WorkflowEngine:
                     arguments=data if isinstance(data, dict) else {},
                 )
             elif event == "tool_result":
-                result_preview = str(data)[:2000] if data else ""
+                if not isinstance(data, ToolExecutionOutcome):
+                    raise TypeError("Workflow tool result requires structured child outcome")
+                result_preview = data.display_text[:2000]
+                result_status = "success" if data.succeeded else data.state.value.lower()
                 calls = self._execution_data[aid]["toolCalls"]
                 for i in range(len(calls) - 1, -1, -1):
                     if calls[i]["tool"] == tool_name and calls[i]["status"] == "running":
-                        calls[i]["status"] = "success"
+                        calls[i]["status"] = result_status
+                        calls[i]["state"] = data.state.value
+                        calls[i]["operation_id"] = data.operation_id
+                        calls[i]["attempt_id"] = data.attempt_id
                         calls[i]["result"] = result_preview
                         break
                 await self._emit_ws(
@@ -163,6 +220,12 @@ class WorkflowEngine:
                     agent_label=label or aid,
                     tool=tool_name,
                     result=result_preview,
+                    status=result_status,
+                    state=data.state.value,
+                    operation_id=data.operation_id,
+                    attempt_id=data.attempt_id,
+                    error_category=data.error_category.value if data.error_category else None,
+                    side_effect_state=data.side_effect_state.value,
                 )
             elif event == "chunk":
                 await self._emit_ws(
@@ -188,17 +251,37 @@ class WorkflowEngine:
         record = self._mgr.get_task(task_id)
         if record is None:
             raise RuntimeError(f"Sub-agent task {task_id} disappeared unexpectedly")
-        if record.status.value == "failed":
-            raise RuntimeError(record.error or "Sub-agent failed without error message")
+        child_outcome = record.outcome
+        if child_outcome is None:
+            child_outcome = ToolResult.unknown_outcome(
+                ErrorCategory.RESULT_CONTRACT,
+                "Sub-agent finished without a structured result.",
+            )
+        if child_outcome.state is not ExecutionState.SUCCEEDED:
+            self._child_failures.append(child_outcome)
+            self._execution_data[aid]["status"] = child_outcome.state.value.lower()
+            await self._emit_ws(
+                "workflow_agent_failed",
+                agent_id=aid,
+                agent_label=label or aid,
+                result=child_outcome.display_text,
+                status=child_outcome.state.value.lower(),
+                state=child_outcome.state.value,
+                side_effect_state=child_outcome.side_effect_state.value,
+            )
+            raise ChildOutcomeError(child_outcome)
         result = record.result or ""
 
         self._execution_data[aid]["result"] = result
+        self._execution_data[aid]["status"] = "success"
 
         await self._emit_ws(
             "workflow_agent_complete",
             agent_id=aid,
             agent_label=label or aid,
             result=result,
+            status="success",
+            state=ExecutionState.SUCCEEDED.value,
         )
         return result
 
@@ -277,7 +360,10 @@ class WorkflowEngine:
     async def run_pipeline(self, goal: str, stages: List[Dict[str, Any]], enable_skills: bool = False) -> str:
         """顺序流水线，每个阶段继承前序输出"""
         if not stages:
-            return "No pipeline stages defined."
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "No pipeline stages defined.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
 
         accumulated: str = ""
         stage_outputs: List[dict] = []
@@ -285,7 +371,7 @@ class WorkflowEngine:
         for idx, stage in enumerate(stages):
             if self._is_cancelled():
                 logger.info("[Workflow/Pipeline] 用户取消，终止流水线")
-                break
+                raise asyncio.CancelledError("Workflow cancelled")
             role = stage.get("role", f"Stage-{idx + 1}")
             task_desc = stage.get("task", "")
             custom_sp = stage.get("system_prompt") or None
@@ -337,7 +423,10 @@ class WorkflowEngine:
     async def run_graph(self, goal: str, slots: List[Dict[str, Any]], enable_skills: bool = False) -> str:
         """依赖DAG，自动并行调度"""
         if not slots:
-            return "No graph slots defined."
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "No graph slots defined.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
 
         slot_system_prompts: Optional[Dict[str, str]] = {}
         slot_map: Dict[str, AgentSlot] = {}
@@ -346,7 +435,10 @@ class WorkflowEngine:
         for s in slots:
             sid = s.get("id", "")
             if not sid:
-                return "Error: every slot must have a non-empty 'id' field."
+                raise ChildOutcomeError(ToolResult.failure(
+                    ErrorCategory.VALIDATION, "Every slot must have a non-empty 'id' field.",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                ))
             deps = s.get("depends_on", s.get("depends", []))
             role = s.get("role", sid)
             task_desc = s.get("task", "")
@@ -379,15 +471,22 @@ class WorkflowEngine:
         for sid, slot in slot_map.items():
             for dep in slot.depends_on:
                 if dep not in slot_map:
-                    return f"Error: slot '{sid}' depends on unknown slot '{dep}'."
+                    raise ChildOutcomeError(ToolResult.failure(
+                        ErrorCategory.VALIDATION,
+                        f"Slot '{sid}' depends on unknown slot '{dep}'.",
+                        side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                    ))
 
         if self._detect_cycle(dep_map):
-            return "Error: the dependency graph contains a cycle."
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "The dependency graph contains a cycle.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
 
         while any(s.phase == SlotPhase.WAITING for s in slot_map.values()):
             if self._is_cancelled():
                 logger.info("[Workflow/Graph] 用户取消，终止依赖图调度")
-                break
+                raise asyncio.CancelledError("Workflow cancelled")
             ready = [
                 s for s in slot_map.values()
                 if s.phase == SlotPhase.WAITING
@@ -450,6 +549,11 @@ class WorkflowEngine:
                 except Exception as exc:
                     slot.phase = SlotPhase.FAILED
                     slot.error = str(exc)
+                    if not isinstance(exc, ChildOutcomeError):
+                        self._child_failures.append(ToolResult.unknown_outcome(
+                            ErrorCategory.INTERNAL,
+                            f"Workflow slot '{slot.slot_id}' failed: {exc}",
+                        ))
                     logger.error(f"[Workflow/Graph] Slot '{slot.slot_id}' failed: {exc}")
 
             await asyncio.gather(*[_run_slot(s) for s in to_execute])
@@ -480,7 +584,10 @@ class WorkflowEngine:
     async def run_council(self, question: str, members: List[Dict[str, Any]], cross_review: bool = True, enable_skills: bool = False) -> str:
         """多视角评审：立场陈述 → [可选]交叉评审 → 综合输出"""
         if not members:
-            return "No council members defined."
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "No council members defined.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
 
         member_map: Dict[str, str] = {
             m["id"]: m.get("perspective", "neutral analyst") for m in members
@@ -495,6 +602,21 @@ class WorkflowEngine:
                 "You analyse questions rigorously from that viewpoint, defend your position "
                 "with evidence, and engage constructively with other members' arguments."
             )
+
+        async def _finish_round(calls) -> Dict[str, str]:
+            # Wait for every started child before reporting a terminal workflow
+            # result; otherwise a sibling may still be executing a Tool.
+            results = await asyncio.gather(*calls, return_exceptions=True)
+            errors = [item for item in results if isinstance(item, BaseException)]
+            if errors:
+                if self._child_failures:
+                    priority = {ExecutionState.UNKNOWN_OUTCOME: 0,
+                                ExecutionState.CANCELLED: 1, ExecutionState.FAILED: 2}
+                    raise ChildOutcomeError(min(
+                        self._child_failures, key=lambda item: priority[item.state]
+                    ))
+                raise errors[0]
+            return dict(results)
 
         async def _initial(member: dict) -> Tuple[str, str]:
             mid = member["id"]
@@ -515,13 +637,11 @@ class WorkflowEngine:
             )
             return mid, result
 
-        round1: Dict[str, str] = dict(
-            await asyncio.gather(*[_initial(m) for m in members])
-        )
+        round1: Dict[str, str] = await _finish_round([_initial(m) for m in members])
 
         if self._is_cancelled():
             logger.info("[Workflow/Council] 用户取消，终止于第1轮完成后")
-            return "Workflow cancelled after round 1."
+            raise asyncio.CancelledError("Workflow cancelled after round 1")
 
         if not cross_review:
             logger.info("[Workflow/Council] 独立模式，跳过交叉评审")
@@ -569,9 +689,7 @@ class WorkflowEngine:
             )
             return mid, result
 
-        round2: Dict[str, str] = dict(
-            await asyncio.gather(*[_cross_review(m) for m in members])
-        )
+        round2: Dict[str, str] = await _finish_round([_cross_review(m) for m in members])
 
         blocks = []
         for m in members:

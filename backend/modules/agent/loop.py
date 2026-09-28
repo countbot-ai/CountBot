@@ -10,7 +10,12 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 from backend.modules.tools.conversation_history import get_conversation_history
-from backend.modules.tools._failure import RetryableToolError
+from backend.modules.tools.execution import (
+    ExecutionState,
+    RetrySafety,
+    SideEffectState,
+    ToolExecutionInProgress,
+)
 from backend.modules.providers.base import AUTH_ERROR_HINTS, RATE_LIMIT_HINTS
 
 
@@ -462,7 +467,10 @@ class AgentLoop:
                             logger.warning(f"Failed to send tool notification: {e}")
                         
                         start_time = time.time()
-                        result = None
+                        # 一个 LLM Tool call 只创建一个 operation；tool_id 仅用于关联。
+                        # Registry 为获准执行的每次物理尝试另建 attempt_id。
+                        operation_id = str(uuid.uuid4())
+                        outcome = None
                         last_error = None
                         
                         if self.tools:
@@ -473,56 +481,92 @@ class AgentLoop:
                         # 主循环不叠加外层 wait_for，避免长任务被默认短超时误杀。
                         uses_outer_timeout = tool_name not in self._SELF_ALARMING_TOOLS
                         try:
-                            for attempt in range(self.max_retries):
+                            for attempt in range(max(1, self.max_retries)):
+                                # 后续尝试若在返回前抛异常，不得沿用上一次的终态。
+                                outcome = None
                                 try:
                                     if uses_outer_timeout:
-                                        result = await asyncio.wait_for(
-                                            self.execute_tool(tool_name, tool_args),
+                                        outcome = await asyncio.wait_for(
+                                            self.execute_tool(
+                                                tool_name, tool_args,
+                                                operation_id=operation_id,
+                                                correlation_id=tool_id,
+                                                retry_ceiling=max(0, self.max_retries - 1),
+                                                retry_authorized=attempt > 0,
+                                                cancellation_token=cancel_token,
+                                            ),
                                             timeout=tool_timeout,
                                         )
                                     else:
-                                        result = await self.execute_tool(
-                                            tool_name, tool_args
+                                        outcome = await self.execute_tool(
+                                            tool_name, tool_args,
+                                            operation_id=operation_id,
+                                            correlation_id=tool_id,
+                                            retry_ceiling=max(0, self.max_retries - 1),
+                                            retry_authorized=attempt > 0,
+                                            cancellation_token=cancel_token,
                                         )
-                                    logger.debug(f"Tool {tool_name} succeeded")
-                                    break
+                                    if isinstance(outcome, ToolExecutionInProgress):
+                                        break
+                                    if outcome.state is ExecutionState.SUCCEEDED:
+                                        logger.debug(f"Tool {tool_name} succeeded")
+                                        break
+                                    # 仅明确失败、可重试且安全时才申请下一次尝试；
+                                    # Registry ledger 仍负责核对前次终态并准入新 attempt。
+                                    if not (
+                                        outcome.state is ExecutionState.FAILED
+                                        and outcome.retryable
+                                        and outcome.retry_safety is RetrySafety.SAFE
+                                        and outcome.side_effect_state is not SideEffectState.UNKNOWN
+                                        and attempt < max(1, self.max_retries) - 1
+                                    ):
+                                        break
+                                    logger.warning(
+                                        f"Tool {tool_name} failed safely (attempt {attempt + 1}/{self.max_retries})"
+                                    )
+                                    await asyncio.sleep(self.retry_delay)
                                 except asyncio.TimeoutError:
-                                    # 挂死工具重试无意义：超时不重试，直接以模板文案
-                                    # 返回给模型（事实 + 下一步建议）。
-                                    result = (
-                                        f"Error: Tool '{tool_name}' timed out after "
-                                        f"{tool_timeout}s. Next: try a smaller scope "
-                                        f"or split the work."
+                                    # Registry 通常在取消后返回 UNKNOWN_OUTCOME；若未返回，
+                                    # 仍保留副作用不确定性，且不再发起下一次尝试。
+                                    last_error = (
+                                        f"Tool '{tool_name}' timed out after {tool_timeout}s; "
+                                        "execution and side effects may have occurred."
                                     )
                                     logger.error(
                                         f"Tool {tool_name} timed out after "
                                         f"{tool_timeout}s"
                                     )
                                     break
-                                except RetryableToolError as e:
-                                    # 可重试（网络/超时/连接类）：计入重试次数
-                                    last_error = e
-                                    logger.warning(
-                                        f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
-                                    )
-                                    if attempt < self.max_retries - 1:
-                                        await asyncio.sleep(self.retry_delay)
                                 except Exception as e:
-                                    # 兜底：防御 registry 意外上抛（正常契约下
-                                    # registry 会返回字符串，此处仅防异常路径）
+                                    # 边界意外上抛时没有可信的重试安全证明，停止重试。
                                     last_error = e
-                                    logger.warning(
-                                        f"Tool {tool_name} failed (attempt {attempt + 1}/{self.max_retries}): {e}"
-                                    )
-                                    if attempt < self.max_retries - 1:
-                                        await asyncio.sleep(self.retry_delay)
+                                    logger.exception(f"Canonical Tool execution failed: {tool_name}")
+                                    break
                         finally:
                             if self.tools:
                                 self.tools.set_tool_event_handler(None)
                         
                         duration_ms = int((time.time() - start_time) * 1000)
                         
-                        if result is not None:
+                        if isinstance(outcome, ToolExecutionInProgress):
+                            # IN_PROGRESS 只是 operation 准入结果，不记录为物理尝试终态。
+                            progress_text = outcome.display_text
+                            if self.context_builder:
+                                messages = self.context_builder.add_tool_result(
+                                    messages, tool_id, tool_name, progress_text,
+                                )
+                            else:
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_id,
+                                    "name": tool_name,
+                                    "content": progress_text,
+                                })
+                            logger.info(
+                                f"Tool {tool_name} is still in progress: operation={operation_id}"
+                            )
+                        elif outcome is not None and outcome.state is ExecutionState.SUCCEEDED:
+                            result = outcome.display_text
                             try:
                                 conversation_history = get_conversation_history()
                                 conversation_history.add_conversation(
@@ -543,6 +587,7 @@ class AgentLoop:
                                     tool_name=tool_name,
                                     arguments=tool_args,
                                     result=result,
+                                    phase="success",
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to send tool result notification: {e}")
@@ -557,6 +602,9 @@ class AgentLoop:
                                             "result": result,
                                             "session_id": session_id,
                                             "duration_ms": duration_ms,
+                                            "execution_state": outcome.state.value,
+                                            "operation_id": outcome.operation_id,
+                                            "attempt_id": outcome.attempt_id,
                                         },
                                     )
                                     if inspect.isawaitable(maybe_result):
@@ -591,17 +639,16 @@ class AgentLoop:
                                 f"status=success, duration_ms={duration_ms}"
                             )
                         else:
-                            if isinstance(last_error, RetryableToolError):
-                                # RetryableToolError.__str__ 不含 "Error:" 前缀，
-                                # 最终文案使用带前缀的模型可见模板
-                                error_msg = last_error.to_model_message()
+                            if outcome is not None:
+                                error_msg = outcome.display_text
+                                if outcome.state is ExecutionState.UNKNOWN_OUTCOME:
+                                    error_msg = (
+                                        "Tool outcome is unknown; side effects may have occurred. "
+                                        + error_msg
+                                    )
                             else:
-                                error_msg = (
-                                    f"Error: Tool execution failed after "
-                                    f"{self.max_retries} attempts: {str(last_error)}. "
-                                    f"Next: check the tool arguments and retry."
-                                )
-                            logger.error(f"Tool {tool_name} failed permanently: {error_msg}")
+                                error_msg = str(last_error or "Tool execution produced no outcome.")
+                            logger.error(f"Tool {tool_name} did not succeed: {error_msg}")
                             
                             try:
                                 conversation_history = get_conversation_history()
@@ -623,6 +670,7 @@ class AgentLoop:
                                     tool_name=tool_name,
                                     arguments=tool_args,
                                     error=error_msg,
+                                    phase="non_success",
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to send tool error notification: {e}")
@@ -637,6 +685,9 @@ class AgentLoop:
                                             "error": error_msg,
                                             "session_id": session_id,
                                             "duration_ms": duration_ms,
+                                            "execution_state": outcome.state.value if outcome else None,
+                                            "operation_id": outcome.operation_id if outcome else operation_id,
+                                            "attempt_id": outcome.attempt_id if outcome else None,
                                         },
                                     )
                                     if inspect.isawaitable(maybe_result):
@@ -791,43 +842,26 @@ class AgentLoop:
         self,
         tool_name: str,
         arguments: Dict[str, Any],
-    ) -> str:
-        """
-        执行工具调用
-        
-        Args:
-            tool_name: 工具名称
-            arguments: 工具参数
-            
-        Returns:
-            str: 工具执行结果
-            
-        Raises:
-            ValueError: 工具不存在
-            Exception: 工具执行失败
-        """
+        *,
+        operation_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        cancellation_token=None,
+        retry_ceiling: int = 0,
+        retry_authorized: bool = False,
+    ):
+        """将 Tool 调用交给 Registry，并原样返回结构化结果或进行中准入结果。"""
         if not self.tools:
             raise ValueError("ToolRegistry not initialized")
-        
         logger.debug(f"执行工具: {tool_name}")
-        
-        try:
-            result = await self.tools.execute(
-                tool_name,
-                arguments,
-                auto_record=False,
-                # 主循环对可重试异常（网络/超时/连接类）opt-in 上抛，
-                # 以便外层 for attempt 重试循环真正生效。
-                raise_on_retryable=True,
-            )
-            return result
-            
-        except RetryableToolError:
-            # registry 已记录失败细节并审计落盘，这里透传供主循环重试
-            raise
-        except Exception as e:
-            logger.error(f"Tool execution failed: {tool_name} - {e}")
-            raise
+        return await self.tools.execute_outcome(
+            tool_name=tool_name,
+            arguments=arguments,
+            operation_id=operation_id,
+            correlation_id=correlation_id,
+            cancellation_token=cancellation_token,
+            retry_ceiling=retry_ceiling,
+            retry_authorized=retry_authorized,
+        )
 
     async def process_direct(
         self,

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.loop import AgentLoop
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
 from backend.modules.config.loader import config_loader
 from backend.modules.external_agents.conversation import (
     build_history_prompt,
@@ -464,7 +465,7 @@ async def handle_tool_execution(
     arguments: Dict[str, Any],
     agent_loop: AgentLoop,
 ) -> None:
-    """处理工具执行事件
+    """处理工具执行事件；由通知封装消费 Registry 结构化结果。
 
     Args:
         session_id: 会话 ID
@@ -485,7 +486,12 @@ async def handle_tool_execution(
             executor=agent_loop.execute_tool,
         )
 
-        logger.info(f"工具执行完成: {tool_name}")
+        if isinstance(result, ToolExecutionInProgress):
+            logger.info(f"工具仍在执行: {tool_name}")
+        elif result.state is ExecutionState.SUCCEEDED:
+            logger.info(f"工具执行完成: {tool_name}")
+        else:
+            logger.warning(f"工具执行未成功: {tool_name}, state={result.state.value}")
 
     except Exception as e:
         logger.exception(f"工具执行失败: {e}")

@@ -19,6 +19,7 @@ from backend.modules.session.runtime_config import (
     resolve_session_runtime_config,
 )
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import ErrorCategory, SideEffectState, ToolResult
 
 
 _event_callback_context: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
@@ -182,13 +183,30 @@ class WorkflowTool(Tool):
         team_name: Optional[str] = None,
         **kwargs: Any,
     ) -> str:
+        return (await self.execute_outcome(
+            mode=mode, goal=goal, agents=agents, cross_review=cross_review,
+            team_name=team_name, **kwargs,
+        )).display_text
+
+    async def execute_outcome(
+        self,
+        mode: Optional[str] = None,
+        goal: str = "",
+        agents: Optional[List[dict]] = None,
+        cross_review: bool = True,
+        team_name: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ToolResult:
         agents = agents or []
 
         if not goal:
-            return "Error: 'goal' must be provided."
+            return ToolResult.failure(ErrorCategory.VALIDATION,
+                "Error: 'goal' must be provided.", side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
         if not team_name and not agents:
-            return "Error: either 'team_name' or 'agents' must be provided."
+            return ToolResult.failure(ErrorCategory.VALIDATION,
+                "Error: either 'team_name' or 'agents' must be provided.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
         # 确定是否启用技能系统和团队模型配置
         enable_skills = False
@@ -209,7 +227,9 @@ class WorkflowTool(Tool):
                     team = result.scalar_one_or_none()
 
                     if team is None:
-                        return f"Error: predefined team '{team_name}' was not found."
+                        return ToolResult.failure(ErrorCategory.VALIDATION,
+                            f"Error: predefined team '{team_name}' was not found.",
+                            side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
                     mode = team.mode
                     agents = team.agents or []
@@ -236,14 +256,18 @@ class WorkflowTool(Tool):
                     )
             except Exception as e:
                 logger.warning(f"Failed to load team config for '{team_name}': {e}")
-                return f"Error: failed to load predefined team '{team_name}': {str(e)}"
+                return ToolResult.failure(ErrorCategory.DEPENDENCY,
+                    f"Error: failed to load predefined team '{team_name}': {str(e)}",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
         # 团队专属模型优先；仅在团队未配置时才回退继承会话级模型。
         if team_model_config is None:
             team_model_config = self._load_session_model_override()
 
         if mode is None:
-            return "Error: 'mode' must be provided when using custom agents."
+            return ToolResult.failure(ErrorCategory.VALIDATION,
+                "Error: 'mode' must be provided when using custom agents.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
         engine = WorkflowEngine(
             self._manager,
@@ -254,14 +278,12 @@ class WorkflowTool(Tool):
             event_callback=_event_callback_context.get(),
         )
 
-        if mode == "pipeline":
-            return await engine.run_pipeline(goal, agents, enable_skills=enable_skills)
-        elif mode == "graph":
-            return await engine.run_graph(goal, agents, enable_skills=enable_skills)
-        elif mode == "council":
-            return await engine.run_council(goal, agents, cross_review=cross_review, enable_skills=enable_skills)
-        else:
-            return (
-                f"Error: unknown workflow mode '{mode}'. "
-                "Valid choices are: pipeline, graph, council."
+        if mode not in ("pipeline", "graph", "council"):
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                f"Error: unknown workflow mode '{mode}'. Valid choices are: pipeline, graph, council.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
             )
+        return await engine.run_outcome(
+            mode, goal, agents, cross_review=cross_review, enable_skills=enable_skills,
+        )

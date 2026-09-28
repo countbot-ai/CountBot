@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from backend.modules.config.loader import config_loader
 from backend.modules.tools.registry import ToolRegistry
+from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress
 from backend.modules.tools.conversation_history import get_conversation_history
 from backend.modules.tools.file_audit_logger import file_audit_logger
 
@@ -144,14 +145,29 @@ async def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
         
         tools = get_tool_registry()
         
-        # 执行工具
-        result = await tools.execute(
+        # Registry 返回权威结构化结果；此处只映射到现有 success/result/error 响应。
+        outcome = await tools.execute_outcome(
             tool_name=request.tool,
             arguments=request.arguments,
         )
-        
+        if isinstance(outcome, ToolExecutionInProgress):
+            # 进行中是 operation 准入状态，不是成功或失败的物理尝试。
+            return ExecuteToolResponse(
+                result="",
+                success=False,
+                error=outcome.display_text,
+            )
+        if outcome.state is not ExecutionState.SUCCEEDED:
+            error_text = outcome.display_text
+            if outcome.state is ExecutionState.UNKNOWN_OUTCOME:
+                error_text = "Tool outcome is unknown; side effects may have occurred. " + error_text
+            return ExecuteToolResponse(
+                result="",
+                success=False,
+                error=error_text,
+            )
         return ExecuteToolResponse(
-            result=result,
+            result=outcome.display_text,
             success=True,
         )
         

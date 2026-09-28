@@ -14,6 +14,7 @@ from backend.modules.session.runtime_config import (
     resolve_session_runtime_config,
 )
 from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import ErrorCategory, ExecutionState, ToolResult
 
 
 class SpawnTool(Tool):
@@ -122,6 +123,11 @@ class SpawnTool(Tool):
             return None
 
     async def execute(self, task: str, label: Optional[str] = None, **kwargs: Any) -> str:
+        return (await self.execute_outcome(task=task, label=label, **kwargs)).display_text
+
+    async def execute_outcome(
+        self, task: str, label: Optional[str] = None, **kwargs: Any
+    ) -> ToolResult:
         display_label = label or task[:30] + ("..." if len(task) > 30 else "")
         model_override = self._load_session_model_override()
 
@@ -152,16 +158,33 @@ class SpawnTool(Tool):
         try:
             await asyncio.wait_for(sub_task.done_event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
-            return f"子 Agent [{display_label}] 超时 (ID: {task_id})，任务仍在后台运行。"
+            return ToolResult.unknown_outcome(
+                ErrorCategory.TIMEOUT,
+                f"子 Agent [{display_label}] 超时 (ID: {task_id})，任务仍在后台运行。",
+            )
 
-        from backend.modules.agent.subagent import TaskStatus
+        child_outcome = sub_task.outcome
+        if child_outcome is None:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.RESULT_CONTRACT,
+                f"子 Agent [{display_label}] 已结束 (ID: {task_id})，但没有结构化结果。",
+            )
 
-        # 取消 ≠ 失败 ≠ 完成：先判取消，避免"任务已被取消"被误报为"已完成"
-        if sub_task.status == TaskStatus.CANCELLED:
-            return f"子 Agent [{display_label}] 已取消 (ID: {task_id})。"
+        if child_outcome.state is ExecutionState.SUCCEEDED:
+            return ToolResult.success(
+                child_outcome.output or "",
+                display_text=(
+                    f"子 Agent [{display_label}] 已完成 (ID: {task_id})。\n\n"
+                    f"{sub_task.result or ''}"
+                ),
+            )
 
-        if sub_task.error:
-            return f"子 Agent [{display_label}] 失败 (ID: {task_id}): {sub_task.error}"
-
-        result_text = sub_task.result or ""
-        return f"子 Agent [{display_label}] 已完成 (ID: {task_id})。\n\n{result_text}"
+        prefix = "已取消" if child_outcome.state is ExecutionState.CANCELLED else "失败"
+        return ToolResult(
+            state=child_outcome.state,
+            display_text=f"子 Agent [{display_label}] {prefix} (ID: {task_id}): {child_outcome.display_text}",
+            error_category=child_outcome.error_category,
+            retryable=child_outcome.retryable,
+            retry_safety=child_outcome.retry_safety,
+            side_effect_state=child_outcome.side_effect_state,
+        )
