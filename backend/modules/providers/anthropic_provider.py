@@ -25,7 +25,7 @@ class AnthropicProvider(LLMProvider):
         self,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
-        default_model: str = "claude-sonnet-4-20250514",
+        default_model: str = "claude-sonnet-4-6",
         timeout: float = 600.0,
         max_retries: int = 3,
         provider_id: Optional[str] = None,
@@ -1105,4 +1105,4 @@ class AnthropicProvider(LLMProvider):
 
     def get_default_model(self) -> str:
         """Return the configured default model."""
-        return self.default_model or "claude-sonnet-4-20250514"
+        return self.default_model or "claude-sonnet-4-6"
