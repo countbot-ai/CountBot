@@ -55,32 +55,34 @@
           
           <transition name="collapse">
             <div v-show="!collapsedDates.has(group.date)" class="timeline-items">
-              <div
-                v-for="message in group.messages"
-                :key="message.id"
-                class="timeline-item"
-                :class="{ 
-                  active: activeMessageId === message.id,
-                  'is-user': message.role === 'user',
-                  'is-assistant': message.role === 'assistant'
-                }"
-                @click="scrollToMessage(message.id)"
-              >
-                <div class="timeline-dot" :class="`role-${message.role}`" />
-                <div class="timeline-card">
-                  <div class="timeline-time">{{ formatTime(message.timestamp) }}</div>
-                  <div class="timeline-preview">
-                    <div class="timeline-role">
-                      <component
-                        :is="message.role === 'user' ? UserIcon : BotIcon"
-                        :size="14"
-                      />
-                      <span>{{ message.role === 'user' ? ($t('timeline.user') || '用户') : ($t('timeline.assistant') || '助手') }}</span>
-                    </div>
-                    <div class="timeline-text" v-html="highlightSearchText(truncateText(message.content, 80))"></div>
-                    <div v-if="resolveToolCount(message) > 0" class="timeline-tools">
-                      <component :is="WrenchIcon" :size="12" />
-                      <span>{{ resolveToolCount(message) }} {{ $t('timeline.tools') || '个工具' }}</span>
+              <div class="timeline-items-inner">
+                <div
+                  v-for="message in group.messages"
+                  :key="message.id"
+                  class="timeline-item"
+                  :class="{ 
+                    active: activeMessageId === message.id,
+                    'is-user': message.role === 'user',
+                    'is-assistant': message.role === 'assistant'
+                  }"
+                  @click="scrollToMessage(message.id)"
+                >
+                  <div class="timeline-dot" :class="`role-${message.role}`" />
+                  <div class="timeline-card">
+                    <div class="timeline-time">{{ formatTime(message.timestamp) }}</div>
+                    <div class="timeline-preview">
+                      <div class="timeline-role">
+                        <component
+                          :is="message.role === 'user' ? UserIcon : BotIcon"
+                          :size="14"
+                        />
+                        <span>{{ message.role === 'user' ? ($t('timeline.user') || '用户') : ($t('timeline.assistant') || '助手') }}</span>
+                      </div>
+                      <div class="timeline-text" v-html="highlightSearchText(truncateText(message.content, 80))"></div>
+                      <div v-if="resolveToolCount(message) > 0" class="timeline-tools">
+                        <component :is="WrenchIcon" :size="12" />
+                        <span>{{ resolveToolCount(message) }} {{ $t('timeline.tools') || '个工具' }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>

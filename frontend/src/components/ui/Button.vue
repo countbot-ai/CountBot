@@ -101,7 +101,7 @@ const handleClick = (event: MouseEvent) => {
 }
 
 .button:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-text-tertiary);
   outline-offset: 2px;
 }
 
@@ -143,11 +143,11 @@ const handleClick = (event: MouseEvent) => {
 /* Variants */
 .button-primary {
   background-color: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-text-inverse);
 }
 
 .button-primary:hover:not(.button-disabled):not(.button-loading) {
-  background-color: #1d4ed8;
+  background-color: var(--color-primary-hover);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -190,22 +190,22 @@ const handleClick = (event: MouseEvent) => {
 
 .button-danger {
   background-color: var(--color-error);
-  color: #ffffff;
+  color: var(--color-text-inverse);
 }
 
 .button-danger:hover:not(.button-disabled):not(.button-loading) {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
 .button-warning {
   background-color: var(--color-warning);
-  color: #ffffff;
+  color: var(--color-text-inverse);
 }
 
 .button-warning:hover:not(.button-disabled):not(.button-loading) {
-  background-color: var(--color-warning-hover, #d97706);
+  background-color: var(--color-warning-hover);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }

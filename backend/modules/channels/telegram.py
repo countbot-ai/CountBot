@@ -50,6 +50,7 @@ class TelegramChannel(BaseChannel):
             return
 
         self._running = True
+        self.set_runtime_state(self.RUNTIME_CONNECTING)
 
         builder = Application.builder().token(self.config.token)
         if hasattr(self.config, "proxy") and self.config.proxy:
@@ -82,12 +83,16 @@ class TelegramChannel(BaseChannel):
         await self._app.updater.start_polling(
             allowed_updates=["message"], drop_pending_updates=True
         )
+        self.set_runtime_state(self.RUNTIME_RUNNING, reconnect_attempts=0)
 
         while self._running:
             await asyncio.sleep(1)
 
+        self.set_runtime_state(self.RUNTIME_STOPPED)
+
     async def stop(self) -> None:
         """停止 Telegram 机器人。"""
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         if self._app:
             logger.info("Stopping Telegram bot...")
@@ -95,6 +100,7 @@ class TelegramChannel(BaseChannel):
             await self._app.stop()
             await self._app.shutdown()
             self._app = None
+        self.set_runtime_state(self.RUNTIME_STOPPED)
 
     # ------------------------------------------------------------------
     # 出站消息发送

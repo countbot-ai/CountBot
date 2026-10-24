@@ -80,7 +80,7 @@ const handleSave = () => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -96,7 +96,7 @@ const handleSave = () => {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .modal-header {
@@ -158,8 +158,8 @@ const handleSave = () => {
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
 }
 
 .form-group textarea {
@@ -186,7 +186,7 @@ const handleSave = () => {
 
 .save-btn {
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: white;

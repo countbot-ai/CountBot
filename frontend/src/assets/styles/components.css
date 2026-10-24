@@ -1,413 +1,458 @@
 /**
- * 全局组件样式 - 确保所有组件有明确的边界和层次
+ * 全局组件样式 - 去边框、微明度分层
+ * 原则：不写死颜色，全部走令牌；边框仅保留 1%-3% 结构存在感；阴影只做浮层景深。
  */
 
 /* ==================== 基础容器样式 ==================== */
 
-/* 主布局 */
 .main-layout {
-  background-color: var(--bg-primary, #ffffff) !important;
+  background-color: var(--color-bg-primary);
 }
 
 .content-area {
-  background-color: var(--bg-secondary, #f9fafb) !important;
+  background-color: var(--color-bg-secondary);
 }
 
 /* ==================== 聊天窗口 ==================== */
 
 .chat-window {
-  background-color: var(--bg-secondary, #f9fafb) !important;
+  background-color: var(--color-bg-primary);
 }
 
 .chat-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+  background-color: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .chat-messages {
-  background-color: var(--bg-secondary, #f9fafb) !important;
+  background-color: var(--color-bg-primary);
 }
 
 .chat-input-container {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-top: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05) !important;
+  background-color: var(--color-bg-primary);
+  border-top: 1px solid var(--color-border-primary);
 }
 
-/* ==================== 技能库 ==================== */
+/* ==================== 面板通用 ==================== */
 
-.skills-library {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.skills-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.stats-bar {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-}
-
-.skill-card {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.skill-card:hover {
-  border-color: var(--color-primary, #18181b) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: translateY(-2px);
-}
-
-/* ==================== 工具面板 ==================== */
-
-.tools-panel {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.tools-nav {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.tool-card {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.tool-card:hover {
-  border-color: var(--color-primary, #18181b) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: translateY(-2px);
-}
-
-/* ==================== 文件操作 ==================== */
-
-.file-operations {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.operations-tabs {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
+.skills-library,
+.tools-panel,
+.file-operations,
+.shell-executor,
+.tool-history,
+.session-panel,
+.task-monitor,
+.settings-panel,
+.memory-panel,
+.cron-manager,
 .op-panel {
-  background-color: var(--bg-secondary, #f9fafb) !important;
+  background: var(--color-bg-secondary);
 }
 
+.skills-header,
+.stats-bar,
+.tools-nav,
+.operations-tabs,
+.executor-header,
+.history-header,
+.stats-grid,
+.session-header,
+.monitor-header,
+.settings-header,
+.memory-header,
+.cron-header,
+.panel-header {
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+/* ==================== 卡片 - 去边框，靠背景阶梯分层 ==================== */
+
+.skill-card,
+.tool-card,
+.session-card,
+.task-card,
+.history-item,
+.stat-card,
+.memory-card,
+.cron-card,
+.settings-section,
 .result-box {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
-/* ==================== Shell 执行器 ==================== */
-
-.shell-executor {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.executor-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.history-item {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.history-item:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: translateY(-1px);
-}
-
-/* ==================== 工具历史 ==================== */
-
-.tool-history {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.history-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.stats-grid {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-}
-
-.stat-card {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
+.skill-card:hover,
+.tool-card:hover,
+.session-card:hover,
+.task-card:hover,
+.history-item:hover,
 .stat-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: translateY(-2px);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 /* ==================== 消息列表 ==================== */
 
 .message-list-container {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-/* ==================== 会话面板 ==================== */
-
-.session-panel {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.session-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.session-card {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.session-card:hover {
-  border-color: var(--color-primary, #18181b) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: translateY(-2px);
-}
-
-/* ==================== 任务监控 ==================== */
-
-.task-monitor {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.monitor-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.task-card {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.task-card:hover {
-  border-color: var(--color-primary, #18181b) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
-  transform: translateY(-2px);
-}
-
-/* ==================== 设置面板 ==================== */
-
-.settings-panel {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.settings-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.settings-section {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-/* ==================== 记忆面板 ==================== */
-
-.memory-panel {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.memory-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.memory-card {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-/* ==================== Cron 管理器 ==================== */
-
-.cron-manager {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-}
-
-.cron-header {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-}
-
-.cron-card {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+  background-color: var(--color-bg-primary);
 }
 
 /* ==================== 模态框 ==================== */
 
 .modal-overlay {
-  background-color: var(--overlay, rgba(0, 0, 0, 0.5)) !important;
-  backdrop-filter: blur(4px);
+  background: var(--color-overlay);
+  backdrop-filter: blur(6px);
 }
 
 .modal-content {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
 }
 
-/* ==================== 按钮样式 ==================== */
+/* ==================== 按钮 ==================== */
 
 .btn-primary {
-  background-color: var(--color-primary, #18181b) !important;
-  border: 1px solid var(--color-primary, #18181b) !important;
-  color: #ffffff !important;
-  box-shadow: 0 2px 4px rgba(24, 24, 27, 0.2) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  min-width: 100px;
+  padding: 9px 18px;
+  background: var(--color-primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: none;
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+  cursor: pointer;
 }
 
-.btn-primary:hover {
-  background-color: var(--color-primary-hover, #27272a) !important;
-  box-shadow: 0 4px 6px rgba(24, 24, 27, 0.3) !important;
-  transform: translateY(-1px);
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn-secondary {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  color: var(--text-primary, #111827) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  min-width: 80px;
+  padding: 8px 16px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: none;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+  cursor: pointer;
 }
 
-.btn-secondary:hover {
-  background-color: var(--bg-secondary, #f9fafb) !important;
-  border-color: var(--color-primary, #18181b) !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-strong);
 }
 
-/* ==================== 输入框样式 ==================== */
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+/* ==================== 输入框 - 规则 2：双环咬合 ==================== */
 
 .form-input,
-.form-textarea {
-  background-color: var(--bg-primary, #ffffff) !important;
-  border: 1px solid var(--border-color, #e5e7eb) !important;
-  color: var(--text-primary, #111827) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+.form-textarea,
+.command-input {
+  padding: 9px 12px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
 }
 
+.form-input::placeholder,
+.form-textarea::placeholder,
+.command-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* 聚焦：无 outline，内环贴边 1px + 外环 4px 微明度，造"咬合"景深 */
 .form-input:focus,
-.form-textarea:focus {
-  border-color: var(--color-primary, #18181b) !important;
-  box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.08) !important;
+.form-textarea:focus,
+.command-input:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 5px var(--color-border-primary);
 }
 
-/* ==================== 深色模式 - 赛博朋克 ==================== */
+/* ==================== 标签页 ==================== */
 
-[data-theme="dark"] .main-layout,
-[data-theme="dark"] .chat-header,
-[data-theme="dark"] .chat-input-container,
-[data-theme="dark"] .skills-header,
-[data-theme="dark"] .stats-bar,
-[data-theme="dark"] .skill-card,
-[data-theme="dark"] .tools-nav,
-[data-theme="dark"] .tool-card,
-[data-theme="dark"] .operations-tabs,
-[data-theme="dark"] .result-box,
-[data-theme="dark"] .executor-header,
-[data-theme="dark"] .history-item,
-[data-theme="dark"] .history-header,
-[data-theme="dark"] .stats-grid,
-[data-theme="dark"] .stat-card,
-[data-theme="dark"] .session-header,
-[data-theme="dark"] .session-card,
-[data-theme="dark"] .monitor-header,
-[data-theme="dark"] .task-card,
-[data-theme="dark"] .settings-header,
-[data-theme="dark"] .settings-section,
-[data-theme="dark"] .memory-header,
-[data-theme="dark"] .memory-card,
-[data-theme="dark"] .cron-header,
-[data-theme="dark"] .cron-card,
-[data-theme="dark"] .modal-content {
-  background-color: var(--bg-elevated, #1d2633) !important;
-  border-color: var(--border-color, #222d3b) !important;
-  box-shadow: 0 14px 30px rgba(3, 7, 14, 0.2) !important;
+.nav-btn,
+.op-tab {
+  position: relative;
+  padding: 10px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+  cursor: pointer;
 }
 
-[data-theme="dark"] .btn-secondary {
-  background-color: var(--bg-elevated, #1d2633) !important;
-  border-color: var(--border-secondary, #314052) !important;
-  color: var(--text-secondary, #a3b0c2) !important;
-  box-shadow: 0 10px 20px rgba(3, 7, 14, 0.14) !important;
+.nav-btn:hover,
+.op-tab:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
-[data-theme="dark"] .form-input,
-[data-theme="dark"] .form-textarea {
-  background-color: #0f151d !important;
-  border-color: var(--border-color, #222d3b) !important;
-  color: var(--text-primary, #e5ecf6) !important;
-  box-shadow: none !important;
+.nav-btn.active,
+.op-tab.active {
+  background: transparent;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
-[data-theme="dark"] .content-area,
-[data-theme="dark"] .chat-window,
-[data-theme="dark"] .chat-messages,
-[data-theme="dark"] .skills-library,
-[data-theme="dark"] .tools-panel,
-[data-theme="dark"] .file-operations,
-[data-theme="dark"] .op-panel,
-[data-theme="dark"] .shell-executor,
-[data-theme="dark"] .tool-history,
-[data-theme="dark"] .message-list-container,
-[data-theme="dark"] .session-panel,
-[data-theme="dark"] .task-monitor,
-[data-theme="dark"] .settings-panel,
-[data-theme="dark"] .memory-panel,
-[data-theme="dark"] .cron-manager {
-  background:
-    radial-gradient(circle at top center, rgba(142, 164, 214, 0.045), transparent 30%),
-    linear-gradient(180deg, var(--bg-secondary, #121821), #111720) !important;
+/* 激活态下划线 - 强调色 */
+.nav-btn.active::after,
+.op-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: var(--color-border-strong);
+  border-radius: 2px 2px 0 0;
 }
 
-[data-theme="dark"] .stat-card {
-  background-color: var(--bg-tertiary, #18202b) !important;
+/* ==================== 徽章 / 状态 ==================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-tertiary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
 }
 
-[data-theme="dark"] .skill-card:hover,
-[data-theme="dark"] .tool-card:hover,
-[data-theme="dark"] .history-item:hover,
-[data-theme="dark"] .stat-card:hover,
-[data-theme="dark"] .session-card:hover,
-[data-theme="dark"] .task-card:hover {
-  border-color: rgba(142, 164, 214, 0.18) !important;
-  box-shadow: 0 18px 32px rgba(3, 7, 14, 0.22) !important;
+.item-status,
+.history-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
 }
 
-[data-theme="dark"] .modal-overlay {
-  background-color: rgba(5, 8, 18, 0.88) !important;
+.item-status.success,
+.history-status.success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.item-status.error,
+.history-status.error {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+/* ==================== 代码块 ==================== */
+
+.code-block-wrapper {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-tertiary);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.code-block-language {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.code-copy-btn:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+/* 复制成功态由 main.css 的 check-pop-fade 统一处理（微弹入场 + 2.5s 自熄） */
+.code-copy-btn.copied {
+    color: var(--color-success);
+}
+
+/* ==================== 图标按钮 ==================== */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+/* ==================== 加载 ==================== */
+
+.spin {
+  animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==================== 响应式 ==================== */
+
+@media (max-width: 768px) {
+  .panel {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .panel-header,
+  .panel-body {
+    padding: var(--spacing-lg);
+  }
+
+  .skills-grid,
+  .tools-grid {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+    min-width: auto;
+  }
+
+  .form-input,
+  .form-textarea {
+    width: 100%;
+  }
+
+  .modal-content {
+    width: calc(100% - var(--spacing-xl));
+    max-width: 100%;
+    margin: var(--spacing-lg);
+  }
+
+  .nav-btn,
+  .op-tab {
+    flex: 1;
+    min-width: 0;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-sm);
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
 }

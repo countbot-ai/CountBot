@@ -5,7 +5,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -21,7 +21,7 @@
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .dialog-header {
@@ -88,8 +88,8 @@
 .input:focus,
 .textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
 }
 
 .input:disabled {
@@ -127,7 +127,7 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--color-bg-tertiary);
   border-radius: 4px;
   font-size: 12px;
   color: var(--color-primary);
@@ -144,7 +144,7 @@
 }
 
 .remove-trait:hover {
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--color-bg-tertiary);
 }
 
 .icon-selector {
@@ -167,13 +167,13 @@
 }
 
 .icon-btn:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   background: var(--bg-hover);
 }
 
 .icon-btn.active {
-  border-color: var(--color-primary);
-  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
   color: var(--color-primary);
 }
 

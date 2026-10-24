@@ -81,6 +81,9 @@ class WorkflowEngine:
         self._event_callback = event_callback
         self._execution_data: Dict[str, dict] = {}
         self._child_failures: List[ToolResult] = []
+        # 本工作流派发的子任务登记：取消时按归属精确取消，
+        # 不能全表清杀 manager 上的任务（会误杀其他工作流/会话的子任务）
+        self._child_task_ids: set = set()
 
     @staticmethod
     def _with_display(result: ToolResult, display_text: str) -> ToolResult:
@@ -151,9 +154,9 @@ class WorkflowEngine:
         return is_cancelled
 
     async def _cancel_all_subagents(self) -> None:
-        """取消所有运行中的子任务"""
+        """取消本工作流派发的所有子任务（按归属过滤，不波及其他工作流）"""
         try:
-            cancelled = await self._mgr.cancel_all_tasks()
+            cancelled = await self._mgr.cancel_tasks(set(self._child_task_ids))
             if cancelled > 0:
                 logger.info(f"[Workflow] Cancelled {cancelled} running subagent tasks")
         except Exception as e:
@@ -254,6 +257,7 @@ class WorkflowEngine:
             model_override=self._team_model_config,  # 传递团队模型配置
             cancel_token=self._cancel_token,  # 传递取消令牌
         )
+        self._child_task_ids.add(task_id)  # 登记归属，供按归属取消
         await self._mgr.execute_task(task_id)
         bg = self._mgr.running_tasks.get(task_id)
         if bg:

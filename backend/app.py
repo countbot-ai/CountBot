@@ -100,6 +100,7 @@ def _create_shared_components(config, config_loader=None):
         memory=memory,
         skills=skills,
         persona_config=config.persona,
+        injection_config=config.injection,
     )
 
     logger.info("Creating subagent manager...")
@@ -130,6 +131,8 @@ def _create_shared_components(config, config_loader=None):
         audit_log_enabled=config.security.audit_log_enabled,
         subagent_manager=subagent_manager,
         skills_loader=skills,
+        # 禁用工具随 tool_params 下发，WebSocket / 渠道 / cron 复用同一份参数
+        disabled_tools=list(config.injection.disabled_tools),
     )
 
     logger.info("Registering all tools...")
@@ -168,6 +171,7 @@ async def lifespan(app: FastAPI):
         ensure_remote_setup_secret,
         get_remote_setup_secret_ttl_minutes,
     )
+    from backend.modules.auth.setup_notice import log_setup_entry_notice
     from backend.modules.auth.router import get_password_hash as get_auth_password_hash
 
     # 初始化数据库和配置
@@ -184,12 +188,7 @@ async def lifespan(app: FastAPI):
     else:
         setup_secret = ensure_remote_setup_secret(app)
         setup_secret_ttl_minutes = get_remote_setup_secret_ttl_minutes()
-        logger.info(
-            f"远程首次初始化入口：将此路径拼接到上方 Network 地址后访问（有效期 {setup_secret_ttl_minutes} 分钟，初始化成功后立即失效） -> /setup/{setup_secret}"
-        )
-        logger.info(
-            f"Remote first-time setup entry: append this path to the Network URL above (valid for {setup_secret_ttl_minutes} minutes and expires immediately after setup succeeds) -> /setup/{setup_secret}"
-        )
+        log_setup_entry_notice(setup_secret, setup_secret_ttl_minutes)
 
     # 创建共享组件
     logger.info("Creating shared components...")

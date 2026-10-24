@@ -1,163 +1,163 @@
 /**
- * CSS 变量定义 - 柔和现代配色
+ * CSS 变量定义 - 暖中性 + 单一强调色
  *
- * 设计理念：柔和、现代、专业
- * 灵感来源：GitHub, Linear, Tailwind
+ * 设计理念：
+ * - 去边框：分层完全靠 1%-3% 微明度背景阶梯，边框仅作结构存在感（近不可见）
+ * - 浅色 #fcfcfb / #f5f5f3，暗色 #0b0b0a / #151515 / #1a1a19 / #20201e
+ * - 两种主色：暖中性（骨架）+ terracotta 强调（focus / 选中 / 链接）
+ * - 禁纯黑 #000
  */
 
 :root {
-    /* ========== 颜色系统 ========== */
+    /* ========== 强调色（唯一彩色主色） ========== */
+    --color-accent: #bf6b4a;
+    --color-accent-hover: #a85c3e;
+    --color-accent-active: #8f4e34;
+    --color-accent-light: #f7ece7;
+    --color-accent-alpha: rgba(191, 107, 74, 0.12);
 
-    /* 主色调 - 柔和蓝灰 */
-    --color-primary: #334155;        /* 深蓝灰 */
-    --color-primary-hover: #1e293b;  /* 更深蓝灰 */
-    --color-primary-active: #0f172a; /* 最深蓝灰 */
-    --color-primary-light: #f1f5f9;  /* 极浅蓝灰背景 */
-    --color-primary-alpha: rgba(51, 65, 85, 0.08);
+    /* ========== 主色 = 近黑（浅色模式）/ 近白（暗色模式由 themes/dark.css 覆盖） ========== */
+    --color-primary: #23231f;
+    --color-primary-hover: #35342e;
+    --color-primary-active: #45443c;
+    --color-primary-light: #efefea;
+    --color-primary-alpha: rgba(35, 35, 31, 0.06);
 
-    /* 辅助色 - 柔和的蓝灰 */
-    --color-secondary: #64748b;      /* 中蓝灰 */
-    --color-secondary-hover: #475569;
-    --color-secondary-light: #f1f5f9;
+    /* 辅助色 */
+    --color-secondary: #6f6d64;
+    --color-secondary-hover: #56544c;
+    --color-secondary-light: #efefea;
 
-    /* 成功色 - 柔和的绿色 */
-    --color-success: #10b981;
-    --color-success-hover: #059669;
-    --color-success-light: #d1fae5;
+    /* 成功色 - 降饱和绿 */
+    --color-success: #3e9c78;
+    --color-success-hover: #358765;
+    --color-success-light: #e6f2ed;
 
-    /* 警告色 - 柔和的琥珀色 */
-    --color-warning: #f59e0b;
-    --color-warning-hover: #d97706;
-    --color-warning-light: #fef3c7;
+    /* 警告色 - 降饱和琥珀 */
+    --color-warning: #b98a2e;
+    --color-warning-hover: #a1772a;
+    --color-warning-light: #f7efdd;
 
-    /* 错误色 - 柔和的红色 */
-    --color-error: #ef4444;
-    --color-error-hover: #dc2626;
-    --color-error-light: #fee2e2;
+    /* 错误色 - 降饱和红 */
+    --color-error: #c5544d;
+    --color-error-hover: #ab4841;
+    --color-error-light: #f8e9e7;
 
-    /* 信息色 - 柔和的天蓝色 */
-    --color-info: #0ea5e9;
-    --color-info-hover: #0284c7;
-    --color-info-light: #e0f2fe;
+    /* 信息色 - 降饱和蓝 */
+    --color-info: #5d8fb8;
+    --color-info-hover: #4f7da4;
+    --color-info-light: #e8f0f6;
 
-    /* 中性色 - 柔和蓝灰系 */
-    --color-text-primary: #0f172a;    /* 深蓝灰 */
-    --color-text-secondary: #475569;  /* 中蓝灰 */
-    --color-text-tertiary: #94a3b8;   /* 浅蓝灰 */
-    --color-text-disabled: #cbd5e1;   /* 极浅蓝灰 */
+    /* ========== 文本色 - 暖灰阶 ========== */
+    --color-text-primary: #1c1c19;
+    --color-text-secondary: #57554e;
+    --color-text-tertiary: #8d8a80;
+    --color-text-disabled: #b9b6ac;
+    --color-text-inverse: #fcfcfb;
 
-    /* 背景色 - 温暖白色系 */
-    --color-bg-primary: #ffffff;      /* 纯白 */
-    --color-bg-secondary: #f8fafc;    /* 极浅蓝灰 */
-    --color-bg-tertiary: #f1f5f9;     /* 浅蓝灰 */
-    --color-bg-elevated: #ffffff;     /* 悬浮卡片 */
+    /* ========== 背景色 - 微明度四阶梯 ========== */
+    --color-bg-primary: #fcfcfb;      /* 页面 / 聊天区 */
+    --color-bg-secondary: #f5f5f3;    /* 侧栏 / 沉底 */
+    --color-bg-tertiary: #eeeeea;     /* hover / 内嵌 */
+    --color-bg-elevated: #ffffff;     /* 浮层 / 弹窗 */
+    --color-bg-overlay: rgba(28, 28, 25, 0.32);
 
-    /* 边框色 - 柔和 */
-    --color-border-primary: #e2e8f0;  /* 极淡蓝灰 */
-    --color-border-secondary: #cbd5e1;/* 淡蓝灰 */
-    --color-border-focus: var(--color-primary);
+    /* ========== 边框 - 1%-3% 微明度（去边框，仅存结构） ========== */
+    --color-border-primary: rgba(28, 28, 25, 0.07);
+    --color-border-secondary: rgba(28, 28, 25, 0.12);
+    --color-border-strong: rgba(28, 28, 25, 0.18);
+    --color-border-focus: var(--color-border-strong);
 
-    /* 阴影色 */
-    --color-shadow: rgba(0, 0, 0, 0.05);
-    --color-shadow-hover: rgba(0, 0, 0, 0.1);
+    /* ========== 阴影色 ========== */
+    --color-shadow: rgba(28, 28, 25, 0.06);
+    --color-shadow-hover: rgba(28, 28, 25, 0.1);
+    --color-overlay: rgba(28, 28, 25, 0.32);
 
-    /* 覆盖层 */
-    --color-overlay: rgba(0, 0, 0, 0.4);
+    /* ========== 代码高亮 ========== */
+    --code-bg: #f5f5f2;
+    --code-text: #2b2b26;
+    --code-comment: #9b988c;
+    --code-keyword: #a85c3e;
+    --code-string: #4a8a6c;
+    --code-number: #b98a2e;
+    --code-function: #5d7ea8;
 
-    /* ========== 间距系统 ========== */
-    --spacing-xs: 0.25rem;
-    /* 4px */
-    --spacing-sm: 0.5rem;
-    /* 8px */
-    --spacing-md: 1rem;
-    /* 16px */
-    --spacing-lg: 1.5rem;
-    /* 24px */
-    --spacing-xl: 2rem;
-    /* 32px */
-    --spacing-2xl: 3rem;
-    /* 48px */
-    --spacing-3xl: 4rem;
-    /* 64px */
+    /* ========== 滚动条 ========== */
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(28, 28, 25, 0.14);
+    --scrollbar-thumb-hover: rgba(28, 28, 25, 0.24);
 
-    /* ========== 字体系统 ========== */
-    --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --font-family-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    /* ========== 特殊组件 ========== */
+    --sidebar-bg: var(--color-bg-secondary);
+    --sidebar-border: var(--color-border-primary);
+    --sidebar-item-hover: var(--color-bg-tertiary);
+    --sidebar-item-active: var(--color-bg-tertiary);
 
-    --font-size-xs: 0.75rem;
-    /* 12px */
-    --font-size-sm: 0.875rem;
-    /* 14px */
-    --font-size-base: 1rem;
-    /* 16px */
-    --font-size-lg: 1.125rem;
-    /* 18px */
-    --font-size-xl: 1.25rem;
-    /* 20px */
-    --font-size-2xl: 1.5rem;
-    /* 24px */
-    --font-size-3xl: 1.875rem;
-    /* 30px */
-    --font-size-4xl: 2.25rem;
-    /* 36px */
+    --header-bg: var(--color-bg-primary);
+    --header-border: var(--color-border-primary);
 
-    --font-weight-normal: 400;
-    --font-weight-medium: 500;
-    --font-weight-semibold: 600;
-    --font-weight-bold: 700;
+    --card-bg: var(--color-bg-primary);
+    --card-border: var(--color-border-primary);
+    --card-shadow: none;
 
-    --line-height-tight: 1.25;
-    --line-height-normal: 1.5;
-    --line-height-relaxed: 1.75;
+    --input-bg: var(--color-bg-primary);
+    --input-border: var(--color-border-secondary);
+    --input-border-focus: var(--color-border-strong);
+    --input-placeholder: var(--color-text-tertiary);
 
-    /* ========== 圆角系统 ========== */
-    --radius-xs: 0.125rem;
-    /* 2px */
-    --radius-sm: 0.25rem;
-    /* 4px */
-    --radius-md: 0.375rem;
-    /* 6px */
-    --radius-lg: 0.5rem;
-    /* 8px */
-    --radius-xl: 0.75rem;
-    /* 12px */
-    --radius-2xl: 1rem;
-    /* 16px */
-    --radius-3xl: 1.5rem;
-    /* 24px */
-    --radius-full: 9999px;
+    --button-primary-bg: var(--color-primary);
+    --button-primary-text: var(--color-text-inverse);
+    --button-primary-hover: var(--color-primary-hover);
 
-    /* ========== 阴影系统 ========== */
-    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-    --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    --button-secondary-bg: var(--color-bg-primary);
+    --button-secondary-text: var(--color-text-primary);
+    --button-secondary-hover: var(--color-bg-tertiary);
 
-    /* ========== 过渡系统 ========== */
-    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    --modal-bg: var(--color-bg-elevated);
+    --modal-overlay: var(--color-bg-overlay);
 
-    /* ========== Z-index 系统 ========== */
-    --z-dropdown: 1000;
-    --z-sticky: 1020;
-    --z-fixed: 1030;
-    --z-modal-backdrop: 1040;
-    --z-modal: 1050;
-    --z-popover: 1060;
-    --z-tooltip: 1070;
+    --tooltip-bg: #23231f;
+    --tooltip-text: #fcfcfb;
 
-    /* ========== 别名（向后兼容） ========== */
+    /* 消息气泡 */
+    --message-user-bg: var(--color-primary);
+    --message-user-text: var(--color-text-inverse);
+    --message-assistant-bg: var(--color-bg-primary);
+    --message-assistant-text: var(--color-text-primary);
+
+    /* ========== 通用别名 ========== */
     --text-primary: var(--color-text-primary);
     --text-secondary: var(--color-text-secondary);
     --text-tertiary: var(--color-text-tertiary);
+    --text-disabled: var(--color-text-disabled);
     --bg-primary: var(--color-bg-primary);
     --bg-secondary: var(--color-bg-secondary);
     --bg-tertiary: var(--color-bg-tertiary);
+    --bg-elevated: var(--color-bg-elevated);
+    --bg-hover: var(--color-bg-tertiary);
+    --bg-active: var(--color-bg-tertiary);
     --border-color: var(--color-border-primary);
+    --border-primary: var(--color-border-primary);
+    --border-secondary: var(--color-border-secondary);
+    --border-focus: var(--color-border-strong);
     --hover-bg: var(--color-bg-tertiary);
-    --font-sans: var(--font-family-base);
-    --font-mono: var(--font-family-mono);
+    --overlay: var(--color-bg-overlay);
+    --color-primary-dark: var(--color-primary-active);
+
+    /* 历史别名（旧组件引用，统一映射到新令牌） */
+    --primary-color: var(--color-primary);
+    --primary-hover: var(--color-primary-hover);
+    --accent-color: var(--color-accent);
+    --success-color: var(--color-success);
+    --danger-color: var(--color-error);
+    --font-family-base: var(--font-sans);
+    --font-family-mono: var(--font-mono);
+    --color-shadow-light: var(--shadow-sm);
+    --color-shadow-medium: var(--shadow-md);
+    --color-success-alpha: color-mix(in srgb, var(--color-success) 12%, transparent);
+    --color-error-alpha: color-mix(in srgb, var(--color-error) 12%, transparent);
+    --color-success-dark: var(--color-success-hover);
+    --color-error-dark: var(--color-error-hover);
+    --color-success-lighter: var(--color-success-light);
+    --color-error-lighter: var(--color-error-light);
 }

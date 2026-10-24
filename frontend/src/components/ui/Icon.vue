@@ -113,7 +113,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 .icon-clickable:focus {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-text-tertiary);
   outline-offset: 2px;
 }
 </style>

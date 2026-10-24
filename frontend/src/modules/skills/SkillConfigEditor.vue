@@ -285,7 +285,7 @@ onMounted(() => {
 }
 
 .help-btn:hover {
-  background: var(--color-primary-light, #eff6ff);
+  background: var(--color-primary-light);
 }
 
 .close-btn {
@@ -397,8 +397,8 @@ onMounted(() => {
   padding: var(--spacing-md);
   margin-top: var(--spacing-xl);
   border-radius: var(--radius-md);
-  background: var(--color-primary-light, #eff6ff);
-  border: 1px solid var(--color-primary);
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border-strong);
   color: var(--color-primary);
   font-size: var(--font-size-xs);
 }
@@ -437,12 +437,12 @@ onMounted(() => {
 
 .save-btn {
   background: var(--color-primary);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   color: white;
 }
 
 .save-btn:hover:not(:disabled) {
-  background: var(--color-primary-dark, #2563eb);
+  background: var(--color-primary-dark);
 }
 
 .save-btn:disabled {
@@ -464,23 +464,11 @@ onMounted(() => {
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .editor-header {
-  background: var(--bg-primary, #0a0e1a);
-  border-color: #152035;
-}
 
-:root[data-theme="dark"] .help-btn:hover {
-  background: rgba(0, 240, 255, 0.1);
-}
 
-:root[data-theme="dark"] .security-notice {
-  background: rgba(0, 240, 255, 0.08);
-  border-color: rgba(0, 240, 255, 0.3);
-  color: #00f0ff;
-}
 
-:root[data-theme="dark"] .editor-footer {
-  background: var(--bg-primary, #0a0e1a);
-  border-color: #152035;
-}
+
+
+
+
 </style>

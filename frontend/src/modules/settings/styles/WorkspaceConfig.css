@@ -46,11 +46,11 @@
 }
 
 .config-card.warning-card {
-  border-color: rgba(245, 158, 11, 0.3);
+  border-color: var(--color-border-primary);
 }
 
 .config-card.warning-card .card-header {
-  background: rgba(245, 158, 11, 0.05);
+  background: var(--color-warning-light);
 }
 
 .card-header {
@@ -76,7 +76,7 @@
 }
 
 .icon-warning {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .header-text {
@@ -208,7 +208,7 @@
 }
 
 .path-display:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .path-display svg {

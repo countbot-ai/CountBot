@@ -233,8 +233,8 @@ defineExpose({
 }
 
 .input-container:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: 0 0 0 1px var(--color-border-strong), 0 0 0 5px var(--color-border-primary);
 }
 
 .input-container.has-error {
@@ -242,7 +242,7 @@ defineExpose({
 }
 
 .input-container.has-error:focus-within {
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+  box-shadow: 0 0 0 1px var(--color-error), 0 0 0 5px color-mix(in srgb, var(--color-error) 14%, transparent);
 }
 
 .input-container.is-disabled {

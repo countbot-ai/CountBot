@@ -192,15 +192,15 @@ onBeforeUnmount(() => {
 }
 
 .tooltip-dark {
-  background: rgba(0, 0, 0, 0.9);
-  color: #ffffff;
+  background: var(--color-bg-overlay);
+  color: var(--color-text-inverse);
 }
 
 .tooltip-light {
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 .tooltip-content {
@@ -216,11 +216,11 @@ onBeforeUnmount(() => {
 }
 
 .tooltip-dark .tooltip-arrow {
-  background: rgba(0, 0, 0, 0.9);
+  background: var(--color-bg-overlay);
 }
 
 .tooltip-light .tooltip-arrow {
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   border: 1px solid var(--border-color);
 }
 

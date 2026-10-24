@@ -1,7 +1,7 @@
 
 .multi-bot-editor {
-  --editor-border: rgba(148, 163, 184, 0.18);
-  --editor-border-strong: rgba(148, 163, 184, 0.28);
+  --editor-border: var(--color-border-primary);
+  --editor-border-strong: var(--color-border-secondary);
   --editor-panel-bg: var(--bg-primary);
   --editor-panel-muted: var(--bg-secondary);
   --editor-panel-hover: var(--bg-hover);
@@ -11,14 +11,6 @@
   gap: 20px;
 }
 
-:root[data-theme='dark'] .multi-bot-editor {
-  --editor-border: rgba(56, 70, 90, 0.58);
-  --editor-border-strong: rgba(78, 94, 118, 0.66);
-  --editor-panel-bg: linear-gradient(180deg, rgba(24, 31, 41, 0.98), rgba(18, 24, 33, 0.99));
-  --editor-panel-muted: linear-gradient(180deg, rgba(21, 28, 38, 0.96), rgba(16, 22, 31, 0.98));
-  --editor-panel-hover: rgba(31, 40, 52, 0.94);
-}
-
 .config-section {
   display: flex;
   flex-direction: column;
@@ -26,8 +18,8 @@
 }
 
 .config-section-highlight {
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.06), rgba(16, 185, 129, 0.02));
-  border: 1px solid rgba(16, 185, 129, 0.24);
+  background: linear-gradient(180deg, var(--color-success-light), var(--color-success-light));
+  border: 1px solid var(--color-border-primary);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 8px;
@@ -52,7 +44,7 @@
 }
 
 .enable-toggle-label svg {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .enable-toggle-title {
@@ -82,16 +74,16 @@
   gap: 8px;
   margin-top: 12px;
   padding: 10px 12px;
-  background: #fef3c7;
-  border: 1px solid #fbbf24;
+  background: var(--color-warning-light);
+  border: 1px solid var(--color-warning);
   border-radius: 6px;
   font-size: 13px;
-  color: #92400e;
+  color: var(--color-warning);
 }
 
 .enable-warning svg {
   flex-shrink: 0;
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .guide-card {
@@ -143,8 +135,8 @@
   min-height: 34px;
   padding: 0 14px;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #2563eb;
+  background: var(--color-bg-tertiary);
+  color: var(--color-accent);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
@@ -168,8 +160,8 @@
 }
 
 .bot-card-primary {
-  border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.08);
+  border-color: var(--color-border-primary);
+  box-shadow: none;
 }
 
 .bot-card-header {
@@ -270,9 +262,9 @@
 }
 
 .account-state-badge.enabled {
-  border-color: rgba(16, 185, 129, 0.24);
-  background: rgba(16, 185, 129, 0.1);
-  color: #059669;
+  border-color: var(--color-border-primary);
+  background: var(--color-success-light);
+  color: var(--color-success);
 }
 
 .bot-card-preview {
@@ -300,10 +292,10 @@
 .remove-account-button {
   min-height: 38px;
   padding: 0 14px;
-  border: 1px solid rgba(239, 68, 68, 0.18);
+  border: 1px solid var(--color-border-primary);
   border-radius: 8px;
-  background: rgba(239, 68, 68, 0.05);
-  color: #b42318;
+  background: var(--color-error-light);
+  color: var(--color-error);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -311,8 +303,8 @@
 }
 
 .remove-account-button:hover {
-  background: rgba(239, 68, 68, 0.09);
-  border-color: rgba(239, 68, 68, 0.28);
+  background: var(--color-error-light);
+  border-color: var(--color-border-primary);
 }
 
 :deep(.config-label) {
@@ -325,7 +317,7 @@
 }
 
 :deep(.required) {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 :deep(.config-input) {
@@ -342,8 +334,8 @@
 
 :deep(.config-input:focus) {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
 }
 
 :deep(.config-hint) {
@@ -366,8 +358,8 @@
   align-items: center;
   padding: 2px 6px;
   margin-left: 8px;
-  background: rgba(156, 163, 175, 0.1);
-  color: #6b7280;
+  background: var(--color-bg-tertiary);
+  color: var(--text-secondary);
   font-size: 10px;
   font-weight: 600;
   border-radius: 4px;
@@ -451,7 +443,7 @@
 :deep(.remove-button) {
   width: 36px;
   height: 36px;
-  background: #ef4444;
+  background: var(--color-error);
   color: white;
   border: none;
   border-radius: 6px;
@@ -461,7 +453,7 @@
 }
 
 :deep(.remove-button:hover) {
-  background: #dc2626;
+  background: var(--color-error);
 }
 
 :deep(.add-button),
@@ -482,9 +474,9 @@
 }
 
 :deep(.add-button:hover) {
-  border-color: #3b82f6;
-  color: #2563eb;
-  background: rgba(59, 130, 246, 0.04);
+  border-color: var(--color-border-strong);
+  color: var(--color-accent);
+  background: var(--color-bg-tertiary);
 }
 
 .add-bot-button {
@@ -495,30 +487,15 @@
   white-space: nowrap;
 }
 
-:root[data-theme='dark'] .enable-warning {
-  background: linear-gradient(180deg, rgba(51, 40, 23, 0.94), rgba(40, 31, 18, 0.98));
-  border-color: rgba(196, 160, 110, 0.36);
-  color: #d7c19c;
-}
 
-:root[data-theme='dark'] .enable-warning svg {
-  color: #c4a06e;
-}
 
-:root[data-theme='dark'] .config-section-highlight {
-  background: linear-gradient(180deg, rgba(22, 44, 38, 0.92), rgba(16, 31, 28, 0.96));
-  border-color: rgba(87, 137, 122, 0.34);
-}
 
-:root[data-theme='dark'] .guide-link-button {
-  background: rgba(121, 143, 182, 0.14);
-  color: #abc0df;
-}
 
-:root[data-theme='dark'] .bot-card-primary {
-  border-color: rgba(121, 143, 182, 0.36);
-  box-shadow: 0 0 0 1px rgba(121, 143, 182, 0.08);
-}
+
+
+
+
+
 
 .collapse-toggle {
   display: inline-flex;
@@ -527,45 +504,45 @@
   gap: 8px;
   min-height: 36px;
   padding: 0 10px;
-  border: 1px solid rgba(59, 130, 246, 0.28) !important;
+  border: 1px solid var(--color-border-primary) !important;
   border-radius: 10px;
-  background: rgba(59, 130, 246, 0.14) !important;
-  color: #1d4ed8 !important;
+  background: var(--color-bg-tertiary) !important;
+  color: var(--color-accent) !important;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow-sm);
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .collapse-toggle-expanded {
-  border-color: rgba(13, 148, 136, 0.28) !important;
-  background: rgba(13, 148, 136, 0.14) !important;
-  color: #0f766e !important;
+  border-color: var(--color-border-primary) !important;
+  background: var(--color-bg-tertiary) !important;
+  color: var(--color-accent) !important;
 }
 
 .collapse-toggle:hover {
-  background: rgba(59, 130, 246, 0.18) !important;
-  border-color: rgba(59, 130, 246, 0.38) !important;
-  color: #1d4ed8 !important;
+  background: var(--color-bg-tertiary) !important;
+  border-color: var(--color-border-primary) !important;
+  color: var(--color-accent) !important;
 }
 
 .collapse-toggle-expanded:hover {
-  background: rgba(13, 148, 136, 0.18) !important;
-  border-color: rgba(13, 148, 136, 0.38) !important;
-  color: #0f766e !important;
+  background: var(--color-bg-tertiary) !important;
+  border-color: var(--color-border-primary) !important;
+  color: var(--color-accent) !important;
 }
 
 .collapse-toggle:focus-visible {
   outline: none;
-  border-color: rgba(59, 130, 246, 0.42) !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  border-color: var(--color-border-primary) !important;
+  box-shadow: none;
 }
 
 .collapse-toggle-expanded:focus-visible {
-  border-color: rgba(13, 148, 136, 0.42) !important;
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.16);
+  border-color: var(--color-border-primary) !important;
+  box-shadow: var(--shadow-sm);
 }
 
 .collapse-toggle-label {
@@ -580,54 +557,21 @@
   transform: rotate(90deg);
 }
 
-:root[data-theme='dark'] .accounts-count,
-:root[data-theme='dark'] .account-state-badge {
-  border-color: rgba(71, 85, 105, 0.42);
-  background: rgba(18, 25, 35, 0.82);
-}
 
-:root[data-theme='dark'] .collapse-toggle {
-  border-color: rgba(96, 165, 250, 0.42) !important;
-  background: rgba(37, 99, 235, 0.24) !important;
-  color: #bfdbfe !important;
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
-}
 
-:root[data-theme='dark'] .collapse-toggle-expanded {
-  border-color: rgba(45, 212, 191, 0.42) !important;
-  background: rgba(13, 148, 136, 0.24) !important;
-  color: #ccfbf1 !important;
-}
 
-:root[data-theme='dark'] .collapse-toggle:hover,
-:root[data-theme='dark'] .collapse-toggle:focus-visible {
-  border-color: rgba(147, 197, 253, 0.56) !important;
-  background: rgba(37, 99, 235, 0.34) !important;
-}
 
-:root[data-theme='dark'] .collapse-toggle-expanded:hover,
-:root[data-theme='dark'] .collapse-toggle-expanded:focus-visible {
-  border-color: rgba(94, 234, 212, 0.56) !important;
-  background: rgba(13, 148, 136, 0.34) !important;
-}
 
-:root[data-theme='dark'] .account-state-badge.enabled {
-  border-color: rgba(108, 180, 157, 0.26);
-  background: rgba(108, 180, 157, 0.1);
-  color: #7fb8a5;
-}
 
-:root[data-theme='dark'] .primary-enabled-toggle,
-:root[data-theme='dark'] .test-button,
-:root[data-theme='dark'] :deep(.add-button) {
-  background: rgba(18, 25, 35, 0.82);
-}
 
-:root[data-theme='dark'] .remove-account-button {
-  border-color: rgba(201, 131, 145, 0.16);
-  background: rgba(88, 38, 49, 0.18);
-  color: #d0aab3;
-}
+
+
+
+
+
+
+
+
 
 .test-button:disabled {
   opacity: 0.5;

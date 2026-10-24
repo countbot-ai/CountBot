@@ -18,7 +18,11 @@ import httpx
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
-from backend.modules.channels.media_utils import download_to_temp, format_inbound_media_text
+from backend.modules.channels.media_utils import (
+    MAX_INBOUND_ATTACHMENTS,
+    download_to_temp,
+    format_inbound_media_text,
+)
 
 try:
     import botpy
@@ -62,6 +66,7 @@ def _make_bot_class(channel: "QQChannel") -> type:
             super().__init__(intents=intents)
 
         async def on_ready(self):
+            channel.set_runtime_state(channel.RUNTIME_RUNNING, reconnect_attempts=0)
             logger.info(f"QQ bot ready: {self.robot.name}")
 
         async def on_c2c_message_create(self, message: C2CMessage):
@@ -116,6 +121,7 @@ class QQChannel(BaseChannel):
             return
 
         self._running = True
+        self.set_runtime_state(self.RUNTIME_CONNECTING)
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0))
 
         bot_cls = _make_bot_class(self)
@@ -135,11 +141,15 @@ class QQChannel(BaseChannel):
             )
         except Exception as e:
             logger.warning(f"QQ bot connection exited: {e}")
+            self.set_runtime_state(self.RUNTIME_FAILED, error=str(e))
         finally:
             self._running = False
+            if self._runtime_state != self.RUNTIME_FAILED:
+                self.set_runtime_state(self.RUNTIME_STOPPED)
 
     async def stop(self) -> None:
         """停止 QQ 机器人。"""
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         if self._bot_task:
             self._bot_task.cancel()
@@ -150,6 +160,7 @@ class QQChannel(BaseChannel):
         if self._http:
             await self._http.aclose()
             self._http = None
+        self.set_runtime_state(self.RUNTIME_STOPPED)
         logger.info("QQ bot stopped")
 
     # ------------------------------------------------------------------
@@ -230,6 +241,12 @@ class QQChannel(BaseChannel):
         media_files: List[str] = []
         attachments = getattr(data, "attachments", None) or []
         for attachment in attachments:
+            if len(media_files) >= MAX_INBOUND_ATTACHMENTS:
+                logger.info(
+                    f"QQ attachment limit reached ({MAX_INBOUND_ATTACHMENTS}), "
+                    "remaining attachments are ignored"
+                )
+                break
             try:
                 url = getattr(attachment, "url", None)
                 if not url:

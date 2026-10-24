@@ -25,8 +25,8 @@
 }
 
 .login-button {
-  background: #16a34a;
-  color: #fff;
+  background: var(--color-success);
+  color: var(--color-text-inverse);
 }
 
 .login-button:disabled,
@@ -110,7 +110,7 @@
   aspect-ratio: 1;
   object-fit: contain;
   border-radius: 14px;
-  background: #fff;
+  background: var(--color-bg-elevated);
   border: 1px solid var(--border-color);
   padding: 10px;
 }
@@ -123,12 +123,12 @@
 }
 
 .status-confirmed {
-  border-color: rgba(22, 163, 74, 0.25);
+  border-color: var(--color-border-primary);
 }
 
 .status-error,
 .status-expired {
-  border-color: rgba(239, 68, 68, 0.25);
+  border-color: var(--color-border-primary);
 }
 
 @media (max-width: 640px) {

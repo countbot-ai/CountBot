@@ -48,6 +48,7 @@
             <WorkflowListPanel
               v-else
               :workflow-agents="workflowAgents"
+              default-open
             />
           </div>
         </div>
@@ -99,7 +100,7 @@ if (typeof window !== 'undefined') {
   right: 0;
   bottom: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--color-bg-overlay);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -112,9 +113,9 @@ if (typeof window !== 'undefined') {
   width: 100%;
   height: 100%;
   max-width: 1800px;
-  background: var(--bg-primary, #ffffff);
+  background: var(--bg-primary);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -137,8 +138,8 @@ if (typeof window !== 'undefined') {
   align-items: center;
   justify-content: space-between;
   padding: 20px 28px;
-  background: linear-gradient(135deg, var(--bg-tertiary, #f8fafc) 0%, var(--bg-secondary, #f1f5f9) 100%);
-  border-bottom: 2px solid var(--border-color, #e2e8f0);
+  background: linear-gradient(135deg, var(--bg-tertiary, var(--color-bg-secondary)) 0%, var(--bg-secondary, var(--color-bg-tertiary)) 100%);
+  border-bottom: 2px solid var(--border-color, var(--color-border-primary));
   flex-shrink: 0;
 }
 
@@ -152,17 +153,17 @@ if (typeof window !== 'undefined') {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: var(--text-primary, #1e293b);
+  color: var(--text-primary);
 }
 
 .wf-fullscreen-count {
   padding: 5px 14px;
-  background: var(--bg-tertiary, #f1f5f9);
-  color: var(--text-secondary, #64748b);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
   border-radius: 14px;
-  border: 1px solid var(--border-color, #e2e8f0);
+  border: 1px solid var(--border-color, var(--color-border-primary));
 }
 
 .wf-fullscreen-controls {
@@ -175,9 +176,9 @@ if (typeof window !== 'undefined') {
   display: flex;
   gap: 8px;
   padding: 4px;
-  background: var(--bg-secondary, #f1f5f9);
+  background: var(--bg-secondary);
   border-radius: 10px;
-  border: 1px solid var(--border-color, #e2e8f0);
+  border: 1px solid var(--border-color, var(--color-border-primary));
 }
 
 .wf-view-btn {
@@ -187,7 +188,7 @@ if (typeof window !== 'undefined') {
   padding: 9px 18px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -196,15 +197,15 @@ if (typeof window !== 'undefined') {
 }
 
 .wf-view-btn:hover {
-  color: var(--text-primary, #1e293b);
-  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary);
+  background: var(--bg-primary);
   transform: translateY(-1px);
 }
 
 .wf-view-btn.active {
-  color: var(--accent-color, #3b82f6);
-  background: var(--bg-primary, #ffffff);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  color: var(--accent-color);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .wf-close-btn {
@@ -213,30 +214,31 @@ if (typeof window !== 'undefined') {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: 10px;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .wf-close-btn:hover {
-  background: #fee2e2;
-  border-color: #dc2626;
-  color: #dc2626;
+  background: var(--color-error-light);
+  border-color: var(--color-error);
+  color: var(--color-error);
   transform: scale(1.05);
-  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .wf-fullscreen-content {
   flex: 1;
-  overflow: hidden;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
 }
 
-.wf-fullscreen-content :deep(.wf-compare-panel),
-.wf-fullscreen-content :deep(.wf-list-panel) {
+.wf-fullscreen-content :deep(.wf-compare-panel) {
   height: 100%;
   max-height: none;
   border-top: none;
@@ -260,48 +262,23 @@ if (typeof window !== 'undefined') {
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .wf-fullscreen-modal {
-  background: rgba(0, 0, 0, 0.85);
-}
 
-:root[data-theme="dark"] .wf-fullscreen-container {
-  background: #0e1422;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-}
 
-:root[data-theme="dark"] .wf-fullscreen-header {
-  background: linear-gradient(135deg, #0e1422 0%, #131b2c 100%);
-  border-bottom-color: #1e2d45;
-}
 
-:root[data-theme="dark"] .wf-view-switcher {
-  background: #0a0e1a;
-  border-color: #1e2d45;
-}
 
-:root[data-theme="dark"] .wf-view-btn:hover {
-  background: #131b2c;
-}
 
-:root[data-theme="dark"] .wf-view-btn.active {
-  background: #131b2c;
-}
 
-:root[data-theme="dark"] .wf-close-btn {
-  background: #131b2c;
-  border-color: #1e2d45;
-}
 
-:root[data-theme="dark"] .wf-close-btn:hover {
-  background: #7f1d1d;
-  border-color: #dc2626;
-}
 
-:root[data-theme="dark"] .wf-fullscreen-count {
-  background: #1e293b;
-  color: #94a3b8;
-  border-color: #334155;
-}
+
+
+
+
+
+
+
+
+
 
 /* 响应式 */
 @media (max-width: 768px) {

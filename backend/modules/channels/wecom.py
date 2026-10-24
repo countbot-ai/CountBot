@@ -272,8 +272,9 @@ REPLY_MEDIA_DIRECTIVE_PATTERN = re.compile(
 class LongConnBot:
     """企业微信长连接机器人"""
     
-    def __init__(self, bot_id: str, secret: str, handler: Optional[Callable] = None, 
-                 websocket_url: str = "wss://openws.work.weixin.qq.com"):
+    def __init__(self, bot_id: str, secret: str, handler: Optional[Callable] = None,
+                 websocket_url: str = "wss://openws.work.weixin.qq.com",
+                 on_runtime_state: Optional[Callable[[str, str], None]] = None):
         if not bot_id:
             raise ValueError("bot_id is required")
         if not secret:
@@ -282,6 +283,7 @@ class LongConnBot:
         self.bot_id = bot_id
         self.secret = secret
         self.handler = handler
+        self._on_runtime_state = on_runtime_state
         
         # 连接配置
         self.ws_url = websocket_url
@@ -504,12 +506,22 @@ class LongConnBot:
 
         return content_to_send, msg_items
 
+    def _notify_runtime(self, state: str, error: str = "") -> None:
+        """把连接状态变化回传给渠道实例。"""
+        if not self._on_runtime_state:
+            return
+        try:
+            self._on_runtime_state(state, error)
+        except Exception as exc:  # noqa: BLE001 - 状态回传不能影响连接
+            logger.debug(f"[LongConnBot] runtime state callback failed: {exc}")
+
     async def start(self, ctx: Optional[asyncio.Event] = None) -> None:
         """启动长连接机器人"""
         if self.running:
             return
             
         self.running = True
+        self._notify_runtime("connecting")
         logger.info(f"[LongConnBot] Starting bot {self.bot_id[:12]}...")
         
         try:
@@ -523,9 +535,11 @@ class LongConnBot:
                     break  # 正常退出
                 except LongConnPermanentError as e:
                     logger.error(f"[LongConnBot] Permanent error: {e}")
+                    self._notify_runtime("failed", str(e))
                     raise e
                 except Exception as e:
                     logger.warning(f"[LongConnBot] Session error: {e}, reconnecting in {self.reconnect_interval}s...")
+                    self._notify_runtime("connecting", str(e))
                     
                     # 等待重连间隔
                     try:
@@ -536,6 +550,7 @@ class LongConnBot:
                         
         finally:
             self.running = False
+            self._notify_runtime("stopped")
             await self._cleanup()
     async def _run_session(self, ctx: Optional[asyncio.Event] = None) -> None:
         """运行一次完整的长连接会话"""
@@ -558,6 +573,7 @@ class LongConnBot:
             
             # 发送订阅命令
             await self._subscribe()
+            self._notify_runtime("running")
             logger.success(f"[LongConnBot] Subscribed successfully")
             
             # 启动心跳循环
@@ -1161,7 +1177,8 @@ class WeComChannel(BaseChannel):
             bot_id=self.bot_id, 
             secret=self.secret, 
             handler=self._handle_message_wrapper,
-            websocket_url=self.websocket_url
+            websocket_url=self.websocket_url,
+            on_runtime_state=self.set_runtime_state,
         )
         
         # 启动机器人
@@ -1264,6 +1281,7 @@ class WeComChannel(BaseChannel):
             return
             
         logger.info("[WeCom] Stopping channel...")
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         self.stop_event.set()
         
@@ -1287,6 +1305,7 @@ class WeComChannel(BaseChannel):
                 pass
             except Exception as e:
                 logger.debug(f"[WeCom] Error cancelling start task: {e}")
+        self.set_runtime_state(self.RUNTIME_STOPPED)
 
         if self._http:
             await self._http.aclose()

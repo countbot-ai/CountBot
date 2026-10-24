@@ -108,7 +108,7 @@
 
 .status-dot.active {
   background: var(--color-success);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .status-dot.total {
@@ -164,7 +164,7 @@
 .search-input:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: none;
 }
 
 .clear-btn {
@@ -210,7 +210,7 @@
 .filter-select:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: none;
 }
 
 .no-results {
@@ -282,13 +282,13 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent-color), rgba(59, 130, 246, 0.5));
+  background: linear-gradient(90deg, var(--accent-color), var(--color-bg-tertiary));
   opacity: 0;
   transition: opacity 0.25s;
 }
 
 .team-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-sm);
   border-color: var(--accent-color);
   transform: translateY(-2px);
 }
@@ -348,15 +348,15 @@
 }
 
 .badge-cross {
-  color: #059669;
-  background: rgba(5, 150, 105, 0.1);
-  border-color: #059669;
+  color: var(--color-success);
+  background: var(--color-success-light);
+  border-color: var(--color-success);
 }
 
 .badge-independent {
-  color: #0284c7;
-  background: rgba(2, 132, 199, 0.1);
-  border-color: #0284c7;
+  color: var(--color-info);
+  background: var(--color-info-light);
+  border-color: var(--color-info);
 }
 
 .team-actions {
@@ -449,7 +449,7 @@
 }
 
 .required {
-  color: #dc2626;
+  color: var(--color-error);
 }
 
 .form-input,
@@ -604,12 +604,12 @@
 .btn-primary {
   background: var(--color-primary);
   color: white;
-  box-shadow: 0 10px 24px rgba(2, 8, 20, 0.18);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
-  box-shadow: 0 14px 30px rgba(2, 8, 20, 0.24);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
 
@@ -648,8 +648,8 @@
 }
 
 .icon-btn.danger:hover {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--color-error-light);
+  color: var(--color-error);
 }
 
 /* 模板选择对话框样式 */
@@ -709,7 +709,7 @@
 
 .template-card:hover {
   border-color: var(--accent-color);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-2px);
 }
 

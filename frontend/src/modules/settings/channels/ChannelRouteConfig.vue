@@ -137,9 +137,9 @@ onMounted(async () => {
   flex-direction: column;
   gap: 14px;
   padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid var(--color-border-primary);
   border-radius: 12px;
-  background: rgba(248, 250, 252, 0.72);
+  background: var(--color-bg-secondary);
 }
 
 .route-panel-header {
@@ -177,9 +177,9 @@ onMounted(async () => {
   min-width: 0 !important;
   min-height: auto !important;
   padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  border: 1px solid var(--color-border-primary) !important;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.8) !important;
+  background: var(--color-bg-elevated) !important;
   color: inherit !important;
   box-shadow: none !important;
   cursor: pointer;
@@ -188,21 +188,21 @@ onMounted(async () => {
 }
 
 .route-mode-tab:hover {
-  border-color: rgba(59, 130, 246, 0.28) !important;
-  background: rgba(59, 130, 246, 0.04) !important;
+  border-color: var(--color-border-primary) !important;
+  background: var(--color-bg-tertiary) !important;
   box-shadow: none !important;
 }
 
 .route-mode-tab.active {
-  border-color: rgba(59, 130, 246, 0.4) !important;
-  background: rgba(59, 130, 246, 0.08) !important;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.08) inset !important;
+  border-color: var(--color-border-primary) !important;
+  background: var(--color-bg-tertiary) !important;
+  box-shadow: none !important;
 }
 
 .route-mode-tab:focus,
 .route-mode-tab:focus-visible {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12) !important;
+  box-shadow: none !important;
 }
 
 .route-mode-name {
@@ -237,7 +237,7 @@ onMounted(async () => {
 .route-select:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  box-shadow: none;
 }
 
 .route-select:disabled {
@@ -245,32 +245,15 @@ onMounted(async () => {
   cursor: not-allowed;
 }
 
-:root[data-theme='dark'] .route-panel {
-  border-color: rgba(56, 70, 90, 0.58);
-  background: linear-gradient(180deg, rgba(24, 31, 41, 0.98), rgba(18, 24, 33, 0.99));
-}
 
-:root[data-theme='dark'] .route-mode-tab {
-  border-color: rgba(56, 70, 90, 0.58) !important;
-  background: rgba(20, 27, 36, 0.92) !important;
-  box-shadow: none !important;
-}
 
-:root[data-theme='dark'] .route-mode-tab:hover {
-  border-color: rgba(121, 143, 182, 0.32) !important;
-  background: rgba(44, 57, 76, 0.28) !important;
-}
 
-:root[data-theme='dark'] .route-mode-tab.active {
-  border-color: rgba(121, 143, 182, 0.42) !important;
-  background: rgba(59, 130, 246, 0.14) !important;
-  box-shadow: 0 0 0 1px rgba(121, 143, 182, 0.12) inset !important;
-}
 
-:root[data-theme='dark'] .route-mode-tab:focus,
-:root[data-theme='dark'] .route-mode-tab:focus-visible {
-  box-shadow: 0 0 0 3px rgba(127, 181, 214, 0.16) !important;
-}
+
+
+
+
+
 
 @media (max-width: 640px) {
   .route-mode-tabs {

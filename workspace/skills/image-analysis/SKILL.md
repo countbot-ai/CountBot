@@ -1,6 +1,6 @@
 ---
 name: image-analysis
-description: 图片分析与识别，可分析本地图片、网络图片、视频、文件。适用于 OCR、物体识别、场景理解等。当用户发送图片或要求分析图片时必须使用此技能。
+description: 图片分析与识别，可分析本地图片、网络图片、视频、文件。适用于 OCR、物体识别、场景理解，以及主模型不支持图片输入或需要独立视觉模型复核时。多模态主模型能直接查看附件时不需要调用。
 homepage: https://github.com/countbot-ai/CountBot
 ---
 
@@ -8,7 +8,7 @@ homepage: https://github.com/countbot-ai/CountBot
 
 支持智谱 GLM-4V 和千问 Qwen-VL 两种视觉模型。
 
-当用户发送图片或要求分析图片时，必须使用此技能，不要使用 PIL、pytesseract 等其他方法。
+当主模型无法直接查看图片、需要独立视觉模型复核，或需要专门的 OCR 时使用此技能。多模态主模型已经能直接看到附件时，不要重复调用。
 
 ## 配置
 

@@ -151,7 +151,7 @@ watch(() => props.modelValue, (newVal) => {
   padding: var(--spacing-md);
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
-  border-left: 3px solid var(--color-primary);
+  border-left: 3px solid var(--color-border-strong);
   margin-bottom: var(--spacing-lg);
 }
 
@@ -200,15 +200,15 @@ watch(() => props.modelValue, (newVal) => {
 }
 
 .required-badge {
-  background: var(--color-error-light, #fee2e2);
-  color: var(--color-error, #ef4444);
-  border: 1px solid var(--color-error, #ef4444);
+  background: var(--color-error-light);
+  color: var(--color-error);
+  border: 1px solid var(--color-error, var(--color-error));
 }
 
 .sensitive-badge {
-  background: var(--color-warning-light, #fef3c7);
-  color: var(--color-warning, #f59e0b);
-  border: 1px solid var(--color-warning, #f59e0b);
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning, var(--color-warning));
 }
 
 .field-description {
@@ -255,27 +255,13 @@ watch(() => props.modelValue, (newVal) => {
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .help-text {
-  background: #131b2c;
-  border-color: rgba(0, 240, 255, 0.3);
-}
 
-:root[data-theme="dark"] .field-help-item {
-  background: #0e1422;
-  border-color: #152035;
-}
 
-:root[data-theme="dark"] .field-default code {
-  background: #131b2c;
-}
 
-:root[data-theme="dark"] .required-badge {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-}
 
-:root[data-theme="dark"] .sensitive-badge {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.3);
-}
+
+
+
+
+
 </style>

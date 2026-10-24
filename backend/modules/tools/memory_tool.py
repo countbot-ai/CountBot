@@ -49,10 +49,10 @@ class MemoryWriteTool(Tool):
             source = self._channel or "web-chat"
             line_num = self._memory.append_entry(source=source, content=content)
             total = self._memory.get_line_count()
-            return f"已写入记忆第 {line_num} 行（共 {total} 条）"
+            return f"Memory written at line {line_num} ({total} entries total)."
         except Exception as e:
             logger.error(f"Memory write failed: {e}")
-            return f"写入记忆失败: {e}"
+            return f"Memory write failed: {e}"
 
     async def execute_outcome(self, content: str, **kwargs) -> ToolResult:
         effect_started = False
@@ -61,11 +61,11 @@ class MemoryWriteTool(Tool):
             effect_started = True
             line_num = self._memory.append_entry(source=source, content=content)
             total = self._memory.get_line_count()
-            return ToolResult.success(f"已写入记忆第 {line_num} 行（共 {total} 条）", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+            return ToolResult.success(f"Memory written at line {line_num} ({total} entries total).", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
         except Exception as exc:
             if effect_started:
-                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"写入记忆失败: {exc}", retry_safety=RetrySafety.UNSAFE)
-            return ToolResult.failure(ErrorCategory.EXECUTION, f"写入记忆失败: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Memory write failed: {exc}", retry_safety=RetrySafety.UNSAFE)
+            return ToolResult.failure(ErrorCategory.EXECUTION, f"Memory write failed: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
 
 class MemorySearchTool(Tool):
@@ -111,18 +111,18 @@ class MemorySearchTool(Tool):
             keyword_list = keywords.strip().split()
             result = self._memory.search(keyword_list, max_results=max_results, match_mode=match_mode)
             stats = self._memory.get_stats()
-            return f"记忆库共 {stats['total']} 条\n\n{result}"
+            return f"{stats['total']} memory entries.\n\n{result}"
         except Exception as e:
             logger.error(f"Memory search failed: {e}")
-            return f"搜索记忆失败: {e}"
+            return f"Memory search failed: {e}"
 
     async def execute_outcome(self, keywords: str, max_results: int = 15, match_mode: str = "or", **kwargs) -> ToolResult:
         try:
             result = self._memory.search(keywords.strip().split(), max_results=max_results, match_mode=match_mode)
             stats = self._memory.get_stats()
-            return ToolResult.success(f"记忆库共 {stats['total']} 条\n\n{result}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+            return ToolResult.success(f"{stats['total']} memory entries.\n\n{result}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
         except Exception as exc:
-            return ToolResult.failure(ErrorCategory.EXECUTION, f"搜索记忆失败: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+            return ToolResult.failure(ErrorCategory.EXECUTION, f"Memory search failed: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
 
 
 class MemoryReadTool(Tool):
@@ -170,9 +170,9 @@ class MemoryReadTool(Tool):
     ) -> str:
         try:
             stats = self._memory.get_stats()
-            header = f"记忆库共 {stats['total']} 条"
+            header = f"{stats['total']} memory entries"
             if stats.get("date_range"):
-                header += f"，时间范围: {stats['date_range']}"
+                header += f", range: {stats['date_range']}"
 
             if start_line is not None:
                 content = self._memory.read_lines(start_line, end_line)
@@ -182,7 +182,7 @@ class MemoryReadTool(Tool):
             return f"{header}\n\n{content}"
         except Exception as e:
             logger.error(f"Memory read failed: {e}")
-            return f"读取记忆失败: {e}"
+            return f"Memory read failed: {e}"
 
     async def execute_outcome(
         self,
@@ -193,13 +193,13 @@ class MemoryReadTool(Tool):
     ) -> ToolResult:
         try:
             stats = self._memory.get_stats()
-            header = f"记忆库共 {stats['total']} 条"
+            header = f"{stats['total']} memory entries"
             if stats.get("date_range"):
-                header += f"，时间范围: {stats['date_range']}"
+                header += f", range: {stats['date_range']}"
             content = self._memory.read_lines(start_line, end_line) if start_line is not None else self._memory.get_recent(recent_count)
             return ToolResult.success(f"{header}\n\n{content}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
         except Exception as exc:
-            return ToolResult.failure(ErrorCategory.EXECUTION, f"读取记忆失败: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+            return ToolResult.failure(ErrorCategory.EXECUTION, f"Memory read failed: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
 
 
 # ==============================================================================
@@ -289,34 +289,34 @@ class MemoryTool(Tool):
     ) -> str:
         if action == "write":
             if not content:
-                return "write 操作需要提供 content 参数"
+                return "write requires `content`."
             try:
                 source = self._channel or "web-chat"
                 line_num = self._memory.append_entry(source=source, content=content)
                 total = self._memory.get_line_count()
-                return f"已写入记忆第 {line_num} 行（共 {total} 条）"
+                return f"Memory written at line {line_num} ({total} entries total)."
             except Exception as e:
                 logger.error(f"Memory write failed: {e}")
-                return f"写入记忆失败: {e}"
+                return f"Memory write failed: {e}"
 
         elif action == "search":
             if not keywords:
-                return "search 操作需要提供 keywords 参数"
+                return "search requires `keywords`."
             try:
                 keyword_list = keywords.strip().split()
                 result = self._memory.search(keyword_list, max_results=max_results, match_mode=match_mode)
                 stats = self._memory.get_stats()
-                return f"记忆库共 {stats['total']} 条\n\n{result}"
+                return f"{stats['total']} memory entries.\n\n{result}"
             except Exception as e:
                 logger.error(f"Memory search failed: {e}")
-                return f"搜索记忆失败: {e}"
+                return f"Memory search failed: {e}"
 
         elif action == "read":
             try:
                 stats = self._memory.get_stats()
-                header = f"记忆库共 {stats['total']} 条"
+                header = f"{stats['total']} memory entries"
                 if stats.get("date_range"):
-                    header += f"，时间范围: {stats['date_range']}"
+                    header += f", range: {stats['date_range']}"
                 if start_line is not None:
                     content_result = self._memory.read_lines(start_line, end_line)
                 else:
@@ -324,10 +324,10 @@ class MemoryTool(Tool):
                 return f"{header}\n\n{content_result}"
             except Exception as e:
                 logger.error(f"Memory read failed: {e}")
-                return f"读取记忆失败: {e}"
+                return f"Memory read failed: {e}"
 
         else:
-            return f"未知 action: {action}。可选值: write / search / read"
+            return f"Unknown action: {action}. Use write / search / read."
 
     async def execute_outcome(
         self,
@@ -343,34 +343,34 @@ class MemoryTool(Tool):
     ) -> ToolResult:
         if action == "write":
             if not content:
-                return ToolResult.failure(ErrorCategory.VALIDATION, "write 操作需要提供 content 参数", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                return ToolResult.failure(ErrorCategory.VALIDATION, "write requires `content`.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
             effect_started = False
             try:
                 effect_started = True
                 line_num = self._memory.append_entry(source=self._channel or "web-chat", content=content)
                 total = self._memory.get_line_count()
-                return ToolResult.success(f"已写入记忆第 {line_num} 行（共 {total} 条）", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
+                return ToolResult.success(f"Memory written at line {line_num} ({total} entries total).", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
             except Exception as exc:
                 if effect_started:
-                    return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"写入记忆失败: {exc}", retry_safety=RetrySafety.UNSAFE)
-                return ToolResult.failure(ErrorCategory.EXECUTION, f"写入记忆失败: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+                    return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Memory write failed: {exc}", retry_safety=RetrySafety.UNSAFE)
+                return ToolResult.failure(ErrorCategory.EXECUTION, f"Memory write failed: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
         if action == "search":
             if not keywords:
-                return ToolResult.failure(ErrorCategory.VALIDATION, "search 操作需要提供 keywords 参数", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+                return ToolResult.failure(ErrorCategory.VALIDATION, "search requires `keywords`.", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
             try:
                 result = self._memory.search(keywords.strip().split(), max_results=max_results, match_mode=match_mode)
                 stats = self._memory.get_stats()
-                return ToolResult.success(f"记忆库共 {stats['total']} 条\n\n{result}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+                return ToolResult.success(f"{stats['total']} memory entries.\n\n{result}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
             except Exception as exc:
-                return ToolResult.failure(ErrorCategory.EXECUTION, f"搜索记忆失败: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+                return ToolResult.failure(ErrorCategory.EXECUTION, f"Memory search failed: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
         if action == "read":
             try:
                 stats = self._memory.get_stats()
-                header = f"记忆库共 {stats['total']} 条"
+                header = f"{stats['total']} memory entries"
                 if stats.get("date_range"):
-                    header += f"，时间范围: {stats['date_range']}"
+                    header += f", range: {stats['date_range']}"
                 result = self._memory.read_lines(start_line, end_line) if start_line is not None else self._memory.get_recent(recent_count)
                 return ToolResult.success(f"{header}\n\n{result}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
             except Exception as exc:
-                return ToolResult.failure(ErrorCategory.EXECUTION, f"读取记忆失败: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
-        return ToolResult.failure(ErrorCategory.VALIDATION, f"未知 action: {action}。可选值: write / search / read", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+                return ToolResult.failure(ErrorCategory.EXECUTION, f"Memory read failed: {exc}", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)
+        return ToolResult.failure(ErrorCategory.VALIDATION, f"Unknown action: {action}. Use write / search / read.", retry_safety=RetrySafety.SAFE, side_effect_state=SideEffectState.NOT_APPLICABLE)

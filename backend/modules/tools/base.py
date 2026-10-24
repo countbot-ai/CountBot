@@ -57,33 +57,32 @@ class Tool(ABC):
         """
         pass
 
-    @abstractmethod
     async def execute(self, **kwargs: Any) -> str:
+        """执行工具，返回纯文本结果。
+
+        默认从 ``execute_outcome`` 派生，使内建工具只需实现 canonical outcome
+        一处即可，避免同一份逻辑维护两遍——此前多次出现「加固只改了其中一个
+        入口」的问题。
+
+        子类若只覆盖 ``execute``（legacy 形态），本方法会被子类覆盖而不会执行到
+        这里；因此不存在两个默认实现互递归的情况。
         """
-        执行工具
-        
-        Args:
-            **kwargs: 符合参数 schema 的工具特定参数
-            
-        Returns:
-            str: 工具执行结果
-            
-        Raises:
-            Exception: 工具执行失败时抛出
-        """
-        pass
+        outcome = await self.execute_outcome(**kwargs)
+        return getattr(outcome, "display_text", str(outcome))
 
     async def execute_outcome(self, **kwargs: Any) -> Any:
         """为 canonical execution 返回显式 ``ToolResult``。
 
-PR1 落地期间，该默认实现保留 legacy ``execute`` contract。Registry 会刻意将
-它的原始返回值拒绝为 ``RESULT_CONTRACT`` outcome；已迁移的 Tool 应覆盖此方法，
-并显式返回 ``backend.modules.tools.execution.ToolResult``。
-
-临时兼容层的移除条件：所有已注册 Tool 都返回显式 structured result，且所有
-caller 都使用 canonical outcome 后，移除此 adapter。
-"""
-
+        子类未覆盖本方法时，退化为调用其 ``execute`` 并原样返回结果，由 Registry
+        判定为 ``RESULT_CONTRACT`` 失败——保留 legacy 工具可被拒绝而非误判成功
+        的既有契约。已迁移的 Tool 必须覆盖本方法返回 ``ToolResult``。
+        """
+        # 若子类两个方法都没覆盖，调用本方法会经由 execute 再次回到这里，
+        # 直接报错而不是无限递归。
+        if type(self).execute is Tool.execute:
+            raise NotImplementedError(
+                f"{type(self).__name__} must implement execute or execute_outcome"
+            )
         return await self.execute(**kwargs)
 
     def validate_params(self, params: Dict[str, Any]) -> List[str]:

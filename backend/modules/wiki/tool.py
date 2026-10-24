@@ -428,7 +428,7 @@ class WikiTool(Tool):
             lines.append(f"   {summary}")
             lines.append("")
 
-        # 死胡同修复：检索结果带可精确取用的 slug 标识，
+        # 检索结果附上可精确取用的 slug 标识，
         # 供 batch_get 等下游直接消费，无需重新猜测条目。
         slugs = ", ".join(result["slug"] for result in results)
         return "\n".join(lines) + f"\nSlugs: {slugs}"

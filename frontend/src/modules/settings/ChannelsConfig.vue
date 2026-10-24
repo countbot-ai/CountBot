@@ -151,18 +151,23 @@
                     <div class="instance-status-main">
                       <span class="instance-display-name">{{ getInstanceDisplayName(instance) }}</span>
                       <span class="instance-account-id">{{ getInstanceMeta(instance) }}</span>
+                      <span
+                        v-if="getDeliveryError(instance)"
+                        class="instance-delivery-error"
+                      >
+                        <span class="instance-delivery-error-title">
+                          {{ t('settings.channels.deliveryError') }}
+                        </span>
+                        <span class="instance-delivery-error-detail">
+                          {{ formatDeliveryError(getDeliveryError(instance)) }}
+                        </span>
+                      </span>
                     </div>
                     <span
                       class="instance-status-badge"
-                      :class="instance.running ? 'running' : (instance.enabled ? 'enabled' : 'stopped')"
+                      :class="getInstanceStateClass(instance)"
                     >
-                      {{
-                        instance.running
-                          ? t('settings.channels.running')
-                          : (instance.enabled
-                              ? t('settings.channels.enabled')
-                              : translateOr('settings.channels.multiBot.instanceStopped', '未运行'))
-                      }}
+                      {{ getInstanceStateLabel(instance) }}
                     </span>
                   </div>
                 </div>
@@ -319,7 +324,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChannelsStore } from '@/store/channels'
 import { useToast } from '@/composables/useToast'
@@ -423,7 +428,8 @@ const getChannelInstances = (channelId: string): Array<ChannelInstanceStatus & {
         account.display_name ||
         existing?.display_name ||
         '',
-      instance_key: account.instance_key || existing?.instance_key || `${channelId}:${accountId}`
+      instance_key: account.instance_key || existing?.instance_key || `${channelId}:${accountId}`,
+      runtime_status: account.runtime_status ?? existing?.runtime_status
     })
   }
 
@@ -456,6 +462,81 @@ const getChannelDisplayDescription = (channelId: string, fallback: string) => {
 }
 
 const translateOr = (key: string, fallback: string) => (te(key) ? t(key) : fallback)
+
+const getDeliveryError = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) =>
+  instance.runtime_status?.delivery_error || null
+
+const getInstanceStateLabel = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) => {
+  const state = String(instance.runtime_status?.state || '').trim()
+  const keyMap: Record<string, string> = {
+    starting: 'settings.channels.runtimeState.starting',
+    connecting: 'settings.channels.runtimeState.connecting',
+    running: 'settings.channels.runtimeState.running',
+    stopping: 'settings.channels.runtimeState.stopping',
+    stopped: 'settings.channels.runtimeState.stopped',
+    failed: 'settings.channels.runtimeState.failed'
+  }
+  if (state && keyMap[state] && te(keyMap[state])) {
+    return t(keyMap[state])
+  }
+  if (instance.running) {
+    return t('settings.channels.running')
+  }
+  return instance.enabled
+    ? t('settings.channels.enabled')
+    : translateOr('settings.channels.multiBot.instanceStopped', '未运行')
+}
+
+const getInstanceStateClass = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) => {
+  const state = String(instance.runtime_status?.state || '').trim()
+  if (state === 'failed') {
+    return 'failed'
+  }
+  if (state === 'running') {
+    return 'running'
+  }
+  if (state === 'starting' || state === 'connecting' || state === 'stopping') {
+    return 'enabled'
+  }
+  return instance.running ? 'running' : (instance.enabled ? 'enabled' : 'stopped')
+}
+
+let statusPollTimer: number | null = null
+
+const stopStatusPolling = () => {
+  if (statusPollTimer !== null) {
+    window.clearInterval(statusPollTimer)
+    statusPollTimer = null
+  }
+}
+
+const startStatusPolling = () => {
+  stopStatusPolling()
+  statusPollTimer = window.setInterval(() => {
+    void channelsStore.fetchStatus()
+  }, 2000)
+}
+
+watch(expandedChannel, (channelId) => {
+  if (channelId) {
+    startStatusPolling()
+  } else {
+    stopStatusPolling()
+  }
+})
+
+onBeforeUnmount(stopStatusPolling)
+
+const formatDeliveryError = (detail: Record<string, any>) => {
+  const parts = [
+    detail.operation,
+    detail.status ? `HTTP ${detail.status}` : '',
+    detail.code !== undefined && detail.code !== null ? `code=${detail.code}` : '',
+    detail.msg || detail.error || '',
+    detail.log_id ? `log_id=${detail.log_id}` : ''
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
 
 const formatInternalAccountId = (accountId: string) =>
   te('settings.channels.multiBot.internalAccountIdBadge')

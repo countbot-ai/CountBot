@@ -101,7 +101,7 @@
 
 .tab-btn.active {
   color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+  border-bottom-color: var(--text-secondary);
 }
 
 /* 编辑器内容 */
@@ -133,7 +133,7 @@
 
 .content-textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .editor-stats {
@@ -216,7 +216,7 @@
 
 .add-btn:hover {
   background: var(--hover-bg);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .requirements-tags {
@@ -288,7 +288,7 @@
 
 .save-btn {
   background: var(--color-primary);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   color: white;
 }
 

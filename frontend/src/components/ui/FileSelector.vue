@@ -284,7 +284,7 @@ defineExpose({
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   max-height: 300px;
   overflow-y: auto;
   z-index: 10;

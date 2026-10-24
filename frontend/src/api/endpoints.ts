@@ -152,6 +152,7 @@ export interface ModelConfig {
     max_tokens: number
     max_iterations: number
     thinking_enabled: boolean
+    supports_image?: boolean | null
     api_key?: string
     api_base?: string
 }
@@ -190,6 +191,18 @@ export interface PersonaConfig {
     max_history_messages: number
     enable_short_context_summary: boolean
     heartbeat?: HeartbeatConfig
+}
+
+export interface InjectionConfig {
+    core_rules: boolean
+    external_coding_guidance: boolean
+    skills_always: boolean
+    skills_summary: boolean
+    agent_teams: boolean
+    dynamic_context: boolean
+    team_reminder: boolean
+    disabled_tools: string[]
+    auto_memory_summary: boolean
 }
 
 export interface SessionModelConfig extends ModelConfig {
@@ -257,6 +270,7 @@ export interface UpdateSettingsRequest {
     workspace?: Partial<WorkspaceConfig>
     security?: Partial<SecurityConfig>
     persona?: Partial<PersonaConfig>
+    injection?: Partial<InjectionConfig>
 }
 
 export interface Settings {
@@ -265,6 +279,7 @@ export interface Settings {
     workspace: WorkspaceConfig
     security: SecurityConfig
     persona: PersonaConfig
+    injection?: InjectionConfig
 }
 
 export interface TestConnectionRequest {

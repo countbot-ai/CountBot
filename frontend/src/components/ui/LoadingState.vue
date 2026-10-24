@@ -49,15 +49,15 @@ withDefaults(defineProps<Props>(), {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-4, 1rem);
+  padding: var(--spacing-4);
 }
 
 .loading-state--small {
-  padding: var(--spacing-2, 0.5rem);
+  padding: var(--spacing-2);
 }
 
 .loading-state--large {
-  padding: var(--spacing-8, 2rem);
+  padding: var(--spacing-8);
 }
 
 .skeleton-container {
@@ -66,9 +66,9 @@ withDefaults(defineProps<Props>(), {
 }
 
 .loading-message {
-  margin-top: var(--spacing-3, 0.75rem);
-  color: var(--color-text-secondary, #666);
-  font-size: var(--font-size-sm, 0.875rem);
+  margin-top: var(--spacing-3);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
   text-align: center;
 }
 </style>

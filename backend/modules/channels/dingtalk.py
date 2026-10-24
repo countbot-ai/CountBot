@@ -8,6 +8,7 @@
 import asyncio
 import json
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -103,6 +104,16 @@ class DingTalkStreamHandler(CallbackHandler if DINGTALK_AVAILABLE else object):
             if isinstance(data, str):
                 data = json.loads(data)
             chatbot_msg = ChatbotMessage.from_dict(data)
+
+            # 钉钉 Stream 在重连或 ACK 丢失时可能重复投递同一条消息，
+            # 入站先按 msgId 去重，避免同一句话触发两次 Agent。
+            message_id = str(
+                getattr(chatbot_msg, "message_id", "") or data.get("msgId") or ""
+            ).strip()
+            if not self.channel.claim_inbound_message(message_id):
+                logger.debug(f"Ignored duplicated DingTalk message: {message_id[:16]}...")
+                return AckMessage.STATUS_OK, "OK"
+
             content, media_files = await self._extract_content_and_media(chatbot_msg, data)
 
             if not content and not media_files:
@@ -137,6 +148,7 @@ class DingTalkStreamHandler(CallbackHandler if DINGTALK_AVAILABLE else object):
                     session_webhook=session_webhook,
                     session_webhook_expired_time=session_webhook_expired_time,
                     media_files=media_files,
+                    message_id=message_id,
                 )
             )
             self.channel._background_tasks.add(task)
@@ -203,6 +215,8 @@ class DingTalkChannel(BaseChannel):
         self._background_tasks: Set[asyncio.Task] = set()
         # sessionWebhook 缓存：chat_id -> {url, expired_time, sender_staff_id}
         self._webhook_cache: Dict[str, dict] = {}
+        # 入站消息去重：msgId -> None（保持插入顺序，超出上限淘汰最旧记录）
+        self._processed_ids: OrderedDict[str, None] = OrderedDict()
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -220,6 +234,7 @@ class DingTalkChannel(BaseChannel):
 
         self._running = True
         self._http = httpx.AsyncClient()
+        self.set_runtime_state(self.RUNTIME_CONNECTING)
         logger.info(f"Initializing DingTalk Stream: {self.config.client_id[:12]}...")
 
         try:
@@ -231,12 +246,20 @@ class DingTalkChannel(BaseChannel):
             handler = DingTalkStreamHandler(self)
             self._client.register_callback_handler(ChatbotMessage.TOPIC, handler)
             logger.info("DingTalk bot connecting (Stream Mode WebSocket)...")
+            self.set_runtime_state(self.RUNTIME_RUNNING)
             await self._client.start()
         except Exception as e:
             logger.warning(f"DingTalk stream connection exited: {e}")
+            self.set_runtime_state(self.RUNTIME_FAILED, error=str(e))
+        finally:
+            # Stream 连接断开后必须结束监督循环，交给管理器按退避重连。
+            self._running = False
+            if self._runtime_state != self.RUNTIME_FAILED:
+                self.set_runtime_state(self.RUNTIME_STOPPED)
 
     async def stop(self) -> None:
         """停止钉钉机器人并清理资源。"""
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         if self._http:
             await self._http.aclose()
@@ -244,6 +267,7 @@ class DingTalkChannel(BaseChannel):
         for task in self._background_tasks:
             task.cancel()
         self._background_tasks.clear()
+        self.set_runtime_state(self.RUNTIME_STOPPED)
         logger.info("DingTalk bot stopped")
 
     # ------------------------------------------------------------------
@@ -579,6 +603,18 @@ class DingTalkChannel(BaseChannel):
     # 入站消息处理
     # ------------------------------------------------------------------
 
+    def claim_inbound_message(self, message_id: str) -> bool:
+        """占位入站消息 ID；返回 False 表示这条消息已经处理过。"""
+        normalized = str(message_id or "").strip()
+        if not normalized:
+            return True
+        if normalized in self._processed_ids:
+            return False
+        self._processed_ids[normalized] = None
+        while len(self._processed_ids) > 1000:
+            self._processed_ids.popitem(last=False)
+        return True
+
     async def _on_message(
         self,
         content: str,
@@ -589,6 +625,7 @@ class DingTalkChannel(BaseChannel):
         session_webhook: Optional[str] = None,
         session_webhook_expired_time: Optional[int] = None,
         media_files: Optional[List[str]] = None,
+        message_id: str = "",
     ) -> None:
         """处理入站消息，缓存 webhook 后转发到消息回调。"""
         try:
@@ -616,6 +653,7 @@ class DingTalkChannel(BaseChannel):
                     "platform": "dingtalk",
                     "conversation_id": conversation_id,
                     "is_group": is_group,
+                    "message_id": message_id,
                 },
             )
         except Exception as e:

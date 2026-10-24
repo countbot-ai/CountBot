@@ -13,7 +13,7 @@
   margin-bottom: var(--spacing-lg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.92) 100%);
+  background: linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-secondary) 100%);
   overflow: hidden;
 }
 
@@ -23,8 +23,8 @@
 
 .object-header {
   padding: var(--spacing-md) var(--spacing-lg);
-  background: rgba(248, 250, 252, 0.78);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .object-toggle {
@@ -40,7 +40,7 @@
 }
 
 .object-toggle:hover {
-  background: rgba(241, 245, 249, 0.96);
+  background: var(--color-bg-secondary);
 }
 
 .object-header-copy {
@@ -89,8 +89,8 @@
   gap: 4px;
   padding: 2px 6px;
   border-radius: var(--radius-sm);
-  background: var(--color-warning-light, #fef3c7);
-  color: var(--color-warning, #f59e0b);
+  background: var(--color-warning-light);
+  color: var(--color-warning);
   font-size: var(--font-size-xs);
 }
 
@@ -115,8 +115,8 @@
 .field-input:focus,
 .field-select:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
 }
 
 .field-input.readonly,
@@ -189,7 +189,7 @@
 
 .switch-input:checked + .switch-slider {
   background-color: var(--color-primary);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .switch-input:checked + .switch-slider:before {
@@ -240,48 +240,20 @@
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .sensitive-badge {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fbbf24;
-}
 
-:root[data-theme="dark"] .field-input,
-:root[data-theme="dark"] .field-select {
-  background: var(--bg-secondary, #0e1422);
-  border-color: #152035;
-}
 
-:root[data-theme="dark"] .field-input:focus,
-:root[data-theme="dark"] .field-select:focus {
-  border-color: rgba(0, 240, 255, 0.4);
-  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.1);
-}
 
-:root[data-theme="dark"] .field-input.readonly,
-:root[data-theme="dark"] .field-select.readonly {
-  background: #0a0e1a;
-}
 
-:root[data-theme="dark"] .switch-slider {
-  background-color: #131b2c;
-  border-color: #1e2d45;
-}
 
-:root[data-theme="dark"] .object-field {
-  background: linear-gradient(180deg, rgba(10, 14, 26, 0.96) 0%, rgba(12, 18, 32, 0.9) 100%);
-  border-color: #1f2b44;
-}
 
-:root[data-theme="dark"] .object-header {
-  background: rgba(16, 22, 37, 0.92);
-  border-bottom-color: rgba(37, 54, 84, 0.55);
-}
 
-:root[data-theme="dark"] .object-toggle:hover {
-  background: rgba(18, 25, 41, 0.98);
-}
 
-:root[data-theme="dark"] .switch-input:checked + .switch-slider {
-  background-color: rgba(0, 240, 255, 0.2);
-  border-color: rgba(0, 240, 255, 0.4);
-}
+
+
+
+
+
+
+
+
+

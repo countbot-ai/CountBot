@@ -75,6 +75,8 @@
 
           <SecurityConfig v-else-if="activeTab === 'security'" />
 
+          <InjectionPanel v-else-if="activeTab === 'injection'" />
+
           <ChannelsConfig v-else-if="activeTab === 'channels'" />
 
           <McpPanel v-else-if="activeTab === 'mcp'" />
@@ -136,6 +138,7 @@ import {
   User as PersonIcon,
   FolderOpen as FolderIcon,
   Shield as ShieldIcon,
+  Filter as FilterIcon,
   MessageSquare as MessageIcon,
   Cpu as CpuIcon,
   TerminalSquare as TerminalSquareIcon,
@@ -149,6 +152,7 @@ import PersonaConfig from './PersonaConfig.vue'
 import PersonalityEditor from './PersonalityEditor.vue'
 import WorkspaceConfig from './WorkspaceConfig.vue'
 import SecurityConfig from './SecurityConfig.vue'
+import InjectionPanel from './InjectionPanel.vue'
 import ChannelsConfig from './ChannelsConfig.vue'
 import McpPanel from '@/modules/mcp/McpPanel.vue'
 import ExternalCodingToolsConfig from './ExternalCodingToolsConfig.vue'
@@ -196,6 +200,7 @@ const tabs = [
   { id: 'memory' as SettingsTab, icon: BrainIcon, label: 'settings.tabs.memory', shortLabel: 'settings.tabShort.memory' },
   { id: 'workspace' as SettingsTab, icon: FolderIcon, label: 'settings.tabs.workspace', shortLabel: 'settings.tabShort.workspace' },
   { id: 'security' as SettingsTab, icon: ShieldIcon, label: 'settings.tabs.security', shortLabel: 'settings.tabShort.security' },
+  { id: 'injection' as SettingsTab, icon: FilterIcon, label: 'settings.tabs.injection', shortLabel: 'settings.tabShort.injection' },
   { id: 'channels' as SettingsTab, icon: MessageIcon, label: 'settings.tabs.channels', shortLabel: 'settings.tabShort.channels' },
   { id: 'mcp' as SettingsTab, icon: CpuIcon, label: 'settings.tabs.mcp', shortLabel: 'settings.tabShort.mcp' },
   { id: 'externaltools' as SettingsTab, icon: TerminalSquareIcon, label: 'settings.tabs.externaltools', shortLabel: 'settings.tabShort.externaltools' },
@@ -212,6 +217,9 @@ const footerSaveHint = computed(() => {
   }
   if (activeTab.value === 'mcp') {
     return t('settings.footer.noSave')
+  }
+  if (activeTab.value === 'injection') {
+    return t('settings.footer.injection')
   }
   if (activeTab.value === 'externaltools') {
     return t('settings.footer.externalTools')

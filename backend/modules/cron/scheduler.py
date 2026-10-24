@@ -315,11 +315,14 @@ class CronScheduler:
                 )
             else:
                 # 重试耗尽或不重试
+                exhausted_retries = job.retry_count or 0
                 job.retry_count = 0
                 job.last_status = "error"
-                
-                if job.retry_count > 0:
-                    logger.error(f"Job failed after {job.max_retries} retries: {job.name}")
+
+                if exhausted_retries > 0:
+                    logger.error(
+                        f"Job failed after {exhausted_retries} retries: {job.name}"
+                    )
                 
                 # 按原定计划继续
                 if job.enabled:
@@ -355,6 +358,21 @@ class CronScheduler:
     def is_job_active(self, job_id: str) -> bool:
         """检查某个任务是否正在执行"""
         return job_id in self._active_jobs
+
+    def try_acquire_job(self, job_id: str) -> bool:
+        """尝试占用任务执行权。
+
+        检查与占用必须在同一同步调用内完成：分成两步时，两个请求都会通过
+        检查，随后各自创建后台任务，导致同一任务并发执行。
+        """
+        if job_id in self._active_jobs:
+            return False
+        self._active_jobs.add(job_id)
+        return True
+
+    def release_job(self, job_id: str) -> None:
+        """释放任务执行权。"""
+        self._active_jobs.discard(job_id)
     
     @property
     def active_job_count(self) -> int:

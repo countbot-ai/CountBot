@@ -47,6 +47,10 @@ class ModelConfig(BaseModel):
     )
     max_iterations: int = Field(default=25, ge=1, le=150)
     thinking_enabled: bool = Field(default=True, description="是否启用模型思考模式")
+    supports_image: Optional[bool] = Field(
+        default=None,
+        description="图片输入能力：None=按模型名自动判断，True=强制按图片输入，False=降级为路径",
+    )
 
     @field_validator("api_mode", mode="before")
     @classmethod
@@ -152,7 +156,10 @@ class SecurityConfig(BaseModel):
     max_output_length: int = Field(default=10000, ge=100, le=1000000, description="最大输出长度（字符）")
     
     # 工作空间限制
-    restrict_to_workspace: bool = Field(default=False, description="是否限制命令在工作空间内执行")
+    # 安全默认值必须为 True：False 等于允许 AI 生成的命令以 CountBot 进程
+    # 用户身份读写宿主机任意路径（见安全修复 2026-10-23，CWE-78）。
+    # 明确需要全盘访问的部署方可在配置文件中显式设为 false。
+    restrict_to_workspace: bool = Field(default=True, description="是否限制命令在工作空间内执行")
 
 
 class AgentConfig(BaseModel):
@@ -240,6 +247,15 @@ class FeishuAccountConfig(ChannelAccountConfig):
 
     app_id: str = ""
     app_secret: str = ""
+    group_enabled: bool = Field(
+        default=True, description="是否允许在群聊中响应消息"
+    )
+    group_require_mention: bool = Field(
+        default=True, description="群聊中是否必须 @机器人 才触发处理"
+    )
+    group_topic_enabled: bool = Field(
+        default=True, description="是否按飞书话题（thread）拆分独立会话"
+    )
 
 
 class FeishuConfig(FeishuAccountConfig):
@@ -339,6 +355,38 @@ class McpConfig(BaseModel):
     registry: McpRegistryConfig = Field(default_factory=McpRegistryConfig)
 
 
+class InjectionConfig(BaseModel):
+    """上下文注入开关：逐项控制进入 LLM 请求的内容，默认全部开启（= 历史行为）。"""
+
+    # system prompt 区块
+    core_rules: bool = Field(
+        default=True,
+        description="核心规则段（CountBot 规则/工具执行/文件技能/记忆/知识库/安全），关闭后仅保留最小身份",
+    )
+    external_coding_guidance: bool = Field(
+        default=True, description="外部编码代理指引（external_coding_agent 使用说明）"
+    )
+    skills_always: bool = Field(default=True, description="always=true 技能全文注入")
+    skills_summary: bool = Field(default=True, description="已启用技能摘要（name+description）注入")
+    agent_teams: bool = Field(default=True, description="已激活多智能体团队区块注入")
+
+    # user 消息动态注入
+    dynamic_context: bool = Field(
+        default=True, description="当前时间/用户资料/会话摘要/渠道信息注入首条 user 消息"
+    )
+    team_reminder: bool = Field(default=True, description="检测到 @团队名 时注入 workflow_run 提醒")
+
+    # 工具
+    disabled_tools: List[str] = Field(
+        default_factory=list, description="禁用的工具名列表，不出现在工具定义里且不可调用"
+    )
+
+    # 后台维护：不注入请求，消耗 token 配额
+    auto_memory_summary: bool = Field(
+        default=True, description="后台自动记忆维护（溢出历史/整会话沉淀到 MEMORY.md）"
+    )
+
+
 class ChannelsConfig(BaseModel):
     """渠道配置"""
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
@@ -362,6 +410,7 @@ class AppConfig(BaseModel):
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
     mcp: McpConfig = Field(default_factory=McpConfig)
+    injection: InjectionConfig = Field(default_factory=InjectionConfig)
     theme: str = "auto"
     language: str = "auto"
     font_size: str = "medium"

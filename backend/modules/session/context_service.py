@@ -14,6 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.models.message import Message
 from backend.models.session import Session
 from backend.modules.agent.memory import MemoryStore
+from backend.modules.session.usage_recorder import (
+    USAGE_KIND_COMPACTION,
+    USAGE_KIND_SUMMARY,
+    record_usage,
+)
 from backend.modules.session.message_context import (
     extract_reasoning_content_from_message_context,
     strip_workflow_exec_metadata,
@@ -76,6 +81,7 @@ class ContextMaintenanceRequest:
     message_formatter: MessageFormatter
     memory_store: Optional[MemoryStore]
     auto_summary_source: str
+    enable_auto_memory_summary: bool = True
 
 
 class ConversationContextService:
@@ -267,6 +273,7 @@ class ConversationContextService:
             messages=[message_formatter(message) for message in delta_messages],
             previous_summary=previous_summary,
             char_limit=char_limit,
+            session_id=session_id,
         )
         summary_text = str(summary_text or "").strip()
         if not summary_text:
@@ -330,13 +337,18 @@ class ConversationContextService:
             return False
 
         from backend.modules.agent.analyzer import MessageAnalyzer
-        from backend.modules.agent.prompts import OVERFLOW_SUMMARY_PROMPT
+        from backend.modules.agent.prompts import (
+            OVERFLOW_SUMMARY_PROMPT,
+            is_memory_noop,
+            render_prompt,
+        )
 
         analyzer = MessageAnalyzer()
         formatted = analyzer.format_messages_for_summary(to_summarize, max_chars=4000)
-        prompt = OVERFLOW_SUMMARY_PROMPT.format(messages=formatted)
+        prompt = render_prompt(OVERFLOW_SUMMARY_PROMPT, messages=formatted)
 
         summary_parts: list[str] = []
+        overflow_usage = None
         async for chunk in provider.chat_stream(
             messages=[{"role": "user", "content": prompt}],
             model=model,
@@ -344,9 +356,21 @@ class ConversationContextService:
         ):
             if chunk.is_content and chunk.content:
                 summary_parts.append(chunk.content)
+            if chunk.usage:
+                overflow_usage = chunk.usage
+
+        # 后台摘要同样消耗额度，计入用量统计才能反映真实成本
+        if overflow_usage:
+            await record_usage(
+                session_id=session_id,
+                provider=getattr(provider, "provider_id", None),
+                model=model,
+                kind=USAGE_KIND_SUMMARY,
+                raw_usage=overflow_usage,
+            )
 
         summary = "".join(summary_parts).strip()
-        if summary and "无需记录" not in summary:
+        if summary and not is_memory_noop(summary):
             memory_store.append_entry(source="auto-overflow", content=summary)
             logger.info(
                 f"溢出历史已总结并写入记忆 | 会话={session_id} | 历史窗口={max_history_messages}条 "
@@ -365,7 +389,7 @@ class ConversationContextService:
 
         session.last_summarized_msg_id = pending_messages[-1].id
         await self.db.commit()
-        return bool(summary and "无需记录" not in summary)
+        return bool(summary and not is_memory_noop(summary))
 
     async def maybe_auto_summarize_to_memory(
         self,
@@ -415,16 +439,21 @@ class ConversationContextService:
             return False
 
         from backend.modules.agent.analyzer import MessageAnalyzer
-        from backend.modules.agent.prompts import CONVERSATION_TO_MEMORY_PROMPT
+        from backend.modules.agent.prompts import (
+            CONVERSATION_TO_MEMORY_PROMPT,
+            is_memory_noop,
+            render_prompt,
+        )
 
         analyzer = MessageAnalyzer()
         formatted = analyzer.format_messages_for_summary(
             [message_formatter(message) for message in messages],
             max_chars=4000,
         )
-        prompt = CONVERSATION_TO_MEMORY_PROMPT.format(messages=formatted)
+        prompt = render_prompt(CONVERSATION_TO_MEMORY_PROMPT, messages=formatted)
 
         summary_parts: list[str] = []
+        memory_usage = None
         async for chunk in provider.chat_stream(
             messages=[{"role": "user", "content": prompt}],
             model=model,
@@ -432,6 +461,17 @@ class ConversationContextService:
         ):
             if chunk.is_content and chunk.content:
                 summary_parts.append(chunk.content)
+            if chunk.usage:
+                memory_usage = chunk.usage
+
+        if memory_usage:
+            await record_usage(
+                session_id=session_id,
+                provider=getattr(provider, "provider_id", None),
+                model=model,
+                kind=USAGE_KIND_SUMMARY,
+                raw_usage=memory_usage,
+            )
 
         summary = "".join(summary_parts).strip()
         session.auto_memory_summary_msg_id = current_last_message_id
@@ -443,7 +483,7 @@ class ConversationContextService:
             )
             return False
 
-        if "无需记录" in summary:
+        if is_memory_noop(summary):
             logger.info(
                 f"整会话自动总结判定无需写入记忆 | 会话={session_id} | 消息数={message_count} "
                 f"| 增量消息数={incremental_message_count}\n"
@@ -497,11 +537,13 @@ class ConversationContextService:
         messages: list[dict[str, str]],
         previous_summary: str,
         char_limit: int,
+        session_id: Optional[str] = None,
     ) -> str:
         from backend.modules.agent.analyzer import MessageAnalyzer
         from backend.modules.agent.prompts import (
             RECURSIVE_SHORT_CONTEXT_SUMMARY_PROMPT,
             SHORT_CONTEXT_SUMMARY_PROMPT,
+            render_prompt,
         )
 
         analyzer = MessageAnalyzer()
@@ -513,18 +555,19 @@ class ConversationContextService:
             return ""
 
         if previous_summary:
-            prompt = RECURSIVE_SHORT_CONTEXT_SUMMARY_PROMPT.format(
+            prompt = render_prompt(RECURSIVE_SHORT_CONTEXT_SUMMARY_PROMPT, 
                 previous_summary=previous_summary,
                 past_messages=formatted,
                 char_limit=char_limit,
             )
         else:
-            prompt = SHORT_CONTEXT_SUMMARY_PROMPT.format(
+            prompt = render_prompt(SHORT_CONTEXT_SUMMARY_PROMPT, 
                 messages=formatted,
                 char_limit=char_limit,
             )
 
         parts: list[str] = []
+        short_usage = None
         async for chunk in provider.chat_stream(
             messages=[{"role": "user", "content": prompt}],
             model=model,
@@ -532,6 +575,17 @@ class ConversationContextService:
         ):
             if chunk.is_content and chunk.content:
                 parts.append(chunk.content)
+            if chunk.usage:
+                short_usage = chunk.usage
+
+        if short_usage:
+            await record_usage(
+                session_id=session_id,
+                provider=getattr(provider, "provider_id", None),
+                model=model,
+                kind=USAGE_KIND_COMPACTION,
+                raw_usage=short_usage,
+            )
 
         return "".join(parts).strip()
 
@@ -573,8 +627,14 @@ def schedule_context_maintenance(
     message_formatter: MessageFormatter = default_message_formatter,
     memory_store: Optional[MemoryStore] = None,
     auto_summary_source: str = "web-chat",
+    enable_auto_memory_summary: bool = True,
 ) -> Optional[asyncio.Task[None]]:
-    """Schedule post-response maintenance once per session."""
+    """Schedule post-response maintenance once per session.
+
+    enable_auto_memory_summary=False（injection.auto_memory_summary 关闭）时，
+    跳过溢出历史总结与整会话自动沉淀两类后台 LLM 调用，避免额外 token 消耗；
+    短期上下文摘要缓存仍受 enable_short_context_summary 独立控制。
+    """
     request = ContextMaintenanceRequest(
         db_session_factory=db_session_factory,
         session_id=session_id,
@@ -585,6 +645,7 @@ def schedule_context_maintenance(
         message_formatter=message_formatter,
         memory_store=memory_store,
         auto_summary_source=auto_summary_source,
+        enable_auto_memory_summary=enable_auto_memory_summary,
     )
 
     existing_task = _CONTEXT_MAINTENANCE_TASKS.get(session_id)
@@ -610,22 +671,28 @@ def schedule_context_maintenance(
                         model=current_request.model,
                         message_formatter=current_request.message_formatter,
                     )
-                    await service.summarize_overflow_to_memory(
-                        session_id=current_request.session_id,
-                        max_history_messages=current_request.max_history_messages,
-                        provider=current_request.provider,
-                        model=current_request.model,
-                        memory_store=current_request.memory_store,
-                        message_formatter=current_request.message_formatter,
-                    )
-                    await service.maybe_auto_summarize_to_memory(
-                        session_id=current_request.session_id,
-                        provider=current_request.provider,
-                        model=current_request.model,
-                        memory_store=current_request.memory_store,
-                        message_formatter=current_request.message_formatter,
-                        source=current_request.auto_summary_source,
-                    )
+                    if current_request.enable_auto_memory_summary:
+                        await service.summarize_overflow_to_memory(
+                            session_id=current_request.session_id,
+                            max_history_messages=current_request.max_history_messages,
+                            provider=current_request.provider,
+                            model=current_request.model,
+                            memory_store=current_request.memory_store,
+                            message_formatter=current_request.message_formatter,
+                        )
+                        await service.maybe_auto_summarize_to_memory(
+                            session_id=current_request.session_id,
+                            provider=current_request.provider,
+                            model=current_request.model,
+                            memory_store=current_request.memory_store,
+                            message_formatter=current_request.message_formatter,
+                            source=current_request.auto_summary_source,
+                        )
+                    else:
+                        logger.info(
+                            f"自动记忆维护已关闭（injection.auto_memory_summary=false），"
+                            f"跳过后台记忆总结 | 会话={current_request.session_id}"
+                        )
                 logger.info(
                     f"后台会话上下文维护完成 | 会话={current_request.session_id}"
                 )

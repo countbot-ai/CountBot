@@ -59,6 +59,7 @@ class XiaozhiChannel(BaseChannel):
             return
 
         self._running = True
+        self.set_runtime_state(self.RUNTIME_CONNECTING)
         logger.info("=" * 60)
         logger.info("Starting XiaozhiAI channel")
         logger.info(f"Endpoint: {self.config.endpoint}")
@@ -77,6 +78,7 @@ class XiaozhiChannel(BaseChannel):
                     logger.debug("Connection error during shutdown, ignoring")
                     break
                 logger.error(f"XiaozhiAI connection error: {e}")
+                self.set_runtime_state(self.RUNTIME_CONNECTING, error=str(e))
                 logger.info(f"Reconnecting in {self._current_reconnect_delay}s...")
                 try:
                     await asyncio.sleep(self._current_reconnect_delay)
@@ -102,6 +104,7 @@ class XiaozhiChannel(BaseChannel):
                 close_timeout=10,
             ) as websocket:
                 self._websocket = websocket
+                self.set_runtime_state(self.RUNTIME_RUNNING, reconnect_attempts=0)
                 self._current_reconnect_delay = self._reconnect_delay
                 logger.info("✓ XiaozhiAI MCP connected successfully!")
                 logger.info("Waiting for messages from XiaozhiAI...")
@@ -147,6 +150,7 @@ class XiaozhiChannel(BaseChannel):
             logger.debug("XiaozhiAI channel already stopped")
             return
             
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         logger.info("Stopping XiaozhiAI channel...")
         
@@ -182,6 +186,7 @@ class XiaozhiChannel(BaseChannel):
                 self._websocket = None
                 
         self._initialized = False
+        self.set_runtime_state(self.RUNTIME_STOPPED)
         logger.info("XiaozhiAI channel stopped")
 
     # ------------------------------------------------------------------

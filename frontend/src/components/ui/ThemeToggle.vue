@@ -37,9 +37,9 @@ const themeIcon = computed(() => theme.value === 'light' ? Moon : Sun)
   height: 36px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
   position: relative;
@@ -47,9 +47,9 @@ const themeIcon = computed(() => theme.value === 'light' ? Moon : Sun)
 }
 
 .toggle-btn:hover {
-  background: var(--hover-bg, #f3f4f6);
-  border-color: var(--border-color, #e5e7eb);
-  color: var(--text-primary, #1f2937);
+  background: var(--hover-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
 }
 
 .toggle-btn:active {
@@ -65,15 +65,9 @@ const themeIcon = computed(() => theme.value === 'light' ? Moon : Sun)
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .toggle-btn {
-  color: var(--text-secondary, #9ca3af);
-}
 
-:root[data-theme="dark"] .toggle-btn:hover {
-  background: rgba(0, 240, 255, 0.1);
-  border-color: rgba(0, 240, 255, 0.2);
-  color: #00f0ff;
-}
+
+
 
 /* 主题图标切换动画 */
 .theme-icon-enter-active,

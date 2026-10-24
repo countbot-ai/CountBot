@@ -108,7 +108,7 @@ const handleBacklinkClick = (slug: string) => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,7 +124,7 @@ const handleBacklinkClick = (slug: string) => {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .modal-header {
@@ -256,7 +256,7 @@ const handleBacklinkClick = (slug: string) => {
 }
 
 .backlink-item:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   background: var(--bg-primary);
   transform: translateX(4px);
 }
@@ -304,7 +304,7 @@ const handleBacklinkClick = (slug: string) => {
   align-items: center;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: white;

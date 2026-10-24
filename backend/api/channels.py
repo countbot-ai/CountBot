@@ -1,6 +1,7 @@
 """渠道管理 API 端点"""
 
 import asyncio
+import re
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -9,6 +10,12 @@ from loguru import logger
 
 from backend.modules.config.loader import config_loader
 from backend.modules.channels.manager import ChannelManager
+from backend.modules.channels.onboarding import (
+    begin_onboarding,
+    drop_onboarding_session,
+    poll_onboarding,
+    supports_onboarding,
+)
 from backend.modules.external_agents.registry import ExternalAgentRegistry
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
@@ -52,6 +59,19 @@ class WeChatLoginStartRequest(BaseModel):
 
 class WeChatLoginPollRequest(BaseModel):
     """微信扫码登录轮询请求。"""
+
+    session_key: str
+
+
+class ChannelOnboardStartRequest(BaseModel):
+    """渠道扫码接入启动请求。"""
+
+    account_id: Optional[str] = None
+    display_name: Optional[str] = None
+
+
+class ChannelOnboardPollRequest(BaseModel):
+    """渠道扫码接入轮询请求。"""
 
     session_key: str
 
@@ -158,6 +178,119 @@ _CHANNEL_UNIQUE_ID_FIELDS: Dict[str, tuple[str, ...]] = {
 }
 
 
+# 支持主动推送的渠道（与 ChannelManager 实际可投递的渠道保持一致）
+_DELIVERY_CHANNEL_IDS = (
+    "telegram",
+    "qq",
+    "wechat",
+    "dingtalk",
+    "feishu",
+    "weibo",
+    "wecom",
+    "discord",
+)
+
+# 渠道标识形如 wecom / feishu，用于把普通会话名与渠道会话名区分开
+_CHANNEL_ID_PATTERN = re.compile(r"[a-z][a-z0-9_]{1,20}")
+
+_DELIVERY_CHANNEL_LABELS = {
+    "telegram": "Telegram",
+    "qq": "QQ",
+    "wechat": "微信",
+    "dingtalk": "钉钉",
+    "feishu": "飞书",
+    "weibo": "微博",
+    "wecom": "企业微信",
+    "discord": "Discord",
+}
+
+
+def _is_group_chat_id(channel: str, chat_id: str) -> bool:
+    """判断 chat_id 是否为群（与 cron executor 的判断保持一致）。"""
+    if channel == "feishu":
+        return str(chat_id).startswith("oc_")
+    return False
+
+
+def _parse_session_route(session_name: str) -> Optional[tuple[str, str, str]]:
+    """从渠道会话名 ``channel:account_id:chat_id[:timestamp]`` 解析推送目标。
+
+    普通会话名（如 ``New Chat 2026/10/24 15:46:22``）也含冒号，这里要求首段是
+    合法的渠道标识，避免把普通会话误当作渠道会话。
+    """
+    parts = (session_name or "").split(":")
+    if len(parts) < 3:
+        return None
+    channel, account_id, chat_id = parts[0], parts[1], parts[2]
+    if not _CHANNEL_ID_PATTERN.fullmatch(channel) or not chat_id:
+        return None
+    return channel, account_id or "default", chat_id
+
+
+async def _collect_channel_chats(
+    channel_ids: tuple[str, ...], per_channel_limit: int = 100
+) -> Dict[str, list[Dict[str, Any]]]:
+    """从历史渠道会话中反查真实使用过的 chat_id。
+
+    chat_id 只在渠道收到入站消息时才知道，配置里没有；这里按会话名前缀扫描
+    渠道会话，聚合出每个渠道/账号下的候选聊天，按最近活跃排序。
+    """
+    from sqlalchemy import select
+
+    from backend.database import get_db_session_factory
+    from backend.models.session import Session as SessionModel
+    from backend.utils.datetime_utils import to_utc_iso
+
+    grouped: Dict[str, Dict[tuple[str, str], Dict[str, Any]]] = {
+        channel_id: {} for channel_id in channel_ids
+    }
+
+    try:
+        db_factory = get_db_session_factory()
+    except Exception as e:
+        logger.warning(f"Database unavailable for delivery targets: {e}")
+        return {channel_id: [] for channel_id in channel_ids}
+
+    async with db_factory() as db:
+        for channel_id in channel_ids:
+            escaped = (
+                channel_id.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            result = await db.execute(
+                select(SessionModel)
+                .where(SessionModel.name.like(f"{escaped}:%", escape="\\"))
+                .order_by(SessionModel.updated_at.desc())
+                .limit(per_channel_limit)
+            )
+            for session in result.scalars().all():
+                route = _parse_session_route(session.name)
+                if not route or route[0] != channel_id:
+                    continue
+                _, account_id, chat_id = route
+                key = (account_id, chat_id)
+                if key in grouped[channel_id]:
+                    continue
+                grouped[channel_id][key] = {
+                    "chat_id": chat_id,
+                    "account_id": account_id,
+                    "is_group": _is_group_chat_id(channel_id, chat_id),
+                    "session_id": session.id,
+                    "session_name": session.name,
+                    "last_used": to_utc_iso(session.updated_at),
+                }
+
+    return {
+        channel_id: sorted(
+            grouped[channel_id].values(),
+            key=lambda item: item.get("last_used") or "",
+            reverse=True,
+        )
+        for channel_id in channel_ids
+    }
+
+
 def _validate_duplicate_accounts(channel_name: str, channel_config: Any) -> None:
     """校验多机器人配置中是否复用了同一物理机器人身份。"""
     unique_fields = _CHANNEL_UNIQUE_ID_FIELDS.get(channel_name)
@@ -233,6 +366,64 @@ def _validate_external_coding_route_config(channel_name: str, channel_config: An
                 raise ValueError(
                     f"{channel_name} 渠道账号 '{account_id}' 的外部编程工具不可用: {exc}"
                 ) from exc
+
+
+def _apply_onboarding_credentials(
+    channel_name: str,
+    account_id: Optional[str],
+    credentials: Dict[str, Any],
+    display_name: str = "",
+) -> Any:
+    """把扫码得到的凭据写入渠道配置，并启用对应账号。
+
+    只写入凭据与启用状态，不覆盖用户已有的其他配置；主账号与多机器人账号
+    走同一套逻辑，避免出现两条写入路径。
+    """
+    from backend.modules.config.schema import (
+        QQConfig,
+        FeishuConfig,
+        WeComConfig,
+        DingTalkConfig,
+    )
+
+    config_classes = {
+        "qq": QQConfig,
+        "feishu": FeishuConfig,
+        "wecom": WeComConfig,
+        "dingtalk": DingTalkConfig,
+    }
+    config_class = config_classes.get(channel_name)
+    channel_config = getattr(config_loader.config.channels, channel_name, None)
+    if config_class is None or channel_config is None:
+        raise ValueError(f"渠道 {channel_name} 不支持扫码接入")
+
+    config_data = channel_config.model_dump()
+    top_level_account_id = str(config_data.get("account_id") or "default")
+    target_account_id = str(account_id or top_level_account_id).strip() or top_level_account_id
+    target_display_name = str(display_name or "").strip()
+
+    if target_account_id == top_level_account_id:
+        config_data.update(credentials)
+        config_data["enabled"] = True
+        if target_display_name and not str(config_data.get("display_name") or "").strip():
+            config_data["display_name"] = target_display_name
+    else:
+        accounts = dict(config_data.get("accounts") or {})
+        account_data = dict(accounts.get(target_account_id) or {})
+        account_data.update(credentials)
+        account_data["account_id"] = target_account_id
+        account_data["enabled"] = True
+        if target_display_name and not str(account_data.get("display_name") or "").strip():
+            account_data["display_name"] = target_display_name
+        accounts[target_account_id] = account_data
+        config_data["accounts"] = accounts
+
+    updated_config = config_class(**config_data)
+    # 先校验再落盘：扫码到的机器人若已被其他账号占用，不应留下半写入配置。
+    _validate_duplicate_accounts(channel_name, updated_config)
+    _validate_external_coding_route_config(channel_name, updated_config)
+    setattr(config_loader.config.channels, channel_name, updated_config)
+    return updated_config
 
 
 async def _restart_channel_manager(fastapi_request: Request) -> Optional[ChannelManager]:
@@ -393,6 +584,92 @@ async def list_channels():
     
     except Exception as e:
         logger.error(f"Error listing channels: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/delivery-targets")
+async def get_delivery_targets():
+    """获取可用于消息推送的渠道目标（复用「设置 - 渠道」里已配置好的渠道）。
+
+    返回两部分信息，供定时任务等推送场景直接选择，避免重复手工填写：
+    - 已在渠道设置中完成配置的渠道与其机器人账号（含运行状态）
+    - 从历史渠道会话反查出的真实 chat_id（会话名格式 channel:account_id:chat_id:ts）
+    """
+    try:
+        config = config_loader.config
+        channels_config = config.channels
+
+        try:
+            status_map = get_channel_manager().get_status()
+        except Exception as exc:  # 渠道管理器未就绪时降级为只返回配置
+            logger.debug(f"Channel status unavailable for delivery targets: {exc}")
+            status_map = {}
+
+        known_chats = await _collect_channel_chats(_DELIVERY_CHANNEL_IDS)
+
+        targets: list[Dict[str, Any]] = []
+        for channel_id in _DELIVERY_CHANNEL_IDS:
+            channel_config = getattr(channels_config, channel_id, None)
+            if channel_config is None:
+                continue
+
+            serialized = _serialize_channel_for_list(channel_config)
+            channel_status = status_map.get(channel_id) or {}
+            # 未配置且未运行的渠道没有推送能力，不出现在候选里
+            if not serialized["configured"] and not channel_status.get("running"):
+                continue
+
+            accounts_map = serialized["config"].get("accounts", {}) or {}
+            status_instances = channel_status.get("instances", {}) or {}
+
+            accounts: list[Dict[str, Any]] = []
+            for account_id, account_cfg in accounts_map.items():
+                instance_status = status_instances.get(str(account_id), {})
+                accounts.append(
+                    {
+                        "account_id": str(account_id),
+                        "display_name": str(
+                            account_cfg.get("display_name")
+                            or instance_status.get("display_name")
+                            or account_id
+                        ),
+                        "enabled": bool(account_cfg.get("enabled", True)),
+                        "running": bool(instance_status.get("running", False)),
+                    }
+                )
+
+            # 顶层配置（未拆分多账号）视为 default 账号
+            if not accounts:
+                instance_status = status_instances.get("default", {})
+                accounts.append(
+                    {
+                        "account_id": "default",
+                        "display_name": str(
+                            instance_status.get("display_name")
+                            or _DELIVERY_CHANNEL_LABELS.get(channel_id, channel_id)
+                        ),
+                        "enabled": bool(channel_config.model_dump().get("enabled", True)),
+                        "running": bool(instance_status.get("running", False)),
+                    }
+                )
+
+            targets.append(
+                {
+                    "channel": channel_id,
+                    "name": _DELIVERY_CHANNEL_LABELS.get(channel_id, channel_id),
+                    "icon": channel_id,
+                    "enabled": bool(serialized["enabled"]) or bool(channel_status.get("running")),
+                    "configured": bool(serialized["configured"]),
+                    "running": bool(channel_status.get("running", False)),
+                    "accounts": accounts,
+                    "chats": known_chats.get(channel_id, []),
+                }
+            )
+
+        return {"success": True, "targets": targets}
+
+    except Exception as e:
+        logger.error(f"Error getting delivery targets: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -707,6 +984,101 @@ async def poll_wechat_login(request: WeChatLoginPollRequest, fastapi_request: Re
         logger.error(f"Failed to poll wechat login: {e}")
         return {"success": False, "message": f"轮询微信登录状态失败: {e}"}
 
+
+
+@router.post("/{channel}/onboard/start")
+async def start_channel_onboarding(channel: str, request: ChannelOnboardStartRequest):
+    """发起 QQ / 飞书 / 企业微信 / 钉钉扫码接入，返回二维码。"""
+    try:
+        normalized = str(channel or "").strip().lower()
+        if not supports_onboarding(normalized):
+            return {"success": False, "message": f"渠道 {channel} 不支持扫码接入"}
+
+        channel_config = getattr(config_loader.config.channels, normalized, None)
+        if channel_config is None:
+            return {"success": False, "message": f"渠道 {channel} 配置不存在"}
+
+        account_id = str(
+            request.account_id or getattr(channel_config, "account_id", "default") or "default"
+        ).strip() or "default"
+        result = await begin_onboarding(
+            normalized,
+            account_id,
+            display_name=str(request.display_name or ""),
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"Failed to start {channel} onboarding: {e}")
+        return {"success": False, "message": f"发起扫码绑定失败: {e}"}
+
+
+@router.post("/{channel}/onboard/poll")
+async def poll_channel_onboarding(
+    channel: str,
+    request: ChannelOnboardPollRequest,
+    fastapi_request: Request,
+):
+    """轮询扫码结果；成功后自动保存凭据、启用账号并热重启渠道。"""
+    normalized = str(channel or "").strip().lower()
+    if not supports_onboarding(normalized):
+        return {"success": False, "status": "error", "message": f"渠道 {channel} 不支持扫码接入"}
+
+    try:
+        result = await poll_onboarding(request.session_key)
+    except Exception as e:
+        logger.error(f"Failed to poll {channel} onboarding: {e}")
+        return {"success": False, "status": "error", "message": f"查询扫码状态失败: {e}"}
+
+    status = str(result.get("status") or "pending")
+    if status != "success":
+        return {"success": status == "pending", **result}
+
+    credentials = result.get("credentials") or {}
+    if not credentials:
+        return {"success": False, "status": "error", "message": "扫码成功但未返回机器人凭据"}
+
+    try:
+        updated_config = _apply_onboarding_credentials(
+            normalized,
+            result.get("account_id"),
+            credentials,
+            display_name=str(result.get("display_name") or ""),
+        )
+        await config_loader.save()
+    except ValueError as e:
+        return {"success": False, "status": "error", "message": str(e)}
+    except Exception as e:
+        logger.error(f"Failed to persist {channel} onboarding credentials: {e}")
+        return {"success": False, "status": "error", "message": f"保存机器人凭据失败: {e}"}
+
+    message_handler = getattr(fastapi_request.app.state, "message_handler", None)
+    try:
+        if message_handler is not None and hasattr(message_handler, "reload_config"):
+            message_handler.reload_config()
+        channel_manager = await _restart_channel_manager(fastapi_request)
+        if message_handler is not None and channel_manager is not None:
+            message_handler.set_channel_manager(channel_manager)
+    except Exception as e:
+        logger.warning(f"Failed to reload channels after {channel} onboarding: {e}")
+
+    account_id = str(result.get("account_id") or updated_config.account_id or "default")
+    logger.info(f"{channel} bot bound via QR onboarding: {account_id}")
+    return {
+        "success": True,
+        "status": "success",
+        "message": str(result.get("message") or "扫码绑定成功"),
+        "account_id": account_id,
+        "config": _normalize_accounts_payload(updated_config.model_dump()),
+    }
+
+
+@router.post("/{channel}/onboard/cancel")
+async def cancel_channel_onboarding(channel: str, request: ChannelOnboardPollRequest):
+    """关闭二维码时释放扫码会话，避免后台继续保留轮询状态。"""
+    if not supports_onboarding(str(channel or "").strip().lower()):
+        return {"success": False, "message": f"渠道 {channel} 不支持扫码接入"}
+    drop_onboarding_session(request.session_key)
+    return {"success": True}
 
 
 @router.post("/update")

@@ -33,6 +33,8 @@ export type ChatStreamAction =
   | { type: 'tool_call'; payload: StreamRealtimeMessage; now: number }
   | { type: 'tool_progress'; payload: StreamRealtimeMessage }
   | { type: 'tool_result'; payload: StreamRealtimeMessage }
+  | { type: 'tool_error'; payload: StreamRealtimeMessage }
+  | { type: 'stream_error'; payload: StreamRealtimeMessage }
   | { type: 'workflow_event'; payload: StreamRealtimeMessage; now: number }
   | { type: 'spawn_event'; payload: StreamRealtimeMessage }
   | { type: 'message_complete' }
@@ -86,6 +88,10 @@ export function mapRealtimeMessageToAction(
       return { type: 'tool_progress', payload: message }
     case 'tool_result':
       return { type: 'tool_result', payload: message }
+    case 'tool_error':
+      return { type: 'tool_error', payload: message }
+    case 'stream_error':
+      return { type: 'stream_error', payload: message }
     case 'message_complete':
       return { type: 'message_complete' }
     default:
@@ -127,6 +133,10 @@ export function chatStreamReducer(
       return reduceToolProgress(state, action.payload)
     case 'tool_result':
       return reduceToolResult(state, action.payload)
+    case 'tool_error':
+      return reduceToolError(state, action.payload)
+    case 'stream_error':
+      return reduceStreamError(state, action.payload)
     case 'workflow_event':
       return reduceWorkflowEvent(state, action.payload, action.now)
     case 'spawn_event':
@@ -390,6 +400,71 @@ function reduceToolResult(
   }
 }
 
+function reduceToolError(
+  state: ChatStreamRuntimeState,
+  message: StreamRealtimeMessage
+): ChatStreamRuntimeState {
+  const toolName = message.tool || message.tool_name
+  if (!toolName) {
+    return state
+  }
+
+  const match = findLatestRunningToolCall(state.messages, toolName, state.currentStreamingMessageId)
+  if (!match) {
+    return state
+  }
+
+  const targetMessage = state.messages[match.messageIndex]
+  const toolCalls = [...(targetMessage.toolCalls || [])]
+  const toolCall = toolCalls[match.toolCallIndex]
+
+  toolCalls[match.toolCallIndex] = {
+    ...toolCall,
+    status: 'error',
+    error: message.error ?? message.message ?? null,
+    duration: message.duration_ms ?? message.duration ?? toolCall.duration ?? null,
+    progress: null,
+    progressMessage: null,
+  }
+
+  return {
+    ...state,
+    messages: replaceMessage(state.messages, match.messageIndex, {
+      ...targetMessage,
+      toolCalls,
+    }),
+  }
+}
+
+function reduceStreamError(
+  state: ChatStreamRuntimeState,
+  message: StreamRealtimeMessage
+): ChatStreamRuntimeState {
+  const errorText = message.message ?? message.error ?? null
+  const messages = settleRunningToolCalls(state.messages, 'error', errorText)
+  const messageIndex = findMessageIndex(messages, state.currentStreamingMessageId)
+  let nextMessages = messages
+
+  if (messageIndex !== -1 && messages[messageIndex].isThinking) {
+    nextMessages = replaceMessage(messages, messageIndex, {
+      ...messages[messageIndex],
+      isThinking: false,
+      content: messages[messageIndex].content || '',
+    })
+  }
+
+  // 通用 error 表示本轮对话终止，继续等待只会让界面停在流式状态。
+  return {
+    ...state,
+    messages: nextMessages,
+    currentStreamingMessageId: null,
+    currentWorkflowToolCallId: null,
+    isStreaming: false,
+    isStopping: false,
+    pendingSpawnLink: null,
+  }
+}
+
 function reduceWorkflowEvent(
   state: ChatStreamRuntimeState,
   message: StreamRealtimeMessage,
@@ -625,13 +700,15 @@ function reduceSpawnEvent(
 
 function reduceMessageComplete(state: ChatStreamRuntimeState): ChatStreamRuntimeState {
   const messageIndex = findMessageIndex(state.messages, state.currentStreamingMessageId)
-  let nextMessages = state.messages
+  // 本轮已经结束，任何仍在 running 的卡片都不会再收到终态事件（拦截、
+  // 异常、事件丢失），必须在这里收敛，否则会一直转圈。
+  let nextMessages = settleRunningToolCalls(state.messages, 'error', null)
 
-  if (messageIndex !== -1 && state.messages[messageIndex].isThinking) {
-    nextMessages = replaceMessage(state.messages, messageIndex, {
-      ...state.messages[messageIndex],
+  if (messageIndex !== -1 && nextMessages[messageIndex].isThinking) {
+    nextMessages = replaceMessage(nextMessages, messageIndex, {
+      ...nextMessages[messageIndex],
       isThinking: false,
-      content: state.messages[messageIndex].content || '',
+      content: nextMessages[messageIndex].content || '',
     })
   }
 
@@ -704,6 +781,44 @@ function ensureWorkflowAgent(
       toolCalls: [],
     }
   )
+}
+
+function settleRunningToolCalls(
+  messages: ChatMessage[],
+  status: 'error' | 'cancelled',
+  errorText: string | null
+): ChatMessage[] {
+  let changed = false
+  const nextMessages = messages.map((message) => {
+    const toolCalls = message.toolCalls
+    if (!toolCalls || toolCalls.length === 0) {
+      return message
+    }
+
+    let messageChanged = false
+    const nextToolCalls: ChatToolCall[] = toolCalls.map((toolCall) => {
+      // 子代理任务有独立的 spawn 事件流，主对话结束不代表后台任务结束。
+      if (toolCall.status !== 'running' || toolCall.spawn_task) {
+        return toolCall
+      }
+      messageChanged = true
+      return {
+        ...toolCall,
+        status,
+        error: toolCall.error ?? errorText,
+        progress: null,
+        progressMessage: null,
+      }
+    })
+
+    if (!messageChanged) {
+      return message
+    }
+    changed = true
+    return { ...message, toolCalls: nextToolCalls }
+  })
+
+  return changed ? nextMessages : messages
 }
 
 function findLatestRunningToolCall(

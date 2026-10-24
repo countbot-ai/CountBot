@@ -12,7 +12,14 @@
     @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
-    <template #fields="{ model, handleChange, botKey }">
+    <template #fields="{ model, handleChange, botKey, expanded }">
+      <ChannelOnboardingCard
+        :channel-id="channelId"
+        :model="model"
+        :paused="!expanded"
+        @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
+      />
+
       <div class="config-section">
         <label class="config-label">
           {{ t('settings.channels.dingtalk.clientId') }}
@@ -89,6 +96,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import ChannelOnboardingCard from './ChannelOnboardingCard.vue'
 
 interface Props {
   channelId: string

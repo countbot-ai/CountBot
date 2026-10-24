@@ -96,6 +96,20 @@
       </div>
     </div>
 
+    <div class="form-group">
+      <label class="label">
+        {{ $t('settings.model.imageInput') }}
+      </label>
+      <p class="help-text">
+        {{ $t('settings.model.imageInputDesc') }}
+      </p>
+      <Select
+        v-model="imageSupportMode"
+        :options="imageSupportOptions"
+        :aria-label="$t('settings.model.imageInput')"
+      />
+    </div>
+
     <div class="form-group toggle-group">
       <label class="toggle-label">
         <div class="toggle-content">
@@ -118,6 +132,7 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/store/settings'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
+import Select from '@/components/ui/Select.vue'
 import {
   MAX_TOKENS_PRESET_VALUES,
   MAX_TOKENS_SLIDER_MAX,
@@ -138,6 +153,7 @@ const modelConfig = ref({
   maxTokens: MODEL_CONFIG_FALLBACK.max_tokens,
   maxIterations: MODEL_CONFIG_FALLBACK.max_iterations,
   thinkingEnabled: MODEL_CONFIG_FALLBACK.thinking_enabled,
+  supportsImage: MODEL_CONFIG_FALLBACK.supports_image,
 })
 
 const isUpdating = ref(false)
@@ -152,6 +168,7 @@ onMounted(async () => {
       maxTokens: effectiveConfig.max_tokens,
       maxIterations: effectiveConfig.max_iterations,
       thinkingEnabled: effectiveConfig.thinking_enabled,
+      supportsImage: effectiveConfig.supports_image ?? null,
     }
     isUpdating.value = false
   }
@@ -167,6 +184,7 @@ watch(() => settingsStore.settings?.model, (newModel) => {
       maxTokens: effectiveConfig.max_tokens,
       maxIterations: effectiveConfig.max_iterations,
       thinkingEnabled: effectiveConfig.thinking_enabled,
+      supportsImage: effectiveConfig.supports_image ?? null,
     }
     isUpdating.value = false
   }
@@ -181,6 +199,7 @@ watch(modelConfig, (newConfig) => {
     settingsStore.settings.model.max_tokens = newConfig.maxTokens
     settingsStore.settings.model.max_iterations = newConfig.maxIterations
     settingsStore.settings.model.thinking_enabled = newConfig.thinkingEnabled
+    settingsStore.settings.model.supports_image = newConfig.supportsImage
     isUpdating.value = false
   }
 }, { deep: true })
@@ -210,6 +229,24 @@ const draftSummary = computed(() =>
     },
   )
 )
+
+const imageSupportOptions = computed(() => [
+  { value: 'auto', label: t('settings.model.imageInputAuto') },
+  { value: 'on', label: t('settings.model.imageInputOn') },
+  { value: 'off', label: t('settings.model.imageInputOff') },
+])
+
+const imageSupportMode = computed({
+  get: () => {
+    if (modelConfig.value.supportsImage === true) return 'on'
+    if (modelConfig.value.supportsImage === false) return 'off'
+    return 'auto'
+  },
+  set: (value: string | string[]) => {
+    const mode = Array.isArray(value) ? value[0] : value
+    modelConfig.value.supportsImage = mode === 'on' ? true : mode === 'off' ? false : null
+  },
+})
 
 const maxTokensScaleLabels = computed(() =>
   [

@@ -1,188 +1,147 @@
 <template>
   <div
-    class="tool-call-card"
+    class="tool-call"
     :class="[
       `status-${normalizedStatus}`,
       `context-${normalizedContextKind}`,
-      { collapsed: isCollapsed, 'mcp-tool': isMcpTool }
+      { 'is-open': !isCollapsed, 'is-mcp': isMcpTool }
     ]"
   >
-    <div class="tool-header" @click="toggleCollapse">
-      <div class="tool-header-main">
-        <div class="status-dot" :class="`dot-${normalizedStatus}`">
-          <component v-if="normalizedStatus === 'running'" :is="LoaderIcon" :size="12" class="spin" />
-        </div>
+    <!-- 摘要行：图标 + 动作 + 目标 + 状态/耗时，一眼扫完，不占版面 -->
+    <button
+      type="button"
+      class="tool-call-summary"
+      :aria-expanded="!isCollapsed"
+      :title="summaryTitle"
+      @click="toggleCollapse"
+    >
+      <span class="tool-call-glyph">
+        <component
+          v-if="normalizedStatus === 'running'"
+          :is="LoaderIcon"
+          :size="13"
+          class="spin"
+        />
+        <component v-else :is="getToolIcon()" :size="13" />
+      </span>
 
-        <div class="tool-icon-shell">
-          <component :is="getToolIcon()" :size="15" class="tool-type-icon" />
-        </div>
+      <span class="tool-call-kind">{{ kindLabel }}</span>
 
-        <div class="tool-summary">
-          <div class="tool-context-row">
-            <span class="tool-context-chip">{{ contextChipLabel }}</span>
-            <span v-if="isMcpTool" class="mcp-badge-chip">MCP</span>
-            <span class="tool-context-label">{{ resolvedContextLabel }}</span>
-            <span v-if="contextMeta" class="tool-context-meta">{{ contextMeta }}</span>
-          </div>
-          <div class="tool-name-row">
-            <span class="tool-name">{{ getToolDisplayName(toolName) }}</span>
-            <span v-if="argumentPreview" class="tool-preview">{{ argumentPreview }}</span>
-          </div>
-        </div>
-      </div>
+      <span v-if="argumentPreview" class="tool-call-target">{{ argumentPreview }}</span>
 
-      <div class="tool-header-meta">
-        <span class="tool-status-chip">{{ statusLabel }}</span>
-        <span v-if="effectiveDuration != null" class="tool-duration">{{ formatDuration(effectiveDuration) }}</span>
-        <component :is="ChevronRightIcon" :size="14" class="chevron-icon" :class="{ expanded: !isCollapsed }" />
-      </div>
-    </div>
+      <span v-if="statusNote" class="tool-call-note">{{ statusNote }}</span>
+      <span v-if="durationText" class="tool-call-duration">{{ durationText }}</span>
 
-    <div v-if="showProgressStrip" class="tool-progress-strip">
-      <div class="tool-progress-meta">
-        <span class="tool-progress-message">{{ resolvedProgressMessage }}</span>
-        <span v-if="normalizedProgress != null" class="tool-progress-value">{{ normalizedProgress }}%</span>
-      </div>
-      <div class="tool-progress-bar">
+      <component
+        :is="ChevronRightIcon"
+        :size="13"
+        class="tool-call-chevron"
+        :class="{ 'is-open': !isCollapsed }"
+      />
+    </button>
+
+    <!-- 运行态进度：细线，不做卡片 -->
+    <div v-if="showProgressStrip" class="tool-call-progress">
+      <div class="tool-call-progress-track">
         <div
-          class="tool-progress-fill"
-          :class="{ indeterminate: isProgressIndeterminate }"
+          class="tool-call-progress-fill"
+          :class="{ 'is-indeterminate': isProgressIndeterminate }"
           :style="progressFillStyle"
         />
       </div>
-      <div v-if="latestOutputPreview" class="tool-progress-preview">
-        <div class="tool-progress-preview-label">Latest output</div>
-        <pre class="tool-progress-preview-text">{{ latestOutputPreview }}</pre>
-      </div>
-      <div v-else-if="latestStderrPreview" class="tool-progress-preview tool-progress-preview-error">
-        <div class="tool-progress-preview-label">Latest stderr</div>
-        <pre class="tool-progress-preview-text">{{ latestStderrPreview }}</pre>
-      </div>
+      <span class="tool-call-progress-text">{{ resolvedProgressMessage }}</span>
     </div>
 
-    <transition name="slide">
-      <div v-if="!isCollapsed" class="tool-body">
-        <div v-if="showDetailHint" class="tool-detail-hint">
-          <span>{{ detailHintText }}</span>
-        </div>
+    <transition name="tool-body">
+      <div v-if="!isCollapsed" class="tool-call-body">
+        <p v-if="showDetailHint" class="tool-call-hint">{{ detailHintText }}</p>
 
-        <div v-if="hasArguments" class="tool-section">
-          <div class="section-label">{{ $t('tools.arguments') }}</div>
-          <div class="tool-arguments">
+        <div v-if="hasArguments" class="tool-call-section">
+          <div class="tool-call-section-label">
+            <span>{{ $t('tools.arguments') }}</span>
+          </div>
+          <dl class="tool-call-args">
             <div
               v-for="(value, key) in effectiveArguments"
               :key="key"
-              class="arg-item"
-              :class="{ 'arg-item-file-paths': isSendMediaFilePaths(key, value) }"
+              class="tool-call-arg"
+              :class="{ 'is-media': isSendMediaFilePaths(key, value) }"
             >
-              <span class="arg-key">{{ key }}</span>
-              <div v-if="isSendMediaFilePaths(key, value)" class="send-media-files">
-                <div
-                  v-for="(filePath, fileIndex) in normalizeFilePaths(value)"
-                  :key="fileIndex"
-                  class="send-media-file-item"
-                  :class="getFileItemClass(filePath)"
-                >
-                  <!-- 图片预览 -->
+              <dt class="tool-call-arg-key">{{ key }}</dt>
+              <dd class="tool-call-arg-value">
+                <div v-if="isSendMediaFilePaths(key, value)" class="send-media-files">
                   <div
-                    v-if="isImageFile(filePath) && !imageErrors[getImageKey(filePath)]"
-                    class="send-media-image-preview"
-                    @click="handleImageClick(filePath)"
+                    v-for="(filePath, fileIndex) in normalizeFilePaths(value)"
+                    :key="fileIndex"
+                    class="send-media-file-item"
                   >
-                    <img
-                      :src="getWorkspaceFileUrl(filePath)"
-                      :alt="filePath"
-                      class="send-media-image"
-                      @error="handleImageError(filePath)"
-                    />
-                    <div class="send-media-image-overlay">
-                      <component :is="ExpandIcon" :size="18" />
-                    </div>
-                  </div>
-                  <!-- 文件下载卡片 -->
-                  <div v-else class="send-media-file-card">
-                    <div class="send-media-file-icon">
-                      <component :is="getFileIcon(filePath)" :size="16" />
-                    </div>
-                    <div class="send-media-file-info">
-                      <div class="send-media-file-name">{{ getFileName(filePath) }}</div>
-                      <div class="send-media-file-path">{{ filePath }}</div>
-                    </div>
-                    <button
-                      class="send-media-download-btn"
-                      :title="$t('chat.download') || '下载'"
-                      @click.stop="handleDownloadFile(filePath)"
+                    <div
+                      v-if="isImageFile(filePath) && !imageErrors[getImageKey(filePath)]"
+                      class="send-media-image-preview"
+                      @click="handleImageClick(filePath)"
                     >
-                      <component :is="DownloadIcon" :size="14" />
-                    </button>
+                      <img
+                        :src="getWorkspaceFileUrl(filePath)"
+                        :alt="filePath"
+                        class="send-media-image"
+                        @error="handleImageError(filePath)"
+                      />
+                      <div class="send-media-image-overlay">
+                        <component :is="ExpandIcon" :size="16" />
+                      </div>
+                    </div>
+                    <div v-else class="send-media-file-card">
+                      <component :is="getFileIcon(filePath)" :size="14" class="send-media-file-icon" />
+                      <span class="send-media-file-name">{{ getFileName(filePath) }}</span>
+                      <button
+                        class="send-media-download-btn"
+                        :title="$t('chat.download') || '下载'"
+                        @click.stop="handleDownloadFile(filePath)"
+                      >
+                        <component :is="DownloadIcon" :size="13" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <span v-else class="arg-value">{{ formatValue(value) }}</span>
+                <pre v-else class="tool-call-arg-text">{{ formatValue(value) }}</pre>
+              </dd>
             </div>
-          </div>
+          </dl>
         </div>
 
-        <div v-if="effectiveResult && showResult" class="tool-section result-section">
-          <div class="section-label">
+        <div v-if="effectiveResult && showResult" class="tool-call-section">
+          <div class="tool-call-section-label">
             <span>{{ $t('tools.result') }}</span>
-            <button class="copy-btn" @click.stop="copyResult" :title="copied ? $t('common.copied') : $t('common.copy')">
+            <span class="tool-call-section-meta">{{ $t('tools.card.lines', { count: resultLineCount }) }}</span>
+            <button
+              class="tool-call-copy"
+              :title="copied ? $t('common.copied') : $t('common.copy')"
+              @click.stop="copyResult"
+            >
               <component :is="copied ? CheckIcon : CopyIcon" :size="12" />
             </button>
           </div>
-          <div class="result-viewer">
-            <div class="result-toolbar">
-              <div class="result-toolbar-main">
-                <span class="result-toolbar-lights" aria-hidden="true">
-                  <span class="result-toolbar-light" />
-                  <span class="result-toolbar-light" />
-                  <span class="result-toolbar-light" />
-                </span>
-                <span class="result-toolbar-tab">
-                  <component :is="TerminalIcon" :size="12" class="result-toolbar-icon" />
-                  <span>{{ $t('tools.card.outputLog') }}</span>
-                </span>
-              </div>
-              <span class="result-toolbar-meta">{{ $t('tools.card.lines', { count: resultLineCount }) }}</span>
-            </div>
-
-            <div class="result-scroll">
-              <div
-                v-for="(line, index) in resultLines"
-                :key="`${index}-${line}`"
-                class="result-line"
-              >
-                <span class="result-line-number">{{ index + 1 }}</span>
-                <code class="result-line-text">{{ line || ' ' }}</code>
-              </div>
-            </div>
-          </div>
+          <pre class="tool-call-result">{{ effectiveResult }}</pre>
         </div>
 
-        <div v-if="effectiveError" class="tool-section error-section">
-          <div class="section-label error-label">{{ $t('tools.error') }}</div>
-          <pre class="tool-error">{{ effectiveError }}</pre>
+        <div v-if="effectiveError" class="tool-call-section">
+          <div class="tool-call-section-label">
+            <span class="is-error">{{ $t('tools.error') }}</span>
+          </div>
+          <pre class="tool-call-error">{{ effectiveError }}</pre>
         </div>
       </div>
     </transition>
 
     <!-- 图片预览模态框 -->
     <Teleport to="body">
-      <div
-        v-if="showImagePreviewModal"
-        class="tool-image-preview-modal"
-        @click="closeImagePreview"
-      >
+      <div v-if="showImagePreviewModal" class="tool-image-preview-modal" @click="closeImagePreview">
         <div class="tool-image-preview-backdrop" />
         <div class="tool-image-preview-content" @click.stop>
           <button class="tool-image-preview-close" @click="closeImagePreview">
-            <component :is="XIcon" :size="24" />
+            <component :is="XIcon" :size="22" />
           </button>
-          <img
-            :src="previewImageUrl"
-            alt="Preview"
-            class="tool-image-preview-img"
-          />
+          <img :src="previewImageUrl" alt="Preview" class="tool-image-preview-img" />
         </div>
       </div>
     </Teleport>
@@ -202,7 +161,6 @@ import {
   Check as CheckIcon,
   ChevronRight as ChevronRightIcon,
   Pencil as PencilIcon,
-  Image as ImageIcon,
   Download as DownloadIcon,
   File as FileDefaultIcon,
   Music4 as MusicIcon,
@@ -301,18 +259,8 @@ const isProgressIndeterminate = computed(() => normalizedProgress.value === null
 const showProgressStrip = computed(() => {
   return normalizedStatus.value === 'running' && (
     normalizedProgress.value !== null ||
-    Boolean(props.progressMessage) ||
-    Boolean(latestOutputPreview.value) ||
-    Boolean(latestStderrPreview.value)
+    Boolean(props.progressMessage)
   )
-})
-const latestOutputPreview = computed(() => {
-  const value = props.progressDetails?.latest_output_preview
-  return typeof value === 'string' && value.trim() ? value.trim() : ''
-})
-const latestStderrPreview = computed(() => {
-  const value = props.progressDetails?.latest_stderr_preview
-  return typeof value === 'string' && value.trim() ? value.trim() : ''
 })
 const resolvedProgressMessage = computed(() => {
   const message = String(props.progressMessage || '').trim()
@@ -338,10 +286,14 @@ const hasArguments = computed(() => {
   return Object.keys(effectiveArguments.value || {}).length > 0
 })
 
+/**
+ * 摘要行的目标文本：优先取最能标识这次调用的参数（路径 / 命令 / 查询词），
+ * 而不是把整段 JSON 摊在行里。
+ */
 const argumentPreview = computed(() => {
   if (!effectiveArguments.value) return ''
 
-  const preferredKeys = ['command', 'path', 'file_path', 'pattern', 'query', 'url', 'task', 'message']
+  const preferredKeys = ['path', 'file_path', 'filepath', 'command', 'cmd', 'query', 'url', 'pattern', 'task', 'message', 'content']
   const matchedKey = preferredKeys.find((key) => {
     const value = effectiveArguments.value?.[key]
     return value !== undefined && value !== null && String(value).trim() !== ''
@@ -354,25 +306,26 @@ const argumentPreview = computed(() => {
   if (!formatted) return ''
 
   const compact = formatted.replace(/\s+/g, ' ').trim()
-  return compact.length > 84 ? `${compact.slice(0, 84)}...` : compact
+  return compact.length > 96 ? `${compact.slice(0, 96)}…` : compact
 })
 
-const contextChipLabel = computed(() => {
-  const value = t(`tools.card.contextChip.${normalizedContextKind.value}`)
-  return value && value !== `tools.card.contextChip.${normalizedContextKind.value}`
-    ? value
-    : normalizedContextKind.value
+const summaryTitle = computed(() => {
+  const target = argumentPreview.value
+  return target ? `${kindLabel.value} ${target}` : kindLabel.value
 })
 
-const resolvedContextLabel = computed(() => {
-  if (props.contextLabel && props.contextLabel.trim()) {
-    return props.contextLabel.trim()
+/** 动作词：沿用 tools.names 词表，未知工具回落到原始名，不做猜测性翻译。 */
+const kindLabel = computed(() => {
+  const name = props.toolName || ''
+  if (!name) return t('tools.card.unknownTool')
+
+  const i18nKey = `tools.names.${name}`
+  const translated = t(i18nKey)
+  if (translated && translated !== i18nKey) {
+    return translated
   }
 
-  const value = t(`tools.card.contextLabel.${normalizedContextKind.value}`)
-  return value && value !== `tools.card.contextLabel.${normalizedContextKind.value}`
-    ? value
-    : normalizedContextKind.value
+  return name
 })
 
 const statusLabel = computed(() => {
@@ -382,18 +335,22 @@ const statusLabel = computed(() => {
     : normalizedStatus.value
 })
 
-const splitOutput = (value: string | null | undefined): string[] => {
-  if (!value) return []
-  return value.replace(/\r\n/g, '\n').split('\n')
-}
-
-const resultLines = computed(() => {
-  if (isCollapsed.value || !props.showResult) {
-    return []
-  }
-  return splitOutput(effectiveResult.value)
+/**
+ * 状态提示只在「需要注意」时出现：成功状态不额外写一个字，
+ * 运行/失败/停止才占用摘要行右侧的位置。
+ */
+const statusNote = computed(() => {
+  if (normalizedStatus.value === 'success') return ''
+  if (normalizedStatus.value === 'running') return ''
+  return statusLabel.value
 })
-const resultLineCount = computed(() => resultLines.value.length)
+
+const resultLineCount = computed(() => {
+  const value = effectiveResult.value
+  if (!value) return 0
+  return value.replace(/\r\n/g, '\n').split('\n').length
+})
+
 const showDetailHint = computed(() => {
   return isDetailLoading.value || (props.detailAvailable && !resolvedDetailLoaded.value)
 })
@@ -402,6 +359,11 @@ const detailHintText = computed(() => {
     return t('tools.card.loadingDetail')
   }
   return t('tools.card.previewOnly')
+})
+
+const durationText = computed(() => {
+  if (effectiveDuration.value === null || effectiveDuration.value === undefined) return ''
+  return formatDuration(effectiveDuration.value)
 })
 
 const ensureDetailLoaded = async () => {
@@ -463,7 +425,6 @@ const getToolIcon = () => {
   if (name.includes('read') || name.includes('file')) return FileIcon
   if (name.includes('list') || name.includes('dir')) return FolderIcon
   if (name.includes('web') || name.includes('search') || name.includes('fetch')) return GlobeIcon
-  // MCP tools: use specific icons based on tool name patterns
   if (name.startsWith('mcp_')) {
     if (name.includes('weather') || name.includes('fetch')) return GlobeIcon
     if (name.includes('search') || name.includes('doc')) return GlobeIcon
@@ -479,17 +440,6 @@ const getToolIcon = () => {
 const isMcpTool = computed(() => {
   return props.toolName?.startsWith('mcp_') || false
 })
-
-const getToolDisplayName = (toolName: string): string => {
-  const i18nKey = `tools.names.${toolName}`
-  const translated = t(i18nKey)
-
-  if (translated && translated !== i18nKey) {
-    return translated
-  }
-
-  return toolName
-}
 
 const formatValue = (value: any): string => {
   if (typeof value === 'string') return value
@@ -523,11 +473,6 @@ const normalizeFilePaths = (value: any): string[] => {
 const isImageFile = (path: string): boolean => {
   const ext = path.split('.').pop()?.toLowerCase()
   return IMAGE_EXTENSIONS.has(ext || '')
-}
-
-const getFileItemClass = (path: string): string => {
-  if (isImageFile(path)) return 'file-type-image'
-  return 'file-type-other'
 }
 
 const getWorkspaceFileUrl = (path: string): string => {

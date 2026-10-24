@@ -4,6 +4,7 @@
 使用 multiprocessing.Queue 进行进程间通信。
 """
 
+import importlib.util
 import json
 import os
 import signal
@@ -22,14 +23,17 @@ logger.add(
 )
 logger.add(sys.stderr, level="INFO")
 
-try:
-    import lark_oapi as lark
-    from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
-    FEISHU_SDK_AVAILABLE = True
-except ImportError:
-    lark = None
-    P2ImMessageReceiveV1 = Any
-    FEISHU_SDK_AVAILABLE = False
+# 延迟加载：父进程导入本模块时不应触发 lark_oapi 导入。
+FEISHU_SDK_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
+
+
+def _load_lark():
+    """在真正建立 WebSocket 连接时再导入飞书 SDK。"""
+    if not FEISHU_SDK_AVAILABLE:
+        return None
+    import lark_oapi as lark_module
+
+    return lark_module
 
 
 _IGNORED_EVENT_REGISTRATIONS = (
@@ -42,7 +46,8 @@ _IGNORED_EVENT_REGISTRATIONS = (
 def _build_event_handler(on_message, on_ignored_event, builder=None):
     """构建飞书事件分发器，并为无害事件注册空处理器。"""
     if builder is None:
-        if not FEISHU_SDK_AVAILABLE:
+        lark = _load_lark()
+        if lark is None:
             raise RuntimeError("lark-oapi not installed")
         builder = lark.EventDispatcherHandler.builder("", "")
 
@@ -76,7 +81,7 @@ class FeishuWebSocketWorker:
     # 消息处理
     # ------------------------------------------------------------------
 
-    def on_message(self, data: P2ImMessageReceiveV1) -> None:
+    def on_message(self, data: Any) -> None:
         """消息处理器 - 将消息放入队列供主进程读取。"""
         try:
             event = data.event
@@ -117,6 +122,11 @@ class FeishuWebSocketWorker:
                 "create_time": getattr(message, "create_time", None),
                 "msg_type": msg_type,
                 "content": content,
+                # 话题群需要 thread_id 才能把同一话题的消息归到独立会话。
+                "thread_id": getattr(message, "thread_id", None),
+                "root_id": getattr(message, "root_id", None),
+                "parent_id": getattr(message, "parent_id", None),
+                "mentions": self._serialize_mentions(message),
             }
 
             try:
@@ -132,6 +142,27 @@ class FeishuWebSocketWorker:
             except Exception:
                 pass
 
+    @staticmethod
+    def _serialize_mentions(message: Any) -> list[dict]:
+        """把飞书 @ 提及对象转换为可跨进程传输的普通字典。"""
+        mentions = getattr(message, "mentions", None) or []
+        serialized: list[dict] = []
+        for mention in mentions:
+            mention_id = getattr(mention, "id", None)
+            id_payload = {}
+            for field_name in ("open_id", "union_id", "user_id"):
+                value = getattr(mention_id, field_name, None) if mention_id else None
+                if value:
+                    id_payload[field_name] = str(value)
+            serialized.append(
+                {
+                    "key": str(getattr(mention, "key", "") or ""),
+                    "name": str(getattr(mention, "name", "") or ""),
+                    "id": id_payload,
+                }
+            )
+        return serialized
+
     def on_ignored_event(self, data: Any) -> None:
         """忽略不影响业务的飞书事件，避免 SDK 输出 processor not found。"""
         header = getattr(data, "header", None)
@@ -144,7 +175,8 @@ class FeishuWebSocketWorker:
 
     def start(self) -> None:
         """启动 WebSocket 连接。"""
-        if not FEISHU_SDK_AVAILABLE:
+        lark = _load_lark()
+        if lark is None:
             raise RuntimeError("lark-oapi not installed")
 
         logger.info(f"Starting Feishu WebSocket worker (app: {self.app_id[:12]}...)")

@@ -47,13 +47,13 @@ defineProps<Props>()
 }
 
 .message-content.markdown-content {
-  background: #f8fafc;
-  border: 1px solid #f1f5f9;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
 }
 
 .message-content:not(.markdown-content) {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-primary);
   white-space: pre-wrap;
 }
 
@@ -73,7 +73,7 @@ defineProps<Props>()
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-tertiary, #94a3b8);
+  background: var(--text-tertiary);
   animation: thinking-bounce 1.4s ease-in-out infinite;
 }
 
@@ -99,7 +99,7 @@ defineProps<Props>()
 .typewriter-active :deep(*:last-child)::after {
   content: '|';
   animation: blink-cursor 0.7s step-end infinite;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
   font-weight: 100;
 }
 
@@ -108,17 +108,7 @@ defineProps<Props>()
   50% { opacity: 0; }
 }
 
-[data-theme='dark'] .message-content.markdown-content {
-  background:
-    linear-gradient(180deg, rgba(29, 36, 46, 0.96), rgba(22, 28, 37, 0.98));
-  border: 1px solid rgba(76, 89, 110, 0.34);
-  color: #d6dee8;
-}
 
-[data-theme='dark'] .message-content:not(.markdown-content) {
-  background:
-    linear-gradient(180deg, rgba(36, 44, 55, 0.96), rgba(28, 35, 45, 0.98));
-  border: 1px solid rgba(88, 103, 126, 0.3);
-  color: #d9e2ed;
-}
+
+
 </style>

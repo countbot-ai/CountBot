@@ -43,19 +43,15 @@ defineEmits<Emits>()
   align-items: center;
   gap: 10px;
   padding: 10px var(--spacing-lg);
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-  border-bottom: 1px solid #fbbf24;
-  color: #78350f;
+  background: linear-gradient(135deg, var(--color-warning-light) 0%, var(--color-warning-light) 100%);
+  border-bottom: 1px solid var(--color-warning);
+  color: var(--color-warning);
   font-size: 13px;
   line-height: 1.4;
   z-index: 10;
 }
 
-:root[data-theme="dark"] .security-warning-banner {
-  background: linear-gradient(180deg, rgba(51, 40, 23, 0.96) 0%, rgba(40, 31, 18, 0.98) 100%);
-  border-bottom-color: rgba(196, 160, 110, 0.38);
-  color: #f0d7a8;
-}
+
 
 .security-warning-icon {
   flex-shrink: 0;
@@ -65,14 +61,11 @@ defineEmits<Emits>()
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(245, 158, 11, 0.15);
-  color: #d97706;
+  background: var(--color-warning-light);
+  color: var(--color-warning);
 }
 
-:root[data-theme="dark"] .security-warning-icon {
-  background: rgba(196, 160, 110, 0.14);
-  color: #d4b07e;
-}
+
 
 .security-warning-text {
   flex: 1;
@@ -83,8 +76,8 @@ defineEmits<Emits>()
   padding: 5px 14px;
   border: none;
   border-radius: var(--radius-md);
-  background: #d97706;
-  color: #fff;
+  background: var(--color-warning);
+  color: var(--color-text-inverse);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -92,17 +85,12 @@ defineEmits<Emits>()
 }
 
 .security-warning-action:hover {
-  background: #b45309;
+  background: var(--color-warning);
 }
 
-:root[data-theme="dark"] .security-warning-action {
-  background: #c4a06e;
-  color: #17110a;
-}
 
-:root[data-theme="dark"] .security-warning-action:hover {
-  background: #d3b184;
-}
+
+
 
 .security-warning-dismiss {
   flex-shrink: 0;
@@ -114,7 +102,7 @@ defineEmits<Emits>()
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: #92400e;
+  color: var(--color-warning);
   cursor: pointer;
   opacity: 0.6;
   transition: all 0.15s ease;
@@ -122,14 +110,10 @@ defineEmits<Emits>()
 
 .security-warning-dismiss:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-overlay);
 }
 
-:root[data-theme="dark"] .security-warning-dismiss {
-  color: #f0d7a8;
-}
 
-:root[data-theme="dark"] .security-warning-dismiss:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
+
+
 </style>

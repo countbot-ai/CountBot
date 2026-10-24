@@ -6,6 +6,7 @@ WebSocket 连接运行在独立子进程中，通过 multiprocessing.Queue 通�
 """
 
 import asyncio
+import importlib.util
 import json
 import re
 import time
@@ -19,46 +20,105 @@ from pathlib import Path
 from queue import Empty
 from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 from loguru import logger
 
-from backend.modules.channels.base import BaseChannel, OutboundMessage
+from backend.modules.channels.base import BaseChannel, InboundMessage, OutboundMessage
 from backend.modules.channels.media_utils import (
     format_inbound_media_text,
     save_bytes_to_temp,
 )
 
-try:
-    import lark_oapi as lark
-    from lark_oapi.api.im.v1 import (
-        CreateMessageRequest,
-        CreateMessageRequestBody,
-        CreateMessageReactionRequest,
-        CreateMessageReactionRequestBody,
-        CreateImageRequest,
-        CreateImageRequestBody,
-        PatchMessageRequest,
-        PatchMessageRequestBody,
-        Emoji,
-    )
-    from lark_oapi.api.cardkit.v1 import (
-        Card as CardKitCard,
-        ContentCardElementRequest,
-        ContentCardElementRequestBody,
-        CreateCardRequest,
-        CreateCardRequestBody,
-        SettingsCardRequest,
-        SettingsCardRequestBody,
-        UpdateCardRequest,
-        UpdateCardRequestBody,
-    )
+# 飞书 SDK 延迟加载：仅探测模块是否存在，不在导入渠道模块时加载 lark_oapi。
+# zcode 的约束是 provider-only / HTTP / 卡片渲染不得触发 SDK 导入，
+# 只有真正启动 WebSocket 连接时才加载。
+FEISHU_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
+FEISHU_CARDKIT_AVAILABLE = False
+lark = None
+Emoji = None
+_SDK_LOADED = False
 
-    FEISHU_AVAILABLE = True
-    FEISHU_CARDKIT_AVAILABLE = True
-except ImportError:
-    FEISHU_AVAILABLE = False
-    FEISHU_CARDKIT_AVAILABLE = False
-    lark = None
-    Emoji = None
+
+def _ensure_feishu_sdk() -> bool:
+    """按需导入飞书 SDK，并把 SDK 类注入模块命名空间。"""
+    global lark, Emoji, FEISHU_CARDKIT_AVAILABLE, _SDK_LOADED
+    if _SDK_LOADED:
+        return lark is not None
+    _SDK_LOADED = True
+
+    if not FEISHU_AVAILABLE:
+        return False
+
+    try:
+        import lark_oapi
+        from lark_oapi.api.im.v1 import (
+            CreateImageRequest,
+            CreateImageRequestBody,
+            CreateMessageReactionRequest,
+            CreateMessageReactionRequestBody,
+            CreateMessageRequest,
+            CreateMessageRequestBody,
+            Emoji as EmojiModel,
+            PatchMessageRequest,
+            PatchMessageRequestBody,
+            ReplyMessageRequest,
+            ReplyMessageRequestBody,
+        )
+
+        globals().update(
+            {
+                "CreateImageRequest": CreateImageRequest,
+                "CreateImageRequestBody": CreateImageRequestBody,
+                "CreateMessageReactionRequest": CreateMessageReactionRequest,
+                "CreateMessageReactionRequestBody": CreateMessageReactionRequestBody,
+                "CreateMessageRequest": CreateMessageRequest,
+                "CreateMessageRequestBody": CreateMessageRequestBody,
+                "Emoji": EmojiModel,
+                "PatchMessageRequest": PatchMessageRequest,
+                "PatchMessageRequestBody": PatchMessageRequestBody,
+                "ReplyMessageRequest": ReplyMessageRequest,
+                "ReplyMessageRequestBody": ReplyMessageRequestBody,
+                "lark": lark_oapi,
+            }
+        )
+        lark = lark_oapi
+        Emoji = EmojiModel
+
+        try:
+            from lark_oapi.api.cardkit.v1 import (
+                Card as CardKitCard,
+                ContentCardElementRequest,
+                ContentCardElementRequestBody,
+                CreateCardRequest,
+                CreateCardRequestBody,
+                SettingsCardRequest,
+                SettingsCardRequestBody,
+                UpdateCardRequest,
+                UpdateCardRequestBody,
+            )
+
+            globals().update(
+                {
+                    "CardKitCard": CardKitCard,
+                    "ContentCardElementRequest": ContentCardElementRequest,
+                    "ContentCardElementRequestBody": ContentCardElementRequestBody,
+                    "CreateCardRequest": CreateCardRequest,
+                    "CreateCardRequestBody": CreateCardRequestBody,
+                    "SettingsCardRequest": SettingsCardRequest,
+                    "SettingsCardRequestBody": SettingsCardRequestBody,
+                    "UpdateCardRequest": UpdateCardRequest,
+                    "UpdateCardRequestBody": UpdateCardRequestBody,
+                }
+            )
+            FEISHU_CARDKIT_AVAILABLE = True
+        except ImportError:
+            FEISHU_CARDKIT_AVAILABLE = False
+
+        return True
+    except ImportError:
+        lark = None
+        Emoji = None
+        return False
 
 # 消息类型显示映射
 _MSG_TYPE_MAP = {
@@ -77,6 +137,11 @@ _PROCESSED_MESSAGE_MAX_ENTRIES = 5_000
 _MESSAGE_EXPIRY_MS = 30 * 60 * 1000
 _SENDER_NAME_CACHE_TTL_MS = 30 * 60 * 1000
 _SENDER_NAME_CACHE_MAX_ENTRIES = 500
+# 飞书消息写入的重试与熔断参数：单次写入最多 3 次，连续失败 5 次后熔断 30 秒。
+_STREAM_MAX_ATTEMPTS = 3
+_STREAM_RETRY_BASE_DELAY_MS = 300
+_STREAM_CIRCUIT_FAILURE_THRESHOLD = 5
+_STREAM_CIRCUIT_COOLDOWN_MS = 30_000
 _UNAVAILABLE_HINTS = (
     "message has been deleted",
     "message has been recalled",
@@ -122,8 +187,11 @@ class FeishuStreamState:
     sequence: int = 1
     final_requested: bool = False
     terminal_reason: Optional[str] = None
+    thread_reply_message_id: Optional[str] = None
     flush_task: Optional[asyncio.Task] = None
     flush_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    consecutive_failures: int = 0
+    circuit_open_until_ms: float = 0.0
 
     @property
     def is_terminal(self) -> bool:
@@ -164,6 +232,16 @@ class FeishuChannel(BaseChannel):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stream_states: Dict[str, FeishuStreamState] = {}
         self._active_streams_by_chat: Dict[str, FeishuStreamState] = {}
+        # 最近一次消息写入失败诊断；成功写入后清空，WebSocket 重连不影响。
+        self._delivery_error: Dict[str, Any] = {}
+        # 机器人自身身份缓存，用于判断群聊消息是否 @ 了机器人。
+        self._bot_identity: Dict[str, str] = {}
+        self._bot_identity_expires_at: float = 0.0
+        self._bot_identity_retry_at: float = 0.0
+        self._tenant_token: str = ""
+        self._tenant_token_expires_at: float = 0.0
+        # 群成员目录缓存：chat_id -> ({open_id: name}, expire_at)
+        self._chat_member_cache: Dict[str, Tuple[Dict[str, str], float]] = {}
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -171,7 +249,7 @@ class FeishuChannel(BaseChannel):
 
     async def start(self) -> None:
         """启动飞书机器人（WebSocket 子进程模式）。"""
-        if not FEISHU_AVAILABLE:
+        if not _ensure_feishu_sdk():
             logger.error("Feishu SDK not installed. Run: pip install lark-oapi")
             return
 
@@ -181,6 +259,7 @@ class FeishuChannel(BaseChannel):
 
         self._running = True
         self._loop = asyncio.get_running_loop()
+        self.set_runtime_state(self.RUNTIME_CONNECTING)
 
         self._client = (
             lark.Client.builder()
@@ -207,12 +286,21 @@ class FeishuChannel(BaseChannel):
         logger.info(f"Feishu WebSocket worker started (PID: {self._ws_process.pid})")
 
         self._queue_reader_task = asyncio.create_task(self._read_ws_messages())
+        self.set_runtime_state(
+            self.RUNTIME_RUNNING,
+            error="",
+            reconnect_attempts=0,
+        )
 
         while self._running:
             await asyncio.sleep(1)
 
+        if self._runtime_state != self.RUNTIME_FAILED:
+            self.set_runtime_state(self.RUNTIME_STOPPED)
+
     async def stop(self) -> None:
         """停止飞书机器人。"""
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
 
         if self._queue_reader_task and not self._queue_reader_task.done():
@@ -261,6 +349,8 @@ class FeishuChannel(BaseChannel):
         self._processed_ids.clear()
         self._sender_name_cache.clear()
         self._terminal_stream_ids.clear()
+        self._delivery_error = {}
+        self.set_runtime_state(self.RUNTIME_STOPPED)
 
         logger.info("Feishu bot stopped")
 
@@ -303,17 +393,50 @@ class FeishuChannel(BaseChannel):
                 elif payload_type == "status":
                     logger.info(f"Feishu worker status: {msg_data.get('message')}")
                 elif payload_type == "error":
-                    logger.error(f"Feishu worker error: {msg_data.get('error')}")
+                    worker_error = str(msg_data.get("error") or "unknown worker error")
+                    logger.error(f"Feishu worker error: {worker_error}")
+                    self.set_runtime_state(self.RUNTIME_FAILED, error=worker_error)
                 else:
                     logger.debug(f"Unknown Feishu queue payload type: {payload_type or '<empty>'}")
         except Exception as e:
             logger.error(f"Message queue reader error: {e}")
+            if self._running:
+                self.set_runtime_state(self.RUNTIME_FAILED, error=str(e))
         finally:
+            # Worker 进程退出或队列关闭时，必须让 start() 的等待循环结束，
+            # 否则管理器会一直认为渠道还在运行，无法触发重连。
+            if self._running:
+                self._running = False
+                self.set_runtime_state(
+                    self.RUNTIME_FAILED,
+                    error="websocket worker exited",
+                )
             logger.info("Message queue reader stopped")
 
     # ------------------------------------------------------------------
     # 入站消息处理
     # ------------------------------------------------------------------
+
+    async def notify_queued(self, msg: InboundMessage, position: int = 0) -> None:
+        """群聊会话忙碌时发送排队卡片，明确告知用户消息不会被丢弃。"""
+        metadata = msg.metadata or {}
+        if msg.channel != self.name:
+            return
+        if str(metadata.get("chat_type") or "").lower() != "group":
+            return
+
+        position_text = f"（队列第 {position} 位）" if position > 0 else ""
+        content = (
+            f"⏳ **消息已排队**\n\n"
+            f"当前任务还在执行，本条消息会在结束后自动处理{position_text}。"
+        )
+        thread_message_id = str(metadata.get("thread_reply_message_id") or "").strip() or None
+        await self._send_card(
+            msg.chat_id,
+            content,
+            "chat_id",
+            thread_message_id=thread_message_id,
+        )
 
     async def _process_message(self, msg_data: dict) -> None:
         """处理来自 WebSocket 子进程的消息"""
@@ -349,6 +472,26 @@ class FeishuChannel(BaseChannel):
             chat_type = self._normalize_chat_type(msg_data.get("chat_type"))
             msg_type = str(msg_data.get("msg_type") or "").strip().lower()
 
+            is_group_chat = chat_type == "group"
+            if is_group_chat and (not sender_name or sender_name == sender_id):
+                member_name = await self._resolve_group_member_name(chat_id, sender_id)
+                if member_name:
+                    sender_name = member_name
+                    self._set_cached_sender_name(sender_id, member_name)
+            thread_id = str(
+                msg_data.get("thread_id") or msg_data.get("root_id") or ""
+            ).strip()
+            if is_group_chat:
+                if not bool(getattr(self.config, "group_enabled", True)):
+                    logger.debug(f"[Feishu] Group disabled, ignored: {message_id}")
+                    return
+                if bool(getattr(self.config, "group_require_mention", True)):
+                    if not await self._is_bot_mentioned(msg_data):
+                        logger.debug(f"[Feishu] Group message without bot mention, ignored: {message_id}")
+                        return
+            if not bool(getattr(self.config, "group_topic_enabled", True)):
+                thread_id = ""
+
             await self._add_reaction(message_id, "THUMBSUP")
 
             media_files = []
@@ -365,13 +508,14 @@ class FeishuChannel(BaseChannel):
             else:
                 content = _MSG_TYPE_MAP.get(msg_type, f"[{msg_type}]")
 
-            if not content:
+            if not content and not media_files:
                 return
 
-            is_group_chat = chat_type == "group"
             reply_to = chat_id if is_group_chat else sender_id
             receive_id_type = "chat_id" if is_group_chat else "open_id"
             chat_key = self._build_stream_chat_key(reply_to, receive_id_type)
+            # 话题群里用源消息作为线程回复锚点，保证回复落在同一话题下。
+            thread_reply_message_id = message_id if (is_group_chat and thread_id) else None
 
             if self._is_abort_command(content):
                 await self._abort_active_stream_fast(chat_key, trigger_text=content)
@@ -395,6 +539,7 @@ class FeishuChannel(BaseChannel):
                     chat_key=chat_key,
                     chat_id=reply_to,
                     receive_id_type=receive_id_type,
+                    thread_reply_message_id=thread_reply_message_id,
                 )
                 if not state:
                     return None
@@ -467,9 +612,19 @@ class FeishuChannel(BaseChannel):
                         await flush_task
 
                     if state.phase in {FeishuStreamPhase.UNAVAILABLE, FeishuStreamPhase.FAILED}:
-                        await self._send_card(reply_to, final_text, receive_id_type)
+                        await self._send_card(
+                            reply_to,
+                            final_text,
+                            receive_id_type,
+                            thread_message_id=thread_reply_message_id,
+                        )
                 else:
-                    await self._send_card(reply_to, final_text, receive_id_type)
+                    await self._send_card(
+                        reply_to,
+                        final_text,
+                        receive_id_type,
+                        thread_message_id=thread_reply_message_id,
+                    )
 
                 progressive_stream["sent"] = True
                 logger.info(f"[Feishu] Final reply sent for {message_id}")
@@ -482,7 +637,12 @@ class FeishuChannel(BaseChannel):
                 if state and not state.is_terminal:
                     await self._abort_stream_state(state, reason="abort_handler")
                 else:
-                    await self._send_card(reply_to, "已停止生成。", receive_id_type)
+                    await self._send_card(
+                        reply_to,
+                        "已停止生成。",
+                        receive_id_type,
+                        thread_message_id=thread_reply_message_id,
+                    )
                 logger.info(f"[Feishu] Abort reply sent for {message_id}")
 
             metadata = {
@@ -491,6 +651,11 @@ class FeishuChannel(BaseChannel):
                 "chat_type": chat_type,
                 "msg_type": msg_type,
                 "create_time": create_time,
+                "thread_id": thread_id or None,
+                "root_id": msg_data.get("root_id"),
+                "parent_id": msg_data.get("parent_id"),
+                "thread_reply_message_id": thread_reply_message_id,
+                "mentions": msg_data.get("mentions") or [],
                 "_stream_handler": stream_handler,
                 "_stream_abort_handler": abort_stream_handler,
                 "_tool_event_handler": tool_event_handler,
@@ -564,6 +729,133 @@ class FeishuChannel(BaseChannel):
         if candidate.lower() == "unknown":
             return False
         return candidate != str(sender_id or "").strip()
+
+    async def _get_tenant_token(self) -> str:
+        """获取并缓存 tenant_access_token，供非 SDK 的 HTTP 查询使用。"""
+        now = time.time()
+        if self._tenant_token and now < self._tenant_token_expires_at:
+            return self._tenant_token
+        if not self.config.app_id or not self.config.app_secret:
+            return ""
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.post(
+                    "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                    json={
+                        "app_id": self.config.app_id,
+                        "app_secret": self.config.app_secret,
+                    },
+                )
+                payload = response.json()
+        except Exception as e:
+            logger.debug(f"[Feishu] Failed to fetch tenant token: {e}")
+            return ""
+
+        token = str(payload.get("tenant_access_token") or "").strip()
+        if not token:
+            return ""
+        expire = int(payload.get("expire") or 7200)
+        self._tenant_token = token
+        self._tenant_token_expires_at = now + max(60, expire - 120)
+        return token
+
+    async def _get_bot_identity(self) -> Dict[str, str]:
+        """获取并缓存机器人自身 open_id / 名称，用于群聊 @ 判断。"""
+        now = time.time()
+        if self._bot_identity and now < self._bot_identity_expires_at:
+            return self._bot_identity
+        if now < self._bot_identity_retry_at:
+            return {}
+
+        token = await self._get_tenant_token()
+        if not token:
+            logger.debug("[Feishu] bot identity unavailable: no tenant token")
+            self._bot_identity_retry_at = now + 60
+            return {}
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                info_response = await client.get(
+                    "https://open.feishu.cn/open-apis/bot/v3/info",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                info_payload = info_response.json()
+                bot = info_payload.get("bot") or {}
+                identity = {
+                    "open_id": str(bot.get("open_id") or "").strip(),
+                    "app_name": str(bot.get("app_name") or "").strip(),
+                }
+        except Exception as e:
+            logger.debug(f"[Feishu] Failed to resolve bot identity: {e}")
+            self._bot_identity_retry_at = now + 60
+            return {}
+
+        if identity.get("open_id") or identity.get("app_name"):
+            self._bot_identity = identity
+            self._bot_identity_expires_at = now + 30 * 60
+            self._bot_identity_retry_at = 0.0
+        else:
+            self._bot_identity_retry_at = now + 60
+        return identity
+
+    async def _resolve_group_member_name(self, chat_id: str, sender_id: str) -> str:
+        """通过群成员目录解析发送者名称，作为联系人接口的兜底。"""
+        now = time.time()
+        cached = self._chat_member_cache.get(chat_id)
+        if cached and now < cached[1]:
+            return cached[0].get(sender_id, "")
+
+        token = await self._get_tenant_token()
+        if not token:
+            return ""
+
+        members: Dict[str, str] = {}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}/members",
+                    params={"member_id_type": "open_id", "page_size": 100},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                payload = response.json()
+            if payload.get("code") == 0:
+                for item in (payload.get("data") or {}).get("items") or []:
+                    member_id = str(item.get("member_id") or "").strip()
+                    member_name = str(item.get("name") or "").strip()
+                    if member_id and member_name:
+                        members[member_id] = member_name
+        except Exception as e:
+            logger.debug(f"[Feishu] Failed to load chat members: {e}")
+            self._chat_member_cache[chat_id] = ({}, now + 60)
+            return ""
+
+        self._chat_member_cache[chat_id] = (members, now + 10 * 60)
+        while len(self._chat_member_cache) > 200:
+            self._chat_member_cache.pop(next(iter(self._chat_member_cache)))
+        return members.get(sender_id, "")
+
+    async def _is_bot_mentioned(self, msg_data: Dict[str, Any]) -> bool:
+        """判断群聊消息是否 @ 了当前机器人。"""
+        mentions = msg_data.get("mentions") or []
+        if not mentions:
+            return False
+
+        identity = await self._get_bot_identity()
+        bot_open_id = str(identity.get("open_id") or "").strip()
+        bot_name = str(identity.get("app_name") or "").strip()
+
+        for mention in mentions:
+            mention_ids = mention.get("id") or {}
+            mention_open_id = str(mention_ids.get("open_id") or "").strip()
+            if bot_open_id and mention_open_id == bot_open_id:
+                return True
+            mention_name = str(mention.get("name") or "").strip()
+            if bot_name and mention_name == bot_name:
+                return True
+
+        # 机器人身份接口不可用时，单条 @ 视为在叫机器人，避免群聊完全失联。
+        return len(mentions) == 1
 
     async def _resolve_sender_name(self, sender_id: str, raw_sender_name: Any = None) -> str:
         """优先走缓存，缺失时再调用联系人接口解析 sender_name。"""
@@ -655,6 +947,103 @@ class FeishuChannel(BaseChannel):
     def _build_stream_chat_key(chat_id: str, receive_id_type: str) -> str:
         """生成单聊/群聊维度的流式回复索引键。"""
         return f"{receive_id_type}:{chat_id}"
+
+    # ------------------------------------------------------------------
+    # 消息投递诊断与熔断
+    # ------------------------------------------------------------------
+
+    def get_runtime_status(self) -> Dict[str, Any]:
+        """在统一运行时状态上追加最近一次消息投递失败诊断。"""
+        status = super().get_runtime_status()
+        status["delivery_error"] = dict(self._delivery_error) if self._delivery_error else None
+        return status
+
+    @staticmethod
+    def _describe_delivery_failure(
+        operation: str,
+        *,
+        response: Optional[Any] = None,
+        error: Optional[Exception] = None,
+    ) -> Dict[str, Any]:
+        """提取飞书写入失败的 HTTP 状态、业务码、消息和 log_id。"""
+        detail: Dict[str, Any] = {
+            "operation": operation,
+            "at": time.time(),
+        }
+        if response is not None:
+            raw = getattr(response, "raw", None)
+            log_id = None
+            get_log_id = getattr(response, "get_log_id", None)
+            if callable(get_log_id):
+                try:
+                    log_id = get_log_id()
+                except Exception:
+                    log_id = None
+            detail.update(
+                {
+                    "code": getattr(response, "code", None),
+                    "msg": str(getattr(response, "msg", "") or ""),
+                    "status": getattr(raw, "status_code", None),
+                    "log_id": log_id,
+                }
+            )
+        if error is not None:
+            detail["error"] = str(error)
+        return detail
+
+    def _record_delivery_error(
+        self,
+        operation: str,
+        *,
+        response: Optional[Any] = None,
+        error: Optional[Exception] = None,
+    ) -> Dict[str, Any]:
+        """记录最近一次投递失败，供设置页和运行状态展示。"""
+        detail = self._describe_delivery_failure(operation, response=response, error=error)
+        self._delivery_error = detail
+        logger.error(
+            f"[Feishu] delivery failed operation={operation} "
+            f"status={detail.get('status')} code={detail.get('code')} "
+            f"msg={detail.get('msg') or detail.get('error')} log_id={detail.get('log_id')}"
+        )
+        return detail
+
+    def _clear_delivery_error(self) -> None:
+        """写入成功后清空投递诊断；WebSocket 重连不会触发此方法。"""
+        if self._delivery_error:
+            self._delivery_error = {}
+            logger.info("[Feishu] message delivery recovered")
+
+    @staticmethod
+    def _is_circuit_open(state: FeishuStreamState) -> bool:
+        return bool(
+            state.circuit_open_until_ms
+            and (time.time() * 1000) < state.circuit_open_until_ms
+        )
+
+    def _register_stream_failure(
+        self,
+        state: FeishuStreamState,
+        operation: str,
+        *,
+        response: Optional[Any] = None,
+        error: Optional[Exception] = None,
+    ) -> None:
+        """累计连续失败次数，达到阈值后打开熔断窗口。"""
+        self._record_delivery_error(operation, response=response, error=error)
+        state.consecutive_failures += 1
+        if state.consecutive_failures < _STREAM_CIRCUIT_FAILURE_THRESHOLD:
+            return
+        state.circuit_open_until_ms = (time.time() * 1000) + _STREAM_CIRCUIT_COOLDOWN_MS
+        logger.error(
+            f"[Feishu] streaming circuit opened for {_STREAM_CIRCUIT_COOLDOWN_MS / 1000:.0f}s "
+            f"(source={state.source_message_id}, failures={state.consecutive_failures})"
+        )
+
+    def _register_stream_success(self, state: FeishuStreamState) -> None:
+        state.consecutive_failures = 0
+        state.circuit_open_until_ms = 0.0
+        self._clear_delivery_error()
 
     @staticmethod
     def _is_abort_command(content: str) -> bool:
@@ -1048,44 +1437,101 @@ class FeishuChannel(BaseChannel):
 
         try:
             receive_id_type = "chat_id" if msg.chat_id.startswith("oc_") else "open_id"
+            metadata = msg.metadata or {}
+            thread_message_id = str(
+                metadata.get("thread_reply_message_id")
+                or (metadata.get("message_id") if metadata.get("thread_id") else "")
+                or ""
+            ).strip() or None
 
             if msg.media:
-                await self._send_with_media(msg, receive_id_type)
+                await self._send_with_media(
+                    msg,
+                    receive_id_type,
+                    thread_message_id=thread_message_id,
+                )
             else:
-                await self._send_card(msg.chat_id, msg.content, receive_id_type)
+                await self._send_card(
+                    msg.chat_id,
+                    msg.content,
+                    receive_id_type,
+                    thread_message_id=thread_message_id,
+                )
         except Exception as e:
             logger.error(f"Error sending Feishu message: {e}")
 
-    async def _send_card(self, chat_id: str, content: str, receive_id_type: str) -> None:
+    async def _create_interactive_message_with_retry(
+        self,
+        chat_id: str,
+        content: str,
+        receive_id_type: str,
+        *,
+        operation: str,
+        thread_message_id: Optional[str] = None,
+    ):
+        """发送卡片消息，按 300ms/600ms 退避重试，并记录投递诊断。"""
+        if not self._client:
+            logger.warning("Feishu client not initialized, message dropped")
+            return None
+        last_response = None
+        for attempt in range(_STREAM_MAX_ATTEMPTS):
+            try:
+                response = await self._run_sync(
+                    self._create_interactive_message_sync,
+                    chat_id,
+                    content,
+                    receive_id_type,
+                    thread_message_id,
+                )
+                if response is not None and response.success():
+                    self._clear_delivery_error()
+                    return response
+                last_response = response
+                self._record_delivery_error(operation, response=response)
+            except Exception as e:
+                self._record_delivery_error(operation, error=e)
+
+            if attempt < _STREAM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(
+                    (_STREAM_RETRY_BASE_DELAY_MS * (2 ** attempt)) / 1000
+                )
+        return last_response
+
+    async def _send_card(
+        self,
+        chat_id: str,
+        content: str,
+        receive_id_type: str,
+        *,
+        thread_message_id: Optional[str] = None,
+    ) -> None:
         """发送卡片消息（支持 markdown + 表格）"""
-        response = await self._run_sync(
-            self._create_interactive_message_sync,
+        response = await self._create_interactive_message_with_retry(
             chat_id,
             content,
             receive_id_type,
+            operation="message.create",
+            thread_message_id=thread_message_id,
         )
-
-        if not response.success():
-            logger.error(
-                f"Failed to send Feishu message: code={response.code}, "
-                f"msg={response.msg}, log_id={response.get_log_id()}"
-            )
-        else:
+        if response is not None and response.success():
             logger.debug(f"Feishu message sent to {chat_id}")
     
-    async def _send_initial_message(self, chat_id: str, content: str, receive_id_type: str):
+    async def _send_initial_message(
+        self,
+        chat_id: str,
+        content: str,
+        receive_id_type: str,
+        *,
+        thread_message_id: Optional[str] = None,
+    ):
         """发送初始消息（用于流式输出）"""
-        response = await self._run_sync(
-            self._create_interactive_message_sync,
+        return await self._create_interactive_message_with_retry(
             chat_id,
             content,
             receive_id_type,
+            operation="message.create_initial",
+            thread_message_id=thread_message_id,
         )
-        
-        if not response.success():
-            logger.error(f"Failed to send initial message: {response.msg}")
-        
-        return response
 
     async def _create_stream_state(
         self,
@@ -1094,6 +1540,7 @@ class FeishuChannel(BaseChannel):
         chat_key: str,
         chat_id: str,
         receive_id_type: str,
+        thread_reply_message_id: Optional[str] = None,
     ) -> Optional[FeishuStreamState]:
         """优先创建 CardKit 流式卡片，失败时回退到普通卡片 patch。"""
         state = FeishuStreamState(
@@ -1101,6 +1548,7 @@ class FeishuChannel(BaseChannel):
             chat_key=chat_key,
             reply_to=chat_id,
             receive_id_type=receive_id_type,
+            thread_reply_message_id=thread_reply_message_id,
             phase=FeishuStreamPhase.CREATING,
         )
         if FEISHU_CARDKIT_AVAILABLE:
@@ -1112,6 +1560,7 @@ class FeishuChannel(BaseChannel):
                         chat_id,
                         card_id,
                         receive_id_type,
+                        thread_reply_message_id,
                     )
                     if response and response.success():
                         state.mode = "cardkit"
@@ -1127,12 +1576,18 @@ class FeishuChannel(BaseChannel):
             except Exception as e:
                 logger.warning(f"[Feishu] CardKit init failed, fallback to patch mode: {e}")
 
-        response = await self._send_initial_message(chat_id, "🤔 思考中...", receive_id_type)
+        response = await self._send_initial_message(
+            chat_id,
+            "🤔 思考中...",
+            receive_id_type,
+            thread_message_id=thread_reply_message_id,
+        )
         if response and response.success():
             state.mode = "patch"
             state.feishu_message_id = response.data.message_id
             self._transition_stream_state(state, FeishuStreamPhase.STREAMING, "patch_created")
             return state
+        self._record_delivery_error("message.create_stream", response=response)
         self._transition_stream_state(state, FeishuStreamPhase.FAILED, "create_failed", terminal_reason="create_failed")
         return None
 
@@ -1230,135 +1685,234 @@ class FeishuChannel(BaseChannel):
         content: str,
         state: Optional[FeishuStreamState] = None,
     ) -> bool:
-        """更新消息内容（用于流式输出）"""
-        try:
-            response = await self._run_sync(self._patch_message_sync, message_id, content)
+        """更新消息内容（用于流式输出），带退避重试与熔断。"""
+        if state and self._is_circuit_open(state):
+            logger.debug("[Feishu] message.patch skipped: circuit open")
+            return False
 
-            if not response.success():
+        for attempt in range(_STREAM_MAX_ATTEMPTS):
+            try:
+                response = await self._run_sync(self._patch_message_sync, message_id, content)
+                if response is not None and response.success():
+                    if state:
+                        self._register_stream_success(state)
+                    else:
+                        self._clear_delivery_error()
+                    return True
                 if state and self._is_stream_unavailable(response=response):
                     self._mark_stream_unavailable(state, "message.patch", response=response)
                     return False
-                logger.error(f"Failed to update message: code={response.code}, msg={response.msg}")
-                return False
+                if state:
+                    self._register_stream_failure(state, "message.patch", response=response)
+                else:
+                    self._record_delivery_error("message.patch", response=response)
+            except Exception as e:
+                if state and self._is_stream_unavailable(error=e):
+                    self._mark_stream_unavailable(state, "message.patch.exception", error=e)
+                    return False
+                if state:
+                    self._register_stream_failure(state, "message.patch.exception", error=e)
+                else:
+                    self._record_delivery_error("message.patch.exception", error=e)
 
-            return True
-        except Exception as e:
-            if state and self._is_stream_unavailable(error=e):
-                self._mark_stream_unavailable(state, "message.patch.exception", error=e)
-                return False
-            logger.error(f"Error updating message: {e}")
-            return False
+            if state and self._is_circuit_open(state):
+                break
+            if attempt < _STREAM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(
+                    (_STREAM_RETRY_BASE_DELAY_MS * (2 ** attempt)) / 1000
+                )
+        return False
 
     async def _stream_card_content(self, card_id: str, content: str, state: FeishuStreamState) -> bool:
-        """流式更新 CardKit 卡片正文。"""
-        try:
-            sequence = int(state.sequence) + 1
-            response = await self._run_sync(
-                self._stream_card_content_sync,
-                card_id,
-                content,
-                sequence,
-            )
-            if not response.success():
+        """流式更新 CardKit 卡片正文，带退避重试与熔断。"""
+        if self._is_circuit_open(state):
+            logger.debug("[Feishu] cardkit.stream skipped: circuit open")
+            return False
+
+        for attempt in range(_STREAM_MAX_ATTEMPTS):
+            sequence = int(state.sequence) + 1 + attempt
+            try:
+                response = await self._run_sync(
+                    self._stream_card_content_sync,
+                    card_id,
+                    content,
+                    sequence,
+                )
+                if response is not None and response.success():
+                    state.sequence = sequence
+                    self._register_stream_success(state)
+                    return True
                 if self._is_stream_unavailable(response=response):
                     self._mark_stream_unavailable(state, "cardkit.stream", response=response)
                     return False
-                logger.error(f"[Feishu] CardKit content update failed: code={response.code}, msg={response.msg}")
-                return False
-            state.sequence = sequence
-            return True
-        except Exception as e:
-            if self._is_stream_unavailable(error=e):
-                self._mark_stream_unavailable(state, "cardkit.stream.exception", error=e)
-                return False
-            logger.error(f"[Feishu] CardKit content update error: {e}")
-            return False
+                self._register_stream_failure(state, "cardkit.stream", response=response)
+            except Exception as e:
+                if self._is_stream_unavailable(error=e):
+                    self._mark_stream_unavailable(state, "cardkit.stream.exception", error=e)
+                    return False
+                self._register_stream_failure(state, "cardkit.stream.exception", error=e)
+
+            if self._is_circuit_open(state):
+                break
+            if attempt < _STREAM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(
+                    (_STREAM_RETRY_BASE_DELAY_MS * (2 ** attempt)) / 1000
+                )
+        return False
 
     async def _set_card_streaming_mode(self, card_id: str, streaming_mode: bool, state: FeishuStreamState) -> bool:
-        """切换 CardKit streaming_mode。"""
-        try:
-            sequence = int(state.sequence) + 1
-            response = await self._run_sync(
-                self._set_card_streaming_mode_sync,
-                card_id,
-                streaming_mode,
-                sequence,
-            )
-            if not response.success():
+        """切换 CardKit streaming_mode，带退避重试与熔断。"""
+        if self._is_circuit_open(state):
+            return False
+
+        for attempt in range(_STREAM_MAX_ATTEMPTS):
+            sequence = int(state.sequence) + 1 + attempt
+            try:
+                response = await self._run_sync(
+                    self._set_card_streaming_mode_sync,
+                    card_id,
+                    streaming_mode,
+                    sequence,
+                )
+                if response is not None and response.success():
+                    state.sequence = sequence
+                    self._register_stream_success(state)
+                    return True
                 if self._is_stream_unavailable(response=response):
                     self._mark_stream_unavailable(state, "cardkit.settings", response=response)
                     return False
-                logger.warning(f"[Feishu] CardKit settings failed: code={response.code}, msg={response.msg}")
-                return False
-            state.sequence = sequence
-            return True
-        except Exception as e:
-            if self._is_stream_unavailable(error=e):
-                self._mark_stream_unavailable(state, "cardkit.settings.exception", error=e)
-                return False
-            logger.warning(f"[Feishu] CardKit settings error: {e}")
-            return False
+                self._register_stream_failure(state, "cardkit.settings", response=response)
+            except Exception as e:
+                if self._is_stream_unavailable(error=e):
+                    self._mark_stream_unavailable(state, "cardkit.settings.exception", error=e)
+                    return False
+                self._register_stream_failure(state, "cardkit.settings.exception", error=e)
+
+            if self._is_circuit_open(state):
+                break
+            if attempt < _STREAM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(
+                    (_STREAM_RETRY_BASE_DELAY_MS * (2 ** attempt)) / 1000
+                )
+        return False
 
     async def _finalize_streaming_card(self, card_id: str, content: str, state: FeishuStreamState) -> bool:
-        """结束 CardKit 流式状态并写入最终内容。"""
-        try:
-            sequence = int(state.sequence) + 1
-            response = await self._run_sync(
-                self._update_cardkit_card_sync,
-                card_id,
-                content,
-                sequence,
-            )
-            if not response.success():
+        """结束 CardKit 流式状态并写入最终内容，带退避重试与熔断。"""
+        if self._is_circuit_open(state):
+            return False
+
+        for attempt in range(_STREAM_MAX_ATTEMPTS):
+            sequence = int(state.sequence) + 1 + attempt
+            try:
+                response = await self._run_sync(
+                    self._update_cardkit_card_sync,
+                    card_id,
+                    content,
+                    sequence,
+                )
+                if response is not None and response.success():
+                    state.sequence = sequence
+                    self._register_stream_success(state)
+                    await self._set_card_streaming_mode(card_id, False, state)
+                    return True
                 if self._is_stream_unavailable(response=response):
                     self._mark_stream_unavailable(state, "cardkit.final", response=response)
                     return False
-                logger.error(f"[Feishu] CardKit final update failed: code={response.code}, msg={response.msg}")
-                return False
-            state.sequence = sequence
-            await self._set_card_streaming_mode(card_id, False, state)
-            return True
-        except Exception as e:
-            if self._is_stream_unavailable(error=e):
-                self._mark_stream_unavailable(state, "cardkit.final.exception", error=e)
-                return False
-            logger.error(f"[Feishu] CardKit final update error: {e}")
-            return False
+                self._register_stream_failure(state, "cardkit.final", response=response)
+            except Exception as e:
+                if self._is_stream_unavailable(error=e):
+                    self._mark_stream_unavailable(state, "cardkit.final.exception", error=e)
+                    return False
+                self._register_stream_failure(state, "cardkit.final.exception", error=e)
 
-    async def _send_with_media(self, msg: OutboundMessage, receive_id_type: str) -> None:
+            if self._is_circuit_open(state):
+                break
+            if attempt < _STREAM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(
+                    (_STREAM_RETRY_BASE_DELAY_MS * (2 ** attempt)) / 1000
+                )
+        return False
+
+    async def _send_with_media(
+        self,
+        msg: OutboundMessage,
+        receive_id_type: str,
+        *,
+        thread_message_id: Optional[str] = None,
+    ) -> None:
         """发送带媒体文件的消息。"""
         try:
             if msg.content and msg.content.strip():
-                await self._send_card(msg.chat_id, msg.content, receive_id_type)
+                await self._send_card(
+                    msg.chat_id,
+                    msg.content,
+                    receive_id_type,
+                    thread_message_id=thread_message_id,
+                )
 
             for media_path in msg.media:
-                await self._send_media_file(msg.chat_id, media_path, receive_id_type)
+                await self._send_media_file(
+                    msg.chat_id,
+                    media_path,
+                    receive_id_type,
+                    thread_message_id=thread_message_id,
+                )
         except Exception as e:
             logger.error(f"Error sending media: {e}")
 
     async def _send_media_file(
-        self, chat_id: str, file_path: str, receive_id_type: str
+        self,
+        chat_id: str,
+        file_path: str,
+        receive_id_type: str,
+        *,
+        thread_message_id: Optional[str] = None,
     ) -> None:
         """根据文件类型发送图片或文件。"""
         if self._is_image_file(file_path):
-            await self._send_image(chat_id, file_path, receive_id_type)
+            await self._send_image(
+                chat_id, file_path, receive_id_type, thread_message_id=thread_message_id
+            )
         else:
-            await self._send_file(chat_id, file_path, receive_id_type)
+            await self._send_file(
+                chat_id, file_path, receive_id_type, thread_message_id=thread_message_id
+            )
 
     @staticmethod
     def _is_image_file(file_path: str) -> bool:
         """判断是否为图片文件。"""
         return Path(file_path).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
-    async def _run_sync(self, func, *args):
+    async def _run_sync(self, func, *args, **kwargs):
         """在线程池中执行阻塞式飞书 SDK 调用，避免卡住事件循环。"""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: func(*args))
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
-    def _create_interactive_message_sync(self, chat_id: str, content: str, receive_id_type: str):
-        elements = self._build_card_elements(content)
-        card = {"config": {"wide_screen_mode": True}, "elements": elements}
-        card_json = json.dumps(card, ensure_ascii=False)
+    def _create_message_or_thread_reply_sync(
+        self,
+        *,
+        chat_id: str,
+        receive_id_type: str,
+        msg_type: str,
+        content: str,
+        thread_message_id: Optional[str] = None,
+    ):
+        """普通发送走 create，话题群走 reply_in_thread，保证回复落在同一话题。"""
+        if thread_message_id:
+            request = (
+                ReplyMessageRequest.builder()
+                .message_id(thread_message_id)
+                .request_body(
+                    ReplyMessageRequestBody.builder()
+                    .msg_type(msg_type)
+                    .content(content)
+                    .reply_in_thread(True)
+                    .uuid(str(uuid.uuid4()))
+                    .build()
+                )
+                .build()
+            )
+            return self._client.im.v1.message.reply(request)
 
         request = (
             CreateMessageRequest.builder()
@@ -1366,13 +1920,31 @@ class FeishuChannel(BaseChannel):
             .request_body(
                 CreateMessageRequestBody.builder()
                 .receive_id(chat_id)
-                .msg_type("interactive")
-                .content(card_json)
+                .msg_type(msg_type)
+                .content(content)
                 .build()
             )
             .build()
         )
         return self._client.im.v1.message.create(request)
+
+    def _create_interactive_message_sync(
+        self,
+        chat_id: str,
+        content: str,
+        receive_id_type: str,
+        thread_message_id: Optional[str] = None,
+    ):
+        elements = self._build_card_elements(content)
+        card = {"config": {"wide_screen_mode": True}, "elements": elements}
+        card_json = json.dumps(card, ensure_ascii=False)
+        return self._create_message_or_thread_reply_sync(
+            chat_id=chat_id,
+            receive_id_type=receive_id_type,
+            msg_type="interactive",
+            content=card_json,
+            thread_message_id=thread_message_id,
+        )
 
     def _patch_message_sync(self, message_id: str, content: str):
         elements = self._build_card_elements(content)
@@ -1429,21 +2001,21 @@ class FeishuChannel(BaseChannel):
             raise RuntimeError(f"create cardkit card failed: code={response.code}, msg={response.msg}")
         return getattr(response.data, "card_id", None)
 
-    def _send_card_by_card_id_sync(self, chat_id: str, card_id: str, receive_id_type: str):
+    def _send_card_by_card_id_sync(
+        self,
+        chat_id: str,
+        card_id: str,
+        receive_id_type: str,
+        thread_message_id: Optional[str] = None,
+    ):
         content = json.dumps({"type": "card", "data": {"card_id": card_id}}, ensure_ascii=False)
-        request = (
-            CreateMessageRequest.builder()
-            .receive_id_type(receive_id_type)
-            .request_body(
-                CreateMessageRequestBody.builder()
-                .receive_id(chat_id)
-                .msg_type("interactive")
-                .content(content)
-                .build()
-            )
-            .build()
+        return self._create_message_or_thread_reply_sync(
+            chat_id=chat_id,
+            receive_id_type=receive_id_type,
+            msg_type="interactive",
+            content=content,
+            thread_message_id=thread_message_id,
         )
-        return self._client.im.v1.message.create(request)
 
     def _stream_card_content_sync(self, card_id: str, content: str, sequence: int):
         request = (
@@ -1498,7 +2070,12 @@ class FeishuChannel(BaseChannel):
         return self._client.cardkit.v1.card.update(request)
 
     async def _send_image(
-        self, chat_id: str, image_path: str, receive_id_type: str
+        self,
+        chat_id: str,
+        image_path: str,
+        receive_id_type: str,
+        *,
+        thread_message_id: Optional[str] = None,
     ) -> None:
         """上传并发送图片。"""
         try:
@@ -1510,39 +2087,37 @@ class FeishuChannel(BaseChannel):
             upload_response = await self._run_sync(self._upload_image_sync, image_file)
 
             if not upload_response.success():
-                logger.error(f"Failed to upload image: {upload_response.msg}")
+                self._record_delivery_error("image.upload", response=upload_response)
                 return
 
             image_key = upload_response.data.image_key
             logger.info(f"Image uploaded: {image_key}")
 
             content = json.dumps({"image_key": image_key})
-            request = (
-                CreateMessageRequest.builder()
-                .receive_id_type(receive_id_type)
-                .request_body(
-                    CreateMessageRequestBody.builder()
-                    .receive_id(chat_id)
-                    .msg_type("image")
-                    .content(content)
-                    .build()
-                )
-                .build()
-            )
             response = await self._run_sync(
-                lambda req: self._client.im.v1.message.create(req),
-                request,
+                self._create_message_or_thread_reply_sync,
+                chat_id=chat_id,
+                receive_id_type=receive_id_type,
+                msg_type="image",
+                content=content,
+                thread_message_id=thread_message_id,
             )
 
             if not response.success():
-                logger.error(f"Failed to send image: {response.msg}")
+                self._record_delivery_error("image.send", response=response)
             else:
+                self._clear_delivery_error()
                 logger.info(f"Image sent to {chat_id}")
         except Exception as e:
-            logger.error(f"Error sending image: {e}")
+            self._record_delivery_error("image.send.exception", error=e)
 
     async def _send_file(
-        self, chat_id: str, file_path: str, receive_id_type: str
+        self,
+        chat_id: str,
+        file_path: str,
+        receive_id_type: str,
+        *,
+        thread_message_id: Optional[str] = None,
     ) -> None:
         """上传并发送文件。"""
         try:
@@ -1556,36 +2131,29 @@ class FeishuChannel(BaseChannel):
             upload_response = await self._run_sync(self._upload_file_sync, file)
 
             if not upload_response.success():
-                logger.error(f"Failed to upload file: {upload_response.msg}")
+                self._record_delivery_error("file.upload", response=upload_response)
                 return
 
             file_key = upload_response.data.file_key
             logger.info(f"File uploaded: {file_key}")
 
             content = json.dumps({"file_key": file_key})
-            request = (
-                CreateMessageRequest.builder()
-                .receive_id_type(receive_id_type)
-                .request_body(
-                    CreateMessageRequestBody.builder()
-                    .receive_id(chat_id)
-                    .msg_type("file")
-                    .content(content)
-                    .build()
-                )
-                .build()
-            )
             response = await self._run_sync(
-                lambda req: self._client.im.v1.message.create(req),
-                request,
+                self._create_message_or_thread_reply_sync,
+                chat_id=chat_id,
+                receive_id_type=receive_id_type,
+                msg_type="file",
+                content=content,
+                thread_message_id=thread_message_id,
             )
 
             if not response.success():
-                logger.error(f"Failed to send file: {response.msg}")
+                self._record_delivery_error("file.send", response=response)
             else:
+                self._clear_delivery_error()
                 logger.info(f"File sent to {chat_id}")
         except Exception as e:
-            logger.error(f"Error sending file: {e}")
+            self._record_delivery_error("file.send.exception", error=e)
 
     def _upload_image_sync(self, image_file: Path):
         with image_file.open("rb") as image_handle:

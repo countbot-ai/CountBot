@@ -39,14 +39,10 @@
 .workspace-card,
 .toggle-card,
 .test-result {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 22px;
-  background:
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 249, 252, 0.98));
-  box-shadow:
-    0 14px 36px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-2xl);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
 }
 
 .state-card {
@@ -62,7 +58,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .state-head {
@@ -73,7 +69,7 @@
 }
 
 .state-card.is-dirty {
-  border-color: rgba(34, 197, 94, 0.26);
+  border-color: var(--color-border-strong);
 }
 
 .state-stack {
@@ -112,11 +108,11 @@
   justify-content: center;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(34, 197, 94, 0.18);
-  background: rgba(34, 197, 94, 0.1);
-  color: #166534;
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-warning-light);
+  color: var(--color-warning);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
 }
 
 .workspace-card {
@@ -158,8 +154,8 @@
   justify-content: center;
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-elevated);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
@@ -167,19 +163,19 @@
 }
 
 .status-pill.ready {
-  color: #166534;
-  border-color: rgba(34, 197, 94, 0.22);
-  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 24%, transparent);
+  background: var(--color-success-light);
 }
 
 .status-pill.warning {
-  color: #92400e;
-  border-color: rgba(245, 158, 11, 0.22);
-  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning);
+  border-color: var(--color-border-primary);
+  background: var(--color-warning-light);
 }
 
 .status-pill.neutral {
-  color: #475569;
+  color: var(--text-secondary);
 }
 
 .form-grid {
@@ -250,8 +246,8 @@
   gap: 12px;
   padding: 14px;
   border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
   width: 100%;
   min-width: 0;
 }
@@ -286,9 +282,9 @@
   min-height: 280px;
   min-width: 0;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--color-border-primary);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--color-bg-elevated);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -297,8 +293,8 @@
 }
 
 .openrouter-model-select:focus {
-  border-color: rgba(37, 99, 235, 0.38);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: var(--color-border-primary);
+  box-shadow: none;
 }
 
 .openrouter-model-detail {
@@ -308,9 +304,9 @@
   width: 100%;
   min-width: 0;
   padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--color-border-primary);
   border-radius: 16px;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
 }
 
 .openrouter-model-card-head {
@@ -339,7 +335,7 @@
 .openrouter-model-variant {
   display: block !important;
   margin: 0 0 10px;
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -371,8 +367,8 @@
   align-items: center !important;
   padding: 6px 10px !important;
   border-radius: 999px;
-  background: rgba(226, 232, 240, 0.7);
-  color: #334155;
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
   font-size: 11px;
   font-weight: 700;
 }
@@ -404,7 +400,7 @@
 }
 
 .required-hint {
-  color: #dc2626;
+  color: var(--color-error);
 }
 
 .hint {
@@ -420,9 +416,9 @@
   gap: 10px;
   margin-top: 10px;
   padding: 12px 14px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 16px;
-  background: rgba(15, 23, 42, 0.02);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-secondary);
 }
 
 .provider-capability-badges {
@@ -437,8 +433,8 @@
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-elevated);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
@@ -446,34 +442,34 @@
 
 .capability-group {
   color: var(--color-primary);
-  border-color: rgba(37, 99, 235, 0.18);
-  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .capability-tier-native {
-  color: #15803d;
-  border-color: rgba(21, 128, 61, 0.18);
-  background: rgba(34, 197, 94, 0.12);
+  color: var(--color-success);
+  border-color: var(--color-border-primary);
+  background: var(--color-success-light);
 }
 
 .capability-tier-limited,
 .capability-tier-response_only {
-  color: #b45309;
-  border-color: rgba(180, 83, 9, 0.18);
-  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning);
+  border-color: var(--color-border-primary);
+  background: var(--color-warning-light);
 }
 
 .capability-tier-experimental,
 .capability-tier-compat {
-  color: #1d4ed8;
-  border-color: rgba(29, 78, 216, 0.18);
-  background: rgba(59, 130, 246, 0.12);
+  color: var(--color-accent);
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .capability-tier-unsupported {
-  color: #b91c1c;
-  border-color: rgba(185, 28, 28, 0.16);
-  background: rgba(239, 68, 68, 0.10);
+  color: var(--color-error);
+  border-color: var(--color-border-primary);
+  background: var(--color-error-light);
 }
 
 .provider-capability-note {
@@ -494,7 +490,7 @@
 }
 
 .openrouter-access-link {
-  color: #2563eb;
+  color: var(--color-accent);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
@@ -534,137 +530,54 @@
 }
 
 .test-result.success {
-  color: #166534;
-  border-color: rgba(34, 197, 94, 0.24);
-  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-success);
+  border-color: var(--color-border-primary);
+  background: var(--color-success-light);
 }
 
 .test-result.error {
-  color: #b91c1c;
-  border-color: rgba(239, 68, 68, 0.24);
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  border-color: var(--color-border-primary);
+  background: var(--color-error-light);
 }
 
-:root[data-theme='dark'] .state-card,
-:root[data-theme='dark'] .workspace-card,
-:root[data-theme='dark'] .toggle-card,
-:root[data-theme='dark'] .test-result {
-  border-color: rgba(71, 85, 105, 0.42);
-  background:
-    radial-gradient(circle at top left, rgba(34, 197, 94, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(10, 16, 28, 0.98));
-  box-shadow:
-    0 20px 40px rgba(2, 6, 23, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
 
-:root[data-theme='dark'] .section-title,
-:root[data-theme='dark'] .state-model,
-:root[data-theme='dark'] .workspace-header h4,
-:root[data-theme='dark'] .label,
-:root[data-theme='dark'] .status-pill {
-  color: #e2e8f0;
-}
 
-:root[data-theme='dark'] .state-provider,
-:root[data-theme='dark'] .hint,
-:root[data-theme='dark'] .label-hint,
-:root[data-theme='dark'] .state-label,
-:root[data-theme='dark'] .openrouter-model-id,
-:root[data-theme='dark'] .openrouter-model-variant,
-:root[data-theme='dark'] .openrouter-model-description,
-:root[data-theme='dark'] .openrouter-model-params,
-:root[data-theme='dark'] .openrouter-model-empty {
-  color: #94a3b8;
-}
 
-:root[data-theme='dark'] .provider-capability-card {
-  border-color: rgba(71, 85, 105, 0.42);
-  background: rgba(15, 23, 42, 0.55);
-}
 
-:root[data-theme='dark'] .provider-capability-pill {
-  background: rgba(15, 23, 42, 0.72);
-  border-color: rgba(71, 85, 105, 0.4);
-}
 
-:root[data-theme='dark'] .capability-group {
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.32);
-  background: rgba(30, 64, 175, 0.24);
-}
 
-:root[data-theme='dark'] .capability-tier-native {
-  color: #86efac;
-  border-color: rgba(34, 197, 94, 0.28);
-  background: rgba(20, 83, 45, 0.4);
-}
 
-:root[data-theme='dark'] .capability-tier-limited,
-:root[data-theme='dark'] .capability-tier-response_only {
-  color: #fcd34d;
-  border-color: rgba(245, 158, 11, 0.28);
-  background: rgba(120, 53, 15, 0.34);
-}
 
-:root[data-theme='dark'] .capability-tier-experimental,
-:root[data-theme='dark'] .capability-tier-compat {
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.28);
-  background: rgba(30, 64, 175, 0.28);
-}
 
-:root[data-theme='dark'] .capability-tier-unsupported {
-  color: #fca5a5;
-  border-color: rgba(239, 68, 68, 0.3);
-  background: rgba(127, 29, 29, 0.3);
-}
 
-:root[data-theme='dark'] .state-flag {
-  border-color: rgba(34, 197, 94, 0.22);
-  background: rgba(34, 197, 94, 0.14);
-  color: #bbf7d0;
-}
 
-:root[data-theme='dark'] .status-pill {
-  border-color: rgba(71, 85, 105, 0.42);
-  background: rgba(15, 23, 42, 0.82);
-}
 
-:root[data-theme='dark'] .status-pill.neutral {
-  color: #cbd5e1;
-}
 
-:root[data-theme='dark'] .status-pill.ready {
-  color: #bbf7d0;
-  background: rgba(34, 197, 94, 0.14);
-}
 
-:root[data-theme='dark'] .status-pill.warning {
-  color: #fcd34d;
-  background: rgba(245, 158, 11, 0.14);
-}
 
-:root[data-theme='dark'] .openrouter-model-panel {
-  border-color: rgba(71, 85, 105, 0.42);
-  background: rgba(15, 23, 42, 0.72);
-}
 
-:root[data-theme='dark'] .openrouter-model-select,
-:root[data-theme='dark'] .openrouter-model-detail {
-  border-color: rgba(71, 85, 105, 0.38);
-  background: rgba(15, 23, 42, 0.86);
-}
 
-:root[data-theme='dark'] .openrouter-model-panel-title,
-:root[data-theme='dark'] .openrouter-model-name {
-  color: #e2e8f0;
-}
 
-:root[data-theme='dark'] .openrouter-model-pill {
-  background: rgba(30, 41, 59, 0.92);
-  color: #cbd5e1;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @container settings-content (max-width: 900px) {
   .form-grid {

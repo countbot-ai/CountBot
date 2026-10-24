@@ -72,8 +72,20 @@ export function useChatRealtime(options: UseChatRealtimeOptions) {
     onMessage: (message) => {
       if (message.type === 'error') {
         console.error('[ChatWindow] Error:', message.message)
+        // 通用 error 表示本轮处理已终止：收敛仍在运行的卡片并退出流式态，
+        // 否则界面会一直停在“执行中”。
+        options.dispatchStreamEvent({ ...message, type: 'stream_error' })
         options.toast.error(message.message || '发生错误')
+        const failedSessionId = options.getCurrentSessionId()
+        if (failedSessionId) {
+          persistSessionCache(failedSessionId, true)
+        }
         return
+      }
+
+      if (message.type === 'tool_error') {
+        // 单个工具失败不终止本轮对话，但要保留原有的错误提示。
+        options.toast.error(message.error || message.message || '工具执行失败')
       }
 
       if (message.type === 'sessions_updated') {

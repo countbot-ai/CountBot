@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from backend.modules.agent.loop import AgentLoop
-from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT
+from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT, render_prompt
+from backend.modules.agent.session_gate import get_session_gate
+from backend.modules.session.manager import session_name_matches
 from backend.utils.logger import logger
 
 if TYPE_CHECKING:
@@ -69,14 +71,21 @@ class CronExecutor:
                 self.agent.tools.set_session_id(session_id)
                 self.agent.tools.set_channel(channel or "cron")
 
-            cron_message = CRON_TASK_EXECUTION_PROMPT.format(task_message=message)
-            response = await self.agent.process_direct(
-                content=cron_message,
-                session_id=session_id,
-                channel=channel or "cron",
-                chat_id=chat_id or job_id,
-                account_id=account_id,
-            )
+            cron_message = render_prompt(CRON_TASK_EXECUTION_PROMPT, task_message=message)
+            # 定时任务可能落在用户正在对话的会话上，必须与 IM/WS 共用同一道闸门，
+            # 否则两轮处理会并发读写同一份会话历史。
+            gate = get_session_gate()
+            await gate.acquire(session_id)
+            try:
+                response = await self.agent.process_direct(
+                    content=cron_message,
+                    session_id=session_id,
+                    channel=channel or "cron",
+                    chat_id=chat_id or job_id,
+                    account_id=account_id,
+                )
+            finally:
+                gate.release(session_id)
 
             logger.info(f"Job {job_id} completed")
 
@@ -159,7 +168,9 @@ class CronExecutor:
             return dispatch.greeting
         except Exception as e:
             logger.error(f"Heartbeat execution failed: {e}")
-            return ""
+            # 向上抛出：吞掉异常会让调度器把本次执行记为成功，
+            # 投递渠道故障在面板上无法体现。
+            raise
 
     async def _deliver_to_channel(
         self,
@@ -342,7 +353,7 @@ class CronExecutor:
             # 查找已有会话
             result = await db.execute(
                 select(Session)
-                .where(Session.name.like(f"{prefix}%"))
+                .where(session_name_matches(prefix))
                 .order_by(Session.created_at.desc())
                 .limit(1)
             )
@@ -351,7 +362,7 @@ class CronExecutor:
             if not session and normalized_account_id == PRIMARY_ACCOUNT_ID:
                 result = await db.execute(
                     select(Session)
-                    .where(Session.name.like(f"{legacy_prefix}%"))
+                    .where(session_name_matches(legacy_prefix))
                     .order_by(Session.created_at.desc())
                     .limit(1)
                 )

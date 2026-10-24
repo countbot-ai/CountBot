@@ -147,12 +147,9 @@ const handleCopy = async () => {
 }
 
 .action-btn-delete:hover {
-  color: var(--color-error, #ef4444);
-  background: var(--color-error-bg, #fee2e2);
+  color: var(--color-error);
+  background: var(--color-error-bg);
 }
 
-:root[data-theme="dark"] .action-btn-delete:hover {
-  color: #ff6b8a;
-  background: rgba(239, 68, 68, 0.1);
-}
+
 </style>

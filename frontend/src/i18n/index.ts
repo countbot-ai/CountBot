@@ -7,6 +7,19 @@ import { getEffectiveLocale } from './utils/detector'
 import zhCN from './locales/zh-CN.json'
 import enUS from './locales/en-US.json'
 
+// 历史版本迁移：GeneralConfig 曾把语言存进错误的键 'locale'（bootstrap 只认
+// 'CountBot-language'），导致「设置中文保存后刷新变回英文」。首次启动时把旧键
+// 迁移过来，已经用正确键保存过的用户不受影响。
+try {
+    const legacyLocale = localStorage.getItem('locale')
+    if (legacyLocale && !localStorage.getItem('CountBot-language')) {
+        localStorage.setItem('CountBot-language', legacyLocale.startsWith('zh') ? 'zh-CN' : 'en-US')
+    }
+    localStorage.removeItem('locale')
+} catch {
+    // localStorage 不可用（隐私模式等）时跳过迁移，走默认语言
+}
+
 const i18n = createI18n({
     legacy: false,
     locale: getEffectiveLocale(),

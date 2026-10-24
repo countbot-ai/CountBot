@@ -88,36 +88,72 @@
         </label>
         <select v-model="formData.channel" class="form-select">
           <option value="web">{{ $t('cron.channelNames.web') }}</option>
-          <option value="feishu">{{ $t('cron.channelNames.feishu') }}</option>
-          <option value="telegram">{{ $t('cron.channelNames.telegram') }}</option>
-          <option value="dingtalk">{{ $t('cron.channelNames.dingtalk') }}</option>
-          <option value="wecom">{{ $t('cron.channelNames.wecom') }}</option>
-          <option value="wechat">{{ $t('cron.channelNames.wechat') }}</option>
-          <option value="weibo">{{ $t('cron.channelNames.weibo') }}</option>
-          <option value="qq">{{ $t('cron.channelNames.qq') }}</option>
+          <option
+            v-for="option in channelOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
         </select>
+        <p v-if="!channelOptions.length" class="form-hint">
+          {{ $t('cron.noConfiguredChannelHint') }}
+        </p>
 
-        <label class="form-label" style="margin-top: var(--spacing-md)">
-          {{ $t('cron.accountId') }}
-        </label>
-        <Input
-          v-model="formData.accountId"
-          :placeholder="$t('cron.accountIdPlaceholder')"
-        />
-        <p class="form-hint">
-          {{ $t('cron.accountIdHint') }}
-        </p>
-        
-        <label class="form-label" style="margin-top: var(--spacing-md)">
-          {{ $t('cron.chatId') }}
-        </label>
-        <Input
-          v-model="formData.chatId"
-          :placeholder="$t('cron.chatIdPlaceholder')"
-        />
-        <p class="form-hint">
-          {{ $t('cron.chatIdHint') }}
-        </p>
+        <template v-if="formData.channel !== 'web'">
+          <label class="form-label" style="margin-top: var(--spacing-md)">
+            {{ $t('cron.accountId') }}
+          </label>
+          <select
+            v-if="accountOptions.length"
+            v-model="formData.accountId"
+            class="form-select"
+          >
+            <option
+              v-for="account in accountOptions"
+              :key="account.account_id"
+              :value="account.account_id"
+            >
+              {{ account.display_name }}（{{ account.account_id }}）
+            </option>
+          </select>
+          <Input
+            v-else
+            v-model="formData.accountId"
+            :placeholder="$t('cron.accountIdPlaceholder')"
+          />
+          <p class="form-hint">
+            {{ $t('cron.accountIdHint') }}
+          </p>
+
+          <label class="form-label" style="margin-top: var(--spacing-md)">
+            {{ $t('cron.chatId') }}
+          </label>
+          <select
+            v-if="chatOptions.length"
+            :value="selectedChatOption"
+            class="form-select"
+            @change="handleChatOptionChange"
+          >
+            <option
+              v-for="chat in chatOptions"
+              :key="chat.chat_id"
+              :value="chat.chat_id"
+            >
+              {{ formatChatOption(chat) }}
+            </option>
+            <option value="__custom__">{{ $t('cron.chatIdCustom') }}</option>
+          </select>
+          <Input
+            v-if="selectedChatOption === '__custom__' || !chatOptions.length"
+            v-model="formData.chatId"
+            :placeholder="$t('cron.chatIdPlaceholder')"
+            style="margin-top: var(--spacing-sm)"
+          />
+          <p class="form-hint">
+            {{ chatOptions.length ? $t('cron.chatIdPickHint') : $t('cron.chatIdHint') }}
+          </p>
+        </template>
       </div>
 
       <!-- Advanced Options Section -->
@@ -249,13 +285,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Loader2 as LoaderIcon } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import Input from '@/components/ui/Input.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import CronBuilder from './CronBuilder.vue'
+import { useChannelsStore } from '@/store/channels'
 import type { CronJob } from '@/api'
 
 interface Props {
@@ -269,7 +306,82 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
-const { t } = useI18n()
+const { t, te } = useI18n()
+const channelsStore = useChannelsStore()
+
+// 推送目标：直接复用「设置 - 渠道」里已配置好的渠道/账号/历史会话
+const deliveryTargets = computed(() => channelsStore.deliveryTargets)
+
+const channelOptions = computed(() => {
+  const options = deliveryTargets.value.map((target) => ({
+    value: target.channel,
+    label: target.running ? target.name : `${target.name}（${t('cron.channelNotRunning')}）`
+  }))
+
+  // 历史任务可能指向已下线/未配置的渠道，保留原值避免静默改写配置
+  const current = props.job?.channel
+  if (current && current !== 'web' && !options.some((item) => item.value === current)) {
+    const fallbackKey = `cron.channelNames.${current}`
+    options.push({
+      value: current,
+      label: te(fallbackKey) ? t(fallbackKey) : current
+    })
+  }
+
+  return options
+})
+
+const selectedTarget = computed(() =>
+  deliveryTargets.value.find((target) => target.channel === formData.channel) || null
+)
+
+const accountOptions = computed(() => selectedTarget.value?.accounts || [])
+
+const chatOptions = computed(() => {
+  const target = selectedTarget.value
+  if (!target) {
+    return []
+  }
+  const accountId = formData.accountId || 'default'
+  const matched = target.chats.filter((chat) => chat.account_id === accountId)
+  return matched.length ? matched : target.chats
+})
+
+const selectedChatOption = computed(() =>
+  chatOptions.value.some((chat) => chat.chat_id === formData.chatId)
+    ? formData.chatId
+    : '__custom__'
+)
+
+const formatChatOption = (chat: { chat_id: string; is_group: boolean; session_name?: string }) => {
+  const scope = chat.is_group ? t('cron.chatTypeGroup') : t('cron.chatTypeUser')
+  return `${chat.chat_id} · ${scope}`
+}
+
+const handleChatOptionChange = (event: Event) => {
+  const value = (event.target as HTMLSelectElement).value
+  if (value !== '__custom__') {
+    formData.chatId = value
+  }
+}
+
+// 复用渠道设置里已配置的账号，避免手填 account_id
+const syncAccountWithChannel = () => {
+  const target = deliveryTargets.value.find((item) => item.channel === formData.channel)
+  if (!target || !target.accounts.length) {
+    return
+  }
+  if (!target.accounts.some((account) => account.account_id === formData.accountId)) {
+    formData.accountId = target.accounts[0].account_id
+  }
+}
+
+onMounted(() => {
+  void channelsStore.fetchDeliveryTargets()
+})
+
+watch(deliveryTargets, syncAccountWithChannel)
+watch(() => formData.channel, syncAccountWithChannel)
 
 // State
 const saving = ref(false)

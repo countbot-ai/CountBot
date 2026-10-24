@@ -49,12 +49,45 @@ async def system_info():
     }
 
 
+@router.get("/usage")
+async def model_usage(session_id: Optional[str] = None, days: int = 7):
+    """查询模型用量统计。
+
+    Args:
+        session_id: 只统计指定会话；省略时统计全库
+        days: 统计最近多少天，默认 7 天
+    """
+    from backend.modules.session.usage_recorder import summarize_usage
+
+    return await summarize_usage(session_id=session_id, days=days)
+
+
+@router.get("/concurrency")
+async def concurrency_stats():
+    """查询会话并发状态：正在处理与排队中的会话数量。
+
+    用于排查「消息发出后没有反应」类问题——若某会话长时间处于 busy，
+    说明上一轮处理尚未结束，新消息在排队等待。
+    """
+    from backend.modules.agent.session_gate import get_session_gate
+
+    gate = get_session_gate()
+    return {
+        "gate": gate.stats(),
+        "busy_sessions": gate.busy_sessions(),
+        "running_seconds": {
+            session_id: round(seconds, 2)
+            for session_id in gate.busy_sessions()
+            if (seconds := gate.running_seconds(session_id)) is not None
+        },
+    }
+
+
 class NotificationRequest(BaseModel):
     """通知请求模型"""
     title: str
     message: str
     icon: Optional[str] = None
-
 
 class HotkeyRequest(BaseModel):
     """快捷键注册请求"""

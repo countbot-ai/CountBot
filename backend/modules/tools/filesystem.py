@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from backend.modules.tools.base import Tool
+from backend.modules.tools.path_lock import path_write_lock
 from backend.modules.tools.execution import (
     ErrorCategory,
     ExecutionState,
@@ -35,13 +36,17 @@ def _read_failure(category: ErrorCategory, text: str) -> ToolResult:
 class WorkspaceValidator:
     """工作空间验证器 - 确保文件操作在工作空间内"""
 
-    def __init__(self, workspace: Path, restrict_to_workspace: bool = True):
-        self._workspace = workspace.resolve()
+    def __init__(self, workspace: Optional[Path] = None, restrict_to_workspace: Optional[bool] = None):
+        # 显式传入的取值优先于配置：否则构造参数会被运行期配置静默覆盖，
+        # 调用方（含测试）无法把工具限定到指定目录。未传入时跟随配置热切换。
+        self._workspace = workspace.resolve() if workspace is not None else None
         self._restrict_to_workspace = restrict_to_workspace
-        logger.debug(f"WorkspaceValidator initialized with workspace: {self._workspace}")
+        logger.debug(f"WorkspaceValidator initialized with workspace: {self.workspace}")
 
     @property
     def workspace(self) -> Path:
+        if self._workspace is not None:
+            return self._workspace
         try:
             from backend.modules.config.loader import config_loader
             workspace_path = config_loader.config.workspace.path
@@ -49,15 +54,17 @@ class WorkspaceValidator:
                 return Path(workspace_path).resolve()
         except Exception:
             pass
-        return self._workspace
+        return Path.cwd()
 
     @property
     def restrict_to_workspace(self) -> bool:
+        if self._restrict_to_workspace is not None:
+            return self._restrict_to_workspace
         try:
             from backend.modules.config.loader import config_loader
             return config_loader.config.security.restrict_to_workspace
         except Exception:
-            return self._restrict_to_workspace
+            return True
 
     def validate_path(self, path: str) -> Path:
         current_workspace = self.workspace
@@ -79,9 +86,23 @@ class WorkspaceValidator:
 class ReadFileTool(Tool):
     """读取文件工具 - 支持行号显示和按行范围读取"""
 
-    def __init__(self, workspace: Path, skills_loader=None, restrict_to_workspace: bool = True):
+    # 单次读取上限：行数与字符数先到者生效。未设上限时一次读取超大文件会把
+    # 整份内容塞进上下文，直接耗尽模型窗口。
+    MAX_LINES = 2000
+    MAX_CHARS = 50000
+
+    def __init__(
+        self,
+        workspace: Path,
+        skills_loader=None,
+        restrict_to_workspace: bool = True,
+        max_lines: Optional[int] = None,
+        max_chars: Optional[int] = None,
+    ):
         self.validator = WorkspaceValidator(workspace, restrict_to_workspace)
         self.skills_loader = skills_loader
+        self.max_lines = max_lines if max_lines is not None else self.MAX_LINES
+        self.max_chars = max_chars if max_chars is not None else self.MAX_CHARS
         logger.debug("ReadFileTool initialized")
 
     @property
@@ -90,7 +111,11 @@ class ReadFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Read one file or many files. Single-file mode supports optional 1-based line ranges."
+        return (
+            "Read one file or many files. Single-file mode supports optional 1-based "
+            f"line ranges. Output is capped at {self.max_lines} lines or "
+            f"{self.max_chars // 1000}KB; use start_line/end_line to continue."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -124,37 +149,6 @@ class ReadFileTool(Tool):
                 {"required": ["paths"]}
             ],
         }
-
-    async def execute(self, **kwargs: Any) -> str:
-        path_str = kwargs.get("path")
-        paths_list = kwargs.get("paths")
-        start_line = kwargs.get("start_line")
-        end_line = kwargs.get("end_line")
-        show_line_numbers = kwargs.get("show_line_numbers", True)
-
-        # 参数验证：必须提供 path 或 paths 之一
-        if not path_str and not paths_list:
-            return "Error: Either 'path' or 'paths' parameter is required"
-        
-        if path_str and paths_list:
-            return "Error: Provide either 'path' or 'paths', not both"
-
-        # 批量模式：读取多个文件
-        if paths_list:
-            if not isinstance(paths_list, list):
-                return "Error: 'paths' must be an array of strings"
-            
-            if not paths_list:
-                return "Error: 'paths' array is empty"
-            
-            # 批量模式不支持行范围参数
-            if start_line is not None or end_line is not None:
-                return "Error: Line range parameters (start_line/end_line) are not supported in batch mode"
-            
-            return await self._read_multiple_files(paths_list, show_line_numbers)
-        
-        # 单文件模式：保持原有逻辑
-        return await self._read_single_file(path_str, start_line, end_line, show_line_numbers)
 
     async def execute_outcome(self, **kwargs: Any) -> ToolResult:
         path_str = kwargs.get("path")
@@ -221,15 +215,49 @@ class ReadFileTool(Tool):
                 return _read_failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) exceeds total lines ({total})")
             if start > end:
                 return _read_failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) > end_line ({end})")
+
+            # 未显式指定范围时套用默认窗口；显式范围仍受同一上限约束，
+            # 避免调用方传入超大区间绕过保护。
+            requested_end = end
+            clipped_by_lines = False
+            if end - start + 1 > self.max_lines:
+                end = start + self.max_lines - 1
+                clipped_by_lines = True
+
+            output_lines, clipped_by_chars = self._clip_by_chars(
+                lines[start - 1:end],
+            )
+
             if show_line_numbers:
                 width = len(str(end))
-                output_lines = [f"{start + i:>{width}}| {line}" for i, line in enumerate(lines[start - 1:end])]
+                rendered = [
+                    f"{start + i:>{width}}| {line}" for i, line in enumerate(output_lines)
+                ]
             else:
-                output_lines = lines[start - 1:end]
+                rendered = list(output_lines)
+
             header = f"[File: {path_str} | Lines: {total}"
             if start != 1 or end != total:
                 header += f" | Showing: {start}-{end}"
-            return _read_success(header + "]\n" + "\n".join(output_lines))
+            header += "]"
+
+            body = header + "\n" + "\n".join(rendered)
+
+            # 有剩余内容时给出可直接执行的续读参数，避免模型自行猜测行号。
+            # 仅因单行超长被字符预算裁切时不存在「下一行」，给行号提示会误导模型。
+            next_start = start + len(output_lines)
+            has_remaining_lines = next_start <= min(requested_end, total)
+            if clipped_by_lines or (clipped_by_chars and has_remaining_lines) or end < requested_end:
+                body += (
+                    f"\n\n[Showing lines {start}-{next_start - 1} of {total}. "
+                    f"Use start_line={next_start} to continue.]"
+                )
+            if clipped_by_chars:
+                body += (
+                    f"\n[Output truncated at {self.max_chars} characters. "
+                    "Read a narrower line range if you need the remainder.]"
+                )
+            return _read_success(body)
         except PermissionError as exc:
             return _read_failure(ErrorCategory.PERMISSION, f"Error: {exc}")
         except ValueError as exc:
@@ -237,166 +265,57 @@ class ReadFileTool(Tool):
         except Exception as exc:
             return _read_failure(ErrorCategory.EXECUTION, f"Error reading file: {exc}")
 
+    def _clip_by_chars(self, lines: List[str]) -> tuple:
+        """按字符预算截断行窗口。
+
+        行数与字符数是两个独立预算：压缩过的单行长文本可能行数很少但体积很大。
+        返回裁剪后的行与是否因字符数被截断。
+        """
+        budget = self.max_chars
+        kept: List[str] = []
+        used = 0
+        for line in lines:
+            cost = len(line) + 1
+            if kept and used + cost > budget:
+                return kept, True
+            if not kept and cost > budget:
+                # 首行本身就超预算：按字符硬切，保证至少返回部分内容
+                return [line[:budget]], True
+            kept.append(line)
+            used += cost
+        return kept, False
+
     async def _read_multiple_files_outcome(self, paths_list: List[str], show_line_numbers: bool) -> ToolResult:
         rendered: List[str] = []
         failures: List[ErrorCategory] = []
+        # 单文件限额之外还需总量控制：批量读几十个文件时，逐文件限额会累加成
+        # 远超窗口的体积。超出预算后剩余文件只给提示，不再展开内容。
+        batch_budget = self.max_chars * 2
+        used = 0
+        skipped = 0
         for path_str in paths_list:
+            if used >= batch_budget:
+                skipped = len(paths_list) - len(rendered)
+                break
             item = await self._read_single_file_outcome(path_str, None, None, show_line_numbers)
             rendered.append(item.display_text)
+            used += len(item.display_text)
             if item.state is not ExecutionState.SUCCEEDED:
                 failures.append(item.error_category or ErrorCategory.EXECUTION)
         summary = (
-            f"\n{'=' * 60}\n[Batch Read Summary: {len(paths_list) - len(failures)} succeeded, "
+            f"\n{'=' * 60}\n[Batch Read Summary: {len(rendered) - len(failures)} succeeded, "
             f"{len(failures)} failed]\n{'=' * 60}"
         )
+        if skipped:
+            summary += (
+                f"\n[Batch output budget reached; {skipped} file(s) not read. "
+                "Read them in a separate call.]"
+            )
         display_text = "\n\n".join(rendered) + summary
         if not failures:
             return _read_success(display_text)
         category = ErrorCategory.PERMISSION if ErrorCategory.PERMISSION in failures else failures[0]
         return _read_failure(category, display_text)
-
-    async def _read_single_file(
-        self, 
-        path_str: str, 
-        start_line: Optional[int], 
-        end_line: Optional[int], 
-        show_line_numbers: bool
-    ) -> str:
-        """读取单个文件（原有逻辑）"""
-        if not path_str:
-            return "Error: Path parameter is required"
-
-        try:
-            # 禁用技能检查
-            if self.skills_loader:
-                file_path_check = Path(path_str)
-                if not file_path_check.is_absolute():
-                    file_path_check = (self.validator.workspace / path_str).resolve()
-                else:
-                    file_path_check = file_path_check.resolve()
-                if file_path_check.name == "SKILL.md":
-                    skill_name = file_path_check.parent.name
-                    skill = self.skills_loader.get_skill(skill_name)
-                    if skill and not skill.enabled:
-                        logger.warning(f"Blocked read of disabled skill: {skill_name}")
-                        return f"Error: Skill '{skill_name}' is disabled. Enable it first."
-
-            file_path = self.validator.validate_path(path_str)
-            if not file_path.exists():
-                return (
-                    f"Error: File not found: {path_str}. "
-                    f"Next: run list_dir to see existing files."
-                )
-            if not file_path.is_file():
-                return f"Error: Not a file: {path_str}"
-
-            content = self._read_text_content(file_path, path_str)
-            lines = content.splitlines()
-            total = len(lines)
-
-            # 解析行范围
-            s = max(1, int(start_line)) if start_line is not None else 1
-            e = min(total, int(end_line)) if end_line is not None else total
-
-            if s > total:
-                return f"Error: start_line ({s}) exceeds total lines ({total})"
-            if s > e:
-                return f"Error: start_line ({s}) > end_line ({e})"
-
-            selected = lines[s - 1:e]
-
-            # 格式化
-            if show_line_numbers:
-                w = len(str(e))
-                output_lines = [f"{s + i:>{w}}| {line}" for i, line in enumerate(selected)]
-            else:
-                output_lines = selected
-
-            header = f"[File: {path_str} | Lines: {total}"
-            if s != 1 or e != total:
-                header += f" | Showing: {s}-{e}"
-            header += "]"
-
-            logger.info(f"Read file: {path_str} (lines {s}-{e} of {total})")
-            return header + "\n" + "\n".join(output_lines)
-
-        except ValueError as ve:
-            logger.error(f"Failed to read file '{path_str}': {ve}")
-            return f"Error: {ve}"
-        except Exception as ex:
-            logger.error(f"Unexpected error reading file '{path_str}': {ex}")
-            return f"Error reading file: {str(ex)}"
-
-    async def _read_multiple_files(self, paths_list: List[str], show_line_numbers: bool) -> str:
-        """批量读取多个文件"""
-        results = []
-        success_count = 0
-        error_count = 0
-
-        for path_str in paths_list:
-            try:
-                # 禁用技能检查
-                if self.skills_loader:
-                    file_path_check = Path(path_str)
-                    if not file_path_check.is_absolute():
-                        file_path_check = (self.validator.workspace / path_str).resolve()
-                    else:
-                        file_path_check = file_path_check.resolve()
-                    if file_path_check.name == "SKILL.md":
-                        skill_name = file_path_check.parent.name
-                        skill = self.skills_loader.get_skill(skill_name)
-                        if skill and not skill.enabled:
-                            logger.warning(f"Blocked read of disabled skill: {skill_name}")
-                            results.append(f"[File: {path_str}]\nError: Skill '{skill_name}' is disabled. Enable it first.")
-                            error_count += 1
-                            continue
-
-                file_path = self.validator.validate_path(path_str)
-                
-                if not file_path.exists():
-                    results.append(
-                        f"[File: {path_str}]\nError: File not found. "
-                        f"Next: run list_dir to see existing files."
-                    )
-                    error_count += 1
-                    continue
-                
-                if not file_path.is_file():
-                    results.append(f"[File: {path_str}]\nError: Not a file")
-                    error_count += 1
-                    continue
-
-                content = self._read_text_content(file_path, path_str)
-                lines = content.splitlines()
-                total = len(lines)
-
-                # 格式化输出
-                if show_line_numbers:
-                    w = len(str(total))
-                    output_lines = [f"{i + 1:>{w}}| {line}" for i, line in enumerate(lines)]
-                else:
-                    output_lines = lines
-
-                header = f"[File: {path_str} | Lines: {total}]"
-                results.append(header + "\n" + "\n".join(output_lines))
-                success_count += 1
-                logger.info(f"Read file (batch): {path_str} ({total} lines)")
-
-            except ValueError as ve:
-                logger.error(f"Failed to read file '{path_str}' in batch: {ve}")
-                results.append(f"[File: {path_str}]\nError: {ve}")
-                error_count += 1
-            except Exception as ex:
-                logger.error(f"Unexpected error reading file '{path_str}' in batch: {ex}")
-                results.append(f"[File: {path_str}]\nError: {str(ex)}")
-                error_count += 1
-
-        # 添加批量读取摘要
-        summary = f"\n{'='*60}\n[Batch Read Summary: {success_count} succeeded, {error_count} failed]\n{'='*60}"
-        
-        logger.info(f"Batch read completed: {success_count} succeeded, {error_count} failed out of {len(paths_list)} files")
-        
-        return "\n\n".join(results) + summary
 
     @staticmethod
     def _read_text_content(file_path: Path, path_str: str) -> str:
@@ -462,41 +381,6 @@ class WriteFileTool(Tool):
             "required": ["path", "content"],
         }
 
-    async def execute(self, **kwargs: Any) -> str:
-        path_str = kwargs.get("path", "")
-        content = kwargs.get("content", "")
-        mode = kwargs.get("mode", "overwrite")
-
-        if not path_str:
-            return "Error: Path parameter is required"
-
-        try:
-            file_path = self.validator.validate_path(path_str)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if mode == "append":
-                if file_path.exists():
-                    existing = file_path.read_text(encoding="utf-8")
-                    file_path.write_text(existing + content, encoding="utf-8")
-                    total = len(existing) + len(content)
-                    logger.info(f"Appended to file: {path_str} (+{len(content)} chars, total: {total})")
-                    return f"Appended {len(content)} chars to {path_str} (total: {total})"
-                else:
-                    file_path.write_text(content, encoding="utf-8")
-                    logger.info(f"Created file (append, new): {path_str} ({len(content)} chars)")
-                    return f"Created {path_str} with {len(content)} chars (file was new)"
-            else:
-                file_path.write_text(content, encoding="utf-8")
-                logger.info(f"Wrote file: {path_str} ({len(content)} chars)")
-                return f"Wrote {len(content)} chars to {path_str}"
-
-        except ValueError as ve:
-            logger.error(f"Failed to write file '{path_str}': {ve}")
-            return f"Error: {ve}"
-        except Exception as ex:
-            logger.error(f"Unexpected error writing file '{path_str}': {ex}")
-            return f"Error writing file: {str(ex)}"
-
     async def execute_outcome(self, **kwargs: Any) -> ToolResult:
         path_str = kwargs.get("path", "")
         content = kwargs.get("content", "")
@@ -511,22 +395,25 @@ class WriteFileTool(Tool):
         effect_started = False
         try:
             file_path = self.validator.validate_path(path_str)
-            # 已存在文件的追加先读取原内容。这属于准备而非修改；读取或权限失败时，
-            # 可以确定副作用尚未开始。
-            existing = None
-            if mode == "append" and file_path.exists():
-                existing = file_path.read_text(encoding="utf-8")
-            effect_started = True
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            if existing is not None:
-                file_path.write_text(existing + content, encoding="utf-8")
-                display = f"Appended {len(content)} chars to {path_str} (total: {len(existing) + len(content)})"
-            elif mode == "append":
-                file_path.write_text(content, encoding="utf-8")
-                display = f"Created {path_str} with {len(content)} chars (file was new)"
-            else:
-                file_path.write_text(content, encoding="utf-8")
-                display = f"Wrote {len(content)} chars to {path_str}"
+            # 追加模式是读-改-写：读与写之间若插入另一个写入者，会基于旧内容
+            # 覆盖对方结果。整段串行化以避免丢失更新。
+            async with path_write_lock(file_path):
+                # 已存在文件的追加先读取原内容。这属于准备而非修改；读取或权限失败时，
+                # 可以确定副作用尚未开始。
+                existing = None
+                if mode == "append" and file_path.exists():
+                    existing = file_path.read_text(encoding="utf-8")
+                effect_started = True
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                if existing is not None:
+                    file_path.write_text(existing + content, encoding="utf-8")
+                    display = f"Appended {len(content)} chars to {path_str} (total: {len(existing) + len(content)})"
+                elif mode == "append":
+                    file_path.write_text(content, encoding="utf-8")
+                    display = f"Created {path_str} with {len(content)} chars (file was new)"
+                else:
+                    file_path.write_text(content, encoding="utf-8")
+                    display = f"Wrote {len(content)} chars to {path_str}"
             return ToolResult.success(
                 display,
                 retry_safety=RetrySafety.UNSAFE,
@@ -613,46 +500,6 @@ class EditFileTool(Tool):
             "required": ["path"],
         }
 
-    async def execute(self, **kwargs: Any) -> str:
-        path_str = kwargs.get("path", "")
-        old_text = kwargs.get("old_text")
-        new_text = kwargs.get("new_text", "")
-        start_line = kwargs.get("start_line")
-        end_line = kwargs.get("end_line")
-        insert_mode = kwargs.get("insert", False)
-
-        if not path_str:
-            return "Error: Path parameter is required"
-
-        try:
-            file_path = self.validator.validate_path(path_str)
-            if not file_path.exists():
-                return (
-                    f"Error: File not found: {path_str}. "
-                    f"Next: run list_dir to see existing files."
-                )
-
-            content = file_path.read_text(encoding="utf-8")
-
-            if start_line is not None:
-                return self._edit_by_lines(
-                    file_path, path_str, content,
-                    int(start_line),
-                    int(end_line) if end_line is not None else None,
-                    new_text, insert_mode
-                )
-            elif old_text is not None:
-                return self._edit_by_text(file_path, path_str, content, old_text, new_text)
-            else:
-                return "Error: Provide 'old_text' (text mode) or 'start_line' (line mode)"
-
-        except ValueError as ve:
-            logger.error(f"Failed to edit file '{path_str}': {ve}")
-            return f"Error: {ve}"
-        except Exception as ex:
-            logger.error(f"Unexpected error editing file '{path_str}': {ex}")
-            return f"Error editing file: {str(ex)}"
-
     async def execute_outcome(self, **kwargs: Any) -> ToolResult:
         path_str = kwargs.get("path", "")
         old_text = kwargs.get("old_text")
@@ -667,130 +514,93 @@ class EditFileTool(Tool):
                 retry_safety=RetrySafety.UNSAFE,
                 side_effect_state=SideEffectState.NOT_ATTEMPTED,
             )
-        effect_started = False
+        # 用可变容器把「是否已进入写入」回传给异常分支：编辑被拆到独立方法后，
+        # 局部变量无法跨方法共享，而副作用是否已发生决定了失败能否重试。
+        effect = {"started": False}
         try:
             file_path = self.validator.validate_path(path_str)
-            if not file_path.exists():
-                return ToolResult.failure(
-                    ErrorCategory.VALIDATION,
-                    f"Error: File not found: {path_str}. Next: run list_dir to see existing files.",
-                    retry_safety=RetrySafety.UNSAFE,
-                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            # 编辑同样是读-改-写：先读全文、改完再整体覆盖写回。若不串行化，
+            # 并发编辑会基于同一份旧内容各自计算，后写者覆盖前者的改动。
+            async with path_write_lock(file_path):
+                return self._apply_edit(
+                    file_path, path_str, old_text, new_text,
+                    start_line, end_line, insert_mode, effect,
                 )
-            content = file_path.read_text(encoding="utf-8")
-            if start_line is None and old_text is None:
-                return ToolResult.failure(
-                    ErrorCategory.VALIDATION,
-                    "Error: Provide 'old_text' (text mode) or 'start_line' (line mode)",
-                    retry_safety=RetrySafety.UNSAFE,
-                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
-                )
-            if start_line is None:
-                if not old_text:
-                    return ToolResult.failure(ErrorCategory.VALIDATION, "Error: old_text is required for text replace mode", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
-                if old_text not in content:
-                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: old_text not found in file ({len(content.splitlines())} lines, {len(content)} chars). Use read_file to check exact content.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
-                count = content.count(old_text)
-                if count > 1:
-                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Warning: old_text found {count} times. Add more context to make it unique.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
-                effect_started = True
-                file_path.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
-                display = f"Edited {path_str} (replaced 1 occurrence)"
-            else:
-                lines = content.splitlines(keepends=True)
-                total = len(lines)
-                start = int(start_line)
-                end = int(end_line) if end_line is not None else start
-                if start < 1 or start > total + 1:
-                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) out of range (1-{total})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
-                if not insert_mode and end < start:
-                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: end_line ({end}) < start_line ({start})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
-                if not insert_mode and end > total:
-                    return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: end_line ({end}) exceeds total lines ({total})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
-                new_lines = new_text.splitlines(keepends=True) if new_text else []
-                if new_lines and not new_lines[-1].endswith("\n"):
-                    new_lines[-1] += "\n"
-                if insert_mode:
-                    result = lines[: start - 1] + new_lines + lines[start - 1 :]
-                    display = f"Inserted {len(new_lines)} lines before line {start} in {path_str}"
-                else:
-                    result = lines[: start - 1] + new_lines + lines[end:]
-                    action = f"Deleted lines {start}-{end}" if not new_text else f"Replaced lines {start}-{end} with {len(new_lines)} lines"
-                    display = f"Edited {path_str}: {action}"
-                effect_started = True
-                file_path.write_text("".join(result), encoding="utf-8")
-            return ToolResult.success(display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
         except (ValueError, PermissionError) as exc:
-            if effect_started:
+            if effect["started"]:
                 return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error: {exc}", retry_safety=RetrySafety.UNSAFE)
             return ToolResult.failure(ErrorCategory.PERMISSION if isinstance(exc, PermissionError) else ErrorCategory.VALIDATION, f"Error: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
         except Exception as exc:
-            if effect_started:
+            if effect["started"]:
                 return ToolResult.unknown_outcome(ErrorCategory.EXECUTION, f"Error editing file: {exc}", retry_safety=RetrySafety.UNSAFE)
             return ToolResult.failure(ErrorCategory.EXECUTION, f"Error editing file: {exc}", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
-    def _edit_by_text(self, file_path: Path, path_str: str, content: str,
-                      old_text: str, new_text: str) -> str:
-        if not old_text:
-            return "Error: old_text is required for text replace mode"
-        if old_text not in content:
-            total = len(content.splitlines())
-            return (
-                f"Error: old_text not found in file ({total} lines, {len(content)} chars). "
-                f"Use read_file to check exact content."
+    def _apply_edit(
+        self,
+        file_path: Path,
+        path_str: str,
+        old_text: Optional[str],
+        new_text: str,
+        start_line: Optional[int],
+        end_line: Optional[int],
+        insert_mode: bool,
+        effect: dict,
+    ) -> ToolResult:
+        """在持有路径锁的前提下执行编辑。
+
+        ``effect`` 在进入写入前被置为 True，供调用方在异常时判定副作用是否已发生。
+        """
+        if not file_path.exists():
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                f"Error: File not found: {path_str}. Next: run list_dir to see existing files.",
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
             )
-        count = content.count(old_text)
-        if count > 1:
-            return f"Warning: old_text found {count} times. Add more context to make it unique."
+        content = file_path.read_text(encoding="utf-8")
+        if start_line is None and old_text is None:
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                "Error: Provide 'old_text' (text mode) or 'start_line' (line mode)",
+                retry_safety=RetrySafety.UNSAFE,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+        if start_line is None:
+            if not old_text:
+                return ToolResult.failure(ErrorCategory.VALIDATION, "Error: old_text is required for text replace mode", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+            if old_text not in content:
+                return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: old_text not found in file ({len(content.splitlines())} lines, {len(content)} chars). Use read_file to check exact content.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+            count = content.count(old_text)
+            if count > 1:
+                return ToolResult.failure(ErrorCategory.VALIDATION, f"Warning: old_text found {count} times. Add more context to make it unique.", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+            effect["started"] = True
+            file_path.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
+            return ToolResult.success(f"Edited {path_str} (replaced 1 occurrence)", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
 
-        new_content = content.replace(old_text, new_text, 1)
-        file_path.write_text(new_content, encoding="utf-8")
-        logger.info(f"Edited file (text replace): {path_str}")
-        return f"Edited {path_str} (replaced 1 occurrence)"
-
-    def _edit_by_lines(self, file_path: Path, path_str: str, content: str,
-                       start_line: int, end_line: Optional[int],
-                       new_text: str, insert_mode: bool) -> str:
         lines = content.splitlines(keepends=True)
         total = len(lines)
+        start = int(start_line)
+        end = int(end_line) if end_line is not None else start
+        if start < 1 or start > total + 1:
+            return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: start_line ({start}) out of range (1-{total})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        if not insert_mode and end < start:
+            return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: end_line ({end}) < start_line ({start})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
+        if not insert_mode and end > total:
+            return ToolResult.failure(ErrorCategory.VALIDATION, f"Error: end_line ({end}) exceeds total lines ({total})", retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
-        if start_line < 1 or start_line > total + 1:
-            return f"Error: start_line ({start_line}) out of range (1-{total})"
-
+        new_lines = new_text.splitlines(keepends=True) if new_text else []
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines[-1] += "\n"
         if insert_mode:
-            new_lines = new_text.splitlines(keepends=True)
-            if new_lines and not new_lines[-1].endswith("\n"):
-                new_lines[-1] += "\n"
-            idx = start_line - 1
-            result = lines[:idx] + new_lines + lines[idx:]
-            file_path.write_text("".join(result), encoding="utf-8")
-            logger.info(f"Inserted {len(new_lines)} lines before line {start_line}: {path_str}")
-            return f"Inserted {len(new_lines)} lines before line {start_line} in {path_str}"
-
-        if end_line is None:
-            end_line = start_line
-        if end_line < start_line:
-            return f"Error: end_line ({end_line}) < start_line ({start_line})"
-        if end_line > total:
-            return f"Error: end_line ({end_line}) exceeds total lines ({total})"
-
-        if new_text:
-            new_lines = new_text.splitlines(keepends=True)
-            if new_lines and not new_lines[-1].endswith("\n"):
-                new_lines[-1] += "\n"
+            result = lines[: start - 1] + new_lines + lines[start - 1 :]
+            display = f"Inserted {len(new_lines)} lines before line {start} in {path_str}"
         else:
-            new_lines = []
-
-        result = lines[:start_line - 1] + new_lines + lines[end_line:]
+            result = lines[: start - 1] + new_lines + lines[end:]
+            action = f"Deleted lines {start}-{end}" if not new_text else f"Replaced lines {start}-{end} with {len(new_lines)} lines"
+            display = f"Edited {path_str}: {action}"
+        effect["started"] = True
         file_path.write_text("".join(result), encoding="utf-8")
-
-        if not new_text:
-            action = f"Deleted lines {start_line}-{end_line}"
-        else:
-            action = f"Replaced lines {start_line}-{end_line} with {len(new_lines)} lines"
-        logger.info(f"Line edit: {path_str} - {action}")
-        return f"Edited {path_str}: {action}"
-
+        return ToolResult.success(display, retry_safety=RetrySafety.UNSAFE, side_effect_state=SideEffectState.COMMITTED)
 
 class ListDirTool(Tool):
     """列出目录工具"""
@@ -819,32 +629,6 @@ class ListDirTool(Tool):
                 },
             },
         }
-
-    async def execute(self, **kwargs: Any) -> str:
-        path_str = kwargs.get("path", ".")
-        try:
-            dir_path = self.validator.validate_path(path_str)
-            if not dir_path.exists():
-                raise FileNotFoundError(f"Directory not found: {path_str}")
-            if not dir_path.is_dir():
-                raise ValueError(f"Not a directory: {path_str}")
-
-            items = []
-            for item in sorted(dir_path.iterdir()):
-                item_type = "dir" if item.is_dir() else "file"
-                size = item.stat().st_size if item.is_file() else 0
-                items.append(f"{item_type:4} {item.name:40} {size:>10} bytes")
-
-            result = f"Contents of {path_str}:\n" + "\n".join(items)
-            logger.info(f"Listed directory: {path_str} ({len(items)} items)")
-            return result
-
-        except (ValueError, FileNotFoundError) as e:
-            logger.error(f"Failed to list directory '{path_str}': {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error listing directory '{path_str}': {e}")
-            raise
 
     async def execute_outcome(self, **kwargs: Any) -> ToolResult:
         path_str = kwargs.get("path", ".")

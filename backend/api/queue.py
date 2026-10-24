@@ -13,6 +13,9 @@ class QueueStatsResponse(BaseModel):
     inbound_size: int
     outbound_size: int
     active_tasks: int
+    # 会话闸门统计（忙碌/排队/累计等待），由 handler.get_queue_stats() 返回；
+    # 未在此声明的话 FastAPI 会按模型过滤掉该字段
+    session_gate: Optional[dict] = None
     rate_limiter: Optional[dict]
 
 

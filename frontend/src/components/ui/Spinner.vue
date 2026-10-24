@@ -93,13 +93,11 @@ const strokeWidth = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-bg-elevated);
   z-index: 9998;
 }
 
-[data-theme='dark'] .spinner-wrapper.spinner-fullscreen {
-  background: rgba(15, 23, 42, 0.9);
-}
+
 
 .spinner {
   display: inline-block;
@@ -147,7 +145,7 @@ const strokeWidth = computed(() => {
 }
 
 .spinner-white .spinner-path {
-  stroke: #ffffff;
+  stroke: var(--color-text-inverse);
 }
 
 .spinner-text {

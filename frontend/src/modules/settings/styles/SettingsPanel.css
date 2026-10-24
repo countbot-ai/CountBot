@@ -103,16 +103,16 @@
 
 .nav-item:hover {
   background: var(--bg-hover) !important;
-  border-color: rgba(148, 163, 184, 0.16) !important;
+  border-color: var(--color-border-primary) !important;
   color: var(--text-primary) !important;
   box-shadow: none !important;
 }
 
 .nav-item.active {
-  border-color: rgba(96, 165, 250, 0.26) !important;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(14, 165, 233, 0.08) 100%) !important;
-  color: var(--color-primary) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: none !important;
 }
 
 .nav-item:focus {
@@ -122,8 +122,8 @@
 
 .nav-item:focus-visible {
   outline: none !important;
-  border-color: rgba(96, 165, 250, 0.34) !important;
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14) !important;
+  border-color: var(--color-border-primary) !important;
+  box-shadow: none !important;
 }
 
 .nav-icon {
@@ -152,16 +152,9 @@
   border-radius: 0 2px 2px 0;
 }
 
-:root[data-theme='dark'] .nav-item.active {
-  border-color: rgba(96, 165, 250, 0.28) !important;
-  background: linear-gradient(135deg, rgba(30, 64, 175, 0.32), rgba(8, 145, 178, 0.2)) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
-}
 
-:root[data-theme='dark'] .nav-item:focus-visible {
-  border-color: rgba(127, 181, 214, 0.38) !important;
-  box-shadow: 0 0 0 3px rgba(127, 181, 214, 0.18) !important;
-}
+
+
 
 /* 主内容区 */
 .main-content {
@@ -215,7 +208,6 @@
   padding: 16px 32px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-primary);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .footer-content {
@@ -272,24 +264,25 @@
   border-color: var(--text-tertiary);
 }
 
-/* 保存按钮 - 灰色 */
+/* 保存按钮 - 主色 */
 .action-button-save {
-  background: #475569;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 .action-button-save:hover:not(:disabled) {
-  background: #334155;
+  background: var(--color-primary-hover);
 }
 
-/* 保存全部按钮 - 深灰色 */
+/* 保存全部按钮 - 次级 */
 .action-button-save-all {
-  background: #1e293b;
-  color: white;
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--color-border-primary);
 }
 
 .action-button-save-all:hover:not(:disabled) {
-  background: #0f172a;
+  background: var(--hover-bg);
 }
 
 /* 加载动画 */
@@ -428,7 +421,7 @@
 
 .persona-tab-btn.active {
   color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+  border-bottom-color: var(--text-secondary);
 }
 
 .persona-tab-content {

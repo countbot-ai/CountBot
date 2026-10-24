@@ -151,6 +151,7 @@
           :handleChange="handleChange"
           :botKey="primaryBot._draft_key"
           :isPrimary="true"
+          :expanded="primaryExpanded"
         />
       </div>
     </div>
@@ -304,6 +305,7 @@
           :handleChange="handleChange"
           :botKey="account._draft_key"
           :isPrimary="false"
+          :expanded="isAccountExpanded(account._draft_key)"
         />
       </div>
     </div>

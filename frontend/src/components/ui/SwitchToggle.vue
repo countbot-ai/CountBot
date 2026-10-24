@@ -87,10 +87,10 @@ function handleChange(event: Event) {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--color-border-primary);
   border-radius: 999px;
-  background: var(--bg-tertiary, #dbe3ee);
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+  background: var(--bg-tertiary);
+  box-shadow: var(--shadow-sm);
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
@@ -105,10 +105,10 @@ function handleChange(event: Event) {
   left: var(--switch-padding);
   width: var(--switch-thumb-size);
   height: var(--switch-thumb-size);
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--color-border-primary);
   border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.16);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
   transition:
     transform 0.2s ease,
     background-color 0.2s ease,
@@ -117,9 +117,9 @@ function handleChange(event: Event) {
 }
 
 .switch-toggle-input:checked + .switch-toggle-track {
-  border-color: var(--color-success, #10b981);
-  background: var(--color-success, #10b981);
-  box-shadow: 0 8px 18px rgba(16, 185, 129, 0.18);
+  border-color: var(--color-success);
+  background: var(--color-success);
+  box-shadow: var(--shadow-sm);
 }
 
 .switch-toggle-input:checked + .switch-toggle-track::before {
@@ -127,9 +127,7 @@ function handleChange(event: Event) {
 }
 
 .switch-toggle-input:focus-visible + .switch-toggle-track {
-  box-shadow:
-    0 0 0 3px rgba(16, 185, 129, 0.2),
-    inset 0 1px 2px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 .switch-toggle:hover .switch-toggle-track {
@@ -147,21 +145,9 @@ function handleChange(event: Event) {
   cursor: not-allowed;
 }
 
-:root[data-theme='dark'] .switch-toggle-track {
-  background: rgba(8, 12, 22, 0.96);
-  border-color: rgba(48, 67, 92, 0.92);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.38);
-}
 
-:root[data-theme='dark'] .switch-toggle-track::before {
-  background: #9caec4;
-  border-color: rgba(0, 240, 255, 0.16);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
-}
 
-:root[data-theme='dark'] .switch-toggle-input:checked + .switch-toggle-track {
-  border-color: var(--color-success, #10b981);
-  background: var(--color-success, #10b981);
-  box-shadow: 0 10px 22px rgba(108, 180, 157, 0.24);
-}
+
+
+
 </style>

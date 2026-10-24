@@ -202,7 +202,7 @@
 }
 
 .pattern-card.builtin {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.03) 0%, rgba(220, 38, 38, 0.03) 100%);
+  background: linear-gradient(135deg, var(--color-error-light) 0%, var(--color-error-light) 100%);
   border-left: 3px solid var(--color-error);
 }
 
@@ -224,7 +224,7 @@
 }
 
 .pattern-icon.danger {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--color-error-light);
   color: var(--color-error);
 }
 
@@ -339,8 +339,8 @@
 
 .pattern-input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha);
+  border-color: var(--color-border-strong);
+  box-shadow: 0 0 0 3px var(--color-border-primary);
 }
 
 .pattern-input::placeholder {
@@ -428,8 +428,8 @@
 
 .number-input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-alpha);
+  border-color: var(--color-border-strong);
+  box-shadow: 0 0 0 3px var(--color-border-primary);
 }
 
 .input-suffix {

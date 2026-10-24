@@ -53,7 +53,6 @@
         "refresh": "Refresh",
         "saveSuccess": "Saved successfully",
         "saveFailed": "Failed to save",
-        "optional": "Optional",
         "enable": "Enable",
         "disable": "Disable",
         "default": "Default"
@@ -113,6 +112,8 @@
         "skills": "Skills Library",
         "cron": "Scheduler",
         "timeline": "Timeline",
+        "wiki": "Wiki",
+        "wikiTooltip": "Manage local wiki",
         "sessionsTooltip": "View session history",
         "memoryTooltip": "View memory bank",
         "multiagentTooltip": "Open multi-agent settings",
@@ -156,7 +157,10 @@
             "collapse": "Collapse",
             "expand": "Expand",
             "show": "Show Thinking Process",
-            "hide": "Hide Thinking Process"
+            "hide": "Hide Thinking Process",
+            "thinkingNow": "Thinking",
+            "thought": "Thought process",
+            "thoughtFor": "Thought for {seconds}s"
         },
         "mermaid": {
             "title": "Mermaid Diagram",
@@ -368,7 +372,8 @@
             "lines": "{count} lines",
             "previewOnly": "Only the history preview is shown right now. Expanding will fetch the full result.",
             "loadingDetail": "Loading full tool output...",
-            "loadDetailFailed": "Failed to load tool details"
+            "loadDetailFailed": "Failed to load tool details",
+            "unknownTool": "Tool call"
         },
         "names": {
             "read_file": "Read File",
@@ -388,6 +393,7 @@
             "run_command": "Run Command",
             "execute_script": "Execute Script",
             "web_fetch": "Fetch Web Page",
+            "web_search": "Web search",
             "spawn": "Spawn Sub-Agent",
             "external_coding_agent": "External Coding Agent",
             "workflow_run": "Run Workflow",
@@ -471,7 +477,8 @@
             "providerModel": "Save applies provider and model together",
             "channels": "Only saves the current channel config",
             "externalTools": "This page saves independently",
-            "noSave": "This page has no shared save action"
+            "noSave": "This page has no shared save action",
+            "injection": "Changes on this page are saved automatically and hot-applied"
         },
         "saveAll": "Save All",
         "saveAllSuccess": "All settings saved",
@@ -486,7 +493,8 @@
             "channels": "IM Channels",
             "mcp": "MCP",
             "externaltools": "Coding Tools",
-            "multiagent": "Multi-Agent"
+            "multiagent": "Multi-Agent",
+            "injection": "Injection"
         },
         "tabShort": {
             "general": "General",
@@ -499,11 +507,12 @@
             "channels": "IM Channels",
             "mcp": "MCP",
             "externaltools": "Coding Tools",
-            "multiagent": "Multi-Agent"
+            "multiagent": "Multi-Agent",
+            "injection": "Injection"
         },
         "mcp": {
             "title": "MCP Tool Integration",
-            "description": "Connect external MCP Servers to extend AI tool capabilities",
+            "description": "Description",
             "enabled": "Enabled",
             "disabled": "Disabled",
             "enableMcp": "Enable MCP",
@@ -522,7 +531,6 @@
             "saveError": "Save failed",
             "noServers": "No MCP servers configured. Click 'Add Server' to get started",
             "serverNamePlaceholder": "Server name",
-            "description": "Description",
             "descriptionPlaceholder": "Describe what this MCP server is for",
             "transport": "Transport",
             "command": "Command",
@@ -908,6 +916,11 @@
             "maxIterationsDesc": "Maximum number of tool calls the agent can make to prevent infinite loops.",
             "thinkingEnabled": "Enable Thinking",
             "thinkingEnabledDesc": "When disabled, CountBot will prefer a direct answer. On supported models or gateways, this usually reduces time-to-first-token. If reasoning still comes back, CountBot will keep showing it, which means the upstream side did not actually disable reasoning.",
+            "imageInput": "Image Input",
+            "imageInputDesc": "Choose whether images are sent as multimodal content or only as workspace paths for the image skill. Auto mode detects by model name; select Supported for custom models.",
+            "imageInputAuto": "Auto",
+            "imageInputOn": "Supported",
+            "imageInputOff": "Not supported",
             "thinkingProviderStatus": "Current provider capability: {tier} · {group}"
         },
         "persona": {
@@ -1113,6 +1126,15 @@
             "testNote": "Note: Full connection test will be performed after enabling the channel",
             "configUpdated": "Configuration updated",
             "restartNotice": "Channel configuration changes require application restart to take effect. Please restart the application to apply new configuration.",
+            "deliveryError": "Last message delivery failed:",
+            "runtimeState": {
+                "starting": "Starting",
+                "connecting": "Connecting",
+                "running": "Running",
+                "stopping": "Stopping",
+                "stopped": "Stopped",
+                "failed": "Connection failed"
+            },
             "enableChannel": {
                 "message": "Channel is not enabled. Configuration will not take effect. Please turn on the enable switch to activate the channel."
             },
@@ -1160,6 +1182,32 @@
                 "profilePlaceholder": "Not set",
                 "noProfiles": "Add a tool in the Coding Tools tab first.",
                 "profileDisabled": "disabled"
+            },
+            "onboarding": {
+                "statusLabel": "Binding Status",
+                "idle": "QR binding has not started yet.",
+                "statusIdle": "Idle",
+                "statusStarting": "Generating QR code",
+                "statusWaiting": "Waiting for scan",
+                "statusConfirmed": "Bound",
+                "statusExpired": "Expired",
+                "statusError": "Error",
+                "start": "Scan to Bind",
+                "startingButton": "Generating...",
+                "restart": "Scan Again",
+                "check": "Check Status",
+                "polling": "Checking...",
+                "startingMessage": "Requesting a QR code from the backend...",
+                "waitingMessage": "Scan the QR code with your phone and finish authorization on the page.",
+                "confirmedMessage": "Bound successfully. Credentials are saved and the channel is enabled.",
+                "expiredMessage": "The QR code has expired. Please start a new scan.",
+                "errorMessage": "QR binding failed. Retry or configure the credentials manually.",
+                "startFailed": "Failed to generate QR code",
+                "pollFailed": "Failed to query QR binding status",
+                "qrAlt": "QR binding code",
+                "openAuthPage": "Open authorization page",
+                "userCode": "Code: {code}",
+                "boundAccount": "Bound account: {id}"
             },
             "catalog": {
                 "telegram": {
@@ -1229,6 +1277,8 @@
             "qq": {
                 "enabled": "Connect QQ Bot",
                 "enableHint": "After enabling the QQ channel, you can manage bot instances and receive messages.",
+                "onboardingTitle": "Scan to Bind QQ Bot",
+                "onboardingHint": "Scan with mobile QQ, then create or select a bot on the page. CountBot saves the App ID and Secret and enables the channel automatically.",
                 "disabledWarning": "The channel is disabled, so the configuration will not take effect",
                 "guideTitle": "Setup Guide",
                 "guideConsoleLink": "Open Link",
@@ -1291,6 +1341,8 @@
             "dingtalk": {
                 "enabled": "Connect DingTalk Bot",
                 "enableHint": "After enabling the DingTalk channel, you can manage bot instances and receive messages.",
+                "onboardingTitle": "Scan to Bind DingTalk Bot",
+                "onboardingHint": "Scan with DingTalk, then create a bot in one click. CountBot saves the Client ID and Secret and enables the channel automatically.",
                 "disabledWarning": "The channel is disabled, so the configuration will not take effect",
                 "guideTitle": "Setup Guide",
                 "guideLink": "Open Link",
@@ -1310,6 +1362,8 @@
             "feishu": {
                 "enabled": "Connect Feishu Bot",
                 "enableHint": "After enabling the Feishu channel, you can manage bot instances and receive messages.",
+                "onboardingTitle": "Scan to Create Feishu Bot",
+                "onboardingHint": "Scan with Feishu to authorize and create a personal agent app. CountBot saves the App ID and Secret and enables the channel automatically.",
                 "disabledWarning": "The channel is disabled, so the configuration will not take effect",
                 "guideTitle": "Setup Guide",
                 "guideLink": "Open Link",
@@ -1327,6 +1381,12 @@
                 "verificationToken": "Verification Token",
                 "verificationTokenPlaceholder": "Enter Verification Token (optional)",
                 "verificationTokenHint": "For event verification, optional",
+                "groupEnabled": "Respond in group chats",
+                "groupEnabledHint": "When off, the bot only handles private chats and ignores group messages.",
+                "groupRequireMention": "Require @mention in groups",
+                "groupRequireMentionHint": "Only group messages that mention the bot trigger a task, avoiding accidental replies.",
+                "groupTopicEnabled": "Isolate sessions by topic",
+                "groupTopicEnabledHint": "Each Feishu topic keeps its own context and replies stay inside the same topic.",
                 "allowFrom": "Allowed Users",
                 "userIdPlaceholder": "User ID",
                 "allowFromHint": "Leave empty to allow all users, or add specific user IDs",
@@ -1335,6 +1395,8 @@
             "wecom": {
                 "enabled": "Connect WeCom Bot",
                 "enableHint": "After enabling the WeCom channel, you can manage bot instances and receive messages.",
+                "onboardingTitle": "Scan to Bind WeCom Bot",
+                "onboardingHint": "Scan with WeCom, then create a smart robot on the page. CountBot saves the Bot ID and Secret and enables the channel automatically.",
                 "disabledWarning": "The channel is disabled, so the configuration will not take effect",
                 "guideTitle": "Setup Guide",
                 "guideLink": "Open Link",
@@ -1519,6 +1581,31 @@
                     "reviewTask": "Check task completion quality"
                 }
             }
+        },
+        "injection": {
+            "title": "Context Injection",
+            "description": "Control what is injected into each LLM request. Disabling unnecessary injections saves tokens and keeps responses focused. Changes are saved automatically and take effect without restart.",
+            "coreRules": "Core Rules Block",
+            "coreRulesDesc": "CountBot rules, tool & execution, files & skills, memory, knowledge base, safety. When off, only a minimal identity (name, runtime, dirs, personality) remains.",
+            "externalCodingGuidance": "External Coding Agent Guidance",
+            "externalCodingGuidanceDesc": "Usage notes for external_coding_agent (claude/codex). When off, the guidance line is removed from the rules block.",
+            "skillsSummary": "Available Skills Summary",
+            "skillsSummaryDesc": "Name + description list of all enabled skills; the model uses it to decide when to read SKILL.md.",
+            "skillsAlways": "Always-on Skills Full Text",
+            "skillsAlwaysDesc": "Skills with always=true in frontmatter are injected in full into the system prompt. No cost when no always skills exist.",
+            "agentTeams": "Multi-Agent Teams Block",
+            "agentTeamsDesc": "Active team names, modes, members, and the team-name mention -> workflow_run rule.",
+            "dynamicContext": "Dynamic Context",
+            "dynamicContextDesc": "When off, current time, user name, output language, session summary and channel info are no longer sent — the model won't know the time or how to address you. Assistant name, personality and environment are covered by Core Rules instead.",
+            "teamReminder": "Team Mention Reminder",
+            "teamReminderDesc": "Injects a long workflow_run instruction block when a team name is mentioned. When off, only the lightweight teams block remains.",
+            "autoMemorySummary": "Auto Memory Maintenance",
+            "autoMemorySummaryDesc": "Background LLM calls that summarize overflow history and whole sessions into MEMORY.md. Turning off stops these background calls (manual memory tool unaffected).",
+            "toolsWarning": "Disabling core tools (read_file / write_file / edit_file / exec) breaks the read & execute chain of most skills. Use with caution.",
+            "toolCore": "Core",
+            "saveHint": "Changes are saved automatically and hot-applied. Toggling switches changes the system prompt, so the prompt cache rebuilds on the next request.",
+            "disabledTools": "Tool Switches",
+            "disabledToolsDesc": "Unchecked tools are removed from tool definitions and cannot be called. Each definition costs roughly 120-750 tokens."
         }
     },
     "memory": {
@@ -1855,6 +1942,12 @@
         "chatId": "Chat ID",
         "chatIdPlaceholder": "Enter group ID or user ID",
         "chatIdHint": "Feishu group ID, Telegram chat ID, etc.",
+        "chatIdCustom": "Enter chat ID manually",
+        "chatIdPickHint": "Pick from existing channel chats, or choose manual entry for a new target",
+        "chatTypeGroup": "Group",
+        "chatTypeUser": "Direct",
+        "channelNotRunning": "not running",
+        "noConfiguredChannelHint": "No delivery channel available. Configure one in Settings - Channels first",
         "channelNames": {
             "web": "Web",
             "feishu": "Feishu",

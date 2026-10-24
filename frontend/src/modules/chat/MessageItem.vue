@@ -14,15 +14,16 @@
       <component
         v-else
         :is="avatarIcon"
-        :size="16"
+        :size="15"
       />
     </div>
+
     <div class="message-body">
-      <!-- 交织模式：文字和工具调用交织显示 -->
+      <!-- 交织模式：思考 → 正文 → 工具行，按发生顺序摊开，不套卡片 -->
       <div
         v-if="useInterleavedMode && !message.isThinking"
         key="interleaved-mode"
-        class="assistant-response-shell assistant-response-shell-interleaved"
+        class="assistant-response-shell"
       >
         <ReasoningBlock
           v-if="message.reasoningContent && message.role === 'assistant'"
@@ -40,67 +41,63 @@
         />
       </div>
 
-      <!-- 传统模式：工具调用在上，文字在下 -->
+      <!-- 传统模式：工具 / 工作流 / 正文依次排列 -->
       <div v-else key="traditional-mode" class="message-main">
-        <!-- 普通工具调用显示 -->
-        <div
-          v-if="shouldShowToolCallsSection"
-          class="tool-calls-container"
-        >
-          <div class="tool-calls-header" @click="toggleToolCalls">
-            <component :is="WrenchIcon" :size="14" class="tool-calls-icon" />
+        <!-- 普通工具调用：一条时直接排开，多条才给一个可折叠的分组标题 -->
+        <div v-if="shouldShowToolCallsSection" class="tool-calls">
+          <div v-if="showToolCallsHead" class="tool-calls-head" @click="toggleToolCalls">
+            <component :is="WrenchIcon" :size="13" class="tool-calls-glyph" />
             <span class="tool-calls-title">{{ $t('tools.toolCalls') || 'Tool Calls' }}</span>
-            <span class="tool-calls-count">{{ totalToolCallCount }}</span>
-            <component :is="ChevronDownIcon" :size="14" class="tool-calls-chevron" :class="{ expanded: toolCallsExpanded }" />
+            <span class="tool-calls-count">· {{ totalToolCallCount }}</span>
+            <component :is="ChevronDownIcon" :size="13" class="tool-calls-chevron" :class="{ expanded: toolCallsExpanded }" />
           </div>
           <transition name="slide-list">
-            <div v-if="toolCallsExpanded" class="tool-calls-list">
-              <div
+            <div v-if="isToolCallsListVisible" class="tool-calls-list">
+              <p
                 v-if="shouldFetchHistoryToolCalls && !historyToolCallsLoaded && !historyToolCallsLoading"
                 class="tool-calls-note"
               >
                 为避免历史消息卡顿，工具调用按需加载。
-              </div>
-              <div v-if="historyToolCallsLoading" class="tool-calls-loading">
-                <component :is="Loader2Icon" :size="14" class="spin" />
+              </p>
+              <div v-if="historyToolCallsLoading" class="tool-calls-note">
+                <component :is="Loader2Icon" :size="13" class="spin" />
                 <span>工具调用加载中...</span>
               </div>
-              <div v-if="historyToolCallsError" class="tool-calls-error">
-                {{ historyToolCallsError }}
-              </div>
-              <template v-for="(toolCall, index) in regularToolCalls" :key="toolCall.id || index">
-                <!-- 普通工具调用 -->
-                <ToolCallCard
-                  :tool-id="toolCall.id"
-                  :tool-name="toolCall.name"
-                  :arguments="toolCall.arguments"
-                  :status="toolCall.status || 'success'"
-                  :result="toolCall.result"
-                  :error="toolCall.error"
-                  :duration="toolCall.duration"
-                  :detail-available="toolCall.detailAvailable"
-                  :detail-loaded="toolCall.detailLoaded"
-                  :result-truncated="toolCall.resultTruncated"
-                  :error-truncated="toolCall.errorTruncated"
-                  :progress="toolCall.progress"
-                  :progress-message="toolCall.progressMessage"
-                  :progress-details="toolCall.progressDetails"
-                  :timestamp="message.timestamp"
-                  :default-collapsed="true"
-                  :is-replaying="isReplaying"
-                  :show-result="shouldShowToolResult(toolCall.id)"
-                  context-kind="main"
-                />
-              </template>
-              <div
+              <p v-if="historyToolCallsError" class="tool-calls-error">{{ historyToolCallsError }}</p>
+
+              <ToolCallCard
+                v-for="(toolCall, index) in regularToolCalls"
+                :key="toolCall.id || index"
+                :tool-id="toolCall.id"
+                :tool-name="toolCall.name"
+                :arguments="toolCall.arguments"
+                :status="toolCall.status || 'success'"
+                :result="toolCall.result"
+                :error="toolCall.error"
+                :duration="toolCall.duration"
+                :detail-available="toolCall.detailAvailable"
+                :detail-loaded="toolCall.detailLoaded"
+                :result-truncated="toolCall.resultTruncated"
+                :error-truncated="toolCall.errorTruncated"
+                :progress="toolCall.progress"
+                :progress-message="toolCall.progressMessage"
+                :progress-details="toolCall.progressDetails"
+                :timestamp="message.timestamp"
+                :default-collapsed="true"
+                :is-replaying="isReplaying"
+                :show-result="shouldShowToolResult(toolCall.id)"
+                context-kind="main"
+              />
+
+              <p
                 v-if="historyToolCallsLoaded && regularToolCalls.length === 0 && hasSpecialVisibleToolCalls"
                 class="tool-calls-note"
               >
                 特殊工具调用已在下方工作流或子代理面板展示。
-              </div>
+              </p>
               <button
                 v-if="canLoadMoreToolCalls"
-                class="tool-calls-load-more-btn"
+                class="tool-calls-more"
                 :disabled="historyToolCallsLoading"
                 @click.stop="loadMoreToolCalls"
               >
@@ -110,166 +107,105 @@
           </transition>
         </div>
 
-        <!-- 多智能体协作显示（与工具调用同级） -->
-        <div
-          v-if="workflowToolCalls.length > 0"
-          class="workflow-container"
-        >
-          <template v-for="toolCall in workflowToolCalls" :key="toolCall.id">
-            <div class="wf-run-panel" :data-tc-id="toolCall.id">
-              <!-- 面板头部 -->
-              <div class="wf-run-header" @click="toggleWorkflowPanel(toolCall.id, toolCall.status)">
-                <div class="wf-run-lead">
-                  <div class="wf-run-sigil">
-                    <component :is="UsersIcon" :size="14" class="wf-run-icon" />
-                  </div>
-                  <div class="wf-run-copy">
-                    <div class="wf-run-title-row">
-                      <span class="wf-run-kicker">multi-agent</span>
-                      <span class="wf-run-name">{{ t('chat.workflowPanel.title') }}</span>
-                    </div>
-                    <div class="wf-run-meta-row">
-                      <span v-if="toolCall.arguments?.mode" class="wf-run-mode">{{ wfModeLabel(toolCall.arguments.mode) }}</span>
-                      <span class="wf-agent-count">
-                        {{ t('chat.workflowPanel.agentCount', { n: Object.keys(toolCall.workflowAgents || {}).length }) }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <span class="wf-run-status-chip" :class="`wf-run-status-${toolCall.status || 'success'}`">
-                  <component v-if="toolCall.status === 'running'" :is="Loader2Icon" :size="12" class="spin wf-status-loader" />
-                  <span>{{ toolCall.status === 'running' ? 'Running' : 'Complete' }}</span>
-                </span>
-                <!-- 视图控制按钮组 -->
-                <div v-if="Object.keys(toolCall.workflowAgents || {}).length > 1" class="wf-view-controls">
-                  <!-- 并排对比切换按钮 -->
-                  <button
-                    class="wf-view-btn"
-                    :title="wfCompareMode[toolCall.id] ? '切换为列表视图' : '切换为并排视图'"
-                    @click.stop="wfCompareMode[toolCall.id] = !wfCompareMode[toolCall.id]"
-                  >
-                    <component :is="wfCompareMode[toolCall.id] ? ListIcon : LayoutGridIcon" :size="14" />
-                    <span class="wf-btn-text">{{ wfCompareMode[toolCall.id] ? '列表' : '并排' }}</span>
-                  </button>
-                  <!-- 全屏按钮 -->
-                  <button
-                    class="wf-view-btn wf-fullscreen-btn"
-                    title="全屏查看"
-                    @click.stop="openFullscreen(toolCall)"
-                  >
-                    <component :is="MaximizeIcon" :size="14" />
-                    <span class="wf-btn-text">全屏</span>
-                  </button>
-                </div>
+        <!-- 多智能体：一张卡一行摘要，成员与视图开关都在首屏可见 -->
+        <div v-if="workflowToolCalls.length > 0" class="team-run">
+          <article
+            v-for="toolCall in workflowToolCalls"
+            :key="toolCall.id"
+            class="team-run-card"
+            :data-tc-id="toolCall.id"
+          >
+            <header class="team-run-head">
+              <button
+                type="button"
+                class="team-run-toggle"
+                :aria-expanded="isWfPanelOpen(toolCall.id, toolCall.status)"
+                @click="toggleWorkflowPanel(toolCall.id, toolCall.status)"
+              >
                 <component
                   :is="ChevronRightIcon"
-                  :size="14"
-                  class="wf-run-chevron"
-                  :class="{ expanded: isWfPanelOpen(toolCall.id, toolCall.status) }"
+                  :size="13"
+                  class="team-run-chevron"
+                  :class="{ 'is-open': isWfPanelOpen(toolCall.id, toolCall.status) }"
                 />
+                <component :is="UsersIcon" :size="14" class="team-run-glyph" />
+                <span class="team-run-title">{{ t('chat.workflowPanel.title') }}</span>
+                <span v-if="toolCall.arguments?.mode" class="team-run-subject">{{ wfModeLabel(toolCall.arguments.mode) }}</span>
+                <component
+                  v-if="toolCall.status === 'running'"
+                  :is="Loader2Icon"
+                  :size="12"
+                  class="spin team-run-spinner"
+                />
+                <span class="team-run-meta">{{ wfStatusSummary(toolCall) }}</span>
+                <span v-if="toolCall.duration" class="team-run-meta">{{ wfDurationText(toolCall.duration) }}</span>
+              </button>
+
+              <div v-if="workflowAgentList(toolCall).length > 1" class="team-run-toolbar">
+                <button
+                  type="button"
+                  :class="{ 'is-active': !wfCompareMode[toolCall.id] }"
+                  @click.stop="wfCompareMode[toolCall.id] = false"
+                >
+                  <component :is="ListIcon" :size="13" />
+                  <span>列表</span>
+                </button>
+                <button
+                  type="button"
+                  :class="{ 'is-active': wfCompareMode[toolCall.id] }"
+                  @click.stop="wfCompareMode[toolCall.id] = true"
+                >
+                  <component :is="LayoutGridIcon" :size="13" />
+                  <span>并排</span>
+                </button>
+                <button
+                  type="button"
+                  class="team-run-toolbar-icon"
+                  title="全屏查看"
+                  @click.stop="openFullscreen(toolCall)"
+                >
+                  <component :is="MaximizeIcon" :size="13" />
+                </button>
               </div>
-              <!-- Agent 列表 / 并排对比视图 -->
-              <transition name="slide">
-                <div v-if="isWfPanelOpen(toolCall.id, toolCall.status)" class="wf-agents-list">
-                  <!-- 并排对比模式 -->
-                  <WorkflowComparePanel
-                    v-if="wfCompareMode[toolCall.id] && Object.keys(toolCall.workflowAgents || {}).length"
-                    :key="`${toolCall.id}-compare`"
-                    :workflow-agents="toolCall.workflowAgents || {}"
-                  />
-                  
-                  <!-- 列表模式 -->
-                  <WorkflowListPanel
-                    v-else-if="!wfCompareMode[toolCall.id] && Object.keys(toolCall.workflowAgents || {}).length"
-                    :key="`${toolCall.id}-list`"
-                    :workflow-agents="toolCall.workflowAgents || {}"
-                  />
-                  <template v-else>
-                    <div
-                      v-for="agent in visibleAgents(toolCall)"
-                      :key="(agent as any).id"
-                      class="wf-agent-item"
-                    >
-                      <!-- Agent 头部 -->
-                      <div class="wf-agent-header" @click="toggleAgentPanel(toolCall.id, (agent as any).id, (agent as any).status)">
-                        <div class="wf-agent-dot" :class="(agent as any).status === 'running' ? 'wf-dot-running' : 'wf-dot-done'">
-                          <component :is="BotIcon" :size="15" class="wf-agent-bot" />
-                        </div>
-                        <span class="wf-agent-label">{{ (agent as any).label }}</span>
-                        <span v-if="(agent as any).toolCalls?.length" class="wf-agent-tc-count">
-                          {{ (agent as any).toolCalls.length }}
-                        </span>
-                        <component
-                          :is="ChevronRightIcon"
-                          :size="12"
-                          class="wf-agent-chevron"
-                          :class="{ expanded: isAgentOpen(toolCall.id, (agent as any).id, (agent as any).status) }"
-                        />
-                      </div>
-                      <!-- Agent 工具调用 -->
-                      <transition name="slide">
-                        <div v-if="isAgentOpen(toolCall.id, (agent as any).id, (agent as any).status)" class="wf-agent-tools">
-                          <!-- 工具调用头部 -->
-                          <div v-if="(agent as any).toolCalls?.length" class="wf-tools-header" @click.stop="toggleAgentTools(toolCall.id, (agent as any).id)">
-                            <component :is="WrenchIcon" :size="14" class="wf-tools-icon" />
-                            <span class="wf-tools-title">工具调用</span>
-                            <span class="wf-tools-count">{{ (agent as any).toolCalls.length }}</span>
-                            <component :is="ChevronDownIcon" :size="14" class="wf-tools-chevron" :class="{ expanded: isAgentToolsOpen(toolCall.id, (agent as any).id) }" />
-                          </div>
-                          <!-- 工具调用列表 -->
-                          <transition name="slide">
-                            <div v-if="isAgentToolsOpen(toolCall.id, (agent as any).id)" class="wf-tools-list">
-                              <ToolCallCard
-                                v-for="(tc, tci) in (agent as any).toolCalls"
-                                :key="(tc as any).id || tci"
-                                :tool-name="(tc as any).tool"
-                                :arguments="(tc as any).arguments"
-                                :status="(tc as any).status === 'running' ? 'running' : 'success'"
-                                :result="(tc as any).result"
-                                :progress="(tc as any).progress"
-                                :progress-message="(tc as any).progressMessage"
-                                :progress-details="(tc as any).progressDetails"
-                                :default-collapsed="true"
-                                context-kind="agent"
-                                :context-label="(agent as any).label"
-                              />
-                            </div>
-                          </transition>
-                          <!-- 运行中：有流式输出时展示实时内容，否则显示思考中 -->
-                          <template v-if="(agent as any).status === 'running'">
-                            <!-- eslint-disable-next-line vue/no-v-html -->
-                            <div v-if="(agent as any).streamingText" class="wf-agent-result-text markdown-content" v-html="renderMarkdown((agent as any).streamingText)" />
-                            <div v-else-if="!(agent as any).toolCalls?.length" class="wf-agent-thinking">
-                              <component :is="Loader2Icon" :size="11" class="spin" />
-                              <span>{{ t('chat.workflowPanel.thinking') }}</span>
-                            </div>
-                          </template>
-                          <!-- Agent 完成时渲染结论（Markdown 格式，无字数限制） -->
-                          <!-- eslint-disable-next-line vue/no-v-html -->
-                          <div v-if="(agent as any).status === 'complete' && (agent as any).agentResult" class="wf-agent-result-text markdown-content" v-html="renderMarkdown((agent as any).agentResult)" />
-                        </div>
-                      </transition>
-                    </div>
-                  </template>
-                  <!-- 无 agent 时的提示：运行中显示旋转等待，已完成则显示静态说明 -->
-                  <div v-if="!wfCompareMode[toolCall.id] && !Object.keys(toolCall.workflowAgents || {}).length" class="wf-agents-empty">
-                    <template v-if="toolCall.status === 'running'">
-                      <component :is="Loader2Icon" :size="12" class="spin" />
-                      <span>{{ t('chat.workflowPanel.waitingForAgents') }}</span>
-                    </template>
-                    <span v-else class="wf-history-note">{{ t('chat.workflowPanel.historyNotAvailable') }}</span>
-                  </div>
-                </div>
-              </transition>
+            </header>
+
+            <!-- 阵容：收起态也能看出有哪几个成员、各自什么状态 -->
+            <div v-if="workflowAgentList(toolCall).length" class="team-run-roster">
+              <span
+                v-for="agent in workflowAgentList(toolCall)"
+                :key="agent.id"
+                class="team-run-member"
+                :class="agent.status === 'running' ? 'is-running' : 'is-done'"
+              >
+                <span class="team-run-member-dot" />
+                <span class="team-run-member-name">{{ agent.label }}</span>
+              </span>
             </div>
-          </template>
+
+            <transition name="slide">
+              <div v-if="isWfPanelOpen(toolCall.id, toolCall.status)" class="team-run-body">
+                <WorkflowComparePanel
+                  v-if="wfCompareMode[toolCall.id] && workflowAgentList(toolCall).length"
+                  :key="`${toolCall.id}-compare`"
+                  :workflow-agents="toolCall.workflowAgents || {}"
+                />
+                <WorkflowListPanel
+                  v-else-if="workflowAgentList(toolCall).length"
+                  :key="`${toolCall.id}-list`"
+                  :workflow-agents="toolCall.workflowAgents || {}"
+                  :visible-count="wfReplayVisibleCount(toolCall.id)"
+                />
+                <div v-else class="team-run-empty">
+                  <component v-if="toolCall.status === 'running'" :is="Loader2Icon" :size="12" class="spin" />
+                  <span>{{ toolCall.status === 'running' ? t('chat.workflowPanel.waitingForAgents') : t('chat.workflowPanel.historyNotAvailable') }}</span>
+                </div>
+              </div>
+            </transition>
+          </article>
         </div>
 
         <!-- Spawn 子代理任务面板 -->
-        <div
-          v-if="spawnToolCalls.length > 0"
-          class="spawn-container"
-        >
+        <div v-if="spawnToolCalls.length > 0" class="spawn-container">
           <template v-for="toolCall in spawnToolCalls" :key="toolCall.id">
             <SpawnTaskPanel
               v-if="toolCall.spawn_task"
@@ -281,63 +217,61 @@
           </template>
         </div>
 
-      <div v-if="message.attachmentItems && message.attachmentItems.length > 0" class="message-attachments">
-        <MessageAttachment
-          v-for="attachment in message.attachmentItems"
-          :key="attachment.path"
-          :attachment="attachment"
-          :session-id="resolvedSessionId"
-        />
-      </div>
+        <div v-if="message.attachmentItems && message.attachmentItems.length > 0" class="message-attachments">
+          <MessageAttachment
+            v-for="attachment in message.attachmentItems"
+            :key="attachment.path"
+            :attachment="attachment"
+            :session-id="resolvedSessionId"
+          />
+        </div>
 
-      <!-- 思考中状态 -->
-      <div v-if="message.isThinking && !message.reasoningContent" class="message-content thinking-indicator">
-        <span class="thinking-dots">
-          <span class="dot" />
-          <span class="dot" />
-          <span class="dot" />
-        </span>
-      </div>
+        <!-- 思考中状态 -->
+        <div v-if="message.isThinking && !message.reasoningContent" class="message-content thinking-indicator">
+          <span class="thinking-dots">
+            <span class="dot" />
+            <span class="dot" />
+            <span class="dot" />
+          </span>
+        </div>
 
-      <!-- 消息内容（传统模式） -->
-      <!-- eslint-disable-next-line vue/no-v-html -->
-      <div
-        v-else-if="shouldFuseReasoningReply"
-        class="assistant-response-shell"
-      >
-        <ReasoningBlock
-          :content="embeddedReasoningContent"
-          :is-thinking="Boolean(message.isThinking && embeddedReasoningContent)"
-          :default-expanded="false"
-          embedded
-        />
+        <!-- 思考 + 回复融合 -->
         <div
-          v-if="displayContent && (!isReplaying || replayContent !== null)"
-          class="message-content assistant-response-body markdown-content"
-          :class="{ 'typewriter-active': isReplaying }"
+          v-else-if="shouldFuseReasoningReply"
+          class="assistant-response-shell"
+        >
+          <ReasoningBlock
+            :content="embeddedReasoningContent"
+            :is-thinking="Boolean(message.isThinking && embeddedReasoningContent)"
+            :default-expanded="false"
+            embedded
+          />
+          <div
+            v-if="displayContent && (!isReplaying || replayContent !== null)"
+            class="message-content assistant-response-body markdown-content"
+            :class="{ 'typewriter-active': isReplaying || isStreaming }"
+            v-html="replayContent !== null ? replayContent : renderedContent"
+          />
+        </div>
+        <div
+          v-else-if="message.role === 'assistant' && displayContent && (!isReplaying || replayContent !== null)"
+          class="message-content markdown-content"
+          :class="{ 'typewriter-active': isReplaying || isStreaming }"
           v-html="replayContent !== null ? replayContent : renderedContent"
         />
+        <div
+          v-else-if="message.role !== 'assistant' && message.content"
+          class="message-content"
+        >
+          {{ message.content }}
+        </div>
       </div>
-      <div 
-        v-else-if="message.role === 'assistant' && displayContent && (!isReplaying || replayContent !== null)"
-        class="message-content markdown-content"
-        :class="{ 'typewriter-active': isReplaying }"
-        v-html="replayContent !== null ? replayContent : renderedContent"
-      />
-      <div 
-        v-else-if="message.role !== 'assistant' && message.content"
-        class="message-content"
-      >
-        {{ message.content }}
-      </div>
-      </div>
+
       <div class="message-footer">
         <div class="message-time">
           {{ formattedTime }}
         </div>
-        <div
-          class="message-actions"
-        >
+        <div class="message-actions">
           <button
             v-if="message.role === 'assistant'"
             class="action-btn"
@@ -363,6 +297,7 @@
           <button
             v-if="message.role === 'assistant'"
             class="action-btn"
+            :class="{ 'is-copied': copied }"
             :title="$t('chat.copy')"
             @click="handleCopy"
           >
@@ -385,7 +320,7 @@
       </div>
     </div>
   </div>
-  
+
   <!-- 头像设置对话框 - 使用 Teleport 传送到 body -->
   <Teleport to="body">
     <AvatarSettingDialog
@@ -396,13 +331,14 @@
       @clear="handleAvatarClear"
     />
   </Teleport>
-  
+
   <!-- 多智能体全屏模态框 -->
   <WorkflowFullscreenModal
     v-model="showFullscreenModal"
     :workflow-agents="fullscreenWorkflowAgents"
   />
 </template>
+
 
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
@@ -441,10 +377,12 @@ import MessageAttachment from '@/components/chat/MessageAttachment.vue'
 import { normalizeHistoryToolCall } from '@/modules/chat/utils/historyMessages'
 import { splitReasoningSections } from '@/utils/reasoningSections'
 import { useChatStore } from '@/store/chat'
-import type { ChatMessage, ChatToolCall } from '@/types/chat'
+import type { ChatMessage, ChatToolCall, WorkflowAgentState } from '@/types/chat'
 
 interface Props {
   message: ChatMessage
+  /** 本条消息是否正在实时流式输出（用于逐字晕开动画） */
+  isStreaming?: boolean
 }
 
 interface Emits {
@@ -525,7 +463,23 @@ const hasHistoryWorkflowTool = computed(() => {
 })
 
 const shouldShowToolCallsSection = computed(() => {
-  return totalToolCallCount.value > 0 && (!isReplaying.value || replayToolIndex.value > 0)
+  if (totalToolCallCount.value === 0) return false
+  if (isReplaying.value && replayToolIndex.value === 0) return false
+  // 只有工作流 / spawn 时，它们的明细在各自面板里，这里不再留一个空分组
+  if (regularToolCalls.value.length === 0 && !shouldFetchHistoryToolCalls.value) return false
+  return true
+})
+
+/**
+ * 只有一条工具调用时，分组标题是纯冗余：那一行本身就说明了一切。
+ * 需要在历史里按需拉取详情时仍保留标题，因为标题是加载入口。
+ */
+const showToolCallsHead = computed(() => {
+  return totalToolCallCount.value > 1 || shouldFetchHistoryToolCalls.value
+})
+
+const isToolCallsListVisible = computed(() => {
+  return toolCallsExpanded.value || !showToolCallsHead.value
 })
 
 const resolvedSessionId = computed(() => props.message.sessionId || chatStore.currentSessionId || '')
@@ -618,10 +572,6 @@ watch(
 // ---- Workflow Run Panel State ----
 // 存储每个 workflow_run toolCall 的面板展开状态（undefined = 自动，true/false = 用户手动）
 const wfPanelExpanded = ref<Record<string, boolean>>({})
-// 存储每个 agent 的展开状态
-const wfAgentExpanded = ref<Record<string, boolean>>({})
-// 存储每个 agent 的工具调用展开状态
-const wfAgentToolsExpanded = ref<Record<string, boolean>>({})
 // 存储每个 workflow_run 面板的并排对比模式状态
 const wfCompareMode = ref<Record<string, boolean>>({})
 // 全屏模态框状态
@@ -665,30 +615,39 @@ const wfModeLabel = (mode: string): string => {
   return translated === key ? mode : translated
 }
 
-/** 判断某个 agent 是否展开 */
-const isAgentOpen = (tcId: string, agentId: string, status?: string): boolean => {
-  const key = `${tcId}:${agentId}`
-  if (wfAgentExpanded.value[key] !== undefined) return wfAgentExpanded.value[key]
-  return status === 'running' // 运行中默认展开，完成后折叠
+/** 成员列表：模板里多处要用（人数、阵容、空态判断），统一从 workflowAgents 取 */
+const workflowAgentList = (toolCall: ChatToolCall): WorkflowAgentState[] => {
+  return Object.values(toolCall.workflowAgents || {})
 }
 
-const toggleAgentPanel = (tcId: string, agentId: string, status?: string) => {
-  const key = `${tcId}:${agentId}`
-  const cur = isAgentOpen(tcId, agentId, status)
-  wfAgentExpanded.value = { ...wfAgentExpanded.value, [key]: !cur }
+/** 头部摘要里的成员状态：只写有内容的档位，避免「0 个失败」这类噪音 */
+const wfStatusSummary = (toolCall: ChatToolCall): string => {
+  const agents = workflowAgentList(toolCall)
+  if (agents.length === 0) {
+    return toolCall.status === 'running' ? '' : t('chat.workflowPanel.historyNotAvailable')
+  }
+
+  const running = agents.filter(agent => agent.status === 'running').length
+  const done = agents.length - running
+  const parts: string[] = []
+  if (running > 0) parts.push(`${running} 运行中`)
+  if (done > 0) parts.push(`${done} 已完成`)
+  return parts.join(' · ')
 }
 
-/** 判断某个 agent 的工具调用是否展开 */
-const isAgentToolsOpen = (tcId: string, agentId: string): boolean => {
-  const key = `${tcId}:${agentId}:tools`
-  if (wfAgentToolsExpanded.value[key] !== undefined) return wfAgentToolsExpanded.value[key]
-  return true // 默认展开
+const wfDurationText = (duration: number): string => {
+  if (duration < 1000) return `${duration}ms`
+  const seconds = duration / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const rest = Math.round(seconds % 60)
+  return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`
 }
 
-const toggleAgentTools = (tcId: string, agentId: string) => {
-  const key = `${tcId}:${agentId}:tools`
-  const cur = isAgentToolsOpen(tcId, agentId)
-  wfAgentToolsExpanded.value = { ...wfAgentToolsExpanded.value, [key]: !cur }
+/** 重放时按可见计数截取成员；非重放返回 undefined（展示全部） */
+const wfReplayVisibleCount = (tcId: string): number | undefined => {
+  if (!isReplaying.value) return undefined
+  return replayWorkflowVisibleCounts.value[tcId]
 }
 
 // 头像相关
@@ -727,7 +686,8 @@ onMounted(() => {
   initAvatars()
 })
 
-const WORKFLOW_META_RE = /\n?\n?<!--WORKFLOW_EXEC:[\s\S]*?:WORKFLOW_EXEC-->$/u
+// 字面量 `<!--` 会被 esbuild 依赖扫描识别为 HTML 注释，故以 \x3C / \x3E 转义，语义等价。
+const WORKFLOW_META_RE = /\n?\n?\x3C!--WORKFLOW_EXEC:[\s\S]*?:WORKFLOW_EXEC--\x3E$/u
 const PIPELINE_WORKFLOW_HEADER = '# Pipeline Workflow Results'
 
 const stripWorkflowMeta = (content: string | null | undefined): string => {
@@ -826,6 +786,68 @@ const renderedContent = computed(() => {
 
 useMermaid(rootEl, [renderedContent, replayContent, () => effectiveToolCalls.value], { deep: true })
 
+// ---- 规则 4 - 流式打字：对正在输出的尾部字符做逐字晕开 ----
+// v-html 是全量重渲染，无法在模板层拆字；这里在 DOM 更新后把最后一个
+// 文本节点的尾部 N 个字符包成 span.stream-char，由 CSS 完成
+// 90ms blur(6px)→清晰、相邻字 30ms 错开的波浪晕开。
+const TYPEWRITER_TAIL = 12
+
+const clearStreamChars = (host: HTMLElement) => {
+  host.querySelectorAll('span.stream-char').forEach((span) => {
+    const parent = span.parentNode
+    if (!parent) return
+    parent.replaceChild(document.createTextNode(span.textContent || ''), span)
+    parent.normalize()
+  })
+}
+
+const applyTypewriter = () => {
+  const root = rootEl.value
+  if (!root) return
+  const host = root.querySelector<HTMLElement>('.typewriter-active')
+  if (!host) return
+
+  clearStreamChars(host)
+
+  // 找最后一个文本节点（跳过 svg / script / style 内的文本，避免破坏结构）
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => {
+      const parent = node.parentElement
+      if (!parent) return NodeFilter.FILTER_REJECT
+      if (parent.closest('svg, script, style')) return NodeFilter.FILTER_REJECT
+      return NodeFilter.FILTER_ACCEPT
+    },
+  })
+  let lastText: Text | null = null
+  while (walker.nextNode()) lastText = walker.currentNode as Text
+  if (!lastText || !lastText.nodeValue || lastText.nodeValue.length < 2) return
+
+  const text = lastText.nodeValue
+  const start = Math.max(0, text.length - TYPEWRITER_TAIL)
+  const head = text.slice(0, start)
+  const tail = text.slice(start)
+
+  const fragment = document.createDocumentFragment()
+  if (head) fragment.appendChild(document.createTextNode(head))
+  for (let i = 0; i < tail.length; i += 1) {
+    const span = document.createElement('span')
+    span.className = 'stream-char'
+    span.style.setProperty('--i', String(i))
+    span.textContent = tail[i]
+    fragment.appendChild(span)
+  }
+  lastText.parentNode?.replaceChild(fragment, lastText)
+}
+
+watch(
+  [renderedContent, replayContent, () => props.isStreaming],
+  () => {
+    if (!props.isStreaming && !isReplaying.value) return
+    nextTick(applyTypewriter)
+  },
+  { flush: 'post' }
+)
+
 /**
  * 判断是否使用交织模式展示
  * 条件：有内容、有工具调用、且没有 workflow_run 或 spawn
@@ -891,17 +913,6 @@ const shouldFuseReasoningReply = computed(() => {
 })
 
 /**
- * 重放时按可见计数截取 agent 列表；非重放时返回全部。
- */
-const visibleAgents = (toolCall: any): any[] => {
-  const all = Object.values(toolCall.workflowAgents || {})
-  if (!isReplaying.value) return all
-  const count = replayWorkflowVisibleCounts.value[toolCall.id]
-  if (count === undefined) return []
-  return all.slice(0, count)
-}
-
-/**
  * 获取普通工具调用是否显示结果（用于重放）
  */
 const shouldShowToolResult = (toolCallId: string): boolean => {
@@ -938,10 +949,11 @@ const handleCopy = async () => {
     await copyTextToClipboard(displayContent.value)
     copied.value = true
     toast.success(t('chat.copied'))
-    
+
+    // 规则 10 - 复制对勾 2.5s 后自熄恢复（CSS 侧同步淡出，切换时无感）
     setTimeout(() => {
       copied.value = false
-    }, 2000)
+    }, 2500)
   } catch (error) {
     console.error('Failed to copy:', error)
     toast.error(t('chat.copyFailed'))

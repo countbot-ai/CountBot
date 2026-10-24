@@ -3,16 +3,16 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-secondary, #f9fafb);
+  background: var(--bg-secondary);
 }
 
 .tools-nav {
   display: flex;
   gap: var(--spacing-xs);
   padding: var(--spacing-md);
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
-  background: var(--bg-primary, #ffffff);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .nav-btn {
@@ -23,7 +23,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -31,15 +31,15 @@
 }
 
 .nav-btn:hover {
-  background: var(--hover-bg, #f3f4f6);
-  color: var(--text-primary, #111827);
+  background: var(--hover-bg);
+  color: var(--text-primary);
 }
 
 .nav-btn.active {
-  background: var(--bg-secondary, #f9fafb);
-  color: var(--color-primary, #3b82f6);
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: var(--bg-secondary);
+  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .tools-content {
@@ -61,15 +61,15 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-md) var(--spacing-xl);
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
-  background: var(--bg-primary, #ffffff);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .section-title {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-primary, #111827);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -79,19 +79,19 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: var(--radius-md);
-  background: var(--bg-primary, #ffffff);
-  color: var(--text-secondary, #6b7280);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: var(--hover-bg, #f3f4f6);
-  color: var(--text-primary, #111827);
-  border-color: var(--color-primary, #3b82f6);
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  border-color: var(--color-border-strong);
 }
 
 .refresh-btn:disabled {
@@ -141,16 +141,16 @@
 
 .tool-card {
   padding: var(--spacing-lg);
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: var(--radius-lg);
-  background: var(--bg-primary, #ffffff);
+  background: var(--bg-primary);
   transition: all var(--transition-base);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .tool-card:hover {
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-2px);
 }
 
@@ -201,25 +201,12 @@
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .tools-panel {
-  background: var(--bg-secondary, #101827);
-}
 
-:root[data-theme="dark"] .tools-nav {
-  background: var(--bg-primary, #0b1320);
-  box-shadow: 0 16px 32px rgba(2, 8, 20, 0.22);
-}
 
-:root[data-theme="dark"] .section-header {
-  background: var(--bg-primary, #0b1320);
-  box-shadow: 0 16px 32px rgba(2, 8, 20, 0.22);
-}
 
-:root[data-theme="dark"] .tool-card {
-  background: var(--bg-primary, #0b1320);
-  box-shadow: 0 16px 32px rgba(2, 8, 20, 0.22);
-}
 
-:root[data-theme="dark"] .tool-card:hover {
-  box-shadow: 0 20px 36px rgba(2, 8, 20, 0.28);
-}
+
+
+
+
+

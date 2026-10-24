@@ -12,7 +12,14 @@
     @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
-    <template #fields="{ model, handleChange, botKey }">
+    <template #fields="{ model, handleChange, botKey, expanded }">
+      <ChannelOnboardingCard
+        :channel-id="channelId"
+        :model="model"
+        :paused="!expanded"
+        @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
+      />
+
       <div class="config-section">
         <label class="config-label">
           {{ t('settings.channels.feishu.appId') }}
@@ -63,6 +70,42 @@
       </div>
 
       <div class="config-section">
+        <label class="config-label">{{ t('settings.channels.feishu.groupEnabled') }}</label>
+        <SwitchToggle
+          v-model="model.group_enabled"
+          :width="52"
+          :height="28"
+          :aria-label="t('settings.channels.feishu.groupEnabled')"
+          @change="handleChange"
+        />
+        <p class="config-hint">{{ t('settings.channels.feishu.groupEnabledHint') }}</p>
+      </div>
+
+      <div class="config-section">
+        <label class="config-label">{{ t('settings.channels.feishu.groupRequireMention') }}</label>
+        <SwitchToggle
+          v-model="model.group_require_mention"
+          :width="52"
+          :height="28"
+          :aria-label="t('settings.channels.feishu.groupRequireMention')"
+          @change="handleChange"
+        />
+        <p class="config-hint">{{ t('settings.channels.feishu.groupRequireMentionHint') }}</p>
+      </div>
+
+      <div class="config-section">
+        <label class="config-label">{{ t('settings.channels.feishu.groupTopicEnabled') }}</label>
+        <SwitchToggle
+          v-model="model.group_topic_enabled"
+          :width="52"
+          :height="28"
+          :aria-label="t('settings.channels.feishu.groupTopicEnabled')"
+          @change="handleChange"
+        />
+        <p class="config-hint">{{ t('settings.channels.feishu.groupTopicEnabledHint') }}</p>
+      </div>
+
+      <div class="config-section">
         <label class="config-label">{{ t('settings.channels.feishu.allowFrom') }}</label>
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
@@ -89,6 +132,8 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import ChannelOnboardingCard from './ChannelOnboardingCard.vue'
+import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 
 interface Props {
   channelId: string
@@ -111,7 +156,10 @@ const createDefaultAccount = () => ({
   account_id: 'default',
   app_id: '',
   app_secret: '',
-  allow_from: []
+  allow_from: [],
+  group_enabled: true,
+  group_require_mention: true,
+  group_topic_enabled: true
 })
 
 const guide = computed(() => ({

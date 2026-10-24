@@ -1,37 +1,40 @@
+/**
+ * 聊天输入区
+ * 去玻璃拟态：无渐变、无 inset 高光；分层靠背景阶梯；
+ * 规则 2 - 聚焦双环咬合：内环 1px 贴边 + 外环 4px 微明度。
+ */
 
 .input-area {
-  padding: 12px 24px 16px;
+  padding: 10px 24px 14px;
   background: transparent;
   z-index: 10;
   position: relative;
 }
 
+/* 与消息流共用同一条中线，避免输入框比正文更宽产生的错位感 */
 .input-shell {
-  max-width: 100%;
+  max-width: var(--chat-column-width, 760px);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
+
+/* ---------- 附件条 ---------- */
 
 .attachment-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 10px;
-  border: 1px solid rgba(207, 217, 230, 0.9);
-  border-radius: 22px;
-  background:
-    radial-gradient(circle at top left, rgba(214, 226, 244, 0.18), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 252, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    0 12px 26px rgba(15, 23, 42, 0.05);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .input-shell.focused .attachment-strip {
-  border-color: rgba(176, 191, 210, 0.96);
+  border-color: var(--color-border-secondary);
 }
 
 .attachment-chip {
@@ -41,50 +44,46 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 17px;
-  border: 1px solid rgba(217, 226, 237, 0.92);
-  background: linear-gradient(180deg, rgba(251, 253, 255, 0.96), rgba(242, 246, 250, 0.96));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 6px 16px rgba(15, 23, 42, 0.04);
-  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .attachment-chip.status-uploading {
-  border-color: rgba(96, 165, 250, 0.5);
+  border-color: var(--color-border-strong);
 }
 
 .attachment-chip.status-error {
-  border-color: rgba(248, 113, 113, 0.38);
-  background: linear-gradient(180deg, rgba(255, 249, 249, 0.98), rgba(254, 243, 243, 0.98));
+  border-color: var(--color-error);
+  background: var(--color-error-light);
 }
 
 .attachment-chip-icon {
   width: 32px;
   height: 32px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(243, 246, 250, 0.88));
-  color: #526071;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 .attachment-chip.kind-image .attachment-chip-icon {
-  color: #2563eb;
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(225, 236, 255, 0.86));
+  color: var(--color-info);
+  background: var(--color-info-light);
 }
 
 .attachment-chip.kind-audio .attachment-chip-icon {
-  color: #0f766e;
-  background: linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(220, 252, 231, 0.84));
+  color: var(--color-success);
+  background: var(--color-success-light);
 }
 
 .attachment-chip.kind-video .attachment-chip-icon {
-  color: #7c3aed;
-  background: linear-gradient(180deg, rgba(245, 243, 255, 0.98), rgba(237, 233, 254, 0.86));
+  color: var(--color-accent);
+  background: var(--color-bg-tertiary);
 }
 
 .attachment-chip-copy {
@@ -96,9 +95,9 @@
 }
 
 .attachment-chip-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -109,7 +108,8 @@
   gap: 8px;
   align-items: center;
   font-size: 11px;
-  color: #708196;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .attachment-chip-path {
@@ -117,7 +117,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-family: var(--font-mono);
 }
 
 .attachment-chip-trailing {
@@ -128,59 +128,59 @@
 }
 
 .attachment-spinner {
-  color: #2563eb;
+  color: var(--color-accent);
   animation: spin 0.9s linear infinite;
 }
 
 .attachment-error-icon {
-  color: #dc2626;
+  color: var(--color-error);
 }
 
 .attachment-remove-btn {
   width: 28px;
   height: 28px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  border: none;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(226, 232, 240, 0.42);
-  color: #6b7b90;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .attachment-remove-btn:hover {
-  background: rgba(226, 232, 240, 0.72);
-  border-color: rgba(203, 213, 225, 0.9);
-  color: #0f172a;
+  background: var(--color-error-light);
+  color: var(--color-error);
 }
+
+/* ---------- 输入主体 ---------- */
 
 .composer-row {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  padding: 8px;
-  border: 1px solid rgba(196, 209, 224, 0.92);
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(214, 226, 244, 0.32), transparent 26%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 249, 252, 0.99));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    0 14px 30px rgba(15, 23, 42, 0.06);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  gap: 8px;
+  padding: 7px 7px 7px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 18px;
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
 }
 
+/* 聚焦只加深一档描边 + 一层极浅外环，不做发光 */
 .input-shell.focused .composer-row {
-  border-color: rgba(116, 140, 176, 0.72);
-  box-shadow:
-    0 0 0 4px rgba(148, 163, 184, 0.12),
-    0 18px 34px rgba(15, 23, 42, 0.08);
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  box-shadow: 0 0 0 3px var(--color-border-primary);
 }
 
 .input-shell.busy .composer-row {
-  border-color: rgba(96, 165, 250, 0.46);
+  border-color: var(--color-border-strong);
 }
 
 .file-input {
@@ -188,41 +188,37 @@
 }
 
 .attach-btn {
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(214, 223, 235, 0.94);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(247, 250, 253, 0.98), rgba(238, 244, 249, 0.96));
-  color: #6b7b90;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 2px 6px rgba(15, 23, 42, 0.04);
-  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .attach-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(160, 174, 194, 0.94);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(244, 248, 252, 0.98));
-  color: #1f2937;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    0 8px 18px rgba(15, 23, 42, 0.08);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .attach-btn:active {
-  transform: scale(0.96);
+  transform: scale(0.94);
 }
 
 .attach-btn:focus-visible {
   outline: none;
-  border-color: rgba(116, 140, 176, 0.72);
-  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.16);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 4px var(--color-border-primary);
 }
 
 .composer-main {
@@ -230,8 +226,8 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 2px 0 4px;
+  min-height: 34px;
+  padding: 0;
 }
 
 .chat-input {
@@ -239,11 +235,11 @@
   flex: 1;
   min-height: 24px;
   max-height: 160px;
-  padding: 9px 0;
+  padding: 6px 0;
   border: none;
   background: transparent;
-  color: var(--text-primary, #111827);
-  font-size: 15px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
   font-family: var(--font-sans);
   line-height: 1.5;
   resize: none;
@@ -253,7 +249,7 @@
 }
 
 .chat-input::placeholder {
-  color: var(--text-disabled, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 .chat-input:focus {
@@ -269,74 +265,78 @@
   align-self: center;
 }
 
+/* 发送按钮 - 主色近黑，ready 才有存在感 */
 .send-message-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(203, 213, 225, 0.94);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(231, 237, 245, 0.96), rgba(213, 222, 234, 0.94));
-  color: #9aa8ba;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
   cursor: not-allowed;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 6px 14px rgba(15, 23, 42, 0.04);
-  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .send-message-btn.ready {
-  border-color: rgba(17, 24, 39, 0.92);
-  background: linear-gradient(180deg, #223041, #111827);
-  color: #ffffff;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.16);
 }
 
 .send-message-btn.ready:hover {
-  background: linear-gradient(180deg, #28374a, #192331);
+  background: var(--color-primary-hover);
 }
 
 .send-message-btn.ready:active {
   transform: scale(0.92);
 }
 
+/* 规则 9 - 对勾/确认类反馈用欠阻尼微弹 */
+.send-message-btn.ready:active svg {
+  animation: spring-pop 380ms var(--ease-spring);
+}
+
 .stop-generation-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(248, 113, 113, 0.24);
-  border-radius: 999px;
-  background: linear-gradient(180deg, #f87171, #ef4444);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-error);
   cursor: pointer;
-  box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-  animation: stop-pulse 2s ease-in-out infinite;
+  transition: transform var(--transition-fast), background var(--transition-fast);
 }
 
 .stop-generation-btn:hover {
-  background: #dc2626;
+  background: var(--color-error-light);
   transform: scale(1.04);
 }
 
 .stop-square {
   display: block;
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 2px;
-  background: #ffffff;
+  background: currentColor;
 }
 
 .input-hint {
   max-width: 100%;
-  margin: 8px auto 0;
+  margin: 6px auto 0;
   padding: 0 8px;
   font-size: 11px;
-  color: #8a98aa;
+  color: var(--color-text-disabled);
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes spin {
@@ -349,180 +349,23 @@
   }
 }
 
-@keyframes stop-pulse {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+/* 规则 9 - 欠阻尼弹簧微弹（点赞 / 对勾 / 确认） */
+@keyframes spring-pop {
+  0% {
+    transform: scale(0.6);
   }
 
-  50% {
-    opacity: 0.9;
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  55% {
+    transform: scale(1.22);
   }
-}
 
-:root[data-theme="dark"] .attachment-strip {
-  border-color: rgba(52, 66, 87, 0.9);
-  background:
-    radial-gradient(circle at top left, rgba(92, 121, 164, 0.14), transparent 28%),
-    linear-gradient(180deg, rgba(18, 26, 38, 0.98), rgba(12, 19, 30, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 16px 30px rgba(3, 7, 14, 0.18);
-}
+  75% {
+    transform: scale(0.94);
+  }
 
-:root[data-theme="dark"] .input-shell.focused .attachment-strip {
-  border-color: rgba(88, 109, 138, 0.94);
-}
-
-:root[data-theme="dark"] .attachment-chip {
-  border-color: rgba(55, 70, 92, 0.92);
-  background: linear-gradient(180deg, rgba(24, 33, 47, 0.98), rgba(17, 24, 36, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 8px 18px rgba(3, 7, 14, 0.16);
-}
-
-:root[data-theme="dark"] .attachment-chip.status-uploading {
-  border-color: rgba(96, 165, 250, 0.4);
-}
-
-:root[data-theme="dark"] .attachment-chip.status-error {
-  border-color: rgba(185, 74, 74, 0.46);
-  background: linear-gradient(180deg, rgba(55, 23, 28, 0.98), rgba(39, 18, 23, 0.98));
-}
-
-:root[data-theme="dark"] .attachment-chip-icon {
-  background: linear-gradient(180deg, rgba(36, 48, 67, 0.92), rgba(22, 31, 45, 0.94));
-  color: #c7d3e0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-:root[data-theme="dark"] .attachment-chip.kind-image .attachment-chip-icon {
-  background: linear-gradient(180deg, rgba(29, 64, 116, 0.5), rgba(22, 45, 83, 0.44));
-}
-
-:root[data-theme="dark"] .attachment-chip.kind-audio .attachment-chip-icon {
-  background: linear-gradient(180deg, rgba(18, 94, 86, 0.4), rgba(15, 62, 59, 0.44));
-}
-
-:root[data-theme="dark"] .attachment-chip.kind-video .attachment-chip-icon {
-  background: linear-gradient(180deg, rgba(76, 29, 149, 0.36), rgba(49, 24, 99, 0.42));
-}
-
-:root[data-theme="dark"] .attachment-chip-name {
-  color: #e5ecf6;
-}
-
-:root[data-theme="dark"] .attachment-chip-meta {
-  color: #91a1b6;
-}
-
-:root[data-theme="dark"] .attachment-remove-btn {
-  background: rgba(255, 255, 255, 0.05);
-  color: #a8b6c8;
-}
-
-:root[data-theme="dark"] .attachment-remove-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(73, 90, 113, 0.82);
-  color: #f8fbff;
-}
-
-:root[data-theme="dark"] .composer-row {
-  border-color: rgba(52, 66, 87, 0.92);
-  background:
-    radial-gradient(circle at top left, rgba(92, 121, 164, 0.18), transparent 30%),
-    linear-gradient(180deg, rgba(18, 26, 38, 0.985), rgba(11, 18, 29, 0.99));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 18px 34px rgba(3, 7, 14, 0.2);
-}
-
-:root[data-theme="dark"] .input-shell.focused .composer-row {
-  border-color: rgba(111, 129, 160, 0.58);
-  box-shadow:
-    0 0 0 4px rgba(111, 129, 160, 0.12),
-    0 20px 36px rgba(3, 7, 14, 0.24);
-}
-
-:root[data-theme="dark"] .input-shell.busy .composer-row {
-  border-color: rgba(96, 165, 250, 0.42);
-}
-
-:root[data-theme="dark"] .attach-btn {
-  border-color: rgba(66, 82, 106, 0.88);
-  background: linear-gradient(180deg, rgba(30, 41, 58, 0.92), rgba(20, 29, 42, 0.96));
-  color: #93a4ba;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 4px 10px rgba(3, 7, 14, 0.14);
-}
-
-:root[data-theme="dark"] .attach-btn:hover {
-  background: linear-gradient(180deg, rgba(37, 51, 72, 0.96), rgba(25, 36, 52, 0.98));
-  border-color: rgba(111, 129, 160, 0.88);
-  color: #e5ecf6;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 10px 18px rgba(3, 7, 14, 0.2);
-}
-
-:root[data-theme="dark"] .attach-btn:active {
-  transform: scale(0.96);
-}
-
-:root[data-theme="dark"] .attach-btn:focus-visible {
-  border-color: rgba(111, 129, 160, 0.82);
-  box-shadow: 0 0 0 3px rgba(111, 129, 160, 0.16);
-}
-
-:root[data-theme="dark"] .chat-input {
-  color: #d2d9e1;
-  background: transparent;
-  box-shadow: none;
-}
-
-:root[data-theme="dark"] .chat-input::placeholder {
-  color: #798493;
-}
-
-:root[data-theme="dark"] .chat-input:focus {
-  box-shadow: none;
-}
-
-:root[data-theme="dark"] .send-message-btn {
-  border-color: rgba(73, 90, 113, 0.84);
-  background: linear-gradient(180deg, rgba(40, 53, 72, 0.96), rgba(29, 40, 57, 0.96));
-  color: #8ea0b6;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 8px 16px rgba(3, 7, 14, 0.14);
-}
-
-:root[data-theme="dark"] .send-message-btn.ready {
-  border-color: rgba(142, 164, 214, 0.34);
-  background: linear-gradient(180deg, #8ea4d6, #627ca8);
-  color: #09111e;
-  box-shadow: 0 12px 24px rgba(11, 19, 32, 0.28);
-}
-
-:root[data-theme="dark"] .send-message-btn.ready:hover {
-  background: linear-gradient(180deg, #9bb0de, #6d88b6);
-}
-
-:root[data-theme="dark"] .stop-generation-btn {
-  border-color: rgba(201, 123, 137, 0.24);
-  background: linear-gradient(180deg, #c97b89, #b96b79);
-  box-shadow: 0 12px 24px rgba(87, 21, 35, 0.24);
-}
-
-:root[data-theme="dark"] .stop-generation-btn:hover {
-  background: linear-gradient(180deg, #d58695, #c17281);
-}
-
-:root[data-theme="dark"] .input-hint {
-  color: #6d7c90;
+  100% {
+    transform: scale(1);
+  }
 }
 
 @media (max-width: 768px) {

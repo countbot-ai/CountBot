@@ -155,6 +155,10 @@ class OpenAIProvider(LLMProvider):
             f"发往上游的工具消息序列 [trace={request_trace_id}]: "
             + self._summarize_tool_message_sequence(sanitized_messages)
         )
+        logger.debug(
+            f"发往上游的消息内容块 [trace={request_trace_id}]: "
+            + self._summarize_content_part_types(sanitized_messages)
+        )
 
         stream = None
         max_attempts = max(1, self.max_retries)
@@ -485,6 +489,42 @@ class OpenAIProvider(LLMProvider):
             or "moonshot.cn" in api_base
         )
 
+    @staticmethod
+    def _convert_content_blocks_for_chat_completions(content: Any) -> Any:
+        """把内部图片内容块转换成 OpenAI chat.completions 的 content parts。"""
+        if not isinstance(content, list):
+            return content
+
+        converted: List[Dict[str, Any]] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "").strip().lower()
+            if block_type == "text":
+                text = str(block.get("text") or "")
+                if text:
+                    converted.append({"type": "text", "text": text})
+                continue
+            if block_type != "image":
+                continue
+
+            media_type = str(block.get("media_type") or "image/png").strip() or "image/png"
+            data = str(block.get("data") or "").strip()
+            if not data:
+                continue
+            converted.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{data}"},
+                }
+            )
+
+        if not converted:
+            return ""
+        if all(item.get("type") == "text" for item in converted):
+            return "\n".join(str(item.get("text") or "") for item in converted)
+        return converted
+
     def _sanitize_messages_for_chat_completions(
         self,
         messages: List[Dict[str, Any]],
@@ -500,7 +540,9 @@ class OpenAIProvider(LLMProvider):
             normalized_role = "system" if role == "developer" else role
             sanitized: Dict[str, Any] = {"role": normalized_role}
             if "content" in message:
-                sanitized["content"] = message.get("content")
+                sanitized["content"] = self._convert_content_blocks_for_chat_completions(
+                    message.get("content")
+                )
 
             if normalized_role == "assistant" and message.get("tool_calls"):
                 sanitized["tool_calls"] = message.get("tool_calls")
@@ -658,6 +700,24 @@ class OpenAIProvider(LLMProvider):
             return f"gpt-{match.group(1)}"
 
         return normalized
+
+    @staticmethod
+    def _summarize_content_part_types(messages: List[Dict[str, Any]]) -> str:
+        """只记录角色和内容块类型，不落 base64 或正文。"""
+        summary: List[str] = []
+        for message in messages[-4:]:
+            role = str(message.get("role") or "").strip() or "unknown"
+            content = message.get("content")
+            if isinstance(content, list):
+                types = [
+                    str(item.get("type") or "").strip()
+                    for item in content
+                    if isinstance(item, dict)
+                ]
+                summary.append(f"{role}[{','.join(part for part in types if part)}]")
+            else:
+                summary.append(role)
+        return " -> ".join(summary) if summary else "<empty>"
 
     @staticmethod
     def _summarize_tool_message_sequence(messages: List[Dict[str, Any]]) -> str:
@@ -1074,6 +1134,7 @@ class OpenAIProvider(LLMProvider):
                 continue
 
             saw_image = False
+            omitted_images = 0
             text_parts: List[str] = []
 
             for item in content:
@@ -1083,6 +1144,7 @@ class OpenAIProvider(LLMProvider):
                 item_type = str(item.get("type", "") or "").strip().lower()
                 if item_type == "image_url":
                     saw_image = True
+                    omitted_images += 1
                     continue
 
                 if item_type == "text":
@@ -1094,6 +1156,11 @@ class OpenAIProvider(LLMProvider):
                 sanitized_messages.append(message)
                 continue
 
+            # 不支持图片的上游已经明确拒绝过一次；降级时保留占位文本，
+            # 让模型知道这里原本有图片，而不是静默丢掉用户内容。
+            text_parts.append(
+                f"[{omitted_images} image(s) omitted: upstream model does not support image input]"
+            )
             updated_message = dict(message)
             updated_message["content"] = "\n".join(part for part in text_parts if part)
             sanitized_messages.append(updated_message)

@@ -88,30 +88,30 @@ const iconSize = computed(() => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: var(--spacing-8, 2rem);
-  color: var(--color-text-secondary, #666);
+  padding: var(--spacing-8);
+  color: var(--color-text-secondary);
 }
 
 .empty-state--small {
-  padding: var(--spacing-4, 1rem);
+  padding: var(--spacing-4);
 }
 
 .empty-state--large {
-  padding: var(--spacing-12, 3rem);
+  padding: var(--spacing-12);
 }
 
 .empty-state-icon {
-  margin-bottom: var(--spacing-4, 1rem);
-  color: var(--color-text-tertiary, #999);
+  margin-bottom: var(--spacing-4);
+  color: var(--color-text-tertiary);
   opacity: 0.6;
 }
 
 .empty-state--small .empty-state-icon {
-  margin-bottom: var(--spacing-2, 0.5rem);
+  margin-bottom: var(--spacing-2);
 }
 
 .empty-state--large .empty-state-icon {
-  margin-bottom: var(--spacing-6, 1.5rem);
+  margin-bottom: var(--spacing-6);
 }
 
 .empty-state-content {
@@ -120,39 +120,39 @@ const iconSize = computed(() => {
 
 .empty-state-title {
   margin: 0 0 var(--spacing-2, 0.5rem);
-  font-size: var(--font-size-lg, 1.125rem);
-  font-weight: var(--font-weight-semibold, 600);
-  color: var(--color-text-primary, #333);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 
 .empty-state--small .empty-state-title {
-  font-size: var(--font-size-base, 1rem);
+  font-size: var(--font-size-base);
 }
 
 .empty-state--large .empty-state-title {
-  font-size: var(--font-size-xl, 1.25rem);
+  font-size: var(--font-size-xl);
 }
 
 .empty-state-description {
   margin: 0;
-  font-size: var(--font-size-sm, 0.875rem);
+  font-size: var(--font-size-sm);
   line-height: 1.6;
-  color: var(--color-text-secondary, #666);
+  color: var(--color-text-secondary);
 }
 
 .empty-state--small .empty-state-description {
-  font-size: var(--font-size-xs, 0.75rem);
+  font-size: var(--font-size-xs);
 }
 
 .empty-state-action {
-  margin-top: var(--spacing-4, 1rem);
+  margin-top: var(--spacing-4);
 }
 
 .empty-state--small .empty-state-action {
-  margin-top: var(--spacing-2, 0.5rem);
+  margin-top: var(--spacing-2);
 }
 
 .empty-state--large .empty-state-action {
-  margin-top: var(--spacing-6, 1.5rem);
+  margin-top: var(--spacing-6);
 }
 </style>

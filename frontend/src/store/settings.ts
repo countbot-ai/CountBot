@@ -4,7 +4,7 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { settingsAPI, type Settings } from '@/api'
+import { settingsAPI, type Settings, type InjectionConfig } from '@/api'
 import { buildSendableModelConfig } from '@/utils/modelConfig'
 
 export interface ProviderConfig {
@@ -27,6 +27,8 @@ export interface ModelConfig {
 export interface WorkspaceConfig {
     path: string
 }
+
+export type { InjectionConfig }
 
 export interface SecurityConfig {
     // 危险命令检测
@@ -187,6 +189,19 @@ export const useSettingsStore = defineStore('settings', () => {
         }
     }
 
+    /**
+     * 更新上下文注入开关
+     */
+    function updateInjection(config: InjectionConfig) {
+        if (settings.value) {
+            settings.value.injection = config
+            // 自动保存并触发热重载
+            void saveSettings({ injection: config }).catch((err: any) => {
+                console.error('Failed to auto-save injection settings:', err)
+            })
+        }
+    }
+
     return {
         // State
         settings,
@@ -203,6 +218,7 @@ export const useSettingsStore = defineStore('settings', () => {
         updateProvider,
         updateModel,
         updateWorkspace,
-        updateSecurity
+        updateSecurity,
+        updateInjection
     }
 })

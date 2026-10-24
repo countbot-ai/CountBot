@@ -6,6 +6,7 @@ export interface ModelConfigLike {
   max_tokens?: number
   max_iterations?: number
   thinking_enabled?: boolean
+  supports_image?: boolean | null
   api_key?: string
   api_base?: string
 }
@@ -18,6 +19,7 @@ export const MODEL_CONFIG_FALLBACK: Required<ModelConfigLike> = {
   max_tokens: 0,
   max_iterations: 25,
   thinking_enabled: true,
+  supports_image: null,
   api_key: '',
   api_base: '',
 }
@@ -55,6 +57,7 @@ const DIFF_KEYS: Array<keyof ModelConfigLike> = [
   'max_tokens',
   'max_iterations',
   'thinking_enabled',
+  'supports_image',
   'api_key',
   'api_base',
 ]
@@ -111,6 +114,7 @@ export function buildCustomModelEditorConfig<T extends ModelConfigLike>(
     max_tokens: override?.max_tokens ?? MODEL_CONFIG_FALLBACK.max_tokens,
     max_iterations: override?.max_iterations ?? MODEL_CONFIG_FALLBACK.max_iterations,
     thinking_enabled: override?.thinking_enabled ?? MODEL_CONFIG_FALLBACK.thinking_enabled,
+    supports_image: override?.supports_image ?? MODEL_CONFIG_FALLBACK.supports_image,
     api_key: typeof override?.api_key === 'string' ? override.api_key : '',
     api_base: typeof override?.api_base === 'string' ? override.api_base : '',
   } as T

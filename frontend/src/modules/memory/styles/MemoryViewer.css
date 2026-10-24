@@ -54,7 +54,7 @@
 }
 
 .memory-tab:hover {
-  border-color: var(--border-secondary, var(--border-color));
+  border-color: var(--border-secondary);
   background: var(--hover-bg);
   color: var(--text-primary);
 }
@@ -115,7 +115,7 @@
 }
 
 .btn-secondary:hover:not(:disabled) {
-  border-color: var(--border-secondary, var(--border-color));
+  border-color: var(--border-secondary);
   background: var(--hover-bg);
 }
 
@@ -125,11 +125,11 @@
   gap: 0.5rem;
   justify-content: center;
   padding: 0.75rem 1.5rem;
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-primary);
-  color: #fff;
-  box-shadow: 0 2px 4px rgba(24, 24, 27, 0.2);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease,
@@ -170,7 +170,7 @@
   gap: 0.75rem;
   margin: 0 var(--spacing-lg) var(--spacing-lg);
   padding: 0.9rem 1rem;
-  border: 1px solid rgba(239, 68, 68, 0.14);
+  border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-lg);
   background: var(--color-error-light);
   color: var(--color-error-hover);
@@ -293,7 +293,7 @@
   width: 2.5rem;
   height: 2.5rem;
   border: 3px solid var(--border-color);
-  border-top-color: var(--color-primary);
+  border-top-color: var(--text-secondary);
   border-radius: 50%;
   margin-bottom: 1rem;
   animation: spin 0.8s linear infinite;
@@ -339,7 +339,7 @@
 .memory-tab.active {
   color: var(--color-primary);
   background: var(--color-primary-light);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .memory-stat-line {

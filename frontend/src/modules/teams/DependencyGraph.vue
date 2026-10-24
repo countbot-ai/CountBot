@@ -33,7 +33,7 @@
             refY="3"
             orient="auto"
           >
-            <polygon points="0 0, 10 3, 0 6" fill="#3b82f6" />
+            <polygon points="0 0, 10 3, 0 6" fill="var(--color-accent)" />
           </marker>
         </defs>
 
@@ -154,9 +154,9 @@ const arrowColor = computed(() => {
   if (typeof window !== 'undefined' && graphContainer.value) {
     const style = getComputedStyle(graphContainer.value)
     const textTertiary = style.getPropertyValue('--text-tertiary').trim()
-    return textTertiary || '#94a3b8'
+    return textTertiary || 'var(--text-tertiary)'
   }
-  return '#94a3b8'
+  return 'var(--text-tertiary)'
 })
 
 const nodeWidth = 140

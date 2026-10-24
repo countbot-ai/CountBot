@@ -149,7 +149,7 @@ const handleToggle = () => {
 }
 
 .skill-card:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   box-shadow: var(--shadow-sm);
 }
 
@@ -295,7 +295,7 @@ const handleToggle = () => {
 
 .view-btn:hover {
   background: var(--hover-bg);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .toggle-btn:hover:not(:disabled) {

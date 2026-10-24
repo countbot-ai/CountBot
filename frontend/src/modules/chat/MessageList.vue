@@ -18,10 +18,11 @@
         </div>
       </div>
       <MessageItem
-        v-for="message in safeMessages"
+        v-for="(message, index) in safeMessages"
         :key="message.id"
         :ref="el => setMessageRef(message.id, el)"
         :message="message"
+        :is-streaming="isStreaming && index === safeMessages.length - 1 && message.role === 'assistant'"
         @regenerate="handleRegenerate"
         @replay-start="handleReplayStart"
         @delete="handleDelete"
@@ -57,6 +58,8 @@ interface Props {
   autoScroll?: boolean
   hasMoreHistory?: boolean
   isLoadingMore?: boolean
+  /** 是否有消息正在实时流式输出（驱动逐字晕开动画） */
+  isStreaming?: boolean
 }
 
 interface Emits {

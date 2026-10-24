@@ -251,7 +251,7 @@ const getTabMeta = (field: ConfigFieldSchema) => {
   padding: var(--spacing-md);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.92) 100%);
+  background: linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-secondary) 100%);
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
@@ -260,13 +260,13 @@ const getTabMeta = (field: ConfigFieldSchema) => {
 
 .config-tab:hover {
   transform: translateY(-1px);
-  border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .config-tab.active {
-  border-color: var(--color-primary);
-  box-shadow: 0 14px 28px rgba(59, 130, 246, 0.16);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
 }
 
 .config-tab-title {
@@ -286,45 +286,30 @@ const getTabMeta = (field: ConfigFieldSchema) => {
   align-items: center;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.14);
+  background: var(--color-bg-secondary);
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: var(--font-weight-medium);
 }
 
 .config-tab-status.configured {
-  background: rgba(16, 185, 129, 0.14);
-  color: #059669;
+  background: var(--color-success-light);
+  color: var(--color-success);
 }
 
 .config-tab-panel {
   padding: var(--spacing-sm) 0 0;
 }
 
-:root[data-theme="dark"] .config-tab {
-  background: linear-gradient(180deg, rgba(10, 14, 26, 0.96) 0%, rgba(12, 18, 32, 0.9) 100%);
-  border-color: #1f2b44;
-}
 
-:root[data-theme="dark"] .config-tab:hover {
-  border-color: rgba(0, 240, 255, 0.26);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
-}
 
-:root[data-theme="dark"] .config-tab.active {
-  border-color: rgba(0, 240, 255, 0.4);
-  box-shadow: 0 12px 28px rgba(0, 240, 255, 0.12);
-}
 
-:root[data-theme="dark"] .config-tab-status {
-  background: rgba(148, 163, 184, 0.18);
-  color: #cbd5e1;
-}
 
-:root[data-theme="dark"] .config-tab-status.configured {
-  background: rgba(16, 185, 129, 0.18);
-  color: #34d399;
-}
+
+
+
+
+
 
 @media (max-width: 768px) {
   .config-tabs {

@@ -479,18 +479,22 @@ async def test_sse_direct_workflow_projects_child_outcome(monkeypatch, tool_resu
     async def backfill(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(chat, "_require_session", require_session)
-    monkeypatch.setattr(chat, "get_agent_loop", get_agent)
-    monkeypatch.setattr(chat, "SessionManager", SessionManager)
-    monkeypatch.setattr(chat, "ConversationContextService", ContextService)
-    monkeypatch.setattr(chat, "_resolve_active_workspace", lambda: tmp_path)
-    monkeypatch.setattr(chat, "_resolve_explicit_external_tool_request", lambda *args: None)
-    monkeypatch.setattr(chat, "_resolve_explicit_team_workflow_request",
+    # 这些符号在拆分后由 backend.api.chat.stream 实际使用，
+    # 补丁必须打在真实使用点，否则不会生效。
+    from backend.api.chat import stream as chat_impl
+
+    monkeypatch.setattr(chat_impl, "_require_session", require_session)
+    monkeypatch.setattr(chat_impl, "get_agent_loop", get_agent)
+    monkeypatch.setattr(chat_impl, "SessionManager", SessionManager)
+    monkeypatch.setattr(chat_impl, "ConversationContextService", ContextService)
+    monkeypatch.setattr(chat_impl, "_resolve_active_workspace", lambda: tmp_path)
+    monkeypatch.setattr(chat_impl, "_resolve_explicit_external_tool_request", lambda *args: None)
+    monkeypatch.setattr(chat_impl, "_resolve_explicit_team_workflow_request",
                         lambda *args: ("team", "goal"))
-    monkeypatch.setattr(chat, "schedule_context_maintenance", lambda **kwargs: None)
-    monkeypatch.setattr(chat, "get_db_session_factory", lambda: None)
+    monkeypatch.setattr(chat_impl, "schedule_context_maintenance", lambda **kwargs: None)
+    monkeypatch.setattr(chat_impl, "get_db_session_factory", lambda: None)
     monkeypatch.setattr(
-        chat, "resolve_session_runtime_config",
+        chat_impl, "resolve_session_runtime_config",
         lambda *args: SimpleNamespace(persona_config=SimpleNamespace(
             max_history_messages=10, enable_short_context_summary=False,
         ), model_name="test"),
@@ -576,3 +580,56 @@ async def test_ws_notification_uses_canonical_state(
     assert outcome.state is tool_result.state
     assert ("complete" in [signal[0] for signal in signals]) is should_complete
     assert ("error" in [signal[0] for signal in signals]) is not should_complete
+
+
+@pytest.mark.asyncio
+async def test_ws_non_success_notification_is_tool_scoped(monkeypatch):
+    """失败工具必须发 tool_error，前端才能把对应卡片收敛为失败态。"""
+    from backend.ws import tool_notifications as notifications
+
+    sent = []
+
+    async def capture(session_id, message):
+        sent.append((session_id, message))
+        return 1
+
+    monkeypatch.setattr(notifications.connection_manager, "send_to_session", capture)
+    await notifications.notify_tool_execution(
+        session_id="session",
+        tool_name="probe",
+        arguments={},
+        error="blocked by safety guard",
+        phase="non_success",
+    )
+
+    assert len(sent) == 1
+    session_id, message = sent[0]
+    assert session_id == "session"
+    assert message.type == "tool_error"
+    assert message.tool == "probe"
+    assert message.error == "blocked by safety guard"
+
+
+@pytest.mark.asyncio
+async def test_ws_success_notification_remains_tool_result(monkeypatch):
+    from backend.ws import tool_notifications as notifications
+
+    sent = []
+
+    async def capture(session_id, message):
+        sent.append((session_id, message))
+        return 1
+
+    monkeypatch.setattr(notifications.connection_manager, "send_to_session", capture)
+    await notifications.notify_tool_execution(
+        session_id="session",
+        tool_name="probe",
+        arguments={},
+        result="finished",
+        phase="success",
+    )
+
+    assert len(sent) == 1
+    _, message = sent[0]
+    assert message.type == "tool_result"
+    assert message.result == "finished"

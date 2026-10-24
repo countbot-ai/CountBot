@@ -67,6 +67,7 @@ class WeiboChannel(BaseChannel):
             return
 
         self._running = True
+        self.set_runtime_state(self.RUNTIME_CONNECTING)
         logger.info(f"[{self._account_id}] Starting Weibo channel...")
 
         # 主循环：自动重连
@@ -77,9 +78,12 @@ class WeiboChannel(BaseChannel):
                 break
             except Exception as e:
                 logger.error(f"[{self._account_id}] Weibo connection error: {e}")
+                self.set_runtime_state(self.RUNTIME_CONNECTING, error=str(e))
 
             if not self._running:
                 break
+
+            self.set_runtime_state(self.RUNTIME_CONNECTING, error="connection lost")
 
             logger.warning(
                 f"[{self._account_id}] Weibo connection lost, "
@@ -92,6 +96,7 @@ class WeiboChannel(BaseChannel):
 
     async def stop(self) -> None:
         """停止微博机器人"""
+        self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         
         # 取消心跳任务
@@ -110,6 +115,7 @@ class WeiboChannel(BaseChannel):
             except Exception as e:
                 logger.warning(f"[{self._account_id}] Error closing WebSocket: {e}")
         
+        self.set_runtime_state(self.RUNTIME_STOPPED)
         logger.info(f"[{self._account_id}] Weibo bot stopped")
 
     async def test_connection(self) -> Dict[str, Any]:
@@ -230,6 +236,7 @@ class WeiboChannel(BaseChannel):
             # 保存到全局缓存
             _ws_clients[self._account_id] = ws
             self._reconnect_delay = 5  # 重置退避时间
+            self.set_runtime_state(self.RUNTIME_RUNNING, reconnect_attempts=0)
             logger.success(f"[{self._account_id}] Weibo WebSocket connected")
 
             # 接收连接确认

@@ -1,6 +1,6 @@
 """工具注册统一配置模块"""
 
-from typing import List, Optional
+from typing import Iterable, List, Optional
 from pathlib import Path
 from loguru import logger
 
@@ -23,6 +23,7 @@ def register_all_tools(
     session_manager=None,
     memory_store=None,
     config_loader=None,
+    disabled_tools: Optional[Iterable[str]] = None,
 ) -> ToolRegistry:
     """
     注册所有可用工具
@@ -42,10 +43,15 @@ def register_all_tools(
         channel_manager: ChannelManager 实例（可选）
         session_manager: SessionManager 实例（可选）
         memory_store: MemoryStore 实例（可选，用于记忆工具）
+        disabled_tools: 禁用的工具名列表（可选，来自 injection.disabled_tools）；
+            命中的工具在注册后卸载，不出现在工具定义里，模型也无法调用
         
     Returns:
         ToolRegistry: 已注册所有工具的注册表
     """
+    # 保存构建参数，供 sync_disabled_tools 重建注册表
+    build_params = dict(locals())
+
     tools = ToolRegistry()
     
     # 配置审计日志
@@ -228,4 +234,55 @@ def register_all_tools(
         logger.warning(f"Failed to register xiaozhi send_message tool: {e}")
 
     logger.debug(f"Registered {len(tools.get_definitions())} tools")
+
+    # 10. 应用注入开关：禁用指定工具（injection.disabled_tools）
+    if disabled_tools:
+        for tool_name in disabled_tools:
+            name = str(tool_name or "").strip()
+            if not name:
+                continue
+            if tools.unregister(name):
+                logger.info(f"Tool '{name}' disabled by injection config (not exposed to LLM)")
+            else:
+                logger.warning(
+                    f"Injection config requests disabling unknown tool '{name}'; "
+                    f"registered tools: {tools.list_tools()}"
+                )
+        logger.debug(
+            f"After injection filtering: {len(tools.get_definitions())} tools"
+        )
+
+    tools.build_params = build_params
     return tools
+
+
+def sync_disabled_tools(registry: ToolRegistry, disabled_tools: Optional[Iterable[str]]) -> bool:
+    """按最新注入开关就地重建工具集，返回是否发生变化。
+
+    长连接（WebSocket）的工具注册表只在建连时创建一次；本函数让
+    「设置页改工具开关 → 下一条消息即生效」不需要重连。
+
+    Args:
+        registry: 已注册工具的注册表（来自 register_all_tools）
+        disabled_tools: 最新的禁用工具名列表
+    """
+    build_params = getattr(registry, "build_params", None)
+    if not isinstance(build_params, dict):
+        return False
+
+    target = [str(name).strip() for name in (disabled_tools or []) if str(name).strip()]
+    current = [
+        str(name).strip()
+        for name in (build_params.get("disabled_tools") or [])
+        if str(name).strip()
+    ]
+    if current == target:
+        return False
+
+    rebuilt = register_all_tools(**{**build_params, "disabled_tools": target})
+    # 就地复用原注册表对象，保持外部引用有效
+    registry._tools = rebuilt._tools
+    registry._definitions_cache = None
+    registry.build_params = rebuilt.build_params
+    logger.info(f"Tool registry re-synced with injection config: disabled_tools={target}")
+    return True

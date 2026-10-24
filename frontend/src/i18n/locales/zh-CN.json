@@ -54,8 +54,6 @@
         "optional": "可选",
         "default": "默认",
         "toggleDropdown": "切换下拉菜单",
-        "optional": "可选",
-        "optional": "可选",
         "enable": "启用",
         "disable": "禁用"
     },
@@ -159,7 +157,10 @@
             "collapse": "收起",
             "expand": "展开",
             "show": "显示思考过程",
-            "hide": "隐藏思考过程"
+            "hide": "隐藏思考过程",
+            "thinkingNow": "思考中",
+            "thought": "思考过程",
+            "thoughtFor": "已思考 {seconds} 秒"
         },
         "mermaid": {
             "title": "Mermaid 图表",
@@ -373,7 +374,8 @@
             "lines": "{count} 行",
             "previewOnly": "当前仅展示历史摘要，展开后会自动加载完整结果。",
             "loadingDetail": "正在加载完整工具结果...",
-            "loadDetailFailed": "加载工具详情失败"
+            "loadDetailFailed": "加载工具详情失败",
+            "unknownTool": "工具调用"
         },
         "names": {
             "read_file": "读取文件",
@@ -393,6 +395,7 @@
             "run_command": "运行命令",
             "execute_script": "执行脚本",
             "web_fetch": "获取网页",
+            "web_search": "网络搜索",
             "spawn": "子代理任务",
             "external_coding_agent": "外部编码代理",
             "workflow_run": "运行工作流",
@@ -482,7 +485,8 @@
             "providerModel": "保存会同时提交提供商与模型参数",
             "channels": "仅保存当前渠道配置",
             "externalTools": "当前页独立保存",
-            "noSave": "当前页无需统一保存"
+            "noSave": "当前页无需统一保存",
+            "injection": "当前页修改后自动保存并热生效"
         },
         "saveAll": "全部保存",
         "saveAllSuccess": "全部设置已保存",
@@ -498,7 +502,8 @@
             "channels": "IM 渠道",
             "mcp": "MCP",
             "externaltools": "编程工具",
-            "multiagent": "多智能体"
+            "multiagent": "多智能体",
+            "injection": "上下文注入"
         },
         "tabShort": {
             "general": "通用",
@@ -511,11 +516,12 @@
             "channels": "IM 渠道",
             "mcp": "MCP",
             "externaltools": "编程工具",
-            "multiagent": "多智能体"
+            "multiagent": "多智能体",
+            "injection": "注入"
         },
         "mcp": {
             "title": "MCP 工具接入",
-            "description": "连接外部 MCP Server，扩展 AI 可用工具",
+            "description": "说明",
             "enabled": "已启用",
             "disabled": "已关闭",
             "enableMcp": "启用 MCP",
@@ -534,7 +540,6 @@
             "saveError": "保存失败",
             "noServers": "暂无 MCP Server，点击「添加 Server」开始接入",
             "serverNamePlaceholder": "Server 名称",
-            "description": "说明",
             "descriptionPlaceholder": "补充这个 MCP server 的用途",
             "transport": "传输方式",
             "command": "启动命令",
@@ -924,6 +929,11 @@
             "maxIterationsDesc": "Agent 可以调用工具的最大次数，防止无限循环。",
             "thinkingEnabled": "启用思考",
             "thinkingEnabledDesc": "关闭后会优先请求直接回答；在支持的模型或接口上，通常能缩短首字等待时间。若上游仍返回 reasoning，系统仍会按思考内容显示，说明当前上游没有真正关闭 reasoning。",
+            "imageInput": "图片输入",
+            "imageInputDesc": "控制图片是直接作为多模态内容发送，还是只发送工作区路径交给图片技能。自动模式会按模型名判断，自定义模型建议手动选择“支持”。",
+            "imageInputAuto": "自动判断",
+            "imageInputOn": "支持图片",
+            "imageInputOff": "不支持图片",
             "thinkingProviderStatus": "当前提供商能力：{tier} · {group}",
             "topP": "Top P",
             "topPDesc": "核采样参数，控制输出的多样性。"
@@ -1231,6 +1241,15 @@
             "testNote": "注意：完整的连接测试将在启用渠道后进行",
             "configUpdated": "配置已更新",
             "restartNotice": "渠道配置更改后需要重启应用才能生效。请重启应用以应用新配置。",
+            "deliveryError": "最近一次消息投递失败：",
+            "runtimeState": {
+                "starting": "启动中",
+                "connecting": "连接中",
+                "running": "运行中",
+                "stopping": "停止中",
+                "stopped": "已停止",
+                "failed": "连接失败"
+            },
             "enableChannel": {
                 "message": "频道未启用，配置不会生效。请开启启用按钮以激活频道。"
             },
@@ -1278,6 +1297,32 @@
                 "profilePlaceholder": "未指定",
                 "noProfiles": "请先到“编程工具”页添加工具。",
                 "profileDisabled": "未启用"
+            },
+            "onboarding": {
+                "statusLabel": "扫码状态",
+                "idle": "尚未发起扫码绑定。",
+                "statusIdle": "未开始",
+                "statusStarting": "正在获取二维码",
+                "statusWaiting": "等待扫码",
+                "statusConfirmed": "已绑定",
+                "statusExpired": "已过期",
+                "statusError": "异常",
+                "start": "扫码绑定",
+                "startingButton": "正在生成...",
+                "restart": "重新扫码",
+                "check": "检查状态",
+                "polling": "查询中...",
+                "startingMessage": "正在向后端申请二维码...",
+                "waitingMessage": "请使用手机扫码，并在页面上完成授权。",
+                "confirmedMessage": "绑定成功，凭据已保存并启用。",
+                "expiredMessage": "二维码已过期，请重新发起扫码绑定。",
+                "errorMessage": "扫码绑定失败，请重试或改用手动配置。",
+                "startFailed": "生成二维码失败",
+                "pollFailed": "查询扫码状态失败",
+                "qrAlt": "扫码绑定二维码",
+                "openAuthPage": "打开授权页面",
+                "userCode": "授权码：{code}",
+                "boundAccount": "已绑定账号：{id}"
             },
             "catalog": {
                 "telegram": {
@@ -1347,6 +1392,8 @@
             "qq": {
                 "enabled": "接入 QQ 机器人",
                 "enableHint": "启用 QQ 通道后，可管理机器人并接收消息。",
+                "onboardingTitle": "扫码绑定 QQ 机器人",
+                "onboardingHint": "用手机 QQ 扫码，按页面提示创建或选择机器人；成功后自动写入 App ID 和 Secret 并启用。",
                 "disabledWarning": "频道未启用，配置后不会生效",
                 "guideTitle": "接入指引",
                 "guideConsoleLink": "打开连接",
@@ -1409,6 +1456,8 @@
             "dingtalk": {
                 "enabled": "接入钉钉机器人",
                 "enableHint": "启用钉钉通道后，可管理机器人并接收消息。",
+                "onboardingTitle": "扫码绑定钉钉机器人",
+                "onboardingHint": "用钉钉扫码，按页面提示一键创建机器人；成功后自动写入 Client ID 和 Secret 并启用。",
                 "disabledWarning": "频道未启用，配置后不会生效",
                 "guideTitle": "接入指引",
                 "guideLink": "打开连接",
@@ -1428,6 +1477,8 @@
             "feishu": {
                 "enabled": "接入飞书机器人",
                 "enableHint": "启用飞书通道后，可管理机器人并接收消息。",
+                "onboardingTitle": "扫码创建飞书机器人",
+                "onboardingHint": "用飞书扫码授权，自动创建个人智能体应用；成功后自动写入 App ID 和 Secret 并启用。",
                 "disabledWarning": "频道未启用，配置后不会生效",
                 "guideTitle": "接入指引",
                 "guideLink": "打开连接",
@@ -1445,6 +1496,12 @@
                 "verificationToken": "Verification Token",
                 "verificationTokenPlaceholder": "输入 Verification Token（可选）",
                 "verificationTokenHint": "可选：用于事件验证，通常可留空",
+                "groupEnabled": "允许群聊响应",
+                "groupEnabledHint": "关闭后机器人只处理私聊，群里的消息会被忽略。",
+                "groupRequireMention": "群聊必须 @机器人",
+                "groupRequireMentionHint": "开启后只有 @ 机器人的群消息才会触发任务，避免群里闲聊误触发。",
+                "groupTopicEnabled": "按话题拆分会话",
+                "groupTopicEnabledHint": "飞书话题群里每个话题独立上下文，回复会落在同一话题下。",
                 "allowFrom": "允许的用户",
                 "userIdPlaceholder": "用户 ID（可选）",
                 "allowFromHint": "可选：留空允许所有用户，或添加特定用户 ID 进行访问控制",
@@ -1453,6 +1510,8 @@
             "wecom": {
                 "enabled": "接入企业微信机器人",
                 "enableHint": "启用企业微信通道后，可管理机器人并接收消息。",
+                "onboardingTitle": "扫码绑定企业微信机器人",
+                "onboardingHint": "用企业微信扫码，按页面提示创建智能机器人；成功后自动写入 Bot ID 和 Secret 并启用。",
                 "disabledWarning": "频道未启用，配置后不会生效",
                 "guideTitle": "接入指引",
                 "guideLink": "打开连接",
@@ -1659,6 +1718,31 @@
             "workspace": "工作空间",
             "codingplan": "Coding Plan",
             "multiagent": "智能体团队"
+        },
+        "injection": {
+            "title": "上下文注入",
+            "description": "控制每次请求注入给大模型的内容。关闭不必要的注入可以节省 token、让响应更聚焦；修改后自动保存并热生效，无需重启。",
+            "coreRules": "核心规则段",
+            "coreRulesDesc": "CountBot 规则、工具与执行、文件与技能、记忆、知识库、安全等完整规则。关闭后仅保留名字、运行环境、目录与性格的最小身份。",
+            "externalCodingGuidance": "外部编码代理指引",
+            "externalCodingGuidanceDesc": "external_coding_agent（claude/codex 等）的使用说明。关闭后规则段中不再出现该指引。",
+            "skillsSummary": "可用技能摘要",
+            "skillsSummaryDesc": "所有已启用技能的 name + description 列表，模型据此判断何时读取 SKILL.md。关闭后模型不知道有哪些技能。",
+            "skillsAlways": "always 技能全文注入",
+            "skillsAlwaysDesc": "frontmatter 中 always=true 的技能全文直接进入系统提示词。当前没有 always 技能时无实际消耗。",
+            "agentTeams": "多智能体团队区块",
+            "agentTeamsDesc": "已激活团队的名称、模式与成员列表，以及团队名提及触发 workflow_run 的规则。",
+            "dynamicContext": "动态上下文",
+            "dynamicContextDesc": "关闭后，时间、称呼、输出语言、会话摘要、渠道信息都不再发送——模型不知道现在几点，也不知道怎么称呼你。名字、性格、运行环境不归它管，见「核心规则段」。",
+            "teamReminder": "团队提及提醒",
+            "teamReminderDesc": "检测到团队名提及时注入大段 workflow_run 调用指令。关闭后仅保留团队区块的轻量提示。",
+            "autoMemorySummary": "自动记忆维护",
+            "autoMemorySummaryDesc": "后台把溢出历史、整会话自动总结并写入 MEMORY.md 的后台 LLM 调用。关闭后不再产生这类后台消耗（手动 memory 工具不受影响）。",
+            "toolsWarning": "禁用核心工具（read_file / write_file / edit_file / exec）会破坏大多数技能的读取与执行链路，请谨慎。",
+            "toolCore": "核心",
+            "saveHint": "修改后自动保存并立即热生效；开关变化会改变系统提示词，首次请求的 prompt cache 会重新建立。",
+            "disabledTools": "工具开关",
+            "disabledToolsDesc": "取消勾选后该工具不再出现在工具定义里，模型无法调用。每个工具定义约 120–750 tokens。"
         }
     },
     "memory": {
@@ -1995,6 +2079,12 @@
         "chatId": "聊天 ID",
         "chatIdPlaceholder": "输入群组 ID 或用户 ID",
         "chatIdHint": "输入群组 ID 或用户 ID,飞书、钉钉群组 ID、可以通过会话功能的会话名称查看",
+        "chatIdCustom": "手动输入聊天 ID",
+        "chatIdPickHint": "从该渠道已有的会话中选择，或选「手动输入聊天 ID」填写新的目标",
+        "chatTypeGroup": "群聊",
+        "chatTypeUser": "私聊",
+        "channelNotRunning": "未运行",
+        "noConfiguredChannelHint": "没有可推送的渠道，请先到「设置 - 渠道」完成渠道配置",
         "channelNames": {
             "web": "网页",
             "feishu": "飞书",

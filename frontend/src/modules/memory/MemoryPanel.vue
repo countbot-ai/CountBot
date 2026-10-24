@@ -57,10 +57,8 @@ defineExpose({
 .memory-panel {
   height: 100%;
   overflow: hidden;
-  background: var(--bg-secondary, #f9fafb);
+  background: var(--bg-secondary);
 }
 
-:root[data-theme="dark"] .memory-panel {
-  background: var(--bg-secondary, #111827);
-}
+
 </style>

@@ -416,18 +416,18 @@ class HeartbeatService:
         前置检查已在 prepare_dispatch 中完成（免打扰时段、随机时间点、
         用户空闲时长、每日上限），此处直接生成内容。
         """
-        from backend.modules.agent.prompts import HEARTBEAT_GREETING_PROMPT
+        from backend.modules.agent.prompts import HEARTBEAT_GREETING_PROMPT, render_prompt
         from backend.modules.agent.personalities import get_personality_prompt
 
         hour = now.hour
         if hour < 12:
-            time_desc = f"上午{hour}点"
+            time_desc = f"{hour}:00 in the morning"
         elif hour < 14:
-            time_desc = f"中午{hour}点"
+            time_desc = f"{hour}:00 around noon"
         elif hour < 18:
-            time_desc = f"下午{hour}点"
+            time_desc = f"{hour}:00 in the afternoon"
         else:
-            time_desc = f"晚上{hour}点"
+            time_desc = f"{hour}:00 in the evening"
 
         # 读取最近记忆作为上下文
         memory_context = ""
@@ -435,7 +435,7 @@ class HeartbeatService:
             memory = MemoryStore(self.workspace / "memory")
             recent = memory.get_recent(5)
             if recent and "记忆为空" not in recent:
-                memory_context = f"最近的记忆（可参考但不必提及）:\n{recent}"
+                memory_context = f"Recent memory (may inform the tone, do not quote it):\n{recent}"
         except Exception:
             pass
 
@@ -446,11 +446,11 @@ class HeartbeatService:
         )
 
         # 用户信息上下文
-        user_context = f"用户称呼: {self.user_name}"
+        user_context = f"User name: {self.user_name}"
         if self.user_address:
-            user_context += f"\n用户地址: {self.user_address}"
+            user_context += f"\nUser location: {self.user_address}"
 
-        prompt = HEARTBEAT_GREETING_PROMPT.format(
+        prompt = render_prompt(HEARTBEAT_GREETING_PROMPT, 
             ai_name=self.ai_name,
             user_name=self.user_name,
             time_desc=time_desc,

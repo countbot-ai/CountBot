@@ -11,7 +11,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import WebSocket
 from loguru import logger
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db, get_db_session_factory
 from backend.modules.agent.loop import AgentLoop
+from backend.modules.agent.session_gate import get_session_gate
 from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress, ToolExecutionRejected
 from backend.modules.config.loader import config_loader
 from backend.modules.external_agents.conversation import (
@@ -159,6 +160,204 @@ def _inject_explicit_external_request_context(
 # ============================================================================
 
 
+async def _resolve_ws_runtime(
+    agent_loop: AgentLoop,
+    session_id: str,
+    session,
+    runtime_config,
+) -> Optional[tuple]:
+    """校验 provider 可用性并解析执行参数。
+
+    不可用时发送 PROVIDER_UNAVAILABLE 分类错误并返回 None；
+    正常返回 (model_override, persona_override, active_provider)。
+    """
+    runtime_state = get_provider_runtime_state(
+        config_loader.config,
+        runtime_config.provider_name,
+        api_key_override=runtime_config.api_key,
+        api_base_override=runtime_config.api_base,
+    )
+    if not runtime_state.selectable:
+        await send_error(
+            session_id,
+            build_provider_unavailable_message(
+                runtime_config.provider_name,
+                runtime_state.reason,
+            ),
+            "PROVIDER_UNAVAILABLE",
+        )
+        return None
+
+    model_override = build_session_model_override(runtime_config, force=True)
+    persona_override = runtime_config.persona_config
+
+    if session.use_custom_config:
+        if runtime_config.has_custom_model_config:
+            logger.info(
+                "✓ 使用会话级模型配置: "
+                f"{runtime_config.provider_name}/{runtime_config.model_name}"
+            )
+        if runtime_config.has_custom_persona_config:
+            logger.info(f"✓ 使用自定义性格: {runtime_config.persona_config.personality}")
+    else:
+        logger.info(
+            "使用全局配置: "
+            f"{runtime_config.provider_name}/{runtime_config.model_name}"
+        )
+
+    active_provider, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
+        model_override
+    )
+    return model_override, persona_override, active_provider
+
+
+async def _persist_user_message_and_build_context(
+    session_manager: SessionManager,
+    db: AsyncSession,
+    session_id: str,
+    content: str,
+    attachment_items: list,
+    history_limit: int,
+    enable_short_context_summary: bool,
+) -> Optional[tuple]:
+    """保存用户消息并构建模型上下文。
+
+    保存失败时发送 DATABASE_ERROR 并返回 None；
+    正常返回 (user_message, context, context_payload)。
+    """
+    user_message = await session_manager.add_message(
+        session_id=session_id,
+        role="user",
+        content=content,
+        message_context=build_message_context(attachment_items=attachment_items),
+    )
+
+    if user_message is None:
+        logger.error(f"保存用户消息失败")
+        await send_error(
+            session_id,
+            "Failed to save user message",
+            "DATABASE_ERROR",
+        )
+        return None
+
+    logger.info(f"用户消息已保存: ID={user_message.id}")
+
+    context_service = ConversationContextService(db)
+    context_payload = await context_service.build_model_context(
+        session_id=session_id,
+        max_history_messages=history_limit,
+        enable_short_context_summary=enable_short_context_summary,
+    )
+    context = context_payload.history
+    if context and context[-1].get("role") == "user":
+        context = context[:-1]
+
+    return user_message, context, context_payload
+
+
+def _inject_ws_tool_context(agent_loop: AgentLoop, session_id: str, cancel_token) -> None:
+    """把会话上下文注入工具注册表，并对齐 MCP 工具集与禁用列表。"""
+    if not agent_loop.tools:
+        return
+
+    agent_loop.tools.set_session_id(session_id)
+    agent_loop.tools.set_cancel_token(cancel_token)
+    logger.debug(f"Propagated session_id={session_id} to tool registry")
+
+    # 每轮对话开始前，把会话级注册表的 MCP 工具与当前全局 MCP 工具集对齐。
+    # 注册表只在 WS 建立时同步过一次，感知不到中途的 MCP 配置变更，
+    # 因此每条消息前重新对齐（增/删/换）。
+    try:
+        from backend.modules.mcp.client import McpClientManager
+        McpClientManager.get_instance().reconcile_registry_sync(agent_loop.tools)
+    except Exception as e:
+        logger.debug(f"MCP reconcile skipped: {e}")
+
+    # 按最新注入配置对齐工具集，避免长连接沿用旧禁用列表
+    try:
+        # 注意：不要在这里重复 import config_loader —— 函数内任何位置的局部 import
+        # 都会让整个函数作用域把 config_loader 视为局部变量，导致调用方在
+        # import 执行前访问时抛 UnboundLocalError。模块顶部已导入。
+        from backend.modules.tools.setup import sync_disabled_tools
+
+        sync_disabled_tools(
+            agent_loop.tools,
+            config_loader.config.injection.disabled_tools,
+        )
+    except Exception as e:
+        logger.debug(f"Disabled-tools sync skipped: {e}")
+
+
+async def _persist_ws_exchange(
+    session_manager: SessionManager,
+    db: AsyncSession,
+    session_id: str,
+    agent_loop: AgentLoop,
+    runtime_config,
+    active_provider,
+    assistant_content: str,
+    assistant_reasoning: str,
+    streaming_handler,
+    history_limit: int,
+) -> None:
+    """持久化助手回复并触发上下文维护与完成通知。"""
+    persisted_content, normalized_reasoning, used_reasoning_fallback = (
+        normalize_assistant_persistence_payload(
+            assistant_content,
+            assistant_reasoning,
+        )
+    )
+    assistant_message_context = (
+        build_message_context(reasoning_content=normalized_reasoning)
+    )
+
+    if persisted_content:
+        if used_reasoning_fallback:
+            assistant_content = persisted_content
+            await streaming_handler.write(persisted_content)
+            await streaming_handler.flush()
+
+        assistant_message = await session_manager.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=persisted_content,
+            message_context=assistant_message_context,
+        )
+
+        logger.info(f"助手消息已保存到数据库: ID={assistant_message.id}")
+
+        # 回填 message_id 到该轮对话产生的工具调用记录
+        try:
+            from backend.modules.tools.conversation_history import get_conversation_history
+            conversation_history = get_conversation_history()
+            await conversation_history.backfill_message_id(
+                session_id=session_id,
+                message_id=assistant_message.id,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to backfill message_id: {e}")
+
+        schedule_context_maintenance(
+            db_session_factory=get_db_session_factory(),
+            session_id=session_id,
+            max_history_messages=history_limit,
+            enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
+            provider=active_provider,
+            model=runtime_config.model_name,
+            memory_store=getattr(agent_loop.context_builder, "memory", None),
+            auto_summary_source="web-chat",
+            enable_auto_memory_summary=config_loader.config.injection.auto_memory_summary,
+        )
+
+        # 发送完成通知
+        await send_message_complete(session_id, "")
+    else:
+        logger.warning(f"AI响应为空")
+        # 没有内容，发送空完成通知
+        await send_message_complete(session_id, "")
+
+
 async def handle_message_event(
     connection_id: str,
     message: ClientMessage,
@@ -172,8 +371,15 @@ async def handle_message_event(
         message: 客户端消息
         agent_loop: Agent 循环实例
         db: 数据库会话
+
+    阶段划分：_resolve_ws_runtime（provider/模型参数解析）→
+    _persist_user_message_and_build_context（用户消息落库与上下文构建）→
+    _inject_ws_tool_context（工具上下文注入）→ 流式处理 →
+    _persist_ws_exchange（助手回复持久化与完成通知）。
     """
     session_id = message.session_id
+    turn_gate_acquired = False
+    token_registered = False
     try:
         content = _validate_message_or_attachments(
             message.content or "",
@@ -194,7 +400,8 @@ async def handle_message_event(
         # 获取取消令牌
         from backend.ws.connection import get_cancel_token, cleanup_cancel_token
         cancel_token = get_cancel_token(session_id)
-        
+        token_registered = True
+
         # 验证会话是否存在
         session_manager = SessionManager(db)
         session = await session_manager.get_session(session_id)
@@ -223,90 +430,32 @@ async def handle_message_event(
         attachment_paths = [relative_path for relative_path, _ in resolved_attachments]
 
         runtime_config = resolve_session_runtime_config(config_loader.config, session)
-        runtime_state = get_provider_runtime_state(
-            config_loader.config,
-            runtime_config.provider_name,
-            api_key_override=runtime_config.api_key,
-            api_base_override=runtime_config.api_base,
-        )
-        if not runtime_state.selectable:
-            await send_error(
-                session_id,
-                build_provider_unavailable_message(
-                    runtime_config.provider_name,
-                    runtime_state.reason,
-                ),
-                "PROVIDER_UNAVAILABLE",
-            )
+        resolved = await _resolve_ws_runtime(agent_loop, session_id, session, runtime_config)
+        if resolved is None:
             return
+        model_override, persona_override, active_provider = resolved
 
-        model_override = build_session_model_override(runtime_config, force=True)
-        persona_override = runtime_config.persona_config
+        # 同一会话串行处理：先到者执行，后到者按到达顺序等待。
+        # 网页端在流式输出期间再次发送消息时，若不强加顺序，两轮对话会各自读取
+        # 到不完整的历史并互相覆盖，最终回复顺序与用户所见不一致。
+        # 注意：用户消息必须在本轮真正开始处理前才写入，保证历史顺序与处理顺序一致。
+        turn_gate = get_session_gate()
+        await turn_gate.acquire(session_id)
+        turn_gate_acquired = True
 
-        if session.use_custom_config:
-            if runtime_config.has_custom_model_config:
-                logger.info(
-                    "✓ 使用会话级模型配置: "
-                    f"{runtime_config.provider_name}/{runtime_config.model_name}"
-                )
-            if runtime_config.has_custom_persona_config:
-                logger.info(f"✓ 使用自定义性格: {runtime_config.persona_config.personality}")
-        else:
-            logger.info(
-                "使用全局配置: "
-                f"{runtime_config.provider_name}/{runtime_config.model_name}"
-            )
-
-        active_provider, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
-            model_override
-        )
-
-        # 保存用户消息到数据库
-        user_message = await session_manager.add_message(
-            session_id=session_id,
-            role="user",
-            content=content,
-            message_context=build_message_context(attachment_items=attachment_items),
-        )
-
-        if user_message is None:
-            logger.error(f"保存用户消息失败")
-            await send_error(
-                session_id,
-                "Failed to save user message",
-                "DATABASE_ERROR",
-            )
-            return
-
-        logger.info(f"用户消息已保存: ID={user_message.id}")
-
-        context_service = ConversationContextService(db)
         history_limit = runtime_config.persona_config.max_history_messages
-        context_payload = await context_service.build_model_context(
-            session_id=session_id,
-            max_history_messages=history_limit,
-            enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
+        persisted = await _persist_user_message_and_build_context(
+            session_manager, db, session_id, content,
+            attachment_items, history_limit,
+            runtime_config.persona_config.enable_short_context_summary,
         )
-        context = context_payload.history
-        if context and context[-1].get("role") == "user":
-            context = context[:-1]
+        if persisted is None:
+            return
+        user_message, context, context_payload = persisted
 
         logger.info(f"开始AI处理，上下文消息数: {len(context)}")
 
-        # 将当前 session_id 注入到所有支持会话感知的工具（如 workflow_run）
-        if agent_loop.tools:
-            agent_loop.tools.set_session_id(session_id)
-            agent_loop.tools.set_cancel_token(cancel_token)
-            logger.debug(f"Propagated session_id={session_id} to tool registry")
-
-            # 每轮对话开始前，把会话级注册表的 MCP 工具与当前全局 MCP 工具集对齐。
-            # 修复“中途改了 MCP 配置，老对话不加载新工具”的问题：本连接的注册表只在
-            # WS 建立时同步过一次，这里让它在每条消息前重新对齐（增/删/换）。
-            try:
-                from backend.modules.mcp.client import McpClientManager
-                McpClientManager.get_instance().reconcile_registry_sync(agent_loop.tools)
-            except Exception as e:
-                logger.debug(f"MCP reconcile skipped: {e}")
+        _inject_ws_tool_context(agent_loop, session_id, cancel_token)
         explicit_external_request = _resolve_explicit_external_tool_request(
             agent_loop,
             content,
@@ -387,63 +536,13 @@ async def handle_message_event(
         stats = streaming_handler.get_stats()
         logger.debug(f"流式响应统计: {stats}")
 
-        # 保存助手响应到数据库
-        persisted_content, normalized_reasoning, used_reasoning_fallback = (
-            normalize_assistant_persistence_payload(
-                assistant_content,
-                assistant_reasoning,
-            )
+        await _persist_ws_exchange(
+            session_manager, db, session_id, agent_loop, runtime_config,
+            active_provider, assistant_content, assistant_reasoning,
+            streaming_handler, history_limit,
         )
-        assistant_message_context = (
-            build_message_context(reasoning_content=normalized_reasoning)
-        )
-
-        if persisted_content:
-            if used_reasoning_fallback:
-                assistant_content = persisted_content
-                await streaming_handler.write(persisted_content)
-                await streaming_handler.flush()
-
-            assistant_message = await session_manager.add_message(
-                session_id=session_id,
-                role="assistant",
-                content=persisted_content,
-                message_context=assistant_message_context,
-            )
-
-            logger.info(f"助手消息已保存到数据库: ID={assistant_message.id}")
-
-            # 回填 message_id 到该轮对话产生的工具调用记录
-            try:
-                from backend.modules.tools.conversation_history import get_conversation_history
-                conversation_history = get_conversation_history()
-                await conversation_history.backfill_message_id(
-                    session_id=session_id,
-                    message_id=assistant_message.id,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to backfill message_id: {e}")
-
-            schedule_context_maintenance(
-                db_session_factory=get_db_session_factory(),
-                session_id=session_id,
-                max_history_messages=history_limit,
-                enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
-                provider=active_provider,
-                model=runtime_config.model_name,
-                memory_store=getattr(agent_loop.context_builder, "memory", None),
-                auto_summary_source="web-chat",
-            )
-
-            # 发送完成通知
-            await send_message_complete(session_id, "")
-        else:
-            logger.warning(f"AI响应为空")
-            # 没有内容，发送空完成通知
-            await send_message_complete(session_id, "")
 
         logger.info(f"消息处理完成 (会话 {session_id})")
-        cleanup_cancel_token(session_id)
 
     except Exception as e:
         logger.exception(f"处理消息事件时出错: {e}")
@@ -453,10 +552,15 @@ async def handle_message_event(
             friendly,
             "PROCESSING_ERROR",
         )
-        cleanup_cancel_token(session_id)
     finally:
         if agent_loop.tools:
             agent_loop.tools.set_cancel_token(None)
+        if turn_gate_acquired:
+            get_session_gate().release(session_id)
+        # 统一在 finally 清理，覆盖会话不存在、附件非法、provider 不可用等
+        # 提前返回路径，避免令牌字典残留未取消的旧条目。
+        if token_registered:
+            cleanup_cancel_token(session_id, cancel_token)
 
 
 async def handle_tool_execution(

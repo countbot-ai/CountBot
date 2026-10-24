@@ -251,10 +251,50 @@ class AnthropicProvider(LLMProvider):
                 )
                 continue
 
-            filtered_messages.append(msg)
+            # Anthropic Messages 仅接受 role/content 两个字段，其余键（如
+            # reasoning_content）会被判定为非法参数，故重建而不是原样透传。
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content = self._convert_user_content_blocks(content)
+            filtered_messages.append(
+                {"role": role, "content": content}
+            )
 
         system_content = "\n\n".join(system_parts).strip() or None
         return system_content, filtered_messages
+
+    @staticmethod
+    def _convert_user_content_blocks(content: List[Any]) -> List[Dict[str, Any]]:
+        """把内部图片内容块转换成 Anthropic Messages 的 content blocks。"""
+        converted: List[Dict[str, Any]] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "").strip().lower()
+            if block_type == "text":
+                text = str(block.get("text") or "")
+                if text:
+                    converted.append({"type": "text", "text": text})
+                continue
+            if block_type != "image":
+                continue
+
+            media_type = str(block.get("media_type") or "image/png").strip() or "image/png"
+            data = str(block.get("data") or "").strip()
+            if not data:
+                continue
+            converted.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": data,
+                    },
+                }
+            )
+
+        return converted or [{"type": "text", "text": ""}]
 
     def _convert_tools(
         self, tools: Optional[List[Dict[str, Any]]]

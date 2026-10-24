@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   background: var(--color-primary-alpha);
   backdrop-filter: blur(4px);
-  border: 2px dashed var(--color-primary);
+  border: 2px dashed var(--color-border-strong);
   border-radius: var(--radius-lg);
   z-index: 1000;
   animation: fadeIn 0.2s ease-out;

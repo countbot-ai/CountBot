@@ -131,21 +131,21 @@ const canTest = (account: Record<string, any>) => Boolean(account.endpoint)
 
 .mode-card {
   padding: 14px 16px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--color-border-primary);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--color-bg-elevated);
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .mode-card:hover {
-  border-color: rgba(59, 130, 246, 0.26);
-  background: rgba(59, 130, 246, 0.03);
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .mode-card.active {
-  border-color: rgba(59, 130, 246, 0.36);
-  background: rgba(59, 130, 246, 0.05);
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .mode-card-header {
@@ -161,8 +161,8 @@ const canTest = (account: Record<string, any>) => Boolean(account.endpoint)
 .mode-badge {
   margin-left: auto;
   font-size: 11px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #2563eb;
+  background: var(--color-bg-tertiary);
+  color: var(--color-accent);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -179,52 +179,33 @@ const canTest = (account: Record<string, any>) => Boolean(account.endpoint)
   align-items: flex-start;
   gap: 8px;
   padding: 11px 12px;
-  background: linear-gradient(180deg, rgba(255, 247, 237, 0.96), rgba(255, 251, 245, 0.98));
-  border: 1px solid rgba(245, 158, 11, 0.22);
+  background: var(--color-warning-light);
+  border: 1px solid var(--color-border-primary);
   border-radius: 10px;
   font-size: 12px;
-  color: #9a3412;
+  color: var(--color-warning);
   margin-top: 4px;
 }
 
 .timeout-notice svg {
   flex-shrink: 0;
   margin-top: 1px;
-  color: #f97316;
+  color: var(--color-warning);
 }
 
-:root[data-theme='dark'] .mode-card {
-  border-color: rgba(56, 70, 90, 0.58);
-  background: linear-gradient(180deg, rgba(24, 31, 41, 0.98), rgba(18, 24, 33, 0.99));
-}
 
-:root[data-theme='dark'] .mode-card:hover,
-:root[data-theme='dark'] .mode-card.active {
-  border-color: rgba(121, 143, 182, 0.36);
-}
 
-:root[data-theme='dark'] .mode-card.active {
-  background: linear-gradient(180deg, rgba(31, 40, 52, 0.96), rgba(23, 30, 41, 0.99));
-}
 
-:root[data-theme='dark'] .mode-badge {
-  background: rgba(121, 143, 182, 0.18);
-  color: #b6c6e1;
-}
 
-:root[data-theme='dark'] .timeout-notice {
-  background: linear-gradient(180deg, rgba(43, 33, 24, 0.94), rgba(35, 27, 19, 0.98));
-  border-color: rgba(191, 138, 82, 0.24);
-  color: #cfbb9f;
-}
 
-:root[data-theme='dark'] .timeout-notice strong {
-  color: #e0cfb7;
-}
 
-:root[data-theme='dark'] .timeout-notice svg {
-  color: #c99258;
-}
+
+
+
+
+
+
+
 
 @media (max-width: 640px) {
   .mode-card {

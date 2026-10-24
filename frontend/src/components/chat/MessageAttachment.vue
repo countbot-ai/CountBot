@@ -175,7 +175,7 @@ const handleDownload = async () => {
 
 .attachment-image-preview:hover {
   transform: scale(1.02);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-sm);
 }
 
 .attachment-thumbnail {
@@ -192,13 +192,13 @@ const handleDownload = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0);
+  background: var(--color-bg-overlay);
   transition: background 0.2s ease;
   color: white;
 }
 
 .attachment-image-preview:hover .attachment-overlay {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--color-bg-overlay);
 }
 
 /* 文件卡片 */
@@ -209,15 +209,15 @@ const handleDownload = async () => {
   min-width: 0;
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(191, 219, 254, 0.76);
-  background: linear-gradient(135deg, rgba(250, 252, 255, 0.98), rgba(242, 247, 252, 0.96));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 8px 20px rgba(15, 23, 42, 0.04);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
 }
 
 .attachment-file-card:hover {
-  border-color: rgba(147, 197, 253, 0.9);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 12px 28px rgba(15, 23, 42, 0.06);
+  border-color: var(--color-border-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .attachment-file-icon {
@@ -227,8 +227,8 @@ const handleDownload = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.86);
-  color: #475569;
+  background: var(--color-bg-elevated);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -243,7 +243,7 @@ const handleDownload = async () => {
 .attachment-file-name {
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -254,7 +254,7 @@ const handleDownload = async () => {
   align-items: center;
   gap: 8px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .attachment-download-btn {
@@ -265,16 +265,16 @@ const handleDownload = async () => {
   height: 32px;
   border: none;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.08);
-  color: #2563eb;
+  background: var(--color-bg-tertiary);
+  color: var(--color-accent);
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .attachment-download-btn:hover {
-  background: rgba(59, 130, 246, 0.16);
-  color: #1d4ed8;
+  background: var(--color-bg-tertiary);
+  color: var(--color-accent);
   transform: scale(1.08);
 }
 
@@ -295,7 +295,7 @@ const handleDownload = async () => {
 .image-preview-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--color-bg-overlay);
   backdrop-filter: blur(8px);
 }
 
@@ -320,14 +320,14 @@ const handleDownload = async () => {
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-bg-elevated);
   color: white;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .image-preview-close:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-bg-elevated);
   transform: scale(1.1);
 }
 
@@ -335,7 +335,7 @@ const handleDownload = async () => {
   max-width: 100%;
   max-height: calc(90vh - 80px);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-sm);
   object-fit: contain;
 }
 
@@ -357,33 +357,17 @@ const handleDownload = async () => {
 }
 
 /* 深色主题适配 */
-[data-theme='dark'] .attachment-file-card {
-  border-color: rgba(73, 90, 113, 0.82);
-  background: linear-gradient(135deg, rgba(21, 28, 38, 0.98), rgba(16, 22, 31, 0.98));
-}
 
-[data-theme='dark'] .attachment-file-icon {
-  background: rgba(255, 255, 255, 0.04);
-  color: #c7d3e0;
-}
 
-[data-theme='dark'] .attachment-file-name {
-  color: #e5ecf6;
-}
 
-[data-theme='dark'] .attachment-file-meta {
-  color: #91a1b6;
-}
 
-[data-theme='dark'] .attachment-download-btn {
-  background: rgba(96, 165, 250, 0.12);
-  color: #60a5fa;
-}
 
-[data-theme='dark'] .attachment-download-btn:hover {
-  background: rgba(96, 165, 250, 0.24);
-  color: #93c5fd;
-}
+
+
+
+
+
+
 
 /* 响应式 */
 @media (max-width: 768px) {

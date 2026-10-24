@@ -36,7 +36,7 @@
   width: 40px;
   height: 40px;
   border: 3px solid var(--border-color);
-  border-top-color: var(--color-primary);
+  border-top-color: var(--text-secondary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-bottom: 16px;
@@ -69,12 +69,12 @@
   border: 1px solid var(--border-color);
   border-radius: 18px;
   transition: all 0.2s ease;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .personality-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-2px);
 }
 
@@ -126,7 +126,7 @@
 
 .trait-tag {
   padding: 4px 8px;
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--color-bg-tertiary);
   border-radius: 4px;
   font-size: 12px;
   color: var(--color-primary);
@@ -150,14 +150,13 @@
   justify-content: center;
   gap: 14px;
   padding: 72px 28px;
-  border: 1px dashed rgba(59, 130, 246, 0.24);
+  border: 1px dashed var(--color-border-primary);
   border-radius: 24px;
-  background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.08), transparent 45%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98));
+  background: radial-gradient(circle at top, var(--color-bg-tertiary), transparent 45%),
+    linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-secondary));
   color: var(--text-secondary);
   text-align: center;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-sm);
 }
 
 .empty-state-icon {
@@ -167,11 +166,9 @@
   width: 72px;
   height: 72px;
   border-radius: 22px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(14, 165, 233, 0.1));
+  background: linear-gradient(135deg, var(--color-bg-tertiary), var(--color-info-light));
   color: var(--color-primary);
-  box-shadow:
-    0 16px 28px rgba(59, 130, 246, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow: none;
 }
 
 .empty-state p {
@@ -213,21 +210,8 @@
   }
 }
 
-:root[data-theme='dark'] .personality-card {
-  box-shadow: 0 18px 32px rgba(2, 6, 23, 0.22);
-}
 
-:root[data-theme='dark'] .empty-state {
-  border-color: rgba(96, 165, 250, 0.22);
-  background:
-    radial-gradient(circle at top, rgba(37, 99, 235, 0.18), transparent 46%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(10, 16, 28, 0.98));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
 
-:root[data-theme='dark'] .empty-state-icon {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(14, 165, 233, 0.16));
-  box-shadow:
-    0 16px 32px rgba(2, 6, 23, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
+
+
+

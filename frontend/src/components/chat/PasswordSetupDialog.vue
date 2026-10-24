@@ -143,7 +143,7 @@ const handleSubmit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-bg-overlay);
   backdrop-filter: blur(4px);
   z-index: 200;
 }
@@ -151,9 +151,9 @@ const handleSubmit = async () => {
 .password-dialog {
   width: 420px;
   max-width: 90vw;
-  background: var(--bg-primary, #fff);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -168,7 +168,7 @@ const handleSubmit = async () => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary, #111827);
+  color: var(--text-primary);
 }
 
 .icon-btn {
@@ -199,7 +199,7 @@ const handleSubmit = async () => {
 .password-dialog-desc {
   margin: 0;
   font-size: 13px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -212,40 +212,36 @@ const handleSubmit = async () => {
 .password-field label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary, #374151);
+  color: var(--text-primary);
 }
 
 .password-field input {
   padding: 10px 12px;
-  border: 1.5px solid var(--border-color, #d1d5db);
-  border-radius: var(--radius-md, 8px);
+  border: 1.5px solid var(--border-color, var(--color-border-secondary));
+  border-radius: var(--radius-md);
   font-size: 14px;
-  color: var(--text-primary, #111827);
-  background: var(--bg-primary, #fff);
+  color: var(--text-primary);
+  background: var(--bg-primary);
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .password-field input:focus {
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
 }
 
 .password-error {
   margin: 0;
   padding: 8px 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: var(--radius-md, 8px);
-  color: #dc2626;
+  background: var(--color-error-light);
+  border: 1px solid color-mix(in srgb, var(--color-error) 20%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
   font-size: 13px;
 }
 
-:root[data-theme="dark"] .password-error {
-  background: #450a0a;
-  border-color: #7f1d1d;
-  color: #fca5a5;
-}
+
 
 .password-dialog-footer {
   display: flex;
@@ -256,17 +252,17 @@ const handleSubmit = async () => {
 
 .btn-cancel {
   padding: 8px 18px;
-  border: 1.5px solid var(--border-color, #d1d5db);
-  border-radius: var(--radius-md, 8px);
+  border: 1.5px solid var(--border-color, var(--color-border-secondary));
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-cancel:hover {
-  background: var(--hover-bg, #f3f4f6);
+  background: var(--hover-bg);
 }
 
 .btn-confirm {
@@ -275,9 +271,9 @@ const handleSubmit = async () => {
   gap: 6px;
   padding: 8px 20px;
   border: none;
-  border-radius: var(--radius-md, 8px);
-  background: #111827;
-  color: #fff;
+  border-radius: var(--radius-md);
+  background: var(--text-primary);
+  color: var(--color-text-inverse);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -285,7 +281,7 @@ const handleSubmit = async () => {
 }
 
 .btn-confirm:hover {
-  background: #1f2937;
+  background: var(--text-primary);
 }
 
 .btn-confirm:disabled {
@@ -293,20 +289,16 @@ const handleSubmit = async () => {
   cursor: not-allowed;
 }
 
-:root[data-theme="dark"] .btn-confirm {
-  background: var(--color-primary, #3b82f6);
-}
 
-:root[data-theme="dark"] .btn-confirm:hover {
-  background: var(--color-primary-hover, #2563eb);
-}
+
+
 
 .spin-small {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
+  border: 2px solid var(--color-border-primary);
+  border-top-color: var(--color-border-primary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }

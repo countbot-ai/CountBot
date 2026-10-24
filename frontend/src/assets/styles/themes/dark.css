@@ -1,76 +1,135 @@
 /**
- * 深色主题
- * 深石墨蓝灰 + 低饱和冷色强调
+ * 深色主题 - 暖近黑微明度分层
+ * 四层背景：#0b0b0a（页面）→ #151515（侧栏/沉底）→ #1a1a19（hover）→ #20201e（浮层）
+ * 规则 3 - 暗色补偿：字重整体降 40（400→360 / 500→460 / 600→560 / 700→660），
+ * 防止白字在深底上视觉发胖。SF Pro / Segoe UI Variable 为可变字体，支持任意字重。
  */
 
 [data-theme='dark'] {
-    --color-primary: #8ea4d6;
-    --color-primary-hover: #a4b7e2;
-    --color-primary-active: #7b92c6;
-    --color-primary-light: #151d2a;
-    --color-primary-alpha: rgba(142, 164, 214, 0.14);
+    /* 强调色 - 暗底下提亮 */
+    --color-accent: #e0937a;
+    --color-accent-hover: #eaa68d;
+    --color-accent-active: #d4856b;
+    --color-accent-light: #2a1f1a;
+    --color-accent-alpha: rgba(224, 147, 122, 0.14);
 
-    --color-secondary: #7f9cb6;
-    --color-secondary-hover: #95afc6;
-    --color-secondary-light: #151d29;
+    /* 主色反转 - 近白按钮 */
+    --color-primary: #ececea;
+    --color-primary-hover: #ffffff;
+    --color-primary-active: #d8d8d4;
+    --color-primary-light: #20201e;
+    --color-primary-alpha: rgba(236, 236, 234, 0.08);
 
-    --color-success: #6cb49d;
-    --color-success-hover: #81c3ae;
-    --color-success-light: #13211d;
+    --color-secondary: #a09d94;
+    --color-secondary-hover: #b5b2a8;
+    --color-secondary-light: #20201e;
 
-    --color-warning: #c4a06e;
-    --color-warning-hover: #d3b184;
-    --color-warning-light: #241d15;
+    --color-success: #6fbf9d;
+    --color-success-hover: #85ccae;
+    --color-success-light: #17211d;
 
-    --color-error: #cf8696;
-    --color-error-hover: #dca0ad;
-    --color-error-light: #26171c;
+    --color-warning: #dfae5a;
+    --color-warning-hover: #e8bd72;
+    --color-warning-light: #221c12;
 
-    --color-info: #7da2c7;
-    --color-info-hover: #93b4d3;
-    --color-info-light: #15202c;
+    --color-error: #e2837b;
+    --color-error-hover: #ea968f;
+    --color-error-light: #241715;
 
-    --color-text-primary: #e5ecf6;
-    --color-text-secondary: #a3b0c2;
-    --color-text-tertiary: #738196;
-    --color-text-disabled: #4a586c;
-    --color-text-inverse: #0a1017;
+    --color-info: #85b3d9;
+    --color-info-hover: #99c1e2;
+    --color-info-light: #161d24;
 
-    --color-bg-primary: #0d1118;
-    --color-bg-secondary: #121821;
-    --color-bg-tertiary: #18202b;
-    --color-bg-elevated: #1d2633;
+    /* 文本 - 暖白灰阶 */
+    --color-text-primary: #ececea;
+    --color-text-secondary: #a8a59c;
+    --color-text-tertiary: #7c7970;
+    --color-text-disabled: #54524c;
+    --color-text-inverse: #1c1c19;
 
-    --color-border-primary: #222d3b;
-    --color-border-secondary: #314052;
-    --color-border-focus: #8ea4d6;
+    /* 背景 - 四层暖近黑 */
+    --color-bg-primary: #0b0b0a;
+    --color-bg-secondary: #151515;
+    --color-bg-tertiary: #1a1a19;
+    --color-bg-elevated: #20201e;
+    --color-bg-overlay: rgba(5, 5, 4, 0.62);
 
-    --color-shadow: rgba(3, 7, 14, 0.48);
-    --color-shadow-hover: rgba(5, 10, 18, 0.38);
+    /* 边框 - 白色微明度 */
+    --color-border-primary: rgba(236, 236, 234, 0.08);
+    --color-border-secondary: rgba(236, 236, 234, 0.13);
+    --color-border-strong: rgba(236, 236, 234, 0.2);
+    --color-border-focus: var(--color-border-strong);
 
-    --color-overlay: rgba(6, 10, 16, 0.72);
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-hover: rgba(0, 0, 0, 0.52);
+    --color-overlay: rgba(5, 5, 4, 0.62);
 
-    --code-bg: #111823;
-    --code-text: #dfe7f3;
-    --code-comment: #6f7f93;
-    --code-keyword: #c88ea0;
-    --code-string: #88b99e;
-    --code-number: #caaa7a;
-    --code-function: #91aeda;
+    --code-bg: #161614;
+    --code-text: #dcdad2;
+    --code-comment: #7c7970;
+    --code-keyword: #e0937a;
+    --code-string: #85b89f;
+    --code-number: #dfae5a;
+    --code-function: #8fb0d4;
 
-    --scrollbar-track: #0f141c;
-    --scrollbar-thumb: #253141;
-    --scrollbar-thumb-hover: #324153;
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(236, 236, 234, 0.14);
+    --scrollbar-thumb-hover: rgba(236, 236, 234, 0.24);
 
-    --sidebar-bg: #0c1118;
-    --sidebar-border: #202a38;
-    --sidebar-item-hover: #161e2a;
-    --sidebar-item-active: #1a2330;
+    --sidebar-bg: var(--color-bg-secondary);
+    --header-bg: var(--color-bg-primary);
+    --card-bg: var(--color-bg-secondary);
 
-    --header-bg: #101722;
-    --header-border: #212c39;
+    --input-bg: var(--color-bg-secondary);
+    --input-border: var(--color-border-secondary);
+    --input-placeholder: var(--color-text-tertiary);
 
-    --card-bg: #171f2b;
-    --card-border: #243040;
-    --card-shadow: 0 14px 30px rgba(3, 7, 14, 0.22);
+    --button-primary-bg: var(--color-primary);
+    --button-primary-text: var(--color-text-inverse);
+
+    --tooltip-bg: #20201e;
+    --tooltip-text: #ececea;
+
+    --message-user-bg: var(--color-primary);
+    --message-user-text: var(--color-text-inverse);
+    --message-assistant-bg: var(--color-bg-primary);
+    --message-assistant-text: var(--color-text-primary);
+
+    --color-success-bg: #17211d;
+    --color-error-bg: #241715;
+    --color-warning-bg: #221c12;
+
+    /* ========== 规则 3：暗色字重补偿（-40） ========== */
+    --font-weight-normal: 360;
+    --font-weight-medium: 460;
+    --font-weight-semibold: 560;
+    --font-weight-bold: 660;
+
+    /* 组件内写死磅值的标题类，暗色下同步降档 */
+    --dark-heading-weight: 560;
+    --dark-strong-weight: 560;
+}
+
+/* 组件里直接写 font-weight 的常见磅值，暗色统一下调一档，防白字发胖 */
+[data-theme='dark'] h1,
+[data-theme='dark'] h2,
+[data-theme='dark'] h3,
+[data-theme='dark'] h4,
+[data-theme='dark'] h5,
+[data-theme='dark'] h6,
+[data-theme='dark'] .title,
+[data-theme='dark'] .panel-title,
+[data-theme='dark'] .section-title,
+[data-theme='dark'] .stat-value,
+[data-theme='dark'] .reasoning-pill-label,
+[data-theme='dark'] .reasoning-inline-title,
+[data-theme='dark'] .mermaid-block__title,
+[data-theme='dark'] .attachment-chip-name {
+    font-weight: var(--dark-heading-weight, 560);
+}
+
+[data-theme='dark'] strong,
+[data-theme='dark'] b,
+[data-theme='dark'] .markdown-content strong {
+    font-weight: var(--dark-strong-weight, 560);
 }

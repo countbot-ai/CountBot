@@ -1,29 +1,16 @@
 
 .memory-editor {
-  --editor-bg: linear-gradient(180deg, rgba(244, 247, 251, 0.96) 0%, rgba(236, 242, 249, 0.98) 100%);
-  --editor-shell: rgba(255, 255, 255, 0.86);
-  --editor-shell-border: rgba(148, 163, 184, 0.16);
-  --editor-surface: rgba(255, 255, 255, 0.8);
-  --editor-text: #1a2635;
-  --editor-muted: #66758a;
-  --editor-accent: #0f766e;
+  --editor-bg: var(--color-bg-secondary);
+  --editor-shell: var(--color-bg-elevated);
+  --editor-shell-border: var(--color-border-primary);
+  --editor-surface: var(--color-bg-primary);
+  --editor-text: var(--text-primary);
+  --editor-muted: var(--text-tertiary);
+  --editor-accent: var(--color-accent);
   display: flex;
   flex-direction: column;
   height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(20, 184, 166, 0.12), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.12), transparent 28%),
-    var(--editor-bg);
-}
-
-:global(:root[data-theme="dark"]) .memory-editor {
-  --editor-bg: linear-gradient(180deg, rgba(7, 13, 22, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%);
-  --editor-shell: rgba(8, 15, 24, 0.84);
-  --editor-shell-border: rgba(148, 163, 184, 0.12);
-  --editor-surface: rgba(15, 23, 42, 0.76);
-  --editor-text: #eef4ff;
-  --editor-muted: #9dadc2;
-  --editor-accent: #5eead4;
+  background: var(--editor-bg);
 }
 
 .editor-shell {
@@ -35,9 +22,7 @@
   border: 1px solid var(--editor-shell-border);
   border-radius: 28px;
   background: var(--editor-shell);
-  box-shadow:
-    0 24px 48px rgba(15, 23, 42, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  box-shadow: var(--shadow-sm);
   backdrop-filter: blur(18px);
   overflow: hidden;
 }
@@ -48,7 +33,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.3rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  border-bottom: 1px solid var(--color-border-primary);
   background: transparent;
 }
 
@@ -96,9 +81,9 @@
   gap: 0.5rem;
   min-height: 2.3rem;
   padding: 0.45rem 0.8rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--color-border-primary);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.56);
+  background: var(--color-bg-elevated);
   color: var(--editor-muted);
   font-size: 0.78rem;
   font-weight: 700;
@@ -121,22 +106,22 @@
   justify-content: center;
   width: 2.5rem;
   height: 2.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--color-border-primary);
   border-radius: 0.95rem;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--color-bg-elevated);
   color: var(--editor-muted);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-secondary {
   min-height: 2.8rem;
   padding: 0.625rem 1.15rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--color-border-primary);
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--color-bg-elevated);
   color: var(--editor-text);
   font-weight: 700;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary {
@@ -147,9 +132,9 @@
   padding: 0.625rem 1.15rem;
   border: none;
   border-radius: 1rem;
-  background: linear-gradient(135deg, #0f766e, #0f766e 40%, #0891b2);
+  background: var(--color-primary);
   color: white;
-  box-shadow: 0 14px 28px rgba(15, 118, 110, 0.24);
+  box-shadow: var(--shadow-sm);
 }
 
 .editor-content {
@@ -166,10 +151,10 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid var(--color-border-primary);
   border-radius: 1.35rem;
   background: var(--editor-surface);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  box-shadow: var(--shadow-sm);
 }
 
 .pane-header {
@@ -229,10 +214,10 @@
   gap: 0.75rem;
   margin: 0 1.3rem;
   padding: 0.95rem 1rem;
-  border: 1px solid rgba(239, 68, 68, 0.16);
+  border: 1px solid var(--color-border-primary);
   border-radius: 1rem;
-  background: rgba(254, 242, 242, 0.82);
-  color: #b91c1c;
+  background: var(--color-error-light);
+  color: var(--color-error);
 }
 
 .btn-text {
@@ -341,14 +326,14 @@
 
 .btn-secondary:hover {
   background: var(--hover-bg);
-  border-color: var(--border-secondary, var(--border-color));
+  border-color: var(--border-secondary);
 }
 
 .btn-primary {
   min-height: 40px;
   border-radius: var(--radius-md);
   background: var(--color-primary);
-  box-shadow: 0 2px 4px rgba(24, 24, 27, 0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .editor-content {
@@ -421,7 +406,7 @@
 
 .error-message {
   margin: 0 var(--spacing-lg);
-  border-color: rgba(239, 68, 68, 0.14);
+  border-color: var(--color-border-primary);
   border-radius: var(--radius-lg);
   background: var(--color-error-light);
   color: var(--color-error-hover);

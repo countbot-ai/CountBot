@@ -37,7 +37,7 @@
 
 .filter-tab.active {
   background: var(--color-primary-light);
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   color: var(--color-primary);
 }
 

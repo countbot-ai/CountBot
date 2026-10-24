@@ -201,9 +201,9 @@ const maxIterationsLabel = computed(() =>
 
 .parameter-group-toggle {
   padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid var(--color-border-primary);
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
+  background: linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-secondary));
 }
 
 .parameter-label {
@@ -232,7 +232,7 @@ const maxIterationsLabel = computed(() =>
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.3), rgba(148, 163, 184, 0.12));
+  background: linear-gradient(90deg, var(--color-bg-secondary), var(--color-bg-secondary));
   outline: none;
   -webkit-appearance: none;
   appearance: none;
@@ -243,20 +243,20 @@ const maxIterationsLabel = computed(() =>
   appearance: none;
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--color-border-primary);
   border-radius: 999px;
   background: var(--color-primary);
-  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.18);
+  box-shadow: none;
   cursor: pointer;
 }
 
 .parameter-slider::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--color-border-primary);
   border-radius: 999px;
   background: var(--color-primary);
-  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.18);
+  box-shadow: none;
   cursor: pointer;
 }
 
@@ -279,7 +279,7 @@ const maxIterationsLabel = computed(() =>
 
 .parameter-reset {
   appearance: none;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--color-border-primary);
   border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
@@ -297,9 +297,9 @@ const maxIterationsLabel = computed(() =>
 }
 
 .parameter-reset:hover:not(:disabled) {
-  border-color: rgba(37, 99, 235, 0.24);
+  border-color: var(--color-border-primary);
   color: var(--color-primary);
-  background: rgba(37, 99, 235, 0.05);
+  background: var(--color-bg-tertiary);
 }
 
 .parameter-reset:disabled {
@@ -334,11 +334,7 @@ const maxIterationsLabel = computed(() =>
   line-height: 1.5;
 }
 
-:root[data-theme='dark'] .parameter-group-toggle,
-:root[data-theme='dark'] .parameter-advanced {
-  border-color: rgba(82, 102, 131, 0.34);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(10, 16, 28, 0.96));
-}
+
 
 @media (max-width: 640px) {
   .parameter-advanced {

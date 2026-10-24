@@ -120,6 +120,7 @@ class EnterpriseMessageQueue:
         
         # 消息去重
         self._message_hashes = {}  # {hash: timestamp}
+        self._dedup_checks = 0
         self._dedup_enabled = enable_dedup
         self._dedup_window = dedup_window
         
@@ -249,24 +250,51 @@ class EnterpriseMessageQueue:
             logger.error(f"Message moved to DLQ: {msg.id[:8]}, error: {error}")
     
     def _hash_message(self, msg: InboundMessage) -> str:
-        """计算消息哈希"""
-        content = f"{msg.channel}:{msg.chat_id}:{msg.sender_id}:{msg.content}"
+        """计算消息哈希
+
+        附件必须参与哈希：同一文案配不同图片属于不同消息，若只按文本去重，
+        后到的图片消息会被当成重复项丢弃。
+        """
+        media = getattr(msg, "media", None) or []
+        media_signature = "|".join(str(item) for item in media)
+        content = (
+            f"{msg.channel}:{msg.chat_id}:{msg.sender_id}:{media_signature}:{msg.content}"
+        )
         return hashlib.md5(content.encode()).hexdigest()
     
+    # 每累计这么多次去重检查，执行一次全表清扫
+    _DEDUP_SWEEP_INTERVAL = 512
+
+    def _sweep_expired_hashes(self, now: float) -> None:
+        """清理已过去重窗口的哈希条目。
+
+        仅在命中对应哈希时按需删除不够：长期运行下每条唯一消息都会永久留下
+        一个条目。改为定期全表扫描，把开销摊到低频路径上。
+        """
+        expired = [
+            key
+            for key, timestamp in self._message_hashes.items()
+            if now - timestamp > self._dedup_window
+        ]
+        for key in expired:
+            del self._message_hashes[key]
+
     def _is_duplicate(self, msg_hash: str) -> bool:
         """检查是否重复消息"""
+        now = time.time()
+        self._dedup_checks += 1
+        if self._dedup_checks % self._DEDUP_SWEEP_INTERVAL == 0:
+            self._sweep_expired_hashes(now)
+
         if msg_hash not in self._message_hashes:
             return False
-        
+
         # 检查是否在去重窗口内
         timestamp = self._message_hashes[msg_hash]
-        age = time.time() - timestamp
-        
-        if age > self._dedup_window:
-            # 过期，删除
+        if now - timestamp > self._dedup_window:
             del self._message_hashes[msg_hash]
             return False
-        
+
         return True
     
     async def _persist_message(self, msg: QueuedMessage):

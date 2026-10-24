@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-bg-overlay);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -221,9 +221,9 @@ onBeforeUnmount(() => {
 
 .modal-container {
   position: relative;
-  background: var(--bg-primary, #ffffff);
+  background: var(--bg-primary);
   border-radius: var(--radius-lg);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - var(--spacing-3xl));
@@ -253,15 +253,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-lg);
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
-  background: var(--bg-primary, #ffffff);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-primary);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .modal-title {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-primary, #1f2937);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -271,26 +271,26 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-base);
 }
 
 .modal-close:hover {
-  background: var(--hover-bg, #f3f4f6);
-  color: var(--text-primary, #1f2937);
-  border-color: var(--color-error, #ef4444);
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  border-color: var(--color-error);
 }
 
 .modal-body {
   flex: 1;
   padding: var(--spacing-lg);
   overflow-y: auto;
-  color: var(--text-primary, #1f2937);
-  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary);
+  background: var(--bg-primary);
 }
 
 .modal-footer {
@@ -299,32 +299,21 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: var(--spacing-sm);
   padding: var(--spacing-lg);
-  border-top: 1px solid var(--border-color, #e5e7eb);
-  background: var(--bg-secondary, #f9fafb);
+  border-top: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-secondary);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .modal-overlay {
-  background: rgba(0, 0, 0, 0.8);
-}
 
-:root[data-theme="dark"] .modal-container {
-  background: var(--bg-primary, #1f2937);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
-}
 
-:root[data-theme="dark"] .modal-header {
-  background: var(--bg-primary, #1f2937);
-}
 
-:root[data-theme="dark"] .modal-body {
-  background: var(--bg-primary, #1f2937);
-}
 
-:root[data-theme="dark"] .modal-footer {
-  background: var(--bg-secondary, #111827);
-}
+
+
+
+
+
 
 /* Modal transitions */
 .modal-enter-active,
@@ -387,11 +376,11 @@ onBeforeUnmount(() => {
 }
 
 .modal-body::-webkit-scrollbar-thumb {
-  background: var(--border-color, #e5e7eb);
+  background: var(--border-color);
   border-radius: var(--radius-sm);
 }
 
 .modal-body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary, #9ca3af);
+  background: var(--text-tertiary);
 }
 </style>

@@ -56,6 +56,7 @@ def build_session_model_override(
         "max_tokens": runtime_config.max_tokens,
         "max_iterations": runtime_config.max_iterations,
         "thinking_enabled": runtime_config.thinking_enabled,
+        "supports_image": runtime_config.model_config.supports_image,
         "api_key": runtime_config.api_key,
         "api_base": runtime_config.api_base or "",
     }
@@ -148,7 +149,7 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         normalized = _normalized_text(raw_model_overrides.get(key))
         if normalized is not None:
             effective_model_data[key] = normalized
-    for key in ("temperature", "max_tokens", "max_iterations", "thinking_enabled", "api_mode"):
+    for key in ("temperature", "max_tokens", "max_iterations", "thinking_enabled", "api_mode", "supports_image"):
         if raw_model_overrides.get(key) is not None:
             effective_model_data[key] = (
                 _normalize_api_mode(raw_model_overrides[key])

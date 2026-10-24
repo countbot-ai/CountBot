@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import mimetypes
 import secrets
+import shutil
 import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -18,6 +23,11 @@ from backend.modules.workspace.manager import workspace_manager
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tiff"}
 _AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a", ".amr", ".aac", ".opus", ".silk"}
 _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mpeg", ".m4v"}
+
+# 入站附件约束与 zcode 保持一致：单条消息最多 4 个附件，单个附件最大 5MB。
+MAX_INBOUND_ATTACHMENTS = 4
+MAX_INBOUND_ATTACHMENT_BYTES = 5 * 1024 * 1024
+DEFAULT_INBOUND_ATTACHMENT_PROMPT = "请查看附件并根据内容协助我。"
 
 _MIME_EXTENSION_MAP = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
@@ -137,7 +147,12 @@ def save_bytes_to_temp(
     content_type: Optional[str] = None,
     prefix: str = "attachment",
     scope: str = "inbound",
+    max_bytes: int = MAX_INBOUND_ATTACHMENT_BYTES,
 ) -> str:
+    if len(data) > max_bytes:
+        raise ValueError(
+            f"media too large: {len(data)} bytes (limit {max_bytes} bytes)"
+        )
     temp_dir = get_channel_temp_dir(channel, scope)
     safe_filename = sanitize_filename(filename, fallback=prefix)
     suffix = infer_extension(filename=safe_filename, content_type=content_type)
@@ -150,6 +165,140 @@ def save_bytes_to_temp(
     return str(file_path)
 
 
+@dataclass
+class PromotedMediaEntry:
+    """单条渠道媒体的转存结果。"""
+
+    original_path: str
+    stored_path: str
+    attachment_item: Optional[dict[str, Any]] = None
+
+
+@dataclass
+class PromotedMediaResult:
+    """渠道入站媒体转存后的路径与附件元信息。"""
+
+    media_paths: list[str] = field(default_factory=list)
+    attachment_items: list[dict[str, Any]] = field(default_factory=list)
+    entries: list[PromotedMediaEntry] = field(default_factory=list)
+
+
+async def promote_inbound_media(
+    channel: str,
+    media_paths: Optional[Sequence[str]],
+    *,
+    account_id: str = "default",
+    workspace: Optional[Path] = None,
+) -> PromotedMediaResult:
+    """把渠道临时媒体复制到工作空间的持久目录。
+
+    频道下载的媒体默认落在 ``workspace/temp/channels``，语义上是临时文件。
+    这里在消息进入 Agent 前统一转存到 ``workspace/uploads/channels``，同时
+    产出附件元信息，供当前轮图片输入与后续历史消息复用。
+
+    已在 ``uploads/`` 下的文件不会重复复制；工作空间外的路径保持原样，
+    不改变现有渠道行为。
+    """
+    paths = [
+        str(path or "").strip()
+        for path in (media_paths or ())
+        if str(path or "").strip()
+    ]
+    if not paths:
+        return PromotedMediaResult()
+
+    return await asyncio.to_thread(
+        _promote_inbound_media_sync,
+        channel,
+        paths,
+        account_id,
+        workspace,
+    )
+
+
+def _promote_inbound_media_sync(
+    channel: str,
+    media_paths: list[str],
+    account_id: str,
+    workspace: Optional[Path],
+) -> PromotedMediaResult:
+    from backend.modules.session.message_context import build_attachment_item
+
+    result = PromotedMediaResult()
+    workspace_root = Path(workspace or workspace_manager.workspace_path).expanduser().resolve()
+    uploads_root = workspace_root / "uploads"
+    safe_channel = sanitize_filename(channel, fallback="channel")
+    safe_account = sanitize_filename(account_id, fallback="default")
+    now = datetime.now(timezone.utc)
+    destination_dir = (
+        uploads_root / "channels" / safe_channel / safe_account
+        / now.strftime("%Y") / now.strftime("%m") / now.strftime("%d")
+    )
+    stored_by_source: dict[Path, str] = {}
+
+    for raw_path in media_paths:
+        candidate = _resolve_inbound_media_path(raw_path, workspace_root)
+        if candidate is None:
+            result.media_paths.append(raw_path)
+            result.entries.append(PromotedMediaEntry(raw_path, raw_path))
+            continue
+
+        if candidate in stored_by_source:
+            stored_path = stored_by_source[candidate]
+            result.media_paths.append(stored_path)
+            result.entries.append(PromotedMediaEntry(raw_path, stored_path))
+            continue
+
+        relative_path = candidate.relative_to(workspace_root).as_posix()
+        if relative_path.startswith("uploads/"):
+            stored_path = relative_path
+        else:
+            try:
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                filename = sanitize_filename(candidate.name, fallback="attachment")
+                destination = destination_dir / f"{uuid.uuid4().hex[:12]}-{filename}"
+                shutil.copy2(candidate, destination)
+            except OSError as exc:
+                logger.warning(f"转存渠道媒体失败 {raw_path}: {exc}")
+                result.media_paths.append(raw_path)
+                result.entries.append(PromotedMediaEntry(raw_path, raw_path))
+                continue
+            stored_path = destination.relative_to(workspace_root).as_posix()
+
+        item = build_attachment_item(
+            relative_path=stored_path,
+            absolute_path=(workspace_root / stored_path),
+        )
+        result.media_paths.append(stored_path)
+        result.attachment_items.append(item)
+        result.entries.append(
+            PromotedMediaEntry(raw_path, stored_path, attachment_item=item)
+        )
+        stored_by_source[candidate] = stored_path
+
+    return result
+
+
+def _resolve_inbound_media_path(raw_path: str, workspace_root: Path) -> Optional[Path]:
+    """解析渠道媒体路径，只处理工作空间内的现存文件。"""
+    try:
+        candidate = Path(raw_path).expanduser()
+        candidate = (
+            candidate.resolve()
+            if candidate.is_absolute()
+            else (workspace_root / candidate).resolve()
+        )
+    except (OSError, RuntimeError) as exc:
+        logger.debug(f"渠道媒体路径解析失败 {raw_path}: {exc}")
+        return None
+
+    if not candidate.is_relative_to(workspace_root):
+        return None
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return candidate
+
+
 async def download_to_temp(
     channel: str,
     url: str,
@@ -160,20 +309,38 @@ async def download_to_temp(
     content_type: Optional[str] = None,
     headers: Optional[Mapping[str, str]] = None,
     prefix: str = "attachment",
-    max_bytes: int = 100 * 1024 * 1024,
+    max_bytes: int = MAX_INBOUND_ATTACHMENT_BYTES,
 ) -> str:
-    response = await client.get(url, headers=dict(headers or {}), follow_redirects=True)
-    response.raise_for_status()
-    data = await response.aread()
-    if len(data) > max_bytes:
-        raise ValueError(f"media too large: {len(data)} bytes")
+    # 流式读取并在超限时立即中止，避免先把超大文件完整读进内存。
+    async with client.stream(
+        "GET", url, headers=dict(headers or {}), follow_redirects=True
+    ) as response:
+        response.raise_for_status()
 
-    resolved_filename = (
-        filename
-        or extract_filename_from_content_disposition(response.headers.get("content-disposition"))
-        or _filename_from_url(url)
-    )
-    resolved_content_type = content_type or response.headers.get("content-type")
+        declared_length = str(response.headers.get("content-length") or "").strip()
+        if declared_length.isdigit() and int(declared_length) > max_bytes:
+            raise ValueError(
+                f"media too large: {declared_length} bytes (limit {max_bytes} bytes)"
+            )
+
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in response.aiter_bytes():
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"media too large: {total}+ bytes (limit {max_bytes} bytes)")
+            chunks.append(chunk)
+        data = b"".join(chunks)
+
+        resolved_filename = (
+            filename
+            or extract_filename_from_content_disposition(
+                response.headers.get("content-disposition")
+            )
+            or _filename_from_url(url)
+        )
+        resolved_content_type = content_type or response.headers.get("content-type")
+
     return save_bytes_to_temp(
         channel,
         data,
@@ -181,6 +348,7 @@ async def download_to_temp(
         filename=resolved_filename,
         content_type=resolved_content_type,
         prefix=prefix,
+        max_bytes=max_bytes,
     )
 
 
@@ -204,7 +372,7 @@ def format_inbound_media_text(media_paths: Sequence[str], original_text: str = "
         lines.append("用户发送了以下本地附件：")
         for media_path in media_paths:
             lines.append(f"- [{infer_media_label(media_path)}] {media_path}")
-        lines.append("这些文件已保存到本地临时目录，可直接读取、分析或继续处理。")
+        lines.append("这些文件已保存到工作区附件目录，可直接读取、分析或继续处理。")
 
     return "\n".join(lines).strip()
 

@@ -50,28 +50,20 @@ defineEmits<Emits>()
 }
 
 .status-reconnecting {
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-  border-bottom: 1px solid #fbbf24;
-  color: #92400e;
+  background: linear-gradient(135deg, var(--color-warning-light) 0%, var(--color-warning-light) 100%);
+  border-bottom: 1px solid var(--color-warning);
+  color: var(--color-warning);
 }
 
-:root[data-theme="dark"] .status-reconnecting {
-  background: linear-gradient(180deg, rgba(51, 40, 23, 0.96) 0%, rgba(40, 31, 18, 0.98) 100%);
-  border-bottom-color: rgba(196, 160, 110, 0.42);
-  color: #f0d7a8;
-}
+
 
 .status-disconnected {
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-  border-bottom: 1px solid #fca5a5;
-  color: #991b1b;
+  background: linear-gradient(135deg, var(--color-error-light) 0%, var(--color-error-light) 100%);
+  border-bottom: 1px solid var(--color-error);
+  color: var(--color-error);
 }
 
-:root[data-theme="dark"] .status-disconnected {
-  background: linear-gradient(180deg, rgba(49, 24, 29, 0.96) 0%, rgba(38, 20, 24, 0.98) 100%);
-  border-bottom-color: rgba(207, 134, 150, 0.38);
-  color: #e6b6c1;
-}
+
 
 .status-bar-content {
   display: flex;
@@ -83,21 +75,18 @@ defineEmits<Emits>()
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(146, 64, 14, 0.3);
-  border-top-color: #d97706;
+  border: 2px solid var(--color-border-primary);
+  border-top-color: var(--color-warning);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
-:root[data-theme="dark"] .status-spinner {
-  border-color: rgba(240, 215, 168, 0.24);
-  border-top-color: #c4a06e;
-}
+
 
 .status-bar-action {
   padding: 2px 12px;
   border: 1px solid currentColor;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   background: transparent;
   color: inherit;
   font-size: 12px;
@@ -109,12 +98,10 @@ defineEmits<Emits>()
 
 .status-bar-action:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-bg-overlay);
 }
 
-:root[data-theme="dark"] .status-bar-action:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
+
 
 .status-bar-enter-active,
 .status-bar-leave-active {

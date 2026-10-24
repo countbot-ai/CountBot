@@ -109,6 +109,7 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import Input from '@/components/ui/Input.vue'
+import { setLocale } from '@/i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useSettingsStore } from '@/store/settings'
 
@@ -141,7 +142,7 @@ const themes: ThemeOption[] = [
 
 const languages = [
   { value: 'zh-CN', label: '简体中文', flag: '🇨🇳' },
-  { value: 'en', label: 'English', flag: '🇺🇸' }
+  { value: 'en-US', label: 'English', flag: '🇺🇸' }
 ]
 
 function setTheme(theme: 'light' | 'dark' | 'auto') {
@@ -149,8 +150,10 @@ function setTheme(theme: 'light' | 'dark' | 'auto') {
 }
 
 function setLanguage(lang: string) {
-  locale.value = lang
-  localStorage.setItem('locale', lang)
+  // 统一走 i18n 的入口：同时更新 locale、localStorage（CountBot-language）和 <html lang>。
+  // 之前这里写的是错误的键 'locale'，刷新后 bootstrap 读不到，语言就丢回系统默认。
+  const next = lang === 'zh-CN' ? 'zh-CN' : 'en-US'
+  setLocale(next)
 }
 
 watch(
@@ -275,7 +278,7 @@ watch(
   gap: var(--spacing-xs);
   padding: var(--spacing-md);
   background: var(--color-bg-primary);
-  border: 2px solid var(--color-border-primary);
+  border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -293,9 +296,9 @@ watch(
 }
 
 .theme-btn.active {
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .theme-btn.active:hover {
@@ -333,7 +336,7 @@ watch(
 }
 
 .language-btn.active {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
   background: var(--color-primary-light);
   color: var(--color-primary);
 }

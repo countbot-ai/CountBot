@@ -12,6 +12,19 @@ from backend.models.message import Message
 from backend.models.session import Session
 
 
+def session_name_matches(prefix: str):
+    """构造按会话名前缀匹配的条件，边界处要求分隔符或字符串结束。
+
+    会话名格式为 ``channel:account:chat_id[:timestamp]``。直接用 ``like(f"{p}%")``
+    会让 ``chat_id=123`` 命中 ``chat_id=1234`` 的会话，可能把消息写进别的会话。
+    此处要求前缀之后紧跟 ``:`` 或已到结尾，同时兼容无时间戳的历史命名。
+    """
+    escaped = (
+        prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    )
+    return Session.name.like(f"{escaped}:%", escape="\\") | (Session.name == prefix)
+
+
 class SessionManager:
     """会话管理器 - 负责会话的 CRUD 操作、消息管理和会话持久化"""
 

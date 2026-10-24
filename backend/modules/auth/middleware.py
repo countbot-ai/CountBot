@@ -10,9 +10,9 @@ from collections.abc import Awaitable, Callable, Iterable
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
-from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from backend.modules.auth.setup_notice import log_setup_entry_notice
 from backend.modules.auth.utils import validate_session
 
 
@@ -77,8 +77,10 @@ def ensure_remote_setup_secret(app) -> str:
         app.state.remote_setup_secret = secret
         app.state.remote_setup_secret_expires_at = time.time() + get_remote_setup_secret_ttl_minutes() * 60
         if expired:
-            logger.info(
-                f"Remote setup secret expired and was refreshed for another {get_remote_setup_secret_ttl_minutes()} minute(s): /setup/{secret}"
+            log_setup_entry_notice(
+                secret,
+                get_remote_setup_secret_ttl_minutes(),
+                refreshed=True,
             )
     return secret
 

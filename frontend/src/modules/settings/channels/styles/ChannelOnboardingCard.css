@@ -1,0 +1,155 @@
+.onboarding-section {
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+
+.onboarding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.onboarding-heading {
+  min-width: 0;
+}
+
+.onboarding-button,
+.onboarding-qr-actions .secondary-button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.onboarding-button {
+  background: var(--color-success);
+  color: var(--color-text-inverse);
+}
+
+.onboarding-button:disabled,
+.onboarding-qr-actions .secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.onboarding-qr-actions .secondary-button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.onboarding-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.status-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.status-message,
+.status-meta,
+.status-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.status-detail {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.status-meta {
+  font-size: 12px;
+}
+
+.onboarding-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.onboarding-qr-image {
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 14px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-color);
+  padding: 10px;
+}
+
+.onboarding-link {
+  font-size: 12px;
+  color: var(--color-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.onboarding-link:hover {
+  text-decoration: underline;
+}
+
+.onboarding-user-code {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+}
+
+.onboarding-qr-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.status-confirmed {
+  border-color: var(--color-border-primary);
+}
+
+.status-error,
+.status-expired {
+  border-color: var(--color-border-primary);
+}
+
+@media (max-width: 640px) {
+  .onboarding-header {
+    flex-direction: column;
+  }
+
+  .onboarding-button {
+    width: 100%;
+  }
+}

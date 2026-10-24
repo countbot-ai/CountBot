@@ -23,6 +23,13 @@ MAX_DESCRIPTION_LENGTH = 1024
 MAX_NAME_LENGTH = 64
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
+# 注入预算：摘要与 always 技能都会进入每轮 system prompt，需设上限防止
+# 技能数量或单个体积膨胀后撑爆模型上下文窗口。
+MAX_SKILL_SUMMARY_CHARS = 6000
+MAX_SKILL_SUMMARY_DESC_CHARS = 200
+MAX_ALWAYS_SKILL_CHARS = 8000
+SKILLS_DIR_HINT = "workspace/skills/<skill-name>/SKILL.md"
+
 
 def _coerce_bool(value: Any) -> bool:
     """YAML 里 `always: true` 是真 bool，但手写的 `always: "yes"` 是字符串，两种都要认。"""
@@ -127,6 +134,16 @@ class Skill:
         # 添加 auto_load 属性，从 metadata 中获取
         self.auto_load = self.metadata.get("always", False)
 
+    @property
+    def manual_only(self) -> bool:
+        """技能是否仅支持显式调用。
+
+        对应 frontmatter 的 ``disable-model-invocation: true``：技能仍然可用，
+        但不进入提示词清单，模型不会主动选择它，只能由用户通过命令点名。
+        适用于体积大、易误触发的技能——常驻清单会挤占上下文并诱导误用。
+        """
+        return bool(self.metadata.get("disable_model_invocation", False))
+
     def _parse_metadata(self) -> Dict[str, Any]:
         """解析技能文件的 YAML frontmatter。
 
@@ -142,8 +159,9 @@ class Skill:
             "dependencies": [],
             "tags": [],
             "always": False,
+            "disable_model_invocation": False,
             "requires": {},
-            # 开放标准字段：此前被解析后丢弃
+            # 开放标准字段：原样保留，不做过滤
             "name": "",
             "version": "",
             "license": "",
@@ -204,6 +222,13 @@ class Skill:
 
         if "always" in data:
             metadata["always"] = _coerce_bool(data["always"])
+
+        # 仅显式调用：连字符写法（开放标准）与下划线写法都认。
+        manual_flag = data.get("disable-model-invocation")
+        if manual_flag is None:
+            manual_flag = data.get("disable_model_invocation")
+        if manual_flag is not None:
+            metadata["disable_model_invocation"] = _coerce_bool(manual_flag)
 
         # 顶层 requires（原生 YAML 写法）
         metadata["requires"] = _coerce_requires(data.get("requires"))
@@ -604,7 +629,13 @@ class SkillsLoader:
         """
         result = []
         for name, skill in self.skills.items():
-            if skill.enabled and skill.metadata.get("always") and skill.check_requirements():
+            if (
+                skill.enabled
+                and skill.metadata.get("always")
+                # 仅显式调用的技能不应自动注入，否则标记失去意义
+                and not skill.manual_only
+                and skill.check_requirements()
+            ):
                 result.append(name)
         return result
 
@@ -623,8 +654,13 @@ class SkillsLoader:
             skill = self.get_skill(name)
             if skill:
                 content = self._strip_frontmatter(skill.content)
+                if len(content) > MAX_ALWAYS_SKILL_CHARS:
+                    content = (
+                        content[:MAX_ALWAYS_SKILL_CHARS]
+                        + "\n\n(技能内容过长已截断，完整内容请用 read_file 读取)"
+                    )
                 parts.append(f"### Skill: {name}\n\n{content}")
-        
+
         return "\n\n---\n\n".join(parts) if parts else ""
 
     def build_skills_summary(self) -> str:
@@ -640,11 +676,17 @@ class SkillsLoader:
             return ""
         
         lines = []
+        manual_only_names: List[str] = []
         for name, skill in sorted(self.skills.items()):
             # 只包含已启用的技能
             if not skill.enabled:
                 continue
-            
+
+            # 仅显式调用的技能不进清单，但要在末尾点名，避免用户以为技能丢了
+            if skill.manual_only:
+                manual_only_names.append(name)
+                continue
+
             # 检查依赖是否满足
             available = skill.check_requirements()
             if not available:
@@ -654,7 +696,10 @@ class SkillsLoader:
             desc = skill.metadata.get("description", "")
             title = skill.metadata.get("title", name)
             desc = " ".join(str(desc or "").split())
-            
+            # 单条描述限长：摘要会进入每轮 system prompt，描述本身无长度约束
+            if len(desc) > MAX_SKILL_SUMMARY_DESC_CHARS:
+                desc = desc[:MAX_SKILL_SUMMARY_DESC_CHARS] + "…"
+
             # 紧凑格式：优先保留技能名，标题仅在明显不同于技能名时展示
             title_suffix = ""
             if title and title != name:
@@ -664,8 +709,24 @@ class SkillsLoader:
                 lines.append(f"- {name}{title_suffix}: {desc}")
             else:
                 lines.append(f"- {name}{title_suffix}")
-        
-        return "\n".join(lines) if lines else ""
+
+        if not lines:
+            return ""
+
+        summary = "\n".join(lines)
+        # 技能数量无上限时摘要会持续膨胀，超出预算后提示改用 read_file 查看
+        if len(summary) > MAX_SKILL_SUMMARY_CHARS:
+            summary = (
+                summary[:MAX_SKILL_SUMMARY_CHARS]
+                + f"\n- (另有技能未列出，完整列表请用 read_file 读取 {SKILLS_DIR_HINT})"
+            )
+
+        if manual_only_names:
+            summary += (
+                "\n\n以下技能仅在用户显式点名时使用，不要主动选用："
+                + "、".join(manual_only_names)
+            )
+        return summary
 
     def _strip_frontmatter(self, content: str) -> str:
         """从 markdown 内容中移除 YAML frontmatter（兼容 CRLF）"""
@@ -864,8 +925,20 @@ class SkillsLoader:
             bool: 是否成功
         """
         try:
-            # 创建技能目录
-            skill_dir = self.workspace_skills / name
+            # name 直接参与路径拼接，必须限定为 skills 目录下的单级目录名，
+            # 否则可借 ".." 或分隔符把文件写到目录之外。
+            skill_dir = (self.workspace_skills / name).resolve()
+            if (
+                not name
+                or name in {".", ".."}
+                or "/" in name
+                or "\\" in name
+                or skill_dir.parent != self.workspace_skills.resolve()
+                or not _is_same_or_nested_path(skill_dir, self.workspace_skills)
+            ):
+                logger.warning(f"Rejected unsafe skill name: {name!r}")
+                return False
+
             skill_dir.mkdir(parents=True, exist_ok=True)
             skill_file = skill_dir / "SKILL.md"
             

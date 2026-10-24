@@ -127,7 +127,7 @@ const handleModalUpdate = (value: boolean) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-4, 1rem);
+  gap: var(--spacing-4);
   padding: var(--spacing-4, 1rem) 0;
 }
 
@@ -138,27 +138,27 @@ const handleModalUpdate = (value: boolean) => {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: var(--color-bg-secondary, #f5f5f5);
+  background: var(--color-bg-secondary);
 }
 
 .confirm-dialog-icon--danger {
-  color: var(--color-error, #ef4444);
-  background: var(--color-error-bg, #fee);
+  color: var(--color-error);
+  background: var(--color-error-bg);
 }
 
 .confirm-dialog-icon--warning {
-  color: var(--color-warning, #f59e0b);
-  background: var(--color-warning-bg, #fffbeb);
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
 }
 
 .confirm-dialog-icon--info {
-  color: var(--color-info, #3b82f6);
-  background: var(--color-info-bg, #eff6ff);
+  color: var(--color-info);
+  background: var(--color-info-bg);
 }
 
 .confirm-dialog-icon--success {
-  color: var(--color-success, #10b981);
-  background: var(--color-success-bg, #f0fdf4);
+  color: var(--color-success);
+  background: var(--color-success-bg);
 }
 
 .confirm-dialog-content {
@@ -168,35 +168,25 @@ const handleModalUpdate = (value: boolean) => {
 
 .confirm-dialog-message {
   margin: 0;
-  font-size: var(--font-size-base, 1rem);
+  font-size: var(--font-size-base);
   line-height: 1.6;
-  color: var(--color-text-primary, #333);
+  color: var(--color-text-primary);
 }
 
 .confirm-dialog-actions {
   display: flex;
-  gap: var(--spacing-2, 0.5rem);
+  gap: var(--spacing-2);
   justify-content: flex-end;
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .confirm-dialog-icon {
-  background: var(--color-bg-tertiary, #2a2a2a);
-}
 
-:root[data-theme="dark"] .confirm-dialog-icon--danger {
-  background: rgba(239, 68, 68, 0.1);
-}
 
-:root[data-theme="dark"] .confirm-dialog-icon--warning {
-  background: rgba(245, 158, 11, 0.1);
-}
 
-:root[data-theme="dark"] .confirm-dialog-icon--info {
-  background: rgba(59, 130, 246, 0.1);
-}
 
-:root[data-theme="dark"] .confirm-dialog-icon--success {
-  background: rgba(16, 185, 129, 0.1);
-}
+
+
+
+
+
 </style>

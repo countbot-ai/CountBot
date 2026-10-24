@@ -122,12 +122,16 @@ def cancel_session(session_id: str) -> bool:
     return False
 
 
-def cleanup_cancel_token(session_id: str):
+def cleanup_cancel_token(session_id: str, token=None):
     """清理会话的取消令牌
-    
+
     Args:
         session_id: 会话 ID
+        token: 可选。给定时仅在登记项仍为该令牌时才删除，避免事件循环让位于
+            同一会话的下一轮后，上一轮结束时误删下一轮正在使用的令牌。
     """
+    if token is not None and _session_cancel_tokens.get(session_id) is not token:
+        return
     if session_id in _session_cancel_tokens:
         del _session_cancel_tokens[session_id]
     if session_id in _session_tasks:

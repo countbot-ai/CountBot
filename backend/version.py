@@ -1,5 +1,5 @@
 """Backend application version definitions."""
 
-VERSION = "9.01"
+VERSION = "1.0.0"
 APP_VERSION = VERSION
 __version__ = VERSION

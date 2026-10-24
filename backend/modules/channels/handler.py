@@ -6,8 +6,6 @@
 """
 
 import asyncio
-import json
-import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -19,12 +17,8 @@ from backend.models.message import Message
 from backend.models.session import Session
 from backend.modules.agent.context import ContextBuilder
 from backend.modules.agent.loop import AgentLoop
+from backend.modules.agent.session_gate import get_session_gate
 from backend.modules.agent.task_manager import CancellationToken
-from backend.modules.agent.team_commands import (
-    build_team_command_overview,
-    build_team_goal_usage,
-    resolve_explicit_team_command,
-)
 from backend.modules.channels.base import InboundMessage, OutboundMessage
 from backend.modules.config.loader import config_loader
 from backend.modules.external_agents.conversation import (
@@ -36,253 +30,46 @@ from backend.modules.external_agents.routing import (
 )
 from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
 from backend.modules.messaging.rate_limiter import RateLimiter
-from backend.modules.providers.runtime import (
-    build_provider_unavailable_message,
-    get_provider_runtime_state,
-)
 from backend.modules.session import (
     build_session_model_override,
     resolve_session_runtime_config,
 )
-from backend.modules.session.message_context import normalize_assistant_persistence_payload
 from backend.modules.tools.setup import register_all_tools
-
-# 预编译 @mention 清理正则
-# 飞书格式: @_user_数字 (如 @_user_1)
-# 企业微信/钉钉格式: <at user_id="xxx">@用户名</at>
-_AT_MENTION_RE = re.compile(r"@_user_\d+\s*|<at[^>]*>.*?</at>\s*", re.IGNORECASE)
-# 纯文本唤醒 mention（例如企业微信/钉钉客户端展开后的 "@SBot "）
-# 仅移除消息开头连续的 mention 前缀，避免把正文中的 @账号 / 邮箱误删。
-_LEADING_WAKEUP_MENTION_TOKEN_RE = re.compile(
-    r"^(?:@|＠)(?P<name>[^\s@＠]{1,64})(?:[\s\u3000,:：，、;；]+|\s*$)",
-    re.IGNORECASE,
+from backend.modules.channels.inbound_utils import (
+    _PRIMARY_ACCOUNT_ID,
+    _WORKFLOW_META_RE,
+    _build_history_message,
+    _decode_message_context,
+    _encode_message_context,
+    _format_bot_label,
+    _format_message_for_model,
+    _friendly_channel_error,
+    _is_group_message,
+    _normalize_assistant_output,
+    _normalize_channel_inbound_content,
+    _resolve_session_route,
+    _validate_runtime_provider,
 )
-# 工作流执行元数据注释（用于前端面板持久化，频道输出时需剥离）
-_WORKFLOW_META_RE = re.compile(r"<!--WORKFLOW_EXEC:.*?:WORKFLOW_EXEC-->", re.DOTALL)
-
-_PRIMARY_GROUP_SHARED_CHANNELS = {"wecom", "feishu", "dingtalk", "qq"}
-_PRIMARY_ACCOUNT_ID = "default"
+from backend.modules.channels.commands import ChannelCommandMixin
+from backend.modules.channels.sessions import ChannelSessionMixin
+from backend.modules.channels.persistence import ChannelPersistenceMixin
 
 
-def _friendly_channel_error(raw: str) -> str:
-    """将原始异常信息转换为频道用户可读的友好提示。"""
-    lower = raw.lower()
-    if any(k in lower for k in ("429", "余额", "quota", "rate limit", "资源包", "充值")):
-        return "AI 服务额度不足，请联系管理员检查 API 账户余额。"
-    if any(k in lower for k in ("401", "unauthorized", "api_key", "authentication")):
-        return "API 认证失败，请联系管理员检查密钥配置。"
-    if any(k in lower for k in ("timeout", "connection", "network", "ssl")):
-        return "网络连接异常，请稍后重试。"
-    if any(k in lower for k in ("context length", "too long", "context_length_exceeded")):
-        return "对话上下文过长，请发送 /new 创建新会话后重试。"
-    if any(k in lower for k in ("500", "502", "503", "504", "service unavailable")):
-        return "AI 服务暂时不可用，请稍后重试。"
-    return "处理消息时出错，请稍后重试。"
+
+def _log_handle_task_exception(task: "asyncio.Task") -> None:
+    """收集 handle_message 后台任务的未处理异常，避免被静默吞掉。"""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error(f"handle_message task failed: {exc!r}")
 
 
-def _validate_runtime_provider(runtime_config) -> None:
-    """确保渠道消息不会使用禁用或未完成配置的 provider。"""
-
-    runtime_state = get_provider_runtime_state(
-        config_loader.config,
-        runtime_config.provider_name,
-        api_key_override=runtime_config.api_key,
-        api_base_override=runtime_config.api_base,
-    )
-    if not runtime_state.selectable:
-        raise RuntimeError(
-            build_provider_unavailable_message(
-                runtime_config.provider_name,
-                runtime_state.reason,
-            )
-        )
-
-
-def _normalize_channel_inbound_content(msg: InboundMessage) -> str:
-    """清理渠道层唤醒 mention，避免干扰后续语义理解。"""
-    content = _AT_MENTION_RE.sub("", msg.content).strip()
-
-    if msg.channel not in {"wecom", "dingtalk", "feishu"}:
-        return content
-
-    if not _is_group_message(msg) or not content:
-        return content
-
-    active_team_names = _load_active_team_names()
-    normalized = content
-    stripped_mentions: List[str] = []
-
-    while normalized:
-        match = _LEADING_WAKEUP_MENTION_TOKEN_RE.match(normalized)
-        if not match:
-            break
-        mention_name = str(match.group("name") or "").strip()
-        if mention_name in active_team_names:
-            break
-        stripped_mentions.append(mention_name)
-        normalized = normalized[match.end():].strip()
-
-    if stripped_mentions:
-        logger.debug(
-            f"[{msg.channel}] Stripped leading wakeup mention(s): "
-            f"{stripped_mentions!r}, {content[:80]!r} -> {normalized[:80]!r}"
-        )
-    return normalized
-
-
-def _load_active_team_names() -> set[str]:
-    """读取当前激活团队名称，用于保留用户显式的 @团队名 指令。"""
-    try:
-        from backend.database import SessionLocal
-        from backend.models.agent_team import AgentTeam
-        from sqlalchemy import select
-
-        with SessionLocal() as session:
-            result = session.execute(
-                select(AgentTeam.name).where(AgentTeam.is_active == True)  # noqa: E712
-            )
-            return {
-                str(name).strip()
-                for name in result.scalars().all()
-                if str(name).strip()
-            }
-    except Exception as e:
-        logger.warning(f"Failed to load active team names for mention normalization: {e}")
-        return set()
-
-
-def _safe_text(value: object) -> str:
-    text = str(value or "").strip()
-    return text
-
-
-def _is_group_message(msg: InboundMessage) -> bool:
-    metadata = msg.metadata or {}
-
-    if msg.channel == "wecom":
-        raw_chat_id = _safe_text(metadata.get("chatid") or msg.chat_id)
-        sender_from_meta = _safe_text(((metadata.get("from") or {}).get("userid")) or msg.sender_id)
-        return bool(raw_chat_id and sender_from_meta and raw_chat_id != sender_from_meta)
-    if msg.channel == "dingtalk":
-        return bool(metadata.get("is_group"))
-    if msg.channel == "feishu":
-        return _safe_text(metadata.get("chat_type")).lower() == "group"
-    if msg.channel == "qq":
-        return bool(metadata.get("is_group"))
-    return False
-
-
-def _resolve_group_chat_id(msg: InboundMessage) -> str:
-    metadata = msg.metadata or {}
-
-    if msg.channel == "wecom":
-        return _safe_text(metadata.get("chatid") or msg.chat_id)
-    if msg.channel == "dingtalk":
-        return _safe_text(metadata.get("conversation_id") or msg.chat_id)
-    return _safe_text(msg.chat_id)
-
-
-def _resolve_sender_name(msg: InboundMessage) -> str:
-    metadata = msg.metadata or {}
-    if msg.channel == "wecom":
-        return _safe_text(metadata.get("sender_name") or ((metadata.get("from") or {}).get("name")) or msg.sender_id)
-    return _safe_text(metadata.get("sender_name") or msg.sender_id)
-
-
-def _format_bot_label(account_id: str) -> str:
-    if account_id == _PRIMARY_ACCOUNT_ID:
-        return "主机器人"
-    return f"机器人[{account_id}]"
-
-
-def _resolve_session_route(msg: InboundMessage) -> Dict[str, object]:
-    metadata = msg.metadata or {}
-    source_account_id = _safe_text(metadata.get("account_id") or _PRIMARY_ACCOUNT_ID) or _PRIMARY_ACCOUNT_ID
-    is_group = _is_group_message(msg)
-    group_chat_id = _resolve_group_chat_id(msg)
-    supports_primary_group_shared = msg.channel in _PRIMARY_GROUP_SHARED_CHANNELS
-    use_primary_group_context = bool(
-        supports_primary_group_shared
-        and is_group
-        and source_account_id == _PRIMARY_ACCOUNT_ID
-    )
-    context_owner_account_id = (
-        _PRIMARY_ACCOUNT_ID if use_primary_group_context else source_account_id
-    )
-    session_scope = (
-        "group_shared_primary"
-        if use_primary_group_context
-        else ("group_independent" if is_group else "private_independent")
-    )
-
-    return {
-        "channel": msg.channel,
-        "is_group": is_group,
-        "group_chat_id": group_chat_id,
-        "session_chat_id": group_chat_id if is_group else _safe_text(msg.chat_id),
-        "source_account_id": source_account_id,
-        "reply_account_id": source_account_id,
-        "context_owner_account_id": context_owner_account_id,
-        "primary_account_id": _PRIMARY_ACCOUNT_ID,
-        "supports_primary_group_shared": supports_primary_group_shared,
-        "use_primary_group_context": use_primary_group_context,
-        "session_scope": session_scope,
-        "sender_id": _safe_text(msg.sender_id),
-        "sender_name": _resolve_sender_name(msg),
-        "target_bot_label": _format_bot_label(source_account_id),
-        "reply_bot_label": _format_bot_label(source_account_id),
-        "context_owner_bot_label": _format_bot_label(context_owner_account_id),
-    }
-
-
-def _encode_message_context(message_context: Optional[dict]) -> Optional[str]:
-    if not message_context:
-        return None
-    return json.dumps(message_context, ensure_ascii=False)
-
-
-def _decode_message_context(raw: Optional[str]) -> dict:
-    if not raw:
-        return {}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _format_message_for_model(role: str, content: str, message_context: Optional[dict]) -> str:
-    if not message_context or not message_context.get("is_group"):
-        return content
-
-    sender_name = _safe_text(message_context.get("sender_name") or message_context.get("sender_id")) or "未知用户"
-    target_bot_label = _safe_text(message_context.get("target_bot_label")) or "机器人"
-    session_scope = _safe_text(message_context.get("session_scope"))
-
-    if role == "user":
-        scope_label = "主机器人群上下文" if session_scope == "group_shared_primary" else "独立机器人群会话"
-        return (
-            f"[群聊消息][{scope_label}][发送者:{sender_name}][目标:{target_bot_label}]\n"
-            f"{content}"
-        )
-    if role == "assistant":
-        # 助手历史只保留纯文本，避免模型把内部机器人标签复述到实际回复里。
-        return content
-    return content
-
-
-def _normalize_assistant_output(
-    content: Optional[str],
-    reasoning_content: Optional[str] = None,
-) -> tuple[str, str]:
-    normalized_content, normalized_reasoning, _ = normalize_assistant_persistence_payload(
-        content,
-        reasoning_content,
-    )
-    return normalized_content, str(normalized_reasoning or "")
-
-
-class ChannelMessageHandler:
+class ChannelMessageHandler(
+    ChannelCommandMixin,
+    ChannelSessionMixin,
+    ChannelPersistenceMixin,
+):
     """频道消息处理器
 
     职责：
@@ -379,6 +166,7 @@ class ChannelMessageHandler:
         thinking_enabled: Optional[bool] = None,
         max_history_messages: Optional[int] = None,
         persona_config=None,
+        injection_config=None,
         workspace=None,
         memory_store=None,
         tool_params_updates: Optional[dict] = None,
@@ -407,6 +195,18 @@ class ChannelMessageHandler:
                 f"Persona reloaded: ai_name={persona_config.ai_name}, "
                 f"user_name={persona_config.user_name}, "
                 f"user_address={getattr(persona_config, 'user_address', '')}"
+            )
+
+        if injection_config is not None:
+            # 注入开关热重载：同步 context_builder 与工具禁用列表
+            self.context_builder.update_injection_config(injection_config)
+            disabled_tools = list(injection_config.disabled_tools)
+            if self._tool_params.get("disabled_tools") != disabled_tools:
+                self._tool_params["disabled_tools"] = disabled_tools
+                should_rebuild_tools = True
+            logger.info(
+                f"Injection config reloaded: disabled_tools={disabled_tools}, "
+                f"auto_memory_summary={injection_config.auto_memory_summary}"
             )
 
         if memory_store is not None:
@@ -456,7 +256,10 @@ class ChannelMessageHandler:
             try:
                 msg = await self.bus.consume_inbound()
                 consecutive_errors = 0
-                asyncio.create_task(self.handle_message(msg))
+                task = asyncio.create_task(self.handle_message(msg))
+                # 显式收集后台任务异常：任务内未处理异常默认只留下
+                # "Task exception was never retrieved"，容易被漏看
+                task.add_done_callback(_log_handle_task_exception)
             except Exception as e:
                 consecutive_errors += 1
                 logger.error(
@@ -475,6 +278,7 @@ class ChannelMessageHandler:
         """处理单条入站消息：命令识别、Agent 处理、回复"""
         cancel_token = CancellationToken()
         session_id = None
+        turn_token_acquired = False
         start_time = time.time()
         typing_session_key = None
 
@@ -489,6 +293,7 @@ class ChannelMessageHandler:
             )
 
             content = _normalize_channel_inbound_content(msg)
+            content = await self._promote_inbound_media(msg, content)
             session_route = _resolve_session_route(msg)
             user_message_context = self._build_user_message_context(msg, session_route)
             model_input = _format_message_for_model("user", content, user_message_context)
@@ -596,6 +401,32 @@ class ChannelMessageHandler:
 
             # Agent 处理
             session_id = await self._get_or_create_session(msg)
+
+            # 同一会话已有处理在进行时，本条消息不并发开跑，而是登记为插话：
+            # 由正在执行的那一轮在工具批次之间取走并合并进上下文，用户看到的是
+            # 一次连续回复，而不是两条互相踩踏的并发回复。
+            gate = get_session_gate()
+            if gate.is_busy(session_id):
+                # 先落库再登记：插话只会被「正在进行的那一轮」合并进上下文，
+                # 若不入库，下一轮从数据库重建历史时就彻底看不到这条消息了。
+                # 由排队补救流程重新投递的消息此前已落库，不能重复写入。
+                if not (msg.metadata or {}).get("_persisted"):
+                    await self._save_message(
+                        session_id,
+                        "user",
+                        content,
+                        message_context=user_message_context,
+                    )
+                entry = gate.enqueue_pending(session_id, content)
+                logger.info(
+                    f"[{msg.channel}] Session {session_id} busy, message queued "
+                    f"for in-flight turn (pending_id={entry.id})"
+                )
+                await self._maybe_notify_queued(msg, session_id)
+                return
+
+            await gate.acquire(session_id)
+            turn_token_acquired = True
             self._active_tasks[session_id] = cancel_token
             if stream_abort_handler:
                 self._register_stream_abort_callback(
@@ -621,12 +452,15 @@ class ChannelMessageHandler:
             workflow_tool = self.tool_registry.get_tool("workflow_run")
             if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
                 workflow_tool.set_event_callback(tool_event_handler)
-            await self._save_message(
-                session_id,
-                "user",
-                content,
-                message_context=user_message_context,
-            )
+            # 由排队补救流程重新投递的消息此前已落库，跳过重复写入
+            already_persisted = bool((msg.metadata or {}).get("_persisted"))
+            if not already_persisted:
+                await self._save_message(
+                    session_id,
+                    "user",
+                    content,
+                    message_context=user_message_context,
+                )
 
             runtime_config = await self._resolve_runtime_config_for_session(session_id)
             _validate_runtime_provider(runtime_config)
@@ -691,6 +525,7 @@ class ChannelMessageHandler:
                     tool_event_handler=tool_event_handler,
                     reasoning_event_handler=reasoning_event_handler,
                     prefer_direct_workflow_result=prefer_direct_workflow_result,
+                    pending_message_provider=lambda: get_session_gate().take_pending(session_id),
                 ):
                     if cancel_token.is_cancelled:
                         break
@@ -805,8 +640,59 @@ class ChannelMessageHandler:
             if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
                 workflow_tool.set_event_callback(None)
             self.tool_registry.set_message_context(None)
-            if session_id and session_id in self._active_tasks:
+            # 只清理自己登记的令牌：并发排队时后者不能误删前者的引用
+            if session_id and self._active_tasks.get(session_id) is cancel_token:
                 del self._active_tasks[session_id]
+            if turn_token_acquired:
+                # 本轮结束前若还有没被消费的插话（例如本轮被取消、异常退出，
+                # 或直接走了 workflow 结果返回路径），把它重新投递回队列，
+                # 让它在下一轮被正常处理，而不是烂在内存里。
+                leftover = get_session_gate().drain_pending(session_id)
+                if leftover and not cancel_token.is_cancelled:
+                    try:
+                        requeue_metadata = dict(msg.metadata or {})
+                        # 这些内容在登记为插话时已经落库，重新处理时不能再写一次；
+                        # 同时清掉本轮残留的流式回调，避免旧的发送句柄被复用。
+                        requeue_metadata["_persisted"] = True
+                        requeue_metadata.pop("_stream_handler", None)
+                        requeue_metadata.pop("_stream_abort_handler", None)
+                        requeue_metadata.pop("_tool_event_handler", None)
+                        await self.bus.publish_inbound(
+                            InboundMessage(
+                                channel=msg.channel,
+                                sender_id=msg.sender_id,
+                                chat_id=msg.chat_id,
+                                content="\n".join(leftover),
+                                media=None,
+                                metadata=requeue_metadata,
+                            )
+                        )
+                        logger.info(
+                            f"[{msg.channel}] Re-queued {len(leftover)} unconsumed "
+                            f"message(s) for session {session_id}"
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            f"[{msg.channel}] Failed to re-queue unconsumed messages: {exc}"
+                        )
+                get_session_gate().release(session_id)
+
+    async def _maybe_notify_queued(self, msg: InboundMessage, session_id: str) -> None:
+        """群聊忙碌时通过渠道能力发送排队卡片（目前由飞书实现）。"""
+        if self.channel_manager is None or not _is_group_message(msg):
+            return
+
+        metadata = msg.metadata or {}
+        account_id = str(metadata.get("account_id") or "default").strip() or "default"
+        channel = self.channel_manager.get_channel(msg.channel, account_id=account_id)
+        if channel is None or not hasattr(channel, "notify_queued"):
+            return
+
+        try:
+            position = get_session_gate().pending_count(session_id)
+            await channel.notify_queued(msg, position=position)
+        except Exception as e:
+            logger.debug(f"[{msg.channel}] Failed to send queue notice: {e}")
 
     async def _maybe_start_channel_typing(self, msg: InboundMessage) -> Optional[str]:
         """按渠道能力开启 typing 提示。"""
@@ -931,6 +817,7 @@ class ChannelMessageHandler:
                 tool_event_handler=tool_event_handler,
                 reasoning_event_handler=reasoning_event_handler,
                 prefer_direct_workflow_result=prefer_direct_workflow_result,
+                pending_message_provider=lambda: get_session_gate().take_pending(session_id),
             ):
                 if cancel_token.is_cancelled:
                     break
@@ -970,679 +857,8 @@ class ChannelMessageHandler:
             logger.error(f"[{original_msg.channel}] Failed to queue reply: {e}")
 
     # ------------------------------------------------------------------
-    # 会话管理命令
+    # 路由偏好与外部编码代理
     # ------------------------------------------------------------------
-
-    def _get_chat_key(self, msg: InboundMessage) -> str:
-        """返回频道内唯一聊天键。"""
-        session_route = _resolve_session_route(msg)
-        return (
-            f"{msg.channel}:"
-            f"{session_route['context_owner_account_id']}:"
-            f"{session_route['session_chat_id']}"
-        )
-
-    def _remember_session_list_scope(self, msg: InboundMessage, include_all: bool) -> None:
-        """记录当前聊天最近一次使用的列表范围。"""
-        self._last_session_list_scope[self._get_chat_key(msg)] = "all" if include_all else "chat"
-
-    def _get_last_session_list_scope(self, msg: InboundMessage) -> str:
-        """获取当前聊天最近一次使用的列表范围，默认当前聊天。"""
-        return getattr(self, "_last_session_list_scope", {}).get(self._get_chat_key(msg), "chat")
-
-    async def _load_recent_sessions(
-        self, msg: InboundMessage, include_all: bool = False, limit: int = 10
-    ) -> List[Session]:
-        """加载最近会话列表。"""
-        from sqlalchemy import select
-
-        query = select(Session)
-        if not include_all:
-            session_route = _resolve_session_route(msg)
-            account_id = str(session_route["context_owner_account_id"])
-            session_chat_id = str(session_route["session_chat_id"])
-            prefix = f"{msg.channel}:{account_id}:{session_chat_id}"
-            if account_id == _PRIMARY_ACCOUNT_ID:
-                legacy_prefix = f"{msg.channel}:{session_chat_id}"
-                query = query.where(
-                    (Session.name.like(f"{prefix}%")) | (Session.name.like(f"{legacy_prefix}%"))
-                )
-            else:
-                query = query.where(Session.name.like(f"{prefix}%"))
-
-        query = query.order_by(Session.updated_at.desc()).limit(limit)
-
-        async with self.db_session_factory() as db:
-            result = await db.execute(query)
-            return list(result.scalars().all())
-
-    async def _load_session_message_counts(self, session_ids: List[str]) -> Dict[str, int]:
-        """批量加载会话消息数量。"""
-        from sqlalchemy import func, select
-
-        if not session_ids:
-            return {}
-
-        async with self.db_session_factory() as db:
-            result = await db.execute(
-                select(Message.session_id, func.count(Message.id))
-                .where(Message.session_id.in_(session_ids))
-                .group_by(Message.session_id)
-            )
-            return {session_id: count for session_id, count in result.all()}
-
-    async def _get_session_by_id(self, session_id: str) -> Optional[Session]:
-        """根据 ID 查找会话。"""
-        from sqlalchemy import select
-
-        async with self.db_session_factory() as db:
-            result = await db.execute(select(Session).where(Session.id == session_id))
-            return result.scalar_one_or_none()
-
-    async def _get_or_create_session(self, msg: InboundMessage) -> str:
-        """获取已有会话或创建新会话。"""
-        if msg.metadata:
-            existing_session_id = str(msg.metadata.get("session_id") or "").strip()
-            if existing_session_id:
-                return existing_session_id
-
-        if hasattr(self, "_active_sessions"):
-            chat_key = self._get_chat_key(msg)
-            if chat_key in self._active_sessions:
-                return self._active_sessions[chat_key]
-
-        session_route = _resolve_session_route(msg)
-        return await self._get_or_create_session_for_route(
-            msg,
-            session_route,
-            cache_key=self._get_chat_key(msg),
-        )
-
-    async def _get_or_create_session_for_route(
-        self,
-        msg: InboundMessage,
-        session_route: Dict[str, object],
-        *,
-        cache_key: Optional[str] = None,
-    ) -> str:
-        """按指定路由解析或创建会话。"""
-        from sqlalchemy import select
-        from datetime import datetime
-
-        account_id = str(session_route["context_owner_account_id"])
-        session_chat_id = str(session_route["session_chat_id"])
-        prefix = f"{msg.channel}:{account_id}:{session_chat_id}"
-        legacy_prefix = f"{msg.channel}:{session_chat_id}"
-        channel_context = self._build_session_channel_context(msg, session_route)
-        async with self.db_session_factory() as db:
-            result = await db.execute(
-                select(Session)
-                .where(Session.name.like(f"{prefix}%"))
-                .order_by(Session.created_at.desc())
-                .limit(1)
-            )
-            session = result.scalar_one_or_none()
-            if not session and account_id == "default":
-                result = await db.execute(
-                    select(Session)
-                    .where(Session.name.like(f"{legacy_prefix}%"))
-                    .order_by(Session.created_at.desc())
-                    .limit(1)
-                )
-                session = result.scalar_one_or_none()
-            if session:
-                existing_context = _decode_message_context(getattr(session, "channel_context", None))
-                if channel_context and channel_context != existing_context:
-                    session.channel_context = json.dumps(channel_context, ensure_ascii=False)
-                    await db.commit()
-                return session.id
-
-            # 创建新会话，使用带时间戳的名称
-            import uuid
-            session_name = (
-                f"{msg.channel}:{account_id}:{session_chat_id}:"
-                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            )
-            session = Session(
-                id=str(uuid.uuid4()),
-                name=session_name,
-                channel_context=(
-                    json.dumps(channel_context, ensure_ascii=False)
-                    if channel_context
-                    else None
-                ),
-                )
-            db.add(session)
-            await db.commit()
-            await db.refresh(session)
-            if cache_key:
-                if not hasattr(self, "_active_sessions"):
-                    self._active_sessions = {}
-                self._active_sessions[cache_key] = session.id
-            logger.info(f"Created session {session.id} for {session_name}")
-            return session.id
-
-    def _should_mirror_to_primary_context(self, session_route: Dict[str, object]) -> bool:
-        """仅在支持的群聊渠道中，把非主机器人对话镜像到主机器人主群会话。"""
-        return bool(
-            session_route.get("supports_primary_group_shared")
-            and session_route.get("is_group")
-            and str(session_route.get("source_account_id") or "") != _PRIMARY_ACCOUNT_ID
-        )
-
-    def _build_primary_group_session_route(
-        self,
-        session_route: Dict[str, object],
-    ) -> Dict[str, object]:
-        """构造主机器人群共享会话路由，不改变原始回复账号。"""
-        primary_route = dict(session_route)
-        primary_route.update(
-            {
-                "context_owner_account_id": _PRIMARY_ACCOUNT_ID,
-                "primary_account_id": _PRIMARY_ACCOUNT_ID,
-                "session_scope": "group_shared_primary",
-                "use_primary_group_context": True,
-                "context_owner_bot_label": _format_bot_label(_PRIMARY_ACCOUNT_ID),
-            }
-        )
-        return primary_route
-
-    async def _mirror_group_exchange_to_primary_context(
-        self,
-        *,
-        msg: InboundMessage,
-        user_content: str,
-        assistant_content: str,
-        session_route: Dict[str, object],
-    ) -> Optional[str]:
-        """把非主机器人在群里的问答镜像写入主机器人群共享会话。"""
-        if not self._should_mirror_to_primary_context(session_route):
-            return None
-
-        primary_route = self._build_primary_group_session_route(session_route)
-        primary_cache_key = (
-            f"{msg.channel}:{primary_route['context_owner_account_id']}:"
-            f"{primary_route['session_chat_id']}"
-        )
-        primary_session_id = await self._get_or_create_session_for_route(
-            msg,
-            primary_route,
-            cache_key=primary_cache_key,
-        )
-
-        async with self.db_session_factory() as db:
-            from backend.modules.session.manager import SessionManager
-
-            session_manager = SessionManager(db)
-            await session_manager.add_message(
-                session_id=primary_session_id,
-                role="user",
-                content=user_content,
-                message_context=_encode_message_context(
-                    self._build_user_message_context(msg, primary_route)
-                ),
-            )
-            await session_manager.add_message(
-                session_id=primary_session_id,
-                role="assistant",
-                content=assistant_content,
-                message_context=_encode_message_context(
-                    self._build_assistant_message_context(msg, primary_route)
-                ),
-            )
-
-        return primary_session_id
-
-    @staticmethod
-    def _build_session_channel_context(
-        msg: InboundMessage,
-        session_route: Optional[Dict[str, object]] = None,
-    ) -> Optional[dict]:
-        """构建可持久化的频道会话上下文。"""
-        session_route = session_route or _resolve_session_route(msg)
-        account_id = str(session_route["context_owner_account_id"])
-
-        context = {
-            "channel": msg.channel,
-            "account_id": account_id,
-            "sender_id": str(msg.sender_id or ""),
-            "chat_id": str(session_route["session_chat_id"] or msg.chat_id or ""),
-            "source_account_id": str(session_route["source_account_id"]),
-            "reply_account_id": str(session_route["reply_account_id"]),
-            "context_owner_account_id": str(session_route["context_owner_account_id"]),
-            "primary_account_id": str(session_route["primary_account_id"]),
-            "session_scope": str(session_route["session_scope"]),
-            "supports_primary_group_shared": bool(session_route["supports_primary_group_shared"]),
-        }
-
-        context.update({
-            "is_group": bool(session_route["is_group"]),
-            "delivery_mode": "chat" if session_route["is_group"] else "user",
-            "to_user": None if session_route["is_group"] else (str(msg.sender_id or "") or str(msg.chat_id or "")),
-            "group_chat_id": (
-                str(session_route["group_chat_id"])
-                if session_route["is_group"]
-                else None
-            ),
-        })
-        return context
-
-    async def _handle_new_session_command(self, msg: InboundMessage) -> None:
-        """处理 /new 命令。"""
-        import uuid
-        from datetime import datetime
-
-        session_route = _resolve_session_route(msg)
-        session_name = (
-            f"{msg.channel}:{str(session_route['context_owner_account_id'])}:{str(session_route['session_chat_id'])}:"
-            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        )
-        session_id = str(uuid.uuid4())
-
-        async with self.db_session_factory() as db:
-            channel_context = self._build_session_channel_context(msg, session_route)
-            db.add(
-                Session(
-                    id=session_id,
-                    name=session_name,
-                    channel_context=(
-                        json.dumps(channel_context, ensure_ascii=False)
-                        if channel_context
-                        else None
-                    ),
-                )
-            )
-            await db.commit()
-
-        if not hasattr(self, "_active_sessions"):
-            self._active_sessions = {}
-        self._active_sessions[self._get_chat_key(msg)] = session_id
-
-        await self._send_reply(
-            msg, 
-            f"新会话已创建\n\n"
-            f"名称: {session_name}\n"
-            f"ID: {session_id}\n\n"
-            f"现在可以开始新对话了"
-        )
-
-    async def _handle_list_sessions_command(
-        self, msg: InboundMessage, include_all: bool = False
-    ) -> None:
-        """处理 /list 和 /al 命令。"""
-        sessions = await self._load_recent_sessions(msg, include_all=include_all, limit=10)
-        self._remember_session_list_scope(msg, include_all)
-
-        if not sessions:
-            empty_text = (
-                "暂无会话记录\n\n"
-                "使用 /n 创建第一个会话"
-                if include_all
-                else "当前聊天暂无会话记录\n\n使用 /n 创建第一个会话\n使用 /al 查看所有会话"
-            )
-            await self._send_reply(msg, empty_text)
-            return
-
-        counts = await self._load_session_message_counts([s.id for s in sessions])
-        title = "所有会话列表 (最近10个)" if include_all else "当前聊天会话列表 (最近10个)"
-        lines = [f"{title}\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-        for i, s in enumerate(sessions, 1):
-            updated_at = getattr(s, "updated_at", None) or s.created_at
-            updated = updated_at.strftime("%Y-%m-%d %H:%M")
-            lines.append(
-                f"[{i}] {s.name}\n"
-                f"    ID: {s.id}\n"
-                f"    更新: {updated} | 消息: {counts.get(s.id, 0)}\n"
-            )
-        lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("使用 /s <编号|ID> 切换，如: /s 1")
-        lines.append("使用 /l 查看当前聊天会话" if include_all else "使用 /al 查看所有会话")
-        await self._send_reply(msg, "\n".join(lines))
-
-    async def _handle_switch_session_command(
-        self, msg: InboundMessage, content: str
-    ) -> None:
-        """处理 /switch 命令，支持数字编号或完整ID。"""
-        parts = content.split(maxsplit=1)
-        if len(parts) < 2:
-            await self._send_reply(
-                msg, 
-                "参数错误\n\n"
-                "用法: /s <编号|ID>\n\n"
-                "先用 /l 查看当前聊天会话，或 /al 查看所有会话"
-            )
-            return
-
-        identifier = parts[1].strip()
-        last_scope = self._get_last_session_list_scope(msg)
-        scope_label = "所有会话" if last_scope == "all" else "当前聊天会话"
-
-        # 尝试作为数字编号解析
-        session = None
-        if identifier.isdigit():
-            sessions = await self._load_recent_sessions(
-                msg, include_all=(last_scope == "all"), limit=10
-            )
-            if not sessions:
-                await self._send_reply(
-                    msg,
-                    "暂无会话记录\n\n"
-                    "使用 /l 查看当前聊天会话，或 /al 查看所有会话"
-                )
-                return
-
-            index = int(identifier) - 1
-            if 0 <= index < len(sessions):
-                session = sessions[index]
-            else:
-                await self._send_reply(
-                    msg,
-                    f"编号 {identifier} 不存在\n\n"
-                    f"当前 {scope_label} 中有 {len(sessions)} 个会话\n"
-                    f"使用 /l 或 /al 重新查看列表"
-                )
-                return
-        else:
-            # 作为完整ID查找
-            session = await self._get_session_by_id(identifier)
-        
-        if not session:
-            await self._send_reply(
-                msg, 
-                f"会话不存在: {identifier}\n\n"
-                f"使用 /l 或 /al 查看可用会话"
-            )
-            return
-
-        if not hasattr(self, "_active_sessions"):
-            self._active_sessions = {}
-        self._active_sessions[self._get_chat_key(msg)] = session.id
-        source_line = f"来源: {scope_label}\n" if identifier.isdigit() else ""
-        await self._send_reply(
-            msg, 
-            f"已切换会话\n\n"
-            f"{session.name}\n"
-            f"ID: {session.id}\n"
-            f"{source_line}\n"
-            f"后续消息将继续写入这个会话"
-        )
-
-    async def _handle_clear_history_command(self, msg: InboundMessage) -> None:
-        """处理 /clear 命令。"""
-        from sqlalchemy import delete
-
-        session_id = await self._get_or_create_session(msg)
-        async with self.db_session_factory() as db:
-            result = await db.execute(
-                delete(Message).where(Message.session_id == session_id)
-            )
-            deleted_count = result.rowcount
-            await db.commit()
-        
-        await self._send_reply(
-            msg, 
-            f"历史记录已清除\n\n"
-            f"已删除 {deleted_count} 条消息"
-        )
-
-    async def _handle_stop_command(self, msg: InboundMessage) -> None:
-        """处理 /stop 命令。"""
-        session_id = await self._get_or_create_session(msg)
-        if await self.cancel_task(session_id):
-            await self._send_reply(msg, "任务已停止")
-        else:
-            await self._send_reply(msg, "没有正在执行的任务")
-
-    async def _handle_personality_command(self, msg: InboundMessage, content: str) -> None:
-        """处理 /personality 或 /p 命令 - 为当前会话设置性格。"""
-        from backend.modules.agent.personalities import PERSONALITY_PRESETS
-        from backend.modules.session.runtime_config import resolve_session_runtime_config
-        from sqlalchemy import select
-        import json
-        
-        session_id = await self._get_or_create_session(msg)
-        parts = content.split(maxsplit=1)
-        
-        async with self.db_session_factory() as db:
-            result = await db.execute(select(Session).where(Session.id == session_id))
-            session = result.scalar_one_or_none()
-            
-            if not session:
-                await self._send_reply(msg, "会话不存在")
-                return
-            
-            runtime_config = resolve_session_runtime_config(config_loader.config, session)
-            current_personality = runtime_config.persona_config.personality
-            
-            if len(parts) < 2:
-                lines = ["可用性格列表\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-                
-                personality_list = list(PERSONALITY_PRESETS.items())
-                for i, (pid, preset) in enumerate(personality_list, 1):
-                    marker = " [当前]" if pid == current_personality else ""
-                    lines.append(f"[{i}] {pid} - {preset['name']}{marker}")
-                
-                lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
-                lines.append(f"当前会话性格: {current_personality}")
-                lines.append("\n使用 /p <编号|性格ID> 切换")
-                lines.append("如: /p 1 或 /p friendly")
-                await self._send_reply(msg, "\n".join(lines))
-                return
-            
-            identifier = parts[1].strip().lower()
-            personality_id = None
-            
-            personality_list = list(PERSONALITY_PRESETS.items())
-            if identifier.isdigit():
-                index = int(identifier) - 1
-                if 0 <= index < len(personality_list):
-                    personality_id = personality_list[index][0]
-                else:
-                    await self._send_reply(
-                        msg,
-                        f"编号 {identifier} 不存在\n\n"
-                        f"当前有 {len(personality_list)} 个性格\n"
-                        f"使用 /p 查看列表"
-                    )
-                    return
-            else:
-                if identifier in PERSONALITY_PRESETS:
-                    personality_id = identifier
-            
-            if not personality_id:
-                await self._send_reply(
-                    msg,
-                    f"性格 '{identifier}' 不存在\n\n"
-                    f"使用 /p 查看可用性格"
-                )
-                return
-            
-            persona_config = {
-                "ai_name": config_loader.config.persona.ai_name or "小C",
-                "user_name": config_loader.config.persona.user_name or "用户",
-                "user_address": getattr(config_loader.config.persona, 'user_address', '') or "",
-                "personality": personality_id,
-                "custom_personality": "",
-            }
-            
-            session.session_persona_config = json.dumps(persona_config, ensure_ascii=False)
-            session.use_custom_config = True
-            await db.commit()
-            
-            preset = PERSONALITY_PRESETS[personality_id]
-            await self._send_reply(
-                msg,
-                f"当前会话性格已设置为: {preset['name']}\n\n"
-                f"{preset['description']}\n\n"
-                f"此设置仅对当前会话生效"
-            )
-
-    async def _handle_provider_command(self, msg: InboundMessage, content: str) -> None:
-        """处理 /provider 或 /m 命令 - 为当前会话设置模型提供商。
-        
-        用法:
-        - /m                    查看可用提供商列表
-        - /m 1                  使用编号切换（使用提供商默认模型）
-        - /m 1 gpt-4           使用编号切换并指定模型名称
-        - /m openai            使用ID切换（使用提供商默认模型）
-        - /m openai gpt-4      使用ID切换并指定模型名称
-        """
-        from backend.modules.providers.registry import get_provider_metadata
-        from backend.modules.providers.runtime import get_provider_runtime_state
-        from backend.modules.config.loader import config_loader
-        from backend.modules.session.runtime_config import resolve_session_runtime_config
-        from sqlalchemy import select
-        import json
-        
-        session_id = await self._get_or_create_session(msg)
-        parts = content.split(maxsplit=2)
-        
-        async with self.db_session_factory() as db:
-            result = await db.execute(select(Session).where(Session.id == session_id))
-            session = result.scalar_one_or_none()
-            
-            if not session:
-                await self._send_reply(msg, "会话不存在")
-                return
-            
-            runtime_config = resolve_session_runtime_config(config_loader.config, session)
-            current_provider = runtime_config.provider_name
-            current_model = runtime_config.model_name
-            is_custom_config = runtime_config.has_custom_model_config
-            
-            if len(parts) < 2:
-                lines = ["已配置的模型提供商\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-                
-                available_providers = []
-                for provider_id, provider_config in config_loader.config.providers.items():
-                    metadata = get_provider_metadata(provider_id)
-                    runtime_state = get_provider_runtime_state(config_loader.config, provider_id)
-                    if metadata and runtime_state.selectable:
-                        available_providers.append((provider_id, metadata, provider_config))
-                
-                if not available_providers:
-                    await self._send_reply(
-                        msg,
-                        "暂无已配置的提供商\n\n"
-                        "请在 Web 界面配置 API Key"
-                    )
-                    return
-                
-                for i, (provider_id, metadata, provider_config) in enumerate(available_providers, 1):
-                    is_current = provider_id == current_provider
-                    marker = " ✓" if is_current else ""
-                    lines.append(f"[{i}] {provider_id} - {metadata.name}{marker}")
-                    
-                    default_model = provider_config.model or metadata.default_model
-                    if default_model:
-                        lines.append(f"    默认: {default_model}")
-                    
-                    if is_current and current_model and current_model != default_model:
-                        lines.append(f"    当前: {current_model} (自定义)")
-                
-                lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
-                lines.append("当前会话配置:")
-                if current_provider and current_model:
-                    config_type = "自定义配置" if is_custom_config else "全局配置"
-                    lines.append(f"  提供商: {current_provider}")
-                    lines.append(f"  模型: {current_model}")
-                    lines.append(f"  类型: {config_type}")
-                else:
-                    lines.append("  未配置")
-                lines.append("\n使用方式:")
-                lines.append("  /m <编号|ID>              使用默认模型")
-                lines.append("  /m <编号|ID> <模型名>     指定模型名称")
-                lines.append("\n示例:")
-                lines.append("  /m 1                      使用第1个提供商的默认模型")
-                lines.append("  /m 1 gpt-4               使用第1个提供商的 gpt-4")
-                lines.append("  /m openai gpt-3.5-turbo  使用 openai 的 gpt-3.5-turbo")
-                await self._send_reply(msg, "\n".join(lines))
-                return
-            
-            identifier = parts[1].strip().lower()
-            custom_model = parts[2].strip() if len(parts) > 2 else None
-            
-            available_providers = []
-            for provider_id, provider_config in config_loader.config.providers.items():
-                metadata = get_provider_metadata(provider_id)
-                runtime_state = get_provider_runtime_state(config_loader.config, provider_id)
-                if metadata and runtime_state.selectable:
-                    available_providers.append((provider_id, metadata, provider_config))
-            
-            provider_id = None
-            metadata = None
-            provider_config = None
-            
-            if identifier.isdigit():
-                index = int(identifier) - 1
-                if 0 <= index < len(available_providers):
-                    provider_id, metadata, provider_config = available_providers[index]
-                else:
-                    await self._send_reply(
-                        msg,
-                        f"编号 {identifier} 不存在\n\n"
-                        f"当前有 {len(available_providers)} 个提供商\n"
-                        f"使用 /m 查看列表"
-                    )
-                    return
-            else:
-                metadata = get_provider_metadata(identifier)
-                if metadata:
-                    provider_config = config_loader.config.providers.get(identifier)
-                    if provider_config and get_provider_runtime_state(config_loader.config, identifier).selectable:
-                        provider_id = identifier
-            
-            if not provider_id or not metadata or not provider_config:
-                await self._send_reply(
-                    msg,
-                    f"提供商 '{identifier}' 不存在或未配置\n\n"
-                    f"使用 /m 查看可用提供商"
-                )
-                return
-            
-            model_name = custom_model if custom_model else (provider_config.model or metadata.default_model)
-            
-            if not model_name:
-                await self._send_reply(
-                    msg,
-                    f"无法确定模型名称\n\n"
-                    f"请指定模型名称:\n"
-                    f"/m {identifier} <模型名>\n\n"
-                    f"例如: /m {identifier} gpt-4"
-                )
-                return
-            
-            runtime_state = get_provider_runtime_state(config_loader.config, provider_id)
-            api_key = runtime_state.api_key
-            if runtime_state.requires_api_key and not api_key:
-                await self._send_reply(
-                    msg,
-                    f"提供商 '{provider_id}' 缺少 API 密钥\n\n"
-                    f"请在 Web 界面配置 API Key"
-                )
-                return
-            
-            api_base = runtime_state.api_base or metadata.default_api_base
-            
-            model_config = {
-                "provider": provider_id,
-                "model": model_name,
-                "api_key": api_key,
-                "api_base": api_base,
-            }
-            
-            session.session_model_config = json.dumps(model_config, ensure_ascii=False)
-            session.use_custom_config = True
-            await db.commit()
-            
-            custom_note = " (自定义)" if custom_model else ""
-            await self._send_reply(
-                msg,
-                f"当前会话模型已设置为:\n\n"
-                f"提供商: {metadata.name}\n"
-                f"模型: {model_name}{custom_note}\n\n"
-                f"此设置仅对当前会话生效"
-            )
 
     def _get_route_preference_key(self, msg: InboundMessage) -> str:
         return self._get_chat_key(msg)
@@ -1719,116 +935,6 @@ class ChannelMessageHandler:
             history_message_count=profile.history_message_count,
         )
 
-    async def _handle_route_command(self, msg: InboundMessage, content: str) -> None:
-        """处理 /route 命令。"""
-        parts = content.strip().split(maxsplit=1)
-        current_mode, current_profile = self._get_routing_preferences(msg)
-
-        if len(parts) == 1:
-            await self._send_reply(
-                msg,
-                "当前聊天路由模式:\n\n"
-                f"- 模式: {current_mode}\n"
-                f"- 外部代理: {current_profile or '未设置'}\n\n"
-                "用法:\n"
-                "- /route ai\n"
-                "- /route direct\n"
-                "- /route default",
-            )
-            return
-
-        value = parts[1].strip().lower()
-        key = self._get_route_preference_key(msg)
-
-        if value == "default":
-            self._route_mode_overrides.pop(key, None)
-            resolved_mode, resolved_profile = self._get_routing_preferences(msg)
-            await self._send_reply(
-                msg,
-                "当前聊天已恢复为渠道默认路由设置。\n\n"
-                f"- 模式: {resolved_mode}\n"
-                f"- 外部代理: {resolved_profile or '未设置'}",
-            )
-            return
-
-        if value not in {"ai", "direct"}:
-            await self._send_reply(
-                msg,
-                "无效路由模式。\n\n"
-                "可用值:\n"
-                "- /route ai\n"
-                "- /route direct\n"
-                "- /route default",
-            )
-            return
-
-        self._route_mode_overrides[key] = value
-        await self._send_reply(
-            msg,
-            "当前聊天路由模式已更新。\n\n"
-            f"- 模式: {value}\n"
-            f"- 外部代理: {current_profile or '未设置'}",
-        )
-
-    async def _handle_coder_command(self, msg: InboundMessage, content: str) -> None:
-        """处理 /coder 命令。"""
-        parts = content.strip().split(maxsplit=1)
-        current_mode, current_profile = self._get_routing_preferences(msg)
-        external_tool = self.tool_registry.get_tool("external_coding_agent")
-        registry = getattr(external_tool, "registry", None)
-        enabled_profiles = registry.enabled_profile_names() if registry else []
-        enabled_profiles_text = ", ".join(enabled_profiles) if enabled_profiles else "无"
-
-        if len(parts) == 1:
-            await self._send_reply(
-                msg,
-                "当前聊天外部编程代理设置:\n\n"
-                f"- 当前模式: {current_mode}\n"
-                f"- 当前代理: {current_profile or '未设置'}\n"
-                f"- 已启用 profile: {enabled_profiles_text}\n\n"
-                "用法:\n"
-                "- /coder codex\n"
-                "- /coder claude\n"
-                "- /coder default",
-            )
-            return
-
-        value = parts[1].strip()
-        key = self._get_route_preference_key(msg)
-
-        if value.lower() == "default":
-            self._coder_profile_overrides.pop(key, None)
-            resolved_mode, resolved_profile = self._get_routing_preferences(msg)
-            await self._send_reply(
-                msg,
-                "当前聊天已恢复为渠道默认外部代理设置。\n\n"
-                f"- 当前模式: {resolved_mode}\n"
-                f"- 当前代理: {resolved_profile or '未设置'}",
-            )
-            return
-
-        if registry is None:
-            await self._send_reply(msg, "external_coding_agent 工具当前不可用。")
-            return
-
-        try:
-            canonical_name = registry.resolve_profile_name(value)
-            registry.resolve_profile(canonical_name)
-        except Exception as e:
-            await self._send_reply(
-                msg,
-                f"无法切换外部代理: {e}\n\n已启用 profile: {enabled_profiles_text}",
-            )
-            return
-
-        self._coder_profile_overrides[key] = canonical_name
-        await self._send_reply(
-            msg,
-            "当前聊天外部编程代理已更新。\n\n"
-            f"- 当前模式: {current_mode}\n"
-            f"- 当前代理: {canonical_name}",
-        )
-
     async def _handle_direct_coding_message(
         self,
         *,
@@ -1843,9 +949,18 @@ class ChannelMessageHandler:
     ) -> None:
         """在 direct 路由模式下直接调用 external_coding_agent。"""
         session_id = await self._get_or_create_session(msg)
-        self._active_tasks[session_id] = cancel_token
-
+        # 外部编码代理是长任务，同样按会话串行：同一会话不允许两条指令并发下发。
+        gate = get_session_gate()
+        turn_acquired = False
+        if gate.is_busy(session_id):
+            await self._send_reply(msg, "当前会话还有任务在执行，请等它结束后再试。")
+            return
         try:
+            # acquire 到 release 之间的代码都在本 try 内，
+            # 任何异常路径都能走到 finally 的 release。
+            await gate.acquire(session_id)
+            turn_acquired = True
+            self._active_tasks[session_id] = cancel_token
             stream_abort_handler = msg.metadata.get('_stream_abort_handler') if msg.metadata else None
             if stream_abort_handler:
                 self._register_stream_abort_callback(
@@ -1940,325 +1055,14 @@ class ChannelMessageHandler:
                 f"for session {session_id} in {duration:.2f}s"
             )
         finally:
-            self.tool_registry.set_cancel_token(None)
-            self._active_tasks.pop(session_id, None)
-
-    async def _handle_help_command(self, msg: InboundMessage) -> None:
-        """处理 /help 命令。"""
-        help_text = (
-            "可用命令\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "会话管理:\n"
-            "  /new (/n) - 创建新会话\n"
-            "  /list (/l) - 查看当前聊天最近10个会话\n"
-            "  /all (/al) - 查看所有会话\n"
-            "  /switch (/s) <编号|ID> - 切换最近一次列表中的会话\n"
-            "  /clear (/c) - 清除当前会话历史\n\n"
-            "个性化设置:\n"
-            "  /personality (/p) [编号|ID] - 查看/切换性格\n"
-            "  /provider (/m) [编号|ID] [模型] - 查看/切换模型\n\n"
-            "渠道编程代理:\n"
-            "  /route (/rt) [ai|direct|default] - 切换当前聊天路由模式\n"
-            "  /coder (/cdr) [profile|default] - 切换当前聊天外部编程代理\n\n"
-            "团队协作:\n"
-            "  /team - 查看可用团队名称\n"
-            "  /team <团队名> <任务> - 直接运行指定智能体团队\n\n"
-            "控制:\n"
-            "  /stop - 停止当前任务\n"
-            "  /help (/h) - 显示此帮助\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "提示:\n"
-            "- 直接发消息即可对话\n"
-            "- 括号内为命令简写\n"
-            "- /l 查看当前聊天，/al 查看所有会话\n"
-            "- 使用 /m 或 /p 查看详细用法\n"
-            "- /route direct 后，普通消息会直接转发给外部编程代理\n"
-            "- /coder codex 可把当前聊天的直通代理切到 codex\n"
-            "- 先发送 /team 可查看当前可用团队名称\n"
-            "- /team 文档深度分析 请总结这份文档，可直接执行团队工作流\n"
-            "- 也可以直接说“用 codex 帮我修这个报错”或“用 claude 写个爬虫”\n"
-        )
-        await self._send_reply(msg, help_text)
-
-    async def _handle_team_command(
-        self,
-        msg: InboundMessage,
-        content: str,
-        *,
-        session_route: Dict[str, object],
-        user_message_context: dict,
-        cancel_token: CancellationToken,
-        tool_event_handler=None,
-        start_time: Optional[float] = None,
-    ) -> None:
-        """处理渠道 /team 命令，直接执行指定团队工作流。"""
-        if content.strip() == "/team":
-            await self._send_reply(
-                msg,
-                build_team_command_overview(
-                    self.context_builder,
-                    log_scope="channel team command",
-                ),
-            )
-            return
-
-        resolved = resolve_explicit_team_command(
-            self.context_builder,
-            content,
-            log_scope="channel team command",
-        )
-        if resolved is None:
-            await self._send_reply(msg, "团队命令当前不可用，请稍后重试。")
-            return
-
-        team_name, goal = resolved
-        if not team_name:
-            await self._send_reply(
-                msg,
-                build_team_command_overview(
-                    self.context_builder,
-                    log_scope="channel team command",
-                ),
-            )
-            return
-        if not goal:
-            await self._send_reply(msg, build_team_goal_usage(team_name))
-            return
-
-        session_id = await self._get_or_create_session(msg)
-        self._active_tasks[session_id] = cancel_token
-        self.tool_registry.set_message_context(
-            {
-                "channel": msg.channel,
-                "sender_id": msg.sender_id,
-                "chat_id": msg.chat_id,
-                "metadata": msg.metadata,
-            }
-        )
-        self.tool_registry.set_session_id(session_id)
-        self.tool_registry.set_cancel_token(cancel_token)
-
-        workflow_tool = self.tool_registry.get_tool("workflow_run")
-        if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
-            workflow_tool.set_event_callback(tool_event_handler)
-
-        try:
-            await self._save_message(
-                session_id,
-                "user",
-                content,
-                message_context=user_message_context,
-            )
-
-            response = await self.tool_registry.execute(
-                "workflow_run",
-                {
-                    "team_name": team_name,
-                    "goal": goal,
-                },
-            )
-
-            async with self.db_session_factory() as db:
-                from backend.modules.session.manager import SessionManager
-
-                session_manager = SessionManager(db)
-                assistant_message = await session_manager.add_message(
-                    session_id=session_id,
-                    role="assistant",
-                    content=response,
-                    message_context=_encode_message_context(
-                        self._build_assistant_message_context(msg, session_route)
-                    ),
-                )
-
-                try:
-                    from backend.modules.tools.conversation_history import get_conversation_history
-
-                    conversation_history = get_conversation_history()
-                    updated_count = await conversation_history.backfill_message_id(
-                        session_id=session_id,
-                        message_id=assistant_message.id,
-                    )
-                    if updated_count > 0:
-                        logger.info(
-                            f"[{msg.channel}] Backfilled message_id={assistant_message.id} "
-                            f"to {updated_count} team command tool conversations"
-                        )
-                except Exception as e:
-                    logger.warning(f"[{msg.channel}] Failed to backfill team command message_id: {e}")
-
-            channel_response = _WORKFLOW_META_RE.sub("", response).strip()
-            await self._send_reply(msg, channel_response or response)
-
-            duration = time.time() - start_time if start_time is not None else 0.0
-            logger.info(
-                f"[{msg.channel}] Team command handled for session {session_id} "
-                f"(team={team_name}) in {duration:.2f}s"
-            )
-        finally:
-            if workflow_tool and hasattr(workflow_tool, "set_event_callback"):
-                workflow_tool.set_event_callback(None)
+            # 与 handle_message / _handle_team_command 的 finally 对齐：
+            # 清掉本轮设置的会话上下文，避免工具注册表把 channel/session
+            # 上下文残留到下一个会话的第一次工具调用。
             self.tool_registry.set_cancel_token(None)
             self.tool_registry.set_message_context(None)
             self._active_tasks.pop(session_id, None)
-
-    # ------------------------------------------------------------------
-    # 数据库辅助
-    # ------------------------------------------------------------------
-
-    def _build_user_message_context(
-        self,
-        msg: InboundMessage,
-        session_route: Optional[Dict[str, object]] = None,
-    ) -> dict:
-        session_route = session_route or _resolve_session_route(msg)
-        return {
-            "channel": msg.channel,
-            "role": "user",
-            "sender_id": str(session_route["sender_id"]),
-            "sender_name": str(session_route["sender_name"]),
-            "source_account_id": str(session_route["source_account_id"]),
-            "reply_account_id": str(session_route["reply_account_id"]),
-            "context_owner_account_id": str(session_route["context_owner_account_id"]),
-            "primary_account_id": str(session_route["primary_account_id"]),
-            "session_scope": str(session_route["session_scope"]),
-            "is_group": bool(session_route["is_group"]),
-            "group_chat_id": (
-                str(session_route["group_chat_id"])
-                if session_route["is_group"]
-                else None
-            ),
-            "target_bot_label": str(session_route["target_bot_label"]),
-            "reply_bot_label": str(session_route["reply_bot_label"]),
-        }
-
-    def _build_assistant_message_context(
-        self,
-        msg: InboundMessage,
-        session_route: Optional[Dict[str, object]] = None,
-    ) -> dict:
-        session_route = session_route or _resolve_session_route(msg)
-        return {
-            "channel": msg.channel,
-            "role": "assistant",
-            "source_account_id": str(session_route["source_account_id"]),
-            "reply_account_id": str(session_route["reply_account_id"]),
-            "context_owner_account_id": str(session_route["context_owner_account_id"]),
-            "primary_account_id": str(session_route["primary_account_id"]),
-            "session_scope": str(session_route["session_scope"]),
-            "is_group": bool(session_route["is_group"]),
-            "group_chat_id": (
-                str(session_route["group_chat_id"])
-                if session_route["is_group"]
-                else None
-            ),
-            "reply_bot_label": str(session_route["reply_bot_label"]),
-            "target_bot_label": str(session_route["target_bot_label"]),
-        }
-
-    async def _save_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        message_context: Optional[dict] = None,
-    ) -> None:
-        """保存消息到数据库。"""
-        async with self.db_session_factory() as db:
-            db.add(
-                Message(
-                    session_id=session_id,
-                    role=role,
-                    content=content,
-                    message_context=_encode_message_context(message_context),
-                )
-            )
-            await db.commit()
-
-    async def _get_session_history(
-        self,
-        session_id: str,
-        *,
-        max_history_messages: Optional[int] = None,
-        summary_provider=None,
-    ) -> List[dict]:
-        """获取会话历史消息。"""
-        from sqlalchemy import select
-
-        if max_history_messages is None:
-            max_history_messages = self.max_history_messages
-        if summary_provider is None:
-            summary_provider = self.agent_loop.provider
-
-        limit = max_history_messages if max_history_messages != -1 else None
-
-        async with self.db_session_factory() as db:
-            if limit is not None:
-                query = (
-                    select(Message)
-                    .where(Message.session_id == session_id)
-                    .order_by(Message.created_at.desc())
-                    .limit(limit)
-                )
-                result = await db.execute(query)
-                messages = list(result.scalars().all())
-                message_dicts = [
-                    {
-                        "role": m.role,
-                        "content": _format_message_for_model(
-                            m.role,
-                            m.content,
-                            _decode_message_context(getattr(m, "message_context", None)),
-                        ),
-                    }
-                    for m in reversed(messages)
-                ]
-            else:
-                query = (
-                    select(Message)
-                    .where(Message.session_id == session_id)
-                    .order_by(Message.created_at.asc())
-                )
-                result = await db.execute(query)
-                message_dicts = [
-                    {
-                        "role": m.role,
-                        "content": _format_message_for_model(
-                            m.role,
-                            m.content,
-                            _decode_message_context(getattr(m, "message_context", None)),
-                        ),
-                    }
-                    for m in result.scalars().all()
-                ]
-
-        if not summary_provider or len(message_dicts) <= 15:
-            return message_dicts
-
-        try:
-            from backend.modules.agent.memory import ConversationSummarizer
-
-            summarizer = ConversationSummarizer(provider=summary_provider, char_limit=2000)
-            if not summarizer.should_summarize(message_dicts):
-                return message_dicts
-
-            to_summarize, to_keep = summarizer.get_messages_to_keep(
-                message_dicts,
-                keep_recent=10,
-            )
-            summary = await summarizer.summarize_conversation(to_summarize)
-            if not summary:
-                return message_dicts
-
-            return [
-                {
-                    "role": "system",
-                    "content": f"## Previous Conversation Summary\n\n{summary}",
-                }
-            ] + to_keep
-        except Exception as exc:
-            logger.warning(f"Failed to summarize channel history for {session_id}: {exc}")
-            return message_dicts
+            if turn_acquired:
+                get_session_gate().release(session_id)
 
     # ------------------------------------------------------------------
     # 任务管理
@@ -2266,6 +1070,8 @@ class ChannelMessageHandler:
 
     async def cancel_task(self, session_id: str) -> bool:
         """取消指定会话的活跃任务。"""
+        # 用户要求停止时，排队等插入的消息也一并作废，避免任务刚停又被旧消息拉起
+        get_session_gate().discard_pending(session_id)
         if session_id in self._active_tasks:
             self._active_tasks[session_id].cancel()
             logger.info(f"Cancelled task for session {session_id}")
@@ -2282,5 +1088,6 @@ class ChannelMessageHandler:
             "inbound_size": self.bus.inbound_size,
             "outbound_size": self.bus.outbound_size,
             "active_tasks": len(self._active_tasks),
+            "session_gate": get_session_gate().stats(),
             "rate_limiter": self.rate_limiter.get_stats() if self.rate_limiter else None,
         }

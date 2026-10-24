@@ -192,7 +192,7 @@ const handleTest = async () => {
 .config-input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: none;
 }
 
 .advanced-group {
@@ -269,7 +269,7 @@ const handleTest = async () => {
 }
 
 .remove-button:hover {
-  background: #dc2626;
+  background: var(--color-error);
 }
 
 .add-button {

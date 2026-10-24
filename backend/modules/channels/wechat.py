@@ -34,6 +34,7 @@ from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
 from backend.modules.channels.media_utils import (
+    MAX_INBOUND_ATTACHMENTS,
     download_to_temp,
     format_inbound_media_text,
     get_channel_temp_dir,
@@ -1215,15 +1216,20 @@ class WeChatChannel(BaseChannel):
             self._running = False
 
     def get_runtime_status(self) -> Dict[str, Any]:
-        """返回微信渠道运行时状态。"""
+        """返回微信渠道运行时状态（在统一状态机上追加登录暂停信息）。"""
         pause_remaining_ms = get_wechat_session_pause_remaining_ms(self.account_id)
         paused = pause_remaining_ms > 0
-        return {
-            "paused": paused,
-            "pause_remaining_ms": pause_remaining_ms,
-            "note": self._last_runtime_note,
-            "healthy_running": bool(self._running and not paused),
-        }
+        status = super().get_runtime_status()
+        status.update(
+            {
+                "paused": paused,
+                "pause_remaining_ms": pause_remaining_ms,
+                "note": self._last_runtime_note,
+            }
+        )
+        if paused:
+            status["healthy_running"] = False
+        return status
 
     async def _get_cached_user_config(
         self,
@@ -1435,6 +1441,12 @@ class WeChatChannel(BaseChannel):
         for item in item_list:
             if not isinstance(item, dict):
                 continue
+            if len(media_paths) >= MAX_INBOUND_ATTACHMENTS:
+                logger.info(
+                    f"[wechat:{self.account_id}] attachment limit reached "
+                    f"({MAX_INBOUND_ATTACHMENTS}), remaining media ignored"
+                )
+                break
             item_type = int(item.get("type") or 0)
             try:
                 if item_type == MESSAGE_ITEM_IMAGE:
@@ -1460,6 +1472,8 @@ class WeChatChannel(BaseChannel):
         for item in item_list:
             if not isinstance(item, dict):
                 continue
+            if len(media_paths) >= MAX_INBOUND_ATTACHMENTS:
+                break
             ref_item = _extract_ref_media_item(item)
             if ref_item is None:
                 continue

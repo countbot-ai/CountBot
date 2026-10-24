@@ -458,7 +458,7 @@ function createEmptyExportPayload(): ConfigExportPayload {
   return {
     version: '1.0.0',
     exported_at: new Date().toISOString(),
-    app_version: '0.5.0',
+    app_version: __APP_VERSION__,
     config: {},
   }
 }

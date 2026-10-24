@@ -223,37 +223,51 @@ class ChannelManager:
     async def _start_channel_supervised(self, name: str, channel: BaseChannel) -> None:
         """在监督循环中启动频道。
 
-        频道异常退出后自动重连，使用指数退避（5s -> 10s -> ... -> 300s）。
-        如果频道成功运行超过 60 秒后才断开，退避时间重置。
+        对齐 zcode 的长连接运行时：显式状态机 + 快速退避。
+        频道异常退出后按 1s / 5s / 15s / 30s / 60s / 300s 退避重连；
+        如果频道成功运行超过 60 秒后才断开，退避与重连次数重置。
         """
-        initial_backoff = 5
-        max_backoff = 300
-        backoff = initial_backoff
+        backoff_sequence = (1, 5, 15, 30, 60, 300)
+        attempt = 0
 
         while self._running:
             start_time = asyncio.get_event_loop().time()
+            channel.set_runtime_state(
+                BaseChannel.RUNTIME_CONNECTING,
+                reconnect_attempts=attempt,
+            )
             try:
                 logger.info(f"Starting {name} channel...")
                 await channel.start()
                 if self._running and channel.is_running:
+                    channel.set_runtime_state(BaseChannel.RUNTIME_RUNNING)
                     logger.info(f"Channel {name} is running in background mode")
                     while self._running and channel.is_running:
                         await asyncio.sleep(1)
             except asyncio.CancelledError:
+                channel.set_runtime_state(BaseChannel.RUNTIME_STOPPED)
                 break
             except Exception as e:
+                channel.set_runtime_state(BaseChannel.RUNTIME_FAILED, error=str(e))
                 logger.error(f"Channel {name} error: {e}")
 
             if not self._running:
+                channel.set_runtime_state(BaseChannel.RUNTIME_STOPPED)
                 break
 
             elapsed = asyncio.get_event_loop().time() - start_time
             if elapsed > 60:
-                backoff = initial_backoff
+                attempt = 0
 
+            backoff = backoff_sequence[min(attempt, len(backoff_sequence) - 1)]
+            attempt += 1
+            channel.set_runtime_state(
+                BaseChannel.RUNTIME_STOPPED,
+                error=f"exited, reconnecting in {backoff}s",
+                reconnect_attempts=attempt,
+            )
             logger.warning(f"Channel {name} exited, restarting in {backoff}s...")
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, max_backoff)
 
     # ------------------------------------------------------------------
     # 消息路由

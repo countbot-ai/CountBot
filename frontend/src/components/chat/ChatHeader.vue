@@ -36,6 +36,8 @@
         <span v-if="action.shortLabel && action.emphasis" class="header-btn-label">{{ action.shortLabel }}</span>
       </button>
 
+      <span class="header-divider" aria-hidden="true" />
+
       <button
         type="button"
         class="header-btn header-btn-danger"

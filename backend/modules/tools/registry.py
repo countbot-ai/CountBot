@@ -469,7 +469,9 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
             return finalize(
                 ToolResult.failure(
                     ErrorCategory.VALIDATION,
-                    f"Tool '{tool_name}' is not registered.",
+                    f"Tool '{tool_name}' is not registered. If '{tool_name}' is a skill, "
+                    f"skills are documents, not tools: read 'skills/{tool_name}/SKILL.md' "
+                    "with read_file, then run its scripts with exec.",
                     side_effect_state=SideEffectState.NOT_ATTEMPTED,
                 )
             )

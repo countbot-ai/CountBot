@@ -56,10 +56,10 @@ const modeLabelMap: Record<string, string> = {
   width: min(480px, calc(100% - 48px));
   max-height: 260px;
   overflow-y: auto;
-  background: var(--bg-primary, #ffffff);
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.06);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   z-index: 100;
   padding: 6px;
 }
@@ -72,9 +72,9 @@ const modeLabelMap: Record<string, string> = {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--text-tertiary, #9ca3af);
+  color: var(--text-tertiary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
   margin-bottom: 4px;
 }
 
@@ -82,7 +82,7 @@ const modeLabelMap: Record<string, string> = {
   padding: 20px 12px;
   text-align: center;
   font-size: 13px;
-  color: var(--text-tertiary, #9ca3af);
+  color: var(--text-tertiary);
 }
 
 .team-picker-item {
@@ -92,9 +92,9 @@ const modeLabelMap: Record<string, string> = {
   width: 100%;
   padding: 8px 12px;
   border: none;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--text-primary, #111827);
+  color: var(--text-primary);
   font-size: 14px;
   text-align: left;
   cursor: pointer;
@@ -103,21 +103,21 @@ const modeLabelMap: Record<string, string> = {
 
 .team-picker-item:hover,
 .team-picker-item.active {
-  background: var(--hover-bg, #f3f4f6);
+  background: var(--hover-bg);
 }
 
 .team-picker-name {
   font-weight: 500;
-  color: var(--text-primary, #111827);
+  color: var(--text-primary);
 }
 
 .team-picker-badge {
   font-size: 11px;
   font-weight: 500;
-  color: var(--text-secondary, #6b7280);
-  background: var(--bg-secondary, #f9fafb);
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: var(--radius-sm, 4px);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  border-radius: var(--radius-sm);
   padding: 1px 7px;
   white-space: nowrap;
   flex-shrink: 0;

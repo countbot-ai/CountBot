@@ -62,6 +62,7 @@
         :auto-scroll="true"
         :has-more-history="hasMoreHistory"
         :is-loading-more="isLoadingOlderMessages"
+        :is-streaming="isStreaming"
         @regenerate="handleRegenerate"
         @delete="handleDelete"
         @load-more="handleLoadOlderMessages"
@@ -352,8 +353,7 @@ const openSettingsTab = (tab: SettingsTab = 'general') => {
   showPanel('settings')
 }
 
-const headerActions = computed(() => [
-  { id: 'sessions', icon: SessionsIcon, label: 'nav.sessions', tooltip: 'nav.sessionsTooltip', onClick: () => showPanel('sessions') },
+const headerActions = computed(() => [  { id: 'sessions', icon: SessionsIcon, label: 'nav.sessions', tooltip: 'nav.sessionsTooltip', onClick: () => showPanel('sessions') },
   { id: 'multiagent', icon: WorkflowIcon, label: 'nav.multiagent', tooltip: 'nav.multiagentTooltip', onClick: () => openSettingsTab('multiagent') },
   { id: 'skills', icon: SkillsIcon, label: 'nav.skills', tooltip: 'nav.skillsTooltip', emphasis: true, shortLabel: 'Skills', onClick: () => showPanel('skills') },
   { id: 'wiki', icon: WikiIcon, label: 'nav.wiki', tooltip: 'nav.wikiTooltip', onClick: () => showPanel('wiki') },
@@ -638,22 +638,62 @@ const handleSessionConfigUpdated = (action: 'saved' | 'reset') => {
 const startResize = (e: MouseEvent) => {
   e.preventDefault()
   isResizing.value = true
-  
+
   const startX = e.clientX
   const startWidth = panelWidth.value
-  
+  let targetWidth = startWidth
+  let rafId = 0
+  let velocity = 0
+  let lastTs = performance.now()
+
+  // 规则 9 - 拖拽用过阻尼弹簧（stiffness 1200 / damping 80，ζ≈1.15 > 1，零回弹咬死）
+  const prefersReducedMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  const springStep = (now: number) => {
+    const dt = Math.min((now - lastTs) / 1000, 0.032)
+    lastTs = now
+    const displacement = panelWidth.value - targetWidth
+    const acceleration = -1200 * displacement - 80 * velocity
+    velocity += acceleration * dt
+    panelWidth.value += velocity * dt
+
+    if (Math.abs(panelWidth.value - targetWidth) < 0.4 && Math.abs(velocity) < 4) {
+      panelWidth.value = targetWidth
+      velocity = 0
+      rafId = 0
+      return
+    }
+    rafId = requestAnimationFrame(springStep)
+  }
+
   const handleMouseMove = (e: MouseEvent) => {
     const deltaX = startX - e.clientX
-    panelWidth.value = clampPanelWidth(startWidth + deltaX)
+    targetWidth = clampPanelWidth(startWidth + deltaX)
+    if (prefersReducedMotion) {
+      panelWidth.value = targetWidth
+      return
+    }
+    if (!rafId) {
+      lastTs = performance.now()
+      rafId = requestAnimationFrame(springStep)
+    }
   }
-  
+
   const handleMouseUp = () => {
     isResizing.value = false
     document.removeEventListener('mousemove', handleMouseMove)
     document.removeEventListener('mouseup', handleMouseUp)
-    localStorage.setItem('panelWidth', panelWidth.value.toString())
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = 0
+    }
+    panelWidth.value = targetWidth
+    velocity = 0
+    localStorage.setItem('panelWidth', String(Math.round(panelWidth.value)))
   }
-  
+
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }

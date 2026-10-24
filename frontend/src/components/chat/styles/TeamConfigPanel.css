@@ -3,14 +3,14 @@
 .config-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--modal-overlay);
   backdrop-filter: blur(4px);
   z-index: 10000; /* 提高 z-index 确保在最顶层 */
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.2s var(--ease-snappy);
 }
 
 @keyframes fadeIn {
@@ -24,10 +24,10 @@
   max-height: 90vh;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   overflow: hidden;
-  animation: slideUp 0.3s ease-out;
+  animation: slideUp 0.3s var(--ease-snappy);
 }
 
 @keyframes slideUp {
@@ -65,9 +65,9 @@
   justify-content: center;
   width: 48px;
   height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, rgba(59, 130, 246, 0.8) 100%);
-  color: white;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
   flex-shrink: 0;
 }
 
@@ -131,8 +131,8 @@
 }
 
 .config-toggle.active {
-  border-color: var(--color-primary);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(37, 99, 235, 0.05) 100%);
+  border-color: var(--color-border-strong);
+  background: var(--color-primary-light);
 }
 
 .toggle-header {
@@ -258,17 +258,21 @@
 .text-input {
   width: 100%;
   padding: 10px 14px;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
-  background: var(--bg-primary);
-  border: 1.5px solid var(--border-color);
-  border-radius: 8px;
-  transition: all 0.2s;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  transition: all var(--transition-fast) var(--ease-snappy);
 }
 
 .text-input:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 5px var(--color-border-primary);
 }
 
 .select-wrapper {
@@ -278,13 +282,23 @@
 .select-input {
   width: 100%;
   padding: 10px 14px;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
-  background: var(--bg-primary);
-  border: 1.5px solid var(--border-color);
-  border-radius: 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  box-shadow: none;
   cursor: pointer;
   appearance: none;
+  transition: all var(--transition-fast) var(--ease-snappy);
+}
+
+.select-input:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 5px var(--color-border-primary);
 }
 
 .select-icon {
@@ -376,13 +390,13 @@
 }
 
 .test-result.success {
-  background: rgba(34, 197, 94, 0.1);
-  color: rgb(34, 197, 94);
+  background: var(--color-success-light);
+  color: var(--color-success);
 }
 
 .test-result.error {
-  background: rgba(239, 68, 68, 0.1);
-  color: rgb(239, 68, 68);
+  background: var(--color-error-light);
+  color: var(--color-error);
 }
 
 .empty-state {

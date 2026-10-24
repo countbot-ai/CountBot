@@ -29,7 +29,7 @@
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-border-strong);
 }
 
 .form-actions {

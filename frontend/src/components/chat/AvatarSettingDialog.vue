@@ -122,7 +122,7 @@ const handleImageError = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -135,7 +135,7 @@ const handleImageError = () => {
   border-radius: 12px;
   width: 90%;
   max-width: 500px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   max-height: 90vh;
@@ -206,7 +206,7 @@ const handleImageError = () => {
 .input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: none;
 }
 
 .hint {
@@ -282,7 +282,7 @@ const handleImageError = () => {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--primary-color-dark, #2563eb);
+  background: var(--primary-color-dark);
 }
 
 .btn-primary:disabled {
@@ -312,7 +312,5 @@ const handleImageError = () => {
 }
 
 /* 深色主题 */
-:root[data-theme="dark"] .modal-overlay {
-  background: rgba(0, 0, 0, 0.7);
-}
+
 </style>

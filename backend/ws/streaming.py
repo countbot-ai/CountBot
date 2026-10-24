@@ -214,12 +214,13 @@ class BufferedStreamingHandler:
         Args:
             iterator: 异步迭代器
         """
-        async for chunk in iterator:
-            if chunk:
-                await self.write(chunk)
-
-        # 确保刷新剩余内容
-        await self.flush()
+        # 迭代器中途抛错时仍需把已缓冲内容送出，否则尾部片段永远不会到达客户端
+        try:
+            async for chunk in iterator:
+                if chunk:
+                    await self.write(chunk)
+        finally:
+            await self.flush()
 
     def get_stats(self) -> Dict[str, int]:
         """获取统计信息

@@ -97,11 +97,11 @@
   fill: var(--bg-secondary);
   stroke: var(--accent-color);
   stroke-width: 3;
-  filter: drop-shadow(0 4px 8px rgba(59, 130, 246, 0.3));
+  filter: drop-shadow(0 4px 8px var(--color-shadow));
 }
 
 .node.has-condition .node-rect {
-  stroke: #f59e0b;
+  stroke: var(--color-warning);
   stroke-dasharray: 4 2;
 }
 
@@ -113,7 +113,7 @@
 }
 
 .condition-indicator {
-  fill: #f59e0b;
+  fill: var(--color-warning);
   font-weight: 600;
   pointer-events: none;
 }
@@ -124,7 +124,7 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-sm);
   z-index: 10;
   max-width: 250px;
   pointer-events: none;
@@ -161,20 +161,20 @@
   align-items: flex-start;
   gap: 12px;
   padding: 16px 20px;
-  background: rgba(251, 191, 36, 0.1);
-  border-top: 1px solid #f59e0b;
+  background: var(--color-warning-light);
+  border-top: 1px solid var(--color-warning);
   color: var(--text-primary);
 }
 
 .cycle-warning svg {
   flex-shrink: 0;
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .cycle-warning strong {
   display: block;
   margin-bottom: 4px;
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .cycle-warning p {

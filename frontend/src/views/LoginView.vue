@@ -189,7 +189,7 @@ async function handleSubmit() {
   justify-content: center;
   min-height: 100vh;
   padding: 24px;
-  background: var(--bg-secondary, #f8fafc);
+  background: var(--bg-secondary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 }
 
@@ -198,10 +198,10 @@ async function handleSubmit() {
   width: 100%;
   max-width: 380px;
   padding: 40px 36px 32px;
-  background: var(--bg-primary, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ===== Brand ===== */
@@ -230,7 +230,7 @@ async function handleSubmit() {
   margin: 0;
   font-size: 24px;
   font-weight: 700;
-  color: var(--text-primary, #0f172a);
+  color: var(--text-primary);
   letter-spacing: -0.02em;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   display: flex;
@@ -239,21 +239,21 @@ async function handleSubmit() {
 }
 
 .brand-count {
-  color: var(--text-primary, #0f172a);
+  color: var(--text-primary);
 }
 
 .brand-bot {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  font-weight: 800;
+  font-weight: var(--font-weight-bold);
 }
 
 .brand-tagline {
   margin: 4px 0 0;
   font-size: 13px;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -263,7 +263,7 @@ async function handleSubmit() {
   margin: 12px 0 28px;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--text-secondary, #475569);
+  color: var(--text-secondary);
 }
 
 /* ===== Form ===== */
@@ -282,28 +282,28 @@ async function handleSubmit() {
 .field label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary, #475569);
+  color: var(--text-secondary);
 }
 
 .field input {
   padding: 10px 14px;
   font-size: 14px;
   line-height: 1.5;
-  color: var(--text-primary, #0f172a);
-  background: var(--bg-primary, #ffffff);
-  border: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: 8px;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .field input::placeholder {
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
 }
 
 .field input:focus {
-  border-color: var(--color-primary, #334155);
-  box-shadow: 0 0 0 3px rgba(51, 65, 85, 0.08);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ===== Password rules ===== */
@@ -311,8 +311,8 @@ async function handleSubmit() {
   padding: 10px 12px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--text-secondary, #475569);
-  background: var(--bg-tertiary, #f1f5f9);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
   border-radius: 6px;
 }
 
@@ -321,9 +321,9 @@ async function handleSubmit() {
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--color-error, #ef4444);
-  background: var(--color-error-bg, #fee2e2);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: var(--color-error);
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-border-primary);
   border-radius: 6px;
 }
 
@@ -338,18 +338,18 @@ async function handleSubmit() {
   margin-top: 4px;
   font-size: 14px;
   font-weight: 500;
-  color: #ffffff;
-  background: var(--color-primary, #334155);
-  border: 1px solid var(--color-primary, #334155);
+  color: var(--color-text-inverse);
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary, var(--color-border-strong));
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: var(--color-primary-hover, #1e293b);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
 
@@ -367,8 +367,8 @@ async function handleSubmit() {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+  border: 2px solid var(--color-border-primary);
+  border-top-color: var(--color-border-primary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -382,81 +382,35 @@ async function handleSubmit() {
   margin-top: 24px;
   text-align: center;
   font-size: 12px;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
 }
 
 /* ===== Dark theme ===== */
-[data-theme="dark"] .login-page {
-  background: radial-gradient(circle at top, rgba(127, 181, 214, 0.08), transparent 34%),
-    linear-gradient(180deg, var(--bg-primary, #0b1320) 0%, var(--bg-secondary, #101827) 100%);
-}
 
-[data-theme="dark"] .login-card {
-  background: linear-gradient(180deg, rgba(11, 19, 32, 0.94), rgba(16, 24, 39, 0.98));
-  border-color: var(--border-color, #223247);
-  box-shadow: 0 28px 60px rgba(1, 8, 18, 0.42);
-}
 
-[data-theme="dark"] .brand-name {
-  color: var(--text-primary, #e3ebf6);
-}
 
-[data-theme="dark"] .brand-count {
-  color: var(--text-primary, #e3ebf6);
-}
 
-[data-theme="dark"] .brand-bot {
-  background: linear-gradient(135deg, #c6d9e8 0%, #94c4e0 42%, #7fb5d6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
 
-[data-theme="dark"] .brand-tagline {
-  color: var(--text-secondary, #9caec4);
-}
 
-[data-theme="dark"] .field input {
-  background: rgba(16, 24, 39, 0.92);
-  border-color: var(--border-color, #223247);
-  color: var(--text-primary, #e3ebf6);
-}
 
-[data-theme="dark"] .field input:focus {
-  border-color: var(--color-primary, #7fb5d6);
-  box-shadow: 0 0 0 3px rgba(127, 181, 214, 0.12);
-}
 
-[data-theme="dark"] .field input::placeholder {
-  color: var(--text-tertiary, #6f8198);
-}
 
-[data-theme="dark"] .password-rules {
-  background: rgba(22, 33, 49, 0.82);
-  color: var(--text-secondary, #9caec4);
-}
 
-[data-theme="dark"] .error-box {
-  color: var(--color-error, #de7f97);
-  background: rgba(222, 127, 151, 0.12);
-  border-color: rgba(222, 127, 151, 0.22);
-}
 
-[data-theme="dark"] .submit-btn {
-  background: linear-gradient(135deg, #73a8c9 0%, #86bad6 100%);
-  border-color: rgba(148, 196, 224, 0.38);
-  color: #08111d;
-  box-shadow: 0 18px 42px rgba(2, 8, 20, 0.34);
-}
 
-[data-theme="dark"] .submit-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #82b5d2 0%, #94c4e0 100%);
-  border-color: rgba(198, 217, 232, 0.34);
-  color: #08111d;
-  box-shadow: 0 22px 46px rgba(2, 8, 20, 0.38);
-}
 
-[data-theme="dark"] .login-footer {
-  color: var(--text-tertiary, #6f8198);
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </style>

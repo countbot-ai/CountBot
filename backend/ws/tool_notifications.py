@@ -23,7 +23,6 @@ from backend.ws.connection import (
     connection_manager,
     send_tool_call,
     send_tool_result,
-    send_error,
     ServerMessage,
 )
 
@@ -68,7 +67,8 @@ class ToolErrorMessage(ServerMessage):
     type: str = "tool_error"
     tool: str
     error: str
-    duration_ms: float
+    # 便捷通知路径没有独立计时器，缺失时不要伪造 0ms。
+    duration_ms: Optional[float] = None
 
 
 # ============================================================================
@@ -335,8 +335,11 @@ async def notify_tool_execution(
         phase: 上游依据结构化状态选定的通知阶段
     """
     if phase == "non_success":
-        # 错误通知
-        await send_error(session_id, f"Tool '{tool_name}' did not succeed: {error or ''}", "TOOL_ERROR")
+        # 工具失败必须以 tool_error 事件回到发起调用的前端：只有它能携带
+        # tool 名并把正在转圈的卡片收敛为失败态。通用 error 事件会被前端
+        # 当作本轮对话终止信号，不能用于仍可继续的单个工具失败。
+        message = ToolErrorMessage(tool=tool_name, error=error or "")
+        await connection_manager.send_to_session(session_id, message)
     elif phase == "success":
         # 仅发送结果（tool_call 已在开始时发送，避免重复）
         await send_tool_result(session_id, tool_name, result or "")

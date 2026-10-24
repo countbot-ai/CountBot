@@ -428,11 +428,11 @@ onMounted(() => {
 .mcp-btn-success {
   background: var(--mcp-success-bg);
   color: var(--mcp-success);
-  border-color: rgba(34, 197, 94, 0.2);
+  border-color: var(--color-border-primary);
 }
 
 .mcp-btn-success:hover:not(:disabled) {
-  background: rgba(34, 197, 94, 0.15);
+  background: var(--color-success-light);
   border-color: var(--mcp-success);
 }
 </style>

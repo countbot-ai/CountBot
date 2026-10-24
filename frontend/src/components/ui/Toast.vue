@@ -164,7 +164,7 @@ defineExpose({
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   pointer-events: auto;
 }
 
@@ -202,7 +202,7 @@ defineExpose({
 }
 
 .toast-info {
-  border-left: 3px solid var(--color-primary);
+  border-left: 3px solid var(--color-border-strong);
 }
 
 .toast-info .toast-icon {

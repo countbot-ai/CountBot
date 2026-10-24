@@ -104,16 +104,16 @@
   height: 40px;
   border-radius: var(--radius-md);
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--color-primary) 0%, rgba(59, 130, 246, 0.8) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-bg-tertiary) 100%);
   color: white;
 }
 
 .header-icon.export {
-  background: linear-gradient(135deg, var(--color-primary) 0%, rgba(59, 130, 246, 0.8) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-bg-tertiary) 100%);
 }
 
 .header-icon.import {
-  background: linear-gradient(135deg, var(--color-primary) 0%, rgba(59, 130, 246, 0.8) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-bg-tertiary) 100%);
 }
 
 .header-text {

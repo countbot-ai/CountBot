@@ -1,120 +1,59 @@
 <template>
-  <section class="reasoning-block" :class="{ 'is-expanded': isExpanded, 'is-thinking': isThinking, 'is-embedded': embedded }">
-    <div
-      role="button"
-      tabindex="0"
-      class="reasoning-header"
+  <section
+    class="reasoning"
+    :class="{ 'is-open': isExpanded, 'is-thinking': isThinking, 'is-embedded': embedded }"
+  >
+    <!-- 一行触发器：大脑图标 + 状态词 + 流式末行摘要，收起态就是唯一的实时视图 -->
+    <button
+      type="button"
+      class="reasoning-trigger"
       :aria-expanded="isExpanded"
+      :title="isExpanded ? $t('chat.reasoning.collapse') : $t('chat.reasoning.expand')"
       @click="toggleExpand"
-      @keydown.enter.prevent="toggleExpand"
-      @keydown.space.prevent="toggleExpand"
     >
-      <div class="reasoning-leading" :class="{ 'is-embedded': embedded }">
-        <div class="reasoning-emblem" aria-hidden="true">
-          <div class="reasoning-orbit">
-            <span class="reasoning-node reasoning-node-top" />
-            <span class="reasoning-node reasoning-node-bottom" />
-            <component
-              :is="BrainCircuitIcon"
-              class="reasoning-glyph"
-              :class="{ 'is-thinking': isThinking }"
-              :size="18"
-              :stroke-width="1.9"
-            />
-            <span class="reasoning-signal" :class="{ 'is-thinking': isThinking }" />
-          </div>
-        </div>
+      <BrainIcon class="reasoning-glyph" :size="14" :stroke-width="1.8" />
 
-        <div class="reasoning-main">
-          <div class="reasoning-row">
-            <span class="reasoning-kicker">{{ $t('chat.reasoning.title') }}</span>
-            <span class="reasoning-divider" />
-            <span class="reasoning-caption">{{ bodyMeta }}</span>
-          </div>
+      <span class="reasoning-state" :class="{ 'is-live': isThinking }">{{ stateLabel }}</span>
 
-          <div class="reasoning-summary">
-            <span class="reasoning-preview-inline">{{ summaryText }}</span>
-          </div>
-        </div>
-      </div>
+      <template v-if="inlinePreview">
+        <span class="reasoning-separator" aria-hidden="true">·</span>
+        <span class="reasoning-preview">{{ inlinePreview }}</span>
+      </template>
 
-      <div class="reasoning-meta" :class="{ 'is-embedded': embedded }">
-        <span v-if="isThinking" class="reasoning-state-pill">
-          <span class="reasoning-state-dot" />
-          {{ $t('chat.workflowPanel.thinking') }}
-        </span>
-
-        <span class="reasoning-meta-pill">{{ lineCountDisplay }}</span>
-        <span class="reasoning-meta-pill">{{ contentMeta }}</span>
-
-        <span class="reasoning-toggle" :class="{ 'is-rotated': isExpanded }" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </span>
-      </div>
-    </div>
+      <ChevronRightIcon
+        class="reasoning-chevron"
+        :class="{ 'is-open': isExpanded }"
+        :size="13"
+        aria-hidden="true"
+      />
+    </button>
 
     <transition name="reasoning-expand">
-      <div v-if="isExpanded" class="reasoning-content">
-        <div class="reasoning-body">
-          <div class="reasoning-body-header">
-            <div class="reasoning-body-copy">
-              <span class="reasoning-body-label">
-                {{ embedded ? $t('chat.reasoning.aiTitle') : $t('chat.reasoning.title') }}
-              </span>
-              <span class="reasoning-body-detail">{{ bodyMeta }}</span>
-            </div>
-
-            <div v-if="!embedded" class="reasoning-toolbar" role="toolbar" :aria-label="$t('chat.reasoning.title')">
-              <div
-                role="button"
-                tabindex="0"
-                class="reasoning-icon-button reasoning-icon-button-copy"
-                :class="{ 'is-success': copied }"
-                @click.stop="copyContent"
-                @keydown.enter.prevent.stop="copyContent"
-                @keydown.space.prevent.stop="copyContent"
-                :title="copied ? $t('common.copied') : $t('common.copy')"
-                :aria-label="copied ? $t('common.copied') : $t('common.copy')"
-              >
-                <component
-                  :is="copied ? CheckIcon : CopyIcon"
-                  class="action-icon"
-                  :size="14"
-                  :stroke-width="1.9"
-                  aria-hidden="true"
-                />
-              </div>
-
-              <div
-                role="button"
-                tabindex="0"
-                class="reasoning-icon-button reasoning-icon-button-collapse"
-                @click.stop="toggleExpand"
-                @keydown.enter.prevent.stop="toggleExpand"
-                @keydown.space.prevent.stop="toggleExpand"
-                :title="$t('common.collapse')"
-                :aria-label="$t('common.collapse')"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                  <polyline points="18 15 12 9 6 15" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <pre class="reasoning-text">{{ content }}</pre>
-        </div>
+      <div v-if="isExpanded" class="reasoning-body">
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <div class="reasoning-text">{{ content }}</div>
+        <button
+          type="button"
+          class="reasoning-copy"
+          :title="copied ? $t('common.copied') : $t('common.copy')"
+          @click.stop="copyContent"
+        >
+          <component :is="copied ? CheckIcon : CopyIcon" :size="12" />
+        </button>
       </div>
     </transition>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BrainCircuit as BrainCircuitIcon, Copy as CopyIcon, Check as CheckIcon } from 'lucide-vue-next'
+import {
+  Brain as BrainIcon,
+  ChevronRight as ChevronRightIcon,
+  Copy as CopyIcon,
+  Check as CheckIcon,
+} from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 
 interface Props {
@@ -133,50 +72,42 @@ const props = withDefaults(defineProps<Props>(), {
 const { t } = useI18n()
 const toast = useToast()
 
-const isExpanded = ref(props.isThinking || props.defaultExpanded)
+// 默认收起：流式期间靠触发器上的末行摘要表达进度，展开交给用户，
+// 避免思考内容持续挤压下方的工具与正文。
+const isExpanded = ref(props.defaultExpanded)
 const copied = ref(false)
+
+// 本次思考的起始时间，由 isThinking 的上升沿记录；结束后换算成秒数。
+const startedAt = ref<number | null>(props.isThinking ? Date.now() : null)
+const durationSeconds = ref<number | null>(null)
 
 const normalizedContent = computed(() => props.content.replace(/\r\n/g, '\n'))
 
-const contentLength = computed(() => props.content.length)
-
-const lineCount = computed(() => {
-  const trimmed = normalizedContent.value.trim()
-  if (!trimmed) {
-    return 0
+/** 流式末行：最新一行才有信息量，取最后一条非空行 */
+const lastLine = computed(() => {
+  const lines = normalizedContent.value.split('\n')
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const text = lines[index]?.trim()
+    if (text) return text
   }
-
-  return trimmed.split('\n').length
+  return ''
 })
 
-const lineCountDisplay = computed(() => `${lineCount.value}L`)
-
-const contentMeta = computed(() => `${contentLength.value} ${t('chat.reasoning.chars')}`)
-
-const bodyMeta = computed(() => `${lineCountDisplay.value} · ${contentMeta.value}`)
-
-const embedded = computed(() => props.embedded)
-
-const previewText = computed(() => {
-  const normalized = props.content.replace(/\s+/g, ' ').trim()
-  if (!normalized) {
-    return ''
+const inlinePreview = computed(() => {
+  if (props.isThinking) {
+    return lastLine.value
   }
-
-  const maxLength = 140
-  if (normalized.length <= maxLength) {
-    return normalized
-  }
-
-  return `${normalized.slice(0, maxLength)}...`
+  return ''
 })
 
-const summaryText = computed(() => {
-  if (previewText.value) {
-    return previewText.value
+const stateLabel = computed(() => {
+  if (props.isThinking) {
+    return t('chat.reasoning.thinkingNow')
   }
-
-  return props.isThinking ? t('chat.workflowPanel.thinking') : t('chat.reasoning.title')
+  if (durationSeconds.value !== null) {
+    return t('chat.reasoning.thoughtFor', { seconds: durationSeconds.value })
+  }
+  return t('chat.reasoning.thought')
 })
 
 const toggleExpand = () => {
@@ -202,15 +133,23 @@ watch(
   () => props.isThinking,
   (isThinking, wasThinking) => {
     if (isThinking && !wasThinking) {
-      isExpanded.value = true
+      startedAt.value = Date.now()
+      durationSeconds.value = null
       return
     }
 
     if (!isThinking && wasThinking) {
-      isExpanded.value = false
+      if (startedAt.value !== null) {
+        durationSeconds.value = Math.max(1, Math.round((Date.now() - startedAt.value) / 1000))
+      }
+      startedAt.value = null
     }
   }
 )
+
+onBeforeUnmount(() => {
+  startedAt.value = null
+})
 </script>
 <style scoped>
 @import './styles/ReasoningBlock.css';

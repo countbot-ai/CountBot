@@ -77,13 +77,13 @@ def test_build_system_prompt_has_no_dynamic_content(tmp_path):
 
     for persona in (None, PERSONA):
         sys_prompt = builder.build_system_prompt(persona_config=persona)
-        assert "当前时间" not in sys_prompt
-        assert "用户称呼" not in sys_prompt
-        assert "用户常用地址" not in sys_prompt
-        assert "默认输出语言" not in sys_prompt
+        assert "Current time" not in sys_prompt
+        assert "User name" not in sys_prompt
+        assert "User location" not in sys_prompt
+        assert "Output language" not in sys_prompt
         # 静态锚点仍应保留
-        assert "# 核心身份" in sys_prompt
-        assert "运行环境: " in sys_prompt
+        assert "# Identity" in sys_prompt
+        assert "Runtime: " in sys_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -99,19 +99,19 @@ def test_messages_system_static_and_dynamic_in_user(tmp_path):
     user_content = messages[-1]["content"]
 
     # system 消息不含任何动态内容
-    assert "当前时间" not in system_content
-    assert "用户称呼" not in system_content
+    assert "Current time" not in system_content
+    assert "User name" not in system_content
     assert SESSION_SUMMARY not in system_content
     assert CHAT_ID not in system_content
     assert ACCOUNT_ID not in system_content
 
     # 动态内容全部出现在 user 消息
-    assert "## 当前会话上下文" in user_content
-    assert "当前时间" in user_content
-    assert "用户称呼: 张总" in user_content
-    assert "用户常用地址: 上海" in user_content
-    assert "默认输出语言: 英文" in user_content
-    assert f"## Current Session Context\n{SESSION_SUMMARY}" in user_content
+    assert "## Session Context" in user_content
+    assert "Current time" in user_content
+    assert "User name: 张总" in user_content
+    assert "User location: 上海" in user_content
+    assert "Output language: 英文" in user_content
+    assert f"## Session Summary\n{SESSION_SUMMARY}" in user_content
     assert f"Channel: {CHANNEL}" in user_content
     assert f"Chat ID: {CHAT_ID}" in user_content
     assert f"Account ID: {ACCOUNT_ID}" in user_content
@@ -149,8 +149,8 @@ def test_system_message_stable_across_time(monkeypatch, tmp_path):
     time_first = t0.strftime("%Y-%m-%d %H:%M (%A)")
     time_second = t1.strftime("%Y-%m-%d %H:%M (%A)")
     assert time_first != time_second
-    assert f"- 当前时间: {time_first}" in user_first
-    assert f"- 当前时间: {time_second}" in user_second
+    assert f"- Current time: {time_first}" in user_first
+    assert f"- Current time: {time_second}" in user_second
 
 
 def test_default_persona_user_info_in_user_message(tmp_path):
@@ -160,9 +160,9 @@ def test_default_persona_user_info_in_user_message(tmp_path):
         history=[], current_message="hi", persona_config=None
     )
     user_content = messages[-1]["content"]
-    assert "用户称呼: 老板" in user_content
-    assert "默认输出语言: 中文" in user_content
-    assert "用户称呼: 老板" not in messages[0]["content"]
+    assert "User name: 老板" in user_content
+    assert "Output language: 中文" in user_content
+    assert "User name: 老板" not in messages[0]["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -183,11 +183,11 @@ def test_team_reminder_merged_into_user_message_not_system(tmp_path):
     )
     # 含 @ 与不含 @ 的 system 字节级一致（team_reminder 不再污染 system）
     assert with_at[0]["content"] == without_at[0]["content"]
-    assert "💡" not in with_at[0]["content"]
-    assert "检测到 @ 符号" not in with_at[0]["content"]
+    assert "Tip:" not in with_at[0]["content"]
+    assert "detected" not in with_at[0]["content"]
     # team_reminder 出现在首条 user 消息末尾
-    assert "💡 检测到 @ 符号" in with_at[-1]["content"]
-    assert "检测到 @ 符号" not in without_at[-1]["content"]
+    assert "Tip: '@' detected" in with_at[-1]["content"]
+    assert "detected" not in without_at[-1]["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -214,5 +214,5 @@ def test_empty_current_message_falls_back_to_dynamic_context_only(tmp_path):
         history=[], current_message="", persona_config=None
     )
     user_content = messages[-1]["content"]
-    assert user_content.startswith("## 当前会话上下文")
-    assert "当前时间" in user_content
+    assert user_content.startswith("## Session Context")
+    assert "Current time" in user_content

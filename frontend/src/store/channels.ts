@@ -24,17 +24,47 @@ export interface ChannelStatus {
   instances?: Record<string, ChannelInstanceStatus>
 }
 
+/** 推送目标：已配置渠道 + 账号 + 历史渠道会话中反查出的 chat */
+export interface DeliveryTargetAccount {
+  account_id: string
+  display_name: string
+  enabled: boolean
+  running: boolean
+}
+
+export interface DeliveryTargetChat {
+  chat_id: string
+  account_id: string
+  is_group: boolean
+  session_id: string
+  session_name: string
+  last_used: string | null
+}
+
+export interface DeliveryTarget {
+  channel: string
+  name: string
+  icon: string
+  enabled: boolean
+  configured: boolean
+  running: boolean
+  accounts: DeliveryTargetAccount[]
+  chats: DeliveryTargetChat[]
+}
+
 export interface ChannelInstanceStatus {
   enabled: boolean
   running: boolean
   display_name: string
   instance_key: string
+  runtime_status?: Record<string, any>
 }
 
 export const useChannelsStore = defineStore('channels', () => {
   // 状态
   const channels: Ref<Record<string, ChannelConfig>> = ref({})
   const status: Ref<Record<string, ChannelStatus>> = ref({})
+  const deliveryTargets: Ref<DeliveryTarget[]> = ref([])
   const loading = ref(false)
   const error: Ref<string | null> = ref(null)
   
@@ -238,6 +268,32 @@ export const useChannelsStore = defineStore('channels', () => {
     pendingChanges.value = {}
   }
 
+  /**
+   * 拉取可直接用于推送的渠道目标（已配置渠道 + 账号 + 历史会话 chat_id）。
+   * 定时任务等场景复用这里的数据，避免重复手工填写推送目标。
+   */
+  async function fetchDeliveryTargets(force = false): Promise<DeliveryTarget[]> {
+    if (deliveryTargets.value.length && !force) {
+      return deliveryTargets.value
+    }
+
+    try {
+      const response = await fetch('/api/channels/delivery-targets')
+      const data = await response.json()
+
+      if (data.success && Array.isArray(data.targets)) {
+        deliveryTargets.value = data.targets as DeliveryTarget[]
+      } else {
+        deliveryTargets.value = []
+      }
+    } catch (e: any) {
+      console.error('Error fetching delivery targets:', e)
+      deliveryTargets.value = []
+    }
+
+    return deliveryTargets.value
+  }
+
   async function getChannelConfig(channelId: string): Promise<Record<string, any> | null> {
     try {
       const response = await fetch(`/api/channels/${channelId}/config`)
@@ -268,6 +324,7 @@ export const useChannelsStore = defineStore('channels', () => {
     // 状态
     channels,
     status,
+    deliveryTargets,
     loading,
     error,
 
@@ -279,6 +336,7 @@ export const useChannelsStore = defineStore('channels', () => {
     // 方法
     fetchChannels,
     fetchStatus,
+    fetchDeliveryTargets,
     testChannel,
     updateChannelConfig,
     updateLocalChannelConfig,

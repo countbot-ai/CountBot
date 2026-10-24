@@ -41,7 +41,7 @@ const customStyle = computed(() => {
 
 <style scoped>
 .skeleton {
-  background: var(--color-skeleton-base, #e0e0e0);
+  background: var(--color-skeleton-base);
   display: block;
 }
 
@@ -77,7 +77,5 @@ const customStyle = computed(() => {
 }
 
 /* 深色模式 */
-:root[data-theme="dark"] .skeleton {
-  background: var(--color-skeleton-base-dark, #2a2a2a);
-}
+
 </style>
