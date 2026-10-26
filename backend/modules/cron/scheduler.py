@@ -256,7 +256,9 @@ class CronScheduler:
                     job.channel,
                     job.account_id,
                     job.chat_id,
-                    job.deliver_response
+                    job.deliver_response,
+                    job.model_provider,
+                    job.model_name,
                 )
                 
                 # 执行成功

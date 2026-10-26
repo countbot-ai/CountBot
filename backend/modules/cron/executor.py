@@ -45,7 +45,9 @@ class CronExecutor:
         channel: Optional[str] = None,
         account_id: Optional[str] = None,
         chat_id: Optional[str] = None,
-        deliver_response: bool = False
+        deliver_response: bool = False,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> str:
         """执行定时任务"""
         # 识别 heartbeat 特殊任务
@@ -83,6 +85,10 @@ class CronExecutor:
                     channel=channel or "cron",
                     chat_id=chat_id or job_id,
                     account_id=account_id,
+                    model_override=self._build_model_override_with_level(
+                        model_provider,
+                        model_name,
+                    ),
                 )
             finally:
                 gate.release(session_id)
@@ -171,6 +177,55 @@ class CronExecutor:
             # 向上抛出：吞掉异常会让调度器把本次执行记为成功，
             # 投递渠道故障在面板上无法体现。
             raise
+
+    @classmethod
+    def _build_model_override_with_level(
+        cls,
+        model_provider: Optional[str],
+        model_name: Optional[str],
+    ) -> Optional[dict]:
+        """在模型覆盖上补思考档位，与聊天窗口同口径：模型条目默认 > 全局设置。"""
+        override = cls._build_model_override(model_provider, model_name)
+        level = cls._resolve_reasoning_level(model_provider, model_name)
+        if not level:
+            return override
+        merged = dict(override or {})
+        merged["reasoning_level"] = level
+        return merged
+
+    @staticmethod
+    def _resolve_reasoning_level(
+        model_provider: Optional[str],
+        model_name: Optional[str],
+    ) -> Optional[str]:
+        """取实际使用的模型条目的默认档位；未配置时回落全局设置的档位。"""
+        from backend.modules.config.loader import config_loader
+
+        config = config_loader.config
+        provider_id = str(model_provider or "").strip() or config.model.provider
+        model_id = str(model_name or "").strip() or config.model.model
+
+        provider_config = config.providers.get(provider_id)
+        if provider_config is not None:
+            entry = provider_config.find_model(model_id)
+            if entry is not None and entry.reasoning_level:
+                return entry.reasoning_level
+        return config.model.reasoning_level
+
+    @staticmethod
+    def _build_model_override(
+        model_provider: Optional[str],
+        model_name: Optional[str],
+    ) -> Optional[dict]:
+        """任务指定了模型时生成执行器可消费的覆盖参数。
+
+        未指定（跟随全局默认）时返回 None；api_key / api_base 由执行器按供应商配置解析。
+        """
+        provider = str(model_provider or "").strip()
+        model = str(model_name or "").strip()
+        if not provider or not model:
+            return None
+        return {"provider": provider, "model": model}
 
     async def _deliver_to_channel(
         self,

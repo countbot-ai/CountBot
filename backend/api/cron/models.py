@@ -17,6 +17,8 @@ class CronJobInfo(BaseModel):
     account_id: Optional[str] = Field(None, description="机器人账号 ID")
     chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
+    model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
+    model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
     last_run: Optional[str] = Field(None, description="上次运行时间")
     next_run: Optional[str] = Field(None, description="下次运行时间")
     last_status: Optional[str] = Field(None, description="上次执行状态")
@@ -49,6 +51,8 @@ class CreateCronJobRequest(BaseModel):
     max_retries: int = Field(0, description="最大重试次数（0=不重试）")
     retry_delay: int = Field(60, description="重试延迟（秒）")
     delete_on_success: bool = Field(False, description="成功后自动删除")
+    model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
+    model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
 
 
 class UpdateCronJobRequest(BaseModel):
@@ -65,6 +69,9 @@ class UpdateCronJobRequest(BaseModel):
     max_retries: Optional[int] = Field(None, description="最大重试次数")
     retry_delay: Optional[int] = Field(None, description="重试延迟（秒）")
     delete_on_success: Optional[bool] = Field(None, description="成功后自动删除")
+    # 传空字符串表示改回跟随全局默认模型；不传该字段则保持原值
+    model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
+    model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
 
 
 class CronJobResponse(BaseModel):

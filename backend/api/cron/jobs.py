@@ -54,6 +54,8 @@ async def list_cron_jobs(db: AsyncSession = Depends(get_db)) -> ListCronJobsResp
                 account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
+                model_provider=job.model_provider,
+                model_name=job.model_name,
                 last_run=_to_shanghai_iso(job.last_run),
                 next_run=_to_shanghai_iso(job.next_run),
                 last_status=job.last_status,
@@ -113,6 +115,8 @@ async def get_cron_job_detail(
                 account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
+                model_provider=job.model_provider,
+                model_name=job.model_name,
                 last_run=_to_shanghai_iso(job.last_run),
                 next_run=_to_shanghai_iso(job.next_run),
                 last_status=job.last_status,
@@ -165,6 +169,8 @@ async def create_cron_job(
             max_retries=request.max_retries,
             retry_delay=request.retry_delay,
             delete_on_success=request.delete_on_success,
+            model_provider=request.model_provider,
+            model_name=request.model_name,
         )
         
         return CronJobResponse(
@@ -178,6 +184,8 @@ async def create_cron_job(
                 account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
+                model_provider=job.model_provider,
+                model_name=job.model_name,
                 last_run=_to_shanghai_iso(job.last_run),
                 next_run=_to_shanghai_iso(job.next_run),
                 last_status=job.last_status,
@@ -244,6 +252,8 @@ async def update_cron_job(
             max_retries=request.max_retries,
             retry_delay=request.retry_delay,
             delete_on_success=request.delete_on_success,
+            model_provider=request.model_provider,
+            model_name=request.model_name,
         )
         
         if job is None:
@@ -263,6 +273,8 @@ async def update_cron_job(
                 account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
+                model_provider=job.model_provider,
+                model_name=job.model_name,
                 last_run=_to_shanghai_iso(job.last_run),
                 next_run=_to_shanghai_iso(job.next_run),
                 last_status=job.last_status,

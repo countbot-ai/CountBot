@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { cronAPI, type CronJob, type CronJobDetail } from '@/api'
+import type { CreateCronJobRequest, UpdateCronJobRequest } from '@/api'
 
 export const useCronStore = defineStore('cron', () => {
     // State
@@ -52,12 +53,7 @@ export const useCronStore = defineStore('cron', () => {
     /**
      * 创建任务
      */
-    async function createJob(data: {
-        name: string
-        schedule: string
-        message: string
-        enabled?: boolean
-    }) {
+    async function createJob(data: CreateCronJobRequest) {
         try {
             const response = await cronAPI.create(data)
 
@@ -74,12 +70,7 @@ export const useCronStore = defineStore('cron', () => {
     /**
      * 更新任务
      */
-    async function updateJob(id: string, data: {
-        name?: string
-        schedule?: string
-        message?: string
-        enabled?: boolean
-    }) {
+    async function updateJob(id: string, data: UpdateCronJobRequest) {
         try {
             await cronAPI.update(id, data)
 

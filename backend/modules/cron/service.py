@@ -37,7 +37,9 @@ class CronService:
         deliver_response: bool = False,
         max_retries: int = 0,
         retry_delay: int = 60,
-        delete_on_success: bool = False
+        delete_on_success: bool = False,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> CronJob:
         """添加定时任务"""
         if not self.validate_schedule(schedule):
@@ -61,6 +63,8 @@ class CronService:
             max_retries=max_retries,
             retry_delay=retry_delay,
             delete_on_success=delete_on_success,
+            model_provider=model_provider,
+            model_name=model_name,
             next_run=next_run,
             created_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None),
             updated_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
@@ -110,7 +114,9 @@ class CronService:
         deliver_response: Optional[bool] = None,
         max_retries: Optional[int] = None,
         retry_delay: Optional[int] = None,
-        delete_on_success: Optional[bool] = None
+        delete_on_success: Optional[bool] = None,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> Optional[CronJob]:
         """更新任务"""
         job = await self.get_job(job_id)
@@ -151,6 +157,13 @@ class CronService:
         
         if delete_on_success is not None:
             job.delete_on_success = delete_on_success
+
+        # 空字符串表示「改回跟随全局默认模型」，因此不能沿用 `is not None` 的写法
+        if model_provider is not None:
+            job.model_provider = model_provider.strip() or None
+
+        if model_name is not None:
+            job.model_name = model_name.strip() or None
         
         if job.enabled:
             job.next_run = self.calculate_next_run(job.schedule)

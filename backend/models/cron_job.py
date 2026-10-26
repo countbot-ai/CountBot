@@ -25,6 +25,10 @@ class CronJob(Base):
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 机器人账号 ID（多机器人渠道）
     chat_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 群组 ID 或用户 ID
     deliver_response: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否发送响应到渠道
+
+    # 本任务使用的模型；留空表示跟随全局默认模型
+    model_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 供应商 ID
+    model_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 模型名
     
     # 执行状态
     last_run: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

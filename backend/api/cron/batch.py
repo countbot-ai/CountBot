@@ -56,6 +56,8 @@ async def batch_create_cron_jobs(
                     max_retries=job_req.max_retries,
                     retry_delay=job_req.retry_delay,
                     delete_on_success=job_req.delete_on_success,
+                    model_provider=job_req.model_provider,
+                    model_name=job_req.model_name,
                 )
                 success_jobs.append(job)
             except Exception as e:
@@ -78,6 +80,8 @@ async def batch_create_cron_jobs(
                 account_id=job.account_id,
                 chat_id=job.chat_id,
                 deliver_response=job.deliver_response,
+                model_provider=job.model_provider,
+                model_name=job.model_name,
                 last_run=_to_shanghai_iso(job.last_run),
                 next_run=_to_shanghai_iso(job.next_run),
                 last_status=job.last_status,

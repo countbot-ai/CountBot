@@ -81,6 +81,8 @@ async def trigger_cron_job(
         job_account_id = job.account_id
         job_chat_id = job.chat_id
         job_deliver_response = job.deliver_response
+        job_model_provider = job.model_provider
+        job_model_name = job.model_name
         job_schedule = job.schedule
         job_enabled = job.enabled
         
@@ -94,7 +96,9 @@ async def trigger_cron_job(
                     channel=job_channel,
                     account_id=job_account_id,
                     chat_id=job_chat_id,
-                    deliver_response=job_deliver_response
+                    deliver_response=job_deliver_response,
+                    model_provider=job_model_provider,
+                    model_name=job_model_name,
                 )
                 # 用独立 session 更新状态
                 async with get_db_session_factory()() as bg_db:
