@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 import httpx
-from Crypto.Cipher import AES
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from loguru import logger
 
 from backend.modules.channels.base import BaseChannel, OutboundMessage
@@ -444,14 +444,15 @@ def _build_cdn_upload_url(cdn_base_url: str, upload_param: str, filekey: str) ->
 
 
 def _aes_ecb_encrypt(plaintext: bytes, key: bytes) -> bytes:
-    cipher = AES.new(key, AES.MODE_ECB)
+    # 微信 CDN 要求 AES-ECB；cryptography 与 pycryptodome 输出逐字节一致。
+    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
     pad_len = 16 - (len(plaintext) % 16)
-    return cipher.encrypt(plaintext + bytes([pad_len]) * pad_len)
+    return encryptor.update(plaintext + bytes([pad_len]) * pad_len) + encryptor.finalize()
 
 
 def _aes_ecb_decrypt(ciphertext: bytes, key: bytes) -> bytes:
-    cipher = AES.new(key, AES.MODE_ECB)
-    padded = cipher.decrypt(ciphertext)
+    decryptor = Cipher(algorithms.AES(key), modes.ECB()).decryptor()
+    padded = decryptor.update(ciphertext) + decryptor.finalize()
     pad_len = padded[-1] if padded else 0
     if pad_len < 1 or pad_len > 16:
         return padded

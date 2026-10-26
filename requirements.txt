@@ -24,9 +24,9 @@ aiosqlite>=0.20.0
 
 # ── 渠道扫码接入 / 入站媒体解密 ────────────
 # QQ 开放平台返回的机器人密钥使用 AES-256-GCM 加密，需要本地解密
+# 企业微信入站媒体使用 AES-CBC 解密；微信 CDN 媒体使用 AES-ECB
+# 以上 AES 解密统一由 cryptography 提供
 cryptography>=42.0.0
-# 企业微信入站媒体使用 AES-CBC 解密
-pycryptodome>=3.20.0
 
 # ── 定时任务 ─────────────────────────────
 croniter>=5.0.0
@@ -42,10 +42,10 @@ python-frontmatter>=1.0.0
 PyYAML>=6.0
 
 # ── 渠道 SDK ─────────────────────────────
+# Telegram 频道用 httpx 直连 Bot API，不再依赖 python-telegram-bot
 qq-botpy>=1.2.1
 dingtalk-stream>=0.24.3
 lark-oapi>=1.5.3
-python-telegram-bot>=20.7
 websockets>=12.0
 
 # ============================================

@@ -16,7 +16,7 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import unquote, urlparse
 
 import httpx
-from Crypto.Cipher import AES
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from backend.modules.workspace.manager import workspace_manager
 
@@ -355,8 +355,9 @@ async def download_to_temp(
 def decrypt_wecom_media_bytes(encrypted_data: bytes, aes_key: str) -> bytes:
     key = _decode_wecom_aes_key(aes_key)
     iv = key[:16]
-    cipher = AES.new(key, AES.MODE_CBC, iv)
-    decrypted = cipher.decrypt(encrypted_data)
+    # cryptography 与 pycryptodome 的 CBC 解密结果逐字节一致；用已有依赖省去 pycryptodome。
+    decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+    decrypted = decryptor.update(encrypted_data) + decryptor.finalize()
     return _pkcs7_unpad(decrypted, 32)
 
 
