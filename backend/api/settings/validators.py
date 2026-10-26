@@ -1,9 +1,4 @@
-"""
-Settings 的输入归一化与校验。
-
-所有写入口保存配置前先过这里：布尔值拒绝模糊输入，正则与 cron 在
-保存前报错，心跳参数规整到合法范围。
-"""
+"""Settings 的输入归一化与校验：布尔拒绝模糊值，正则/cron 保存前报错，心跳参数规整到合法范围。"""
 
 import re
 from typing import Any, Dict, List, Optional
@@ -11,11 +6,71 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
 from loguru import logger
 
-from backend.modules.config.schema import AppConfig
+from backend.modules.config.schema import AppConfig, ModelEntry
 
 
 def _normalize_api_mode_value(value: Any) -> str:
     return "chat_completions"
+
+
+def _normalize_api_type_value(value: Any) -> str:
+    """校验供应商协议白名单，拒绝未知值而不是静默改名。"""
+    from backend.modules.providers.factory import API_TYPES, API_TYPE_OPENAI_CHAT
+
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return API_TYPE_OPENAI_CHAT
+    if normalized not in API_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"api_type '{value}' 无效，可用值: {', '.join(API_TYPES)}"
+            ),
+        )
+    return normalized
+
+
+def _parse_model_entry(raw: Any) -> Optional[ModelEntry]:
+    """把请求里的模型条目解析成 ModelEntry，非法条目返回 None。"""
+    if isinstance(raw, ModelEntry):
+        return raw
+    if isinstance(raw, str):
+        trimmed = raw.strip()
+        return ModelEntry(id=trimmed) if trimmed else None
+    if not isinstance(raw, dict):
+        return None
+
+    model_id = str(raw.get("id") or raw.get("model") or "").strip()
+    if not model_id:
+        return None
+
+    source = str(raw.get("source") or "manual").strip().lower()
+    if source not in ("builtin", "manual", "fetched"):
+        source = "manual"
+
+    context_window = raw.get("context_window")
+    if context_window is not None:
+        try:
+            context_window = int(context_window)
+        except (TypeError, ValueError):
+            context_window = None
+        if context_window is not None and context_window <= 0:
+            context_window = None
+
+    supports_image = raw.get("supports_image")
+    if not isinstance(supports_image, bool):
+        supports_image = None
+
+    display_name = str(raw.get("display_name") or "").strip() or None
+
+    return ModelEntry(
+        id=model_id,
+        display_name=display_name,
+        enabled=bool(raw.get("enabled", True)),
+        context_window=context_window,
+        supports_image=supports_image,
+        source=source,  # type: ignore[arg-type]
+    )
 
 
 def _coerce_boolean_value(value: Any, *, field_name: str) -> bool:

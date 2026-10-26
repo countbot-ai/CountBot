@@ -42,7 +42,7 @@
         >
           <GeneralConfig v-if="activeTab === 'general'" />
 
-          <ProviderConfig v-else-if="activeTab === 'provider'" />
+          <ProviderConfig v-else-if="activeTab === 'provider'" ref="providerConfigRef" />
 
           <ModelConfig v-else-if="activeTab === 'model'" />
 
@@ -235,6 +235,16 @@ const emit = defineEmits<{
   saved: []
 }>()
 
+const providerConfigRef = ref<{ validateBeforeSave?: () => string | null } | null>(null)
+
+/** 供应商一个模型都没有时，保存后补一条提示：它在对话窗口里选不到 */
+const warnProviderWithoutModels = () => {
+  const warning = providerConfigRef.value?.validateBeforeSave?.()
+  if (warning) {
+    toast.warning(warning)
+  }
+}
+
 const handleSave = async () => {
   try {
     const currentSettings = settingsStore.settings
@@ -331,6 +341,7 @@ const handleSave = async () => {
     
     await settingsStore.saveSettings(savePayload)
     toast.success(t('settings.saveSuccess'), t('common.success'))
+    warnProviderWithoutModels()
     emit('saved')
     // 不再自动关闭，保留在当前页面
     // emit('close')
@@ -354,6 +365,7 @@ const handleSaveAll = async () => {
       await externalCodingToolsStore.saveConfig()
     }
     toast.success(t('settings.saveAllSuccess'), t('common.success'))
+    warnProviderWithoutModels()
     emit('saved')
   } catch (error) {
     console.error('Failed to save all settings:', error)

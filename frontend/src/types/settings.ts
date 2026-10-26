@@ -1,45 +1,11 @@
 /**
- * Settings 类型定义
+ * Settings 的展示层类型。
+ *
+ * 与后端对齐的 ProviderConfig / Settings / ProviderMetadata 统一维护在
+ * @/api（endpoints.ts），这里不再重复声明，避免两边字段漂移。
  */
 
-export interface ProviderMetadata {
-    id: string
-    name: string
-    defaultApiBase?: string
-    defaultModel?: string
-    default_api_base?: string
-    default_model?: string
-    enabled?: boolean
-    configured?: boolean
-    selectable?: boolean
-    requires_api_key?: boolean
-    requires_api_base?: boolean
-    status?: string
-    reason?: string
-    providerGroup?: string
-    provider_group?: string
-    thinkingControlTier?: string
-    thinking_control_tier?: string
-}
-
-export interface ProviderConfig {
-    apiKey: string
-    apiKeys: string[]
-    baseUrl?: string
-    enabled: boolean
-}
-
-export interface Settings {
-    providers: Record<string, ProviderConfig>
-    model: string
-    temperature: number
-    maxTokens: number
-    maxIterations: number
-    workspace: string
-    theme: 'light' | 'dark' | 'auto'
-    language: 'zh-CN' | 'en-US' | 'auto'
-    fontSize: 'small' | 'medium' | 'large'
-}
+export type { ProviderMetadata } from '@/api'
 
 export type SettingsTab = 'general' | 'provider' | 'model' | 'persona' | 'memory' | 'workspace' | 'security' | 'injection' | 'channels' | 'mcp' | 'externaltools' | 'multiagent' | 'importexport'
 

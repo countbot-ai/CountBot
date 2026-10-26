@@ -1,6 +1,6 @@
 """Settings API 的请求/响应模型。"""
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -78,6 +78,104 @@ class ProviderConfigResponse(BaseModel):
     api_key: Optional[str] = Field(None, description="API 密钥（脱敏）")
     api_keys: List[str] = Field(default_factory=list, description="API 密钥列表")
     api_base: Optional[str] = Field(None, description="API 基础 URL")
+    name: Optional[str] = Field(None, description="自定义展示名")
+    api_type: str = Field(
+        "openai-chat-completions", description="供应商协议"
+    )
+    models: List[Dict[str, Any]] = Field(
+        default_factory=list, description="该供应商的模型清单"
+    )
+
+
+class ProviderModelPayload(BaseModel):
+    """单个模型条目的写入载荷。"""
+
+    id: str = Field(..., description="模型 ID")
+    display_name: Optional[str] = None
+    enabled: bool = True
+    context_window: Optional[int] = Field(
+        None, description="上下文窗口（token）：决定压缩触发阈值"
+    )
+    supports_image: Optional[bool] = None
+    reasoning_levels: Optional[List[str]] = Field(
+        None, description="该模型支持的思考档位；空=用内置建议，可自定义增删"
+    )
+    reasoning_level: Optional[str] = Field(
+        None, description="默认思考档位；空=不下发档位"
+    )
+    source: Optional[str] = Field(
+        None, description="builtin / manual / fetched；空则跟随批量提交的 source"
+    )
+
+
+class AddProviderModelsRequest(BaseModel):
+    """批量添加模型。"""
+
+    models: List[ProviderModelPayload] = Field(default_factory=list)
+    source: str = Field("fetched", description="批量添加时的来源标记")
+
+
+class UpdateProviderModelRequest(BaseModel):
+    """更新单个模型（部分更新）。"""
+
+    display_name: Optional[str] = None
+    enabled: Optional[bool] = None
+    context_window: Optional[int] = None
+    supports_image: Optional[bool] = None
+    reasoning_levels: Optional[List[str]] = Field(
+        None, description="思考档位列表；传空数组表示改用内置建议"
+    )
+    reasoning_level: Optional[str] = Field(None, description="默认思考档位")
+    clear_display_name: bool = False
+    clear_context_window: bool = False
+    clear_supports_image: bool = False
+    clear_reasoning_level: bool = False
+
+
+class ReorderProviderModelsRequest(BaseModel):
+    """模型排序。"""
+
+    model_ids: List[str] = Field(default_factory=list)
+
+
+class ProviderModelCatalogEntry(BaseModel):
+    """上游 /models 返回的单个模型。"""
+
+    id: str
+    display_name: Optional[str] = None
+    owned_by: Optional[str] = None
+    # 上游上报的上下文窗口；缺失时前端提示用户补充填写
+    context_window: Optional[int] = None
+
+
+class ProviderModelCatalogResponse(BaseModel):
+    """拉取模型列表结果。"""
+
+    success: bool
+    provider: str
+    models: List[ProviderModelCatalogEntry] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class ProviderConnectionTestResponse(BaseModel):
+    """供应商级连接测试结果（不消耗对话 token）。"""
+
+    success: bool
+    latency_ms: Optional[int] = None
+    model_count: Optional[int] = None
+    error: Optional[str] = None
+
+
+class ReasoningLevelsResponse(BaseModel):
+    """思考档位查询结果（内置建议，用户可自定义增删）。"""
+
+    model: str = Field("", description="查询的模型 ID")
+    levels: List[str] = Field(
+        default_factory=list, description="内置建议档位（从低到高）；空=未收录，由用户自填"
+    )
+    known_levels: List[str] = Field(
+        default_factory=list, description="常用档位全集，供自定义填写参考"
+    )
 
 
 class ModelConfigResponse(BaseModel):
@@ -90,6 +188,9 @@ class ModelConfigResponse(BaseModel):
     max_tokens: int = Field(..., description="最大 token 数")
     max_iterations: int = Field(..., description="最大迭代次数")
     thinking_enabled: bool = Field(..., description="是否启用思考模式")
+    reasoning_level: Optional[str] = Field(
+        None, description="思考档位（全局默认；空=按模型条目/旧逻辑）"
+    )
     supports_image: Optional[bool] = Field(
         None,
         description="图片输入能力：None=自动判断，True=强制开启，False=关闭",
@@ -200,7 +301,10 @@ class TestConnectionRequest(BaseModel):
     api_key: str = Field(default="", description="API 密钥")
     api_base: Optional[str] = Field(None, description="API 基础 URL")
     model: Optional[str] = Field(None, description="模型名称（可选）")
-    api_mode: Optional[str] = Field(None, description="API 模式（仅保留兼容字段）")
+    api_type: Optional[str] = Field(
+        None, description="供应商协议，空则用已保存配置或 provider 默认"
+    )
+    api_mode: Optional[str] = Field(None, description="历史字段，已由 api_type 取代")
     temperature: Optional[float] = Field(None, description="温度参数（可选，0 表示不发送）")
     max_tokens: Optional[int] = Field(None, description="最大 token 数（可选，0 表示不发送）")
     thinking_enabled: Optional[bool] = Field(None, description="是否启用思考模式（可选）")

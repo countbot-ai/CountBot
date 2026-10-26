@@ -250,6 +250,22 @@ export function formatMaxTokensValue(
   return String(value)
 }
 
+/** 上下文长度预设档位，供模型设置里的预设选择使用。 */
+export const CONTEXT_WINDOW_PRESET_VALUES = [
+  32_000,
+  64_000,
+  128_000,
+  200_000,
+  256_000,
+  400_000,
+  1_000_000,
+]
+
+/** 上下文长度标签（64K / 128K / 1M）。 */
+export function formatContextLength(value: number): string {
+  return formatMaxTokensValue(value, { unlimitedLabel: String(value) })
+}
+
 export function formatModelConfigSummary(
   config: Pick<ModelConfigLike, 'temperature' | 'max_tokens' | 'max_iterations'>,
   labels?: {

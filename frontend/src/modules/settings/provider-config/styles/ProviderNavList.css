@@ -1,0 +1,316 @@
+/**
+ * 供应商导航列。
+ * 宽容器为「图标 + 名称 + 模型数」列表，窄容器收成纯图标条，
+ * 保证小屏下右栏详情仍然可见可操作。
+ *
+ * 分成两层：外层列铺满整列高度（底纹 + 分隔线），内层 nav 钉在滚动视口上，
+ * 既不会在下方留空白，滚动右侧配置时左栏内容也不会跟着走。
+ */
+
+.provider-nav-column {
+  min-width: 0;
+  border-right: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-2xl) 0 0 var(--radius-2xl);
+  background: var(--color-bg-secondary);
+}
+
+.provider-nav {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: 100dvh;
+  overflow-y: auto;
+  padding: 10px 8px;
+}
+
+.provider-nav-header {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+.provider-nav-title {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.provider-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.provider-nav-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.provider-nav-item:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.provider-nav-item.is-selected {
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-elevated);
+}
+
+/* 图标由 ProviderIcon 直接渲染，这里只负责状态点的定位 */
+.provider-nav-icon {
+  position: relative;
+}
+
+.provider-nav-icon.is-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 1px dashed var(--color-border-secondary);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.provider-nav-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-disabled);
+  box-shadow: 0 0 0 2px var(--color-bg-secondary);
+}
+
+.provider-nav-item.is-selected .provider-nav-dot {
+  box-shadow: 0 0 0 2px var(--color-bg-elevated);
+}
+
+.provider-nav-dot.is-ready {
+  background: var(--color-success);
+}
+
+.provider-nav-dot.is-warning {
+  background: var(--color-warning);
+}
+
+.provider-nav-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.provider-nav-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-nav-meta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-nav-current {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--color-accent);
+  background: var(--color-accent-alpha);
+}
+
+/* 草稿里刚加、还没保存成功的供应商 */
+.provider-nav-draft {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px dashed var(--color-border-secondary);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.provider-nav-add {
+  margin-top: 4px;
+}
+
+.provider-nav-add .provider-nav-name {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* 删除按钮：平时不占位，行 hover / 键盘聚焦时出现在行尾，顶掉右侧徽标。
+   用 opacity 而不是 display 隐藏，键盘 Tab 才够得着它 */
+.provider-nav-remove {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: background var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.provider-nav-item:hover .provider-nav-remove,
+.provider-nav-remove:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 徽标与删除按钮共用行尾，hover 时让位，避免行宽来回跳 */
+.provider-nav-item:hover .provider-nav-current,
+.provider-nav-item:hover .provider-nav-draft {
+  visibility: hidden;
+}
+
+.provider-nav-remove:hover {
+  background: var(--color-danger-light, var(--color-bg-tertiary));
+  color: var(--color-danger);
+}
+
+.provider-nav-add:hover .provider-nav-icon.is-add {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.provider-nav-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.provider-nav-toggle:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.provider-nav-toggle.is-active .provider-nav-toggle-caret {
+  transform: rotate(180deg);
+}
+
+.provider-nav-toggle-caret {
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+}
+
+.provider-nav-toggle-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 窄容器：图标条 ---------- */
+
+@container (max-width: 759px) {
+  .provider-nav {
+    padding: 8px 6px;
+  }
+
+  .provider-nav-header {
+    display: none;
+  }
+
+  .provider-nav-item {
+    justify-content: center;
+    gap: 0;
+    height: 34px;
+    padding: 0;
+  }
+
+  .provider-nav-copy,
+  .provider-nav-current,
+  .provider-nav-draft {
+    display: none;
+  }
+
+  /* 图标条只有 34px 宽，删除按钮铺满整格：hover 时整格变成删除 */
+  .provider-nav-remove {
+    inset: 0;
+    width: auto;
+    height: auto;
+    transform: none;
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+  }
+
+  .provider-nav-item:hover .provider-nav-icon {
+    visibility: hidden;
+  }
+
+  .provider-nav-dot {
+    box-shadow: 0 0 0 2px var(--color-bg-secondary);
+  }
+
+  .provider-nav-toggle {
+    width: 30px;
+    height: 30px;
+    margin: 8px auto 0;
+    padding: 0;
+  }
+
+  .provider-nav-toggle-label {
+    display: none;
+  }
+}

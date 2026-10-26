@@ -1,9 +1,4 @@
-"""
-配置保存后的运行时热重载。
-
-配置落盘后还要把新值推给已运行的单例：工具注册表、渠道消息处理器、
-cron 执行器、工作区路径等，相关编排集中在这里。
-"""
+"""配置保存后把新值热重载到已运行的单例：工具注册表、渠道消息处理器、cron、工作区路径。"""
 
 import json
 import os
@@ -198,11 +193,8 @@ def _rebuild_shared_tool_registry_runtime(request: Request) -> None:
 def _reload_injection_runtime(request: Request, config: AppConfig) -> None:
     """把注入开关（injection）同步到当前运行态。
 
-    单点处理四处持有者，避免调用方各自拼装：
-    - 共享 ContextBuilder（WebSocket / 渠道 / cron 共用）
-    - 共享 tool_params.disabled_tools + 共享工具注册表
-    - 渠道消息处理器（其 _tool_params 需同步并重建注册表）
-    - cron agent（与共享 ContextBuilder 同一对象，仍需重建工具与实例字段）
+    单点处理四处持有者（共享 ContextBuilder、共享工具注册表、渠道消息处理器、
+    cron agent），避免调用方各自拼装。
     """
     from backend.modules.tools.setup import register_all_tools
 
@@ -246,8 +238,7 @@ def _prepare_message_handler_reload_params(
 ) -> Dict[str, object]:
     """根据最新配置构建渠道消息处理器的热重载参数。
 
-    注入开关不走这里：它需要同时刷新多个运行态持有者，
-    统一由 _reload_injection_runtime 处理。
+    注入开关不走这里，统一由 _reload_injection_runtime 处理。
     """
     reload_params: Dict[str, object] = {}
 
@@ -273,12 +264,14 @@ def _prepare_message_handler_reload_params(
                 timeout=600.0,
                 max_retries=3,
                 provider_id=provider_id,
+                api_type=runtime_state.api_type,
             )
             reload_params['model'] = config.model.model
             reload_params['temperature'] = config.model.temperature
             reload_params['max_tokens'] = config.model.max_tokens
             reload_params['max_iterations'] = config.model.max_iterations
             reload_params['thinking_enabled'] = config.model.thinking_enabled
+            reload_params['reasoning_level'] = config.model.reasoning_level
             reload_params['max_history_messages'] = config.persona.max_history_messages
 
             logger.info("Prepared AI config for hot reload")
@@ -362,6 +355,7 @@ def _reload_cron_runtime(
             cron_agent.max_tokens = config.model.max_tokens
             cron_agent.max_iterations = config.model.max_iterations
             cron_agent.thinking_enabled = config.model.thinking_enabled
+            cron_agent.reasoning_level = config.model.reasoning_level
         if workspace_path is not None:
             cron_agent.workspace = workspace_path
 

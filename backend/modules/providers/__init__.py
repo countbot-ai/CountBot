@@ -3,7 +3,8 @@
 from .base import LLMProvider, StreamChunk, ToolCall
 from .anthropic_provider import AnthropicProvider
 from .openai_provider import OpenAIProvider
-from .factory import create_provider
+from .openai_responses_provider import OpenAIResponsesProvider
+from .factory import API_TYPES, create_provider, resolve_api_type
 
 __all__ = [
     "LLMProvider",
@@ -11,5 +12,8 @@ __all__ = [
     "ToolCall",
     "AnthropicProvider",
     "OpenAIProvider",
+    "OpenAIResponsesProvider",
+    "API_TYPES",
     "create_provider",
+    "resolve_api_type",
 ]

@@ -12,7 +12,10 @@ from backend.modules.config.schema import WorkspaceConfig
 from backend.modules.providers.runtime import get_provider_runtime_state
 
 from backend.api.settings._router import router
-from backend.api.settings.validators import _normalize_api_mode_value
+from backend.api.settings.validators import (
+    _normalize_api_mode_value,
+    _normalize_api_type_value,
+)
 from backend.api.settings.models import (
     TestConnectionRequest,
     TestConnectionResponse,
@@ -53,15 +56,27 @@ async def test_connection(request: TestConnectionRequest) -> TestConnectionRespo
                 success=False,
                 error="请先填写模型名称，再测试连接。",
             )
-        
-        logger.info(f"Using {provider_meta.name}, model: {test_model}, base: {test_api_base}")
+
+        # 协议优先级：请求显式指定 > 已保存的供应商配置 > provider 默认
+        saved_provider = config_loader.config.providers.get(request.provider)
+        resolved_api_type = _normalize_api_type_value(
+            request.api_type
+            or getattr(saved_provider, "api_type", None)
+            or None
+        )
+
+        logger.info(
+            f"Using {provider_meta.name}, model: {test_model}, "
+            f"base: {test_api_base}, api_type: {resolved_api_type}"
+        )
         
         # 创建临时 provider
         provider = create_provider(
             api_key=request.api_key,
             api_base=test_api_base,
             default_model=test_model,
-            api_mode=_normalize_api_mode_value(request.api_mode or config_loader.config.model.api_mode),
+            api_mode=_normalize_api_mode_value(None),
+            api_type=resolved_api_type,
             timeout=30.0,
             max_retries=1,
             provider_id=request.provider,

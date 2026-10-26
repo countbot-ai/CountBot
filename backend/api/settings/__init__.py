@@ -1,13 +1,4 @@
-"""
-Settings API。
-
-子模块：validators 输入校验；models 请求与响应模型；runtime 配置保存后的
-热重载；core 全量读写、危险命令模式与 provider 列表；external_coding 外部
-编码代理配置；workspace 工作区操作；transfer 导出导入；test_connection
-连通性测试。
-
-本模块重新导出全部对外符号，既有导入路径不变。
-"""
+"""Settings API：聚合 validators/models/runtime/core 等子模块并重新导出全部对外符号。"""
 
 from backend.api.settings._router import router
 from backend.api.settings.models import (
@@ -55,6 +46,7 @@ from backend.api.settings import core as _core  # noqa: F401
 from backend.api.settings import external_coding as _external_coding  # noqa: F401
 from backend.api.settings import connection_probe as _connection_probe  # noqa: F401
 from backend.api.settings import transfer as _transfer  # noqa: F401
+from backend.api.settings import provider_models as _provider_models  # noqa: F401
 from backend.api.settings import workspace as _workspace  # noqa: F401
 
 from backend.api.settings.core import (
@@ -80,6 +72,14 @@ from backend.api.settings.workspace import (
     select_directory,
     set_workspace_path,
 )
+from backend.api.settings.provider_models import (
+    add_provider_models,
+    delete_provider_model,
+    get_provider_model_catalog,
+    reorder_provider_models,
+    test_provider_connection,
+    update_provider_model,
+)
 
 __all__ = [
     "router",
@@ -101,6 +101,12 @@ __all__ = [
     "update_external_coding_tools_config",
     "check_external_coding_tool_profile",
     "test_connection",
+    "get_provider_model_catalog",
+    "add_provider_models",
+    "update_provider_model",
+    "delete_provider_model",
+    "reorder_provider_models",
+    "test_provider_connection",
     "select_directory",
     "get_workspace_info",
     "clean_temp_files",

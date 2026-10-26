@@ -137,11 +137,32 @@ export interface ProviderMetadata {
     thinking_control_tier?: string
 }
 
+export type ProviderApiType =
+    | 'openai-chat-completions'
+    | 'openai-responses'
+    | 'anthropic-messages'
+
+export interface ProviderModelEntry {
+    id: string
+    display_name?: string | null
+    enabled: boolean
+    context_window?: number | null
+    supports_image?: boolean | null
+    /** 该模型可选的思考档位（从低到高）；空数组=用内置建议，用户可自由增删 */
+    reasoning_levels?: string[]
+    /** 该模型默认思考档位；空=取档位列表首项或不下发档位 */
+    reasoning_level?: string | null
+    source: 'builtin' | 'manual' | 'fetched'
+}
+
 export interface ProviderConfig {
     enabled: boolean
     api_key?: string
     api_keys?: string[]
     api_base?: string
+    name?: string | null
+    api_type?: ProviderApiType
+    models?: ProviderModelEntry[]
 }
 
 export interface ModelConfig {
@@ -152,6 +173,8 @@ export interface ModelConfig {
     max_tokens: number
     max_iterations: number
     thinking_enabled: boolean
+    /** 思考档位：设置页全局默认与会话级覆盖共用该字段 */
+    reasoning_level?: string | null
     supports_image?: boolean | null
     api_key?: string
     api_base?: string
@@ -287,6 +310,7 @@ export interface TestConnectionRequest {
     api_key?: string
     api_base?: string
     model?: string
+    api_type?: ProviderApiType
     api_mode?: 'chat_completions'
     temperature?: number
     max_tokens?: number
@@ -297,6 +321,55 @@ export interface TestConnectionResponse {
     success: boolean
     message?: string
     error?: string
+}
+
+export interface ProviderModelCatalogEntry {
+    id: string
+    display_name?: string | null
+    owned_by?: string | null
+}
+
+export interface ProviderModelCatalogResponse {
+    success: boolean
+    provider: string
+    models: ProviderModelCatalogEntry[]
+    error?: string | null
+}
+
+export interface ProviderConnectionTestResponse {
+    success: boolean
+    latency_ms?: number | null
+    model_count?: number | null
+    error?: string | null
+}
+
+export interface AddProviderModelsRequest {
+    models: Array<Partial<ProviderModelEntry> & { id: string }>
+    source?: ProviderModelEntry['source']
+}
+
+export interface UpdateProviderModelRequest {
+    display_name?: string | null
+    enabled?: boolean
+    context_window?: number | null
+    supports_image?: boolean | null
+    /** 思考档位列表；传空数组表示改用内置建议 */
+    reasoning_levels?: string[]
+    /** 默认思考档位 */
+    reasoning_level?: string | null
+    clear_display_name?: boolean
+    clear_context_window?: boolean
+    clear_supports_image?: boolean
+    /** 清空默认思考档位 */
+    clear_reasoning_level?: boolean
+}
+
+export interface ReasoningLevelsResponse {
+    model: string
+    /** 内置建议档位（从低到高）；未收录的模型返回空数组 */
+    levels: string[]
+    /** 常用档位全集，仅作自定义填写参考 */
+    known_levels: string[]
 }
 
 // Tools API Types
@@ -469,6 +542,8 @@ export interface CronJob {
     account_id?: string | null
     chat_id?: string | null
     deliver_response: boolean
+    model_provider?: string | null
+    model_name?: string | null
     last_run?: string | null
     next_run?: string | null
     last_status?: string | null
@@ -498,6 +573,8 @@ export interface CreateCronJobRequest {
     max_retries?: number
     retry_delay?: number
     delete_on_success?: boolean
+    model_provider?: string | null
+    model_name?: string | null
 }
 
 export interface UpdateCronJobRequest {
@@ -512,6 +589,8 @@ export interface UpdateCronJobRequest {
     max_retries?: number
     retry_delay?: number
     delete_on_success?: boolean
+    model_provider?: string | null
+    model_name?: string | null
 }
 
 export interface ExecuteCronJobResponse {
@@ -754,6 +833,25 @@ export const chatAPI = {
     }> =>
         apiClient.post(`/chat/sessions/${sessionId}/summarize-self-improving`),
 
+    // 手动压缩会话上下文：按 token 水位折叠过长的历史，保留头部与最近若干条原文
+    compactSessionContext: (sessionId: string, focusTopic?: string): Promise<{
+        success: boolean
+        session_id: string
+        reason: string
+        before_tokens: number
+        after_tokens: number
+        saved_tokens: number
+        savings_ratio: number
+        summarized_messages: number
+        pruned_tool_results: number
+        summary_deterministic: boolean
+        message: string
+    }> =>
+        apiClient.post(
+            `/chat/sessions/${sessionId}/compact`,
+            focusTopic ? { focus_topic: focusTopic } : {},
+        ),
+
     exportSessionContext: (sessionId: string): Promise<{
         session_id: string
         session_name: string
@@ -840,6 +938,42 @@ export const settingsAPI = {
 
     getProviders: (): Promise<ProviderMetadata[]> =>
         apiClient.get('/settings/providers'),
+
+    getProviderModelCatalog: (providerId: string): Promise<ProviderModelCatalogResponse> =>
+        apiClient.get(`/settings/providers/${encodeURIComponent(providerId)}/models/catalog`),
+
+    getReasoningLevels: (model: string): Promise<ReasoningLevelsResponse> =>
+        apiClient.get('/settings/reasoning-levels', { params: { model } }),
+
+    addProviderModels: (
+        providerId: string,
+        data: AddProviderModelsRequest,
+    ): Promise<ProviderModelEntry[]> =>
+        apiClient.post(`/settings/providers/${encodeURIComponent(providerId)}/models`, data),
+
+    updateProviderModel: (
+        providerId: string,
+        modelId: string,
+        data: UpdateProviderModelRequest,
+    ): Promise<ProviderModelEntry[]> =>
+        apiClient.put(
+            `/settings/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+            data,
+        ),
+
+    deleteProviderModel: (providerId: string, modelId: string): Promise<ProviderModelEntry[]> =>
+        apiClient.delete(
+            `/settings/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+        ),
+
+    reorderProviderModels: (providerId: string, modelIds: string[]): Promise<ProviderModelEntry[]> =>
+        apiClient.put(
+            `/settings/providers/${encodeURIComponent(providerId)}/models/order`,
+            { model_ids: modelIds },
+        ),
+
+    testProviderConnection: (providerId: string): Promise<ProviderConnectionTestResponse> =>
+        apiClient.post(`/settings/providers/${encodeURIComponent(providerId)}/test`),
 
     getExternalCodingTools: (): Promise<ExternalCodingToolsConfig> =>
         apiClient.get('/settings/external-coding-tools'),

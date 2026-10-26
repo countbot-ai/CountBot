@@ -1,0 +1,256 @@
+/**
+ * 模型清单。
+ * 行布局以等宽模型 ID 为主，右侧跟随上下文/来源/图片能力徽标，
+ * 操作全部收成图标按钮，整行用 1px 分隔线连成一张表，避免「一堆按钮」观感。
+ */
+
+.provider-models {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.provider-models-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.provider-models-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.provider-models-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.provider-models-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- 空态 ---------- */
+
+.provider-models-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px dashed var(--color-border-secondary);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* ---------- 列表 ---------- */
+
+.provider-model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+
+.provider-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-border-primary);
+  transition: background var(--transition-fast);
+}
+
+.provider-model-row:last-child {
+  border-bottom: none;
+}
+
+.provider-model-row:hover {
+  background: var(--color-bg-secondary);
+}
+
+.provider-model-row.is-hidden {
+  opacity: 0.55;
+}
+
+.provider-model-order {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.model-order-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 14px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.model-order-btn:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.model-order-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* 只在支持 hover 的设备上收起排序箭头，避免触屏点不到 */
+@media (hover: hover) {
+  .provider-model-order {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+
+  .provider-model-row:hover .provider-model-order,
+  .provider-model-row:focus-within .provider-model-order {
+    opacity: 1;
+  }
+}
+
+.provider-model-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.provider-model-id {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-model-name {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-model-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 6px;
+  background: var(--color-bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.provider-model-pill.is-muted {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+}
+
+.provider-model-pill.is-vision {
+  border-radius: 999px;
+  font-family: var(--font-sans);
+}
+
+.provider-model-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.provider-model-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.provider-model-action:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.provider-model-action.is-danger:hover:not(:disabled) {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.provider-model-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.model-action-spin {
+  animation: model-action-spin 0.9s linear infinite;
+}
+
+@keyframes model-action-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.provider-models-reorder-hint {
+  margin: 0;
+}
+
+/* ---------- 窄容器：让出徽标空间，保证 ID 不被挤没 ---------- */
+
+@container (max-width: 759px) {
+  .provider-model-source,
+  .provider-model-name {
+    display: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .provider-model-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .provider-model-actions {
+    margin-left: auto;
+  }
+}

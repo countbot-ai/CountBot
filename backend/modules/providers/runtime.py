@@ -63,6 +63,7 @@ class ProviderRuntimeState:
     api_key: str
     api_keys: List[str] = field(default_factory=list)
     api_base: Optional[str] = None
+    api_type: str = "openai-chat-completions"
     status: str = "disabled"
     reason: str = "disabled"
 
@@ -152,6 +153,9 @@ def get_provider_runtime_state(
 ) -> ProviderRuntimeState:
     """计算 provider 是否可被实际请求使用。"""
 
+    # 延迟导入：factory 依赖本模块的 KeyRotator，顶层导入会形成循环
+    from backend.modules.providers.factory import resolve_api_type
+
     provider_meta = get_provider_metadata(provider_id)
     provider_config = app_config.providers.get(provider_id) if app_config else None
     exists = provider_meta is not None
@@ -213,6 +217,12 @@ def get_provider_runtime_state(
         api_key=api_key,
         api_keys=api_keys,
         api_base=api_base,
+        api_type=resolve_api_type(
+            provider_id,
+            getattr(provider_config, "api_type", None),
+            explicit=getattr(provider_config, "api_type", None)
+            not in (None, "", "openai-chat-completions"),
+        ),
         status=status,
         reason=reason,
     )

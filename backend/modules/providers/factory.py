@@ -5,8 +5,45 @@ from loguru import logger
 from .base import LLMProvider
 from .anthropic_provider import AnthropicProvider
 from .openai_provider import OpenAIProvider
+from .openai_responses_provider import OpenAIResponsesProvider
 from .registry import get_provider_metadata
 from .runtime import KeyRotator, get_key_rotator
+
+
+# 供应商级协议标识（与前端 ProviderConfig.api_type 同值）。
+API_TYPE_ANTHROPIC_MESSAGES = "anthropic-messages"
+API_TYPE_OPENAI_RESPONSES = "openai-responses"
+API_TYPE_OPENAI_CHAT = "openai-chat-completions"
+
+API_TYPES = (
+    API_TYPE_OPENAI_CHAT,
+    API_TYPE_OPENAI_RESPONSES,
+    API_TYPE_ANTHROPIC_MESSAGES,
+)
+
+
+def resolve_api_type(
+    provider_id: Optional[str],
+    api_type: Optional[str] = None,
+    *,
+    explicit: bool = False,
+) -> str:
+    """解析供应商使用的协议。
+
+    显式传入的 api_type 优先；未传时按 provider_id 回落到历史默认值，
+    保证存量配置（没有 api_type 字段）行为不变。
+
+    explicit=True 表示「用户确实选过这个值」：即使它恰好等于 schema 默认值
+    （openai-chat-completions），也不再被 provider_id 的推断覆盖。
+    """
+    normalized = str(api_type or "").strip().lower()
+    if normalized in API_TYPES and (explicit or normalized != API_TYPE_OPENAI_CHAT):
+        return normalized
+
+    metadata = get_provider_metadata(provider_id) if provider_id else None
+    if metadata and metadata.id in ("anthropic", "minimax", "custom_anthropic"):
+        return API_TYPE_ANTHROPIC_MESSAGES
+    return API_TYPE_OPENAI_CHAT
 
 
 def create_provider(
@@ -18,11 +55,12 @@ def create_provider(
     max_retries: int = 3,
     provider_id: Optional[str] = None,
     api_keys: Optional[List[str]] = None,
+    api_type: Optional[str] = None,
     **kwargs: Any
 ) -> LLMProvider:
     """创建 LLM Provider
     
-    根据 provider_id 或 api_base 自动选择合适的 Provider 实现，
+    根据 api_type（优先）或 provider_id 选择合适的 Provider 实现，
     并在配置了多个 API Key 时启用轮换。
     
     Args:
@@ -30,16 +68,17 @@ def create_provider(
         api_keys: API 密钥列表（用于轮换，优先于 api_key）
         api_base: API 基础 URL
         default_model: 默认模型
-        api_mode: API 模式
+        api_mode: API 模式（历史字段，行为由 api_type 决定）
         timeout: 超时时间
         max_retries: 最大重试次数
         provider_id: Provider ID（优先级最高）
+        api_type: 供应商协议，见 API_TYPES
         **kwargs: 其他参数
     
     Returns:
         LLMProvider 实例
     """
-    api_mode = "chat_completions"
+    resolved_api_type = resolve_api_type(provider_id, api_type)
 
     metadata = get_provider_metadata(provider_id) if provider_id else None
 
@@ -67,12 +106,12 @@ def create_provider(
     elif effective_api_keys:
         selected_key = effective_api_keys[0]
     
-    if metadata and metadata.id == "anthropic":
+    if resolved_api_type == API_TYPE_ANTHROPIC_MESSAGES:
         provider_class = AnthropicProvider
-        logger.debug(f"Using AnthropicProvider for {provider_id}")
-    elif metadata and metadata.id in ["minimax", "custom_anthropic"]:
-        provider_class = AnthropicProvider
-        logger.debug(f"Using AnthropicProvider (compatible) for {provider_id}")
+        logger.debug(f"Using AnthropicProvider for {provider_id or 'default'}")
+    elif resolved_api_type == API_TYPE_OPENAI_RESPONSES:
+        provider_class = OpenAIResponsesProvider
+        logger.debug(f"Using OpenAIResponsesProvider for {provider_id or 'default'}")
     else:
         provider_class = OpenAIProvider
         logger.debug(f"Using OpenAIProvider for {provider_id or 'default'}")

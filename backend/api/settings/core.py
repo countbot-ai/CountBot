@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.modules.config.loader import config_loader
-from backend.modules.config.schema import AppConfig, ModelConfig, ProviderConfig, WorkspaceConfig
+from backend.modules.config.schema import (
+    AppConfig,
+    ModelConfig,
+    ModelEntry,
+    ProviderConfig,
+    WorkspaceConfig,
+)
 from backend.modules.external_agents.conversation import profile_supports_native_session
 from backend.modules.providers.runtime import get_provider_runtime_state
 from backend.modules.workspace import workspace_manager
@@ -40,7 +46,9 @@ from backend.api.settings.validators import (
     _coerce_boolean_value,
     _heartbeat_plan_settings_changed,
     _normalize_api_mode_value,
+    _normalize_api_type_value,
     _normalize_pattern_list,
+    _parse_model_entry,
     _validate_and_normalize_heartbeat_settings,
     _validate_regex_patterns_or_raise,
 )
@@ -161,6 +169,9 @@ async def get_settings() -> SettingsResponse:
                 api_key=provider_config.api_key,
                 api_keys=provider_config.get_effective_api_keys(),
                 api_base=provider_config.api_base,
+                name=provider_config.name,
+                api_type=provider_config.api_type,
+                models=[entry.model_dump() for entry in provider_config.models],
             )
         
         # 构建响应
@@ -174,6 +185,7 @@ async def get_settings() -> SettingsResponse:
                 max_tokens=config.model.max_tokens,
                 max_iterations=config.model.max_iterations,
                 thinking_enabled=config.model.thinking_enabled,
+                reasoning_level=config.model.reasoning_level,
                 supports_image=config.model.supports_image,
             ),
             workspace=WorkspaceConfigResponse(
@@ -286,6 +298,25 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
 
                 if "api_base" in provider_data:
                     provider_config.api_base = provider_data["api_base"]
+
+                if "name" in provider_data:
+                    raw_name = str(provider_data["name"] or "").strip()
+                    provider_config.name = raw_name or None
+
+                if "api_type" in provider_data:
+                    provider_config.api_type = _normalize_api_type_value(
+                        provider_data["api_type"]
+                    )
+
+                if "models" in provider_data:
+                    provider_config.models = [
+                        entry
+                        for entry in (
+                            _parse_model_entry(item)
+                            for item in (provider_data["models"] or [])
+                        )
+                        if entry is not None
+                    ]
         
         if request.model:
             if "provider" in request.model:
@@ -308,6 +339,15 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
 
             if "thinking_enabled" in request.model:
                 config.model.thinking_enabled = request.model["thinking_enabled"]
+
+            if "reasoning_level" in request.model:
+                # 空值表示清掉全局档位；其余按原样小写存储（自定义档位同样放行）
+                raw_level = request.model["reasoning_level"]
+                config.model.reasoning_level = (
+                    str(raw_level).strip().lower() or None
+                    if raw_level is not None
+                    else None
+                )
 
             if "supports_image" in request.model:
                 raw_supports_image = request.model["supports_image"]
