@@ -49,7 +49,27 @@ from backend.modules.session.manager import SessionManager
 from backend.utils.datetime_utils import to_utc_iso
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.memory import MemoryStore
+from backend.modules.memory import Confidence
 from backend.utils.paths import WORKSPACE_DIR
+
+
+def _resolve_session_source(session: Any) -> str:
+    """会话记忆的写入来源。
+
+    渠道会话在网页里被「沉淀记忆」时，这条记忆仍然属于原来的渠道；只有没有渠道
+    上下文的会话才记为 web-chat。
+    """
+    raw = getattr(session, "channel_context", None)
+    if raw:
+        try:
+            decoded = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError):
+            decoded = None
+        if isinstance(decoded, dict):
+            channel = str(decoded.get("channel") or "").strip()
+            if channel:
+                return channel
+    return "web-chat"
 
 from backend.api.chat.helpers import (
     MAX_TOOL_PREVIEW_LIMIT,
@@ -89,29 +109,25 @@ async def export_session_context(
     agent_loop: AgentLoop = Depends(get_agent_loop),
 ) -> dict:
     """
-    导出会话的完整上下文（包括系统提示词、工具定义、所有消息和工具调用历史）
-    
-    导出内容：
-    1. 系统提示词（发送给 LLM 的完整上下文）
-    2. 工具定义（所有可用工具的描述和参数）
-    3. 用户消息和 AI 回复（数据库中保存的内容）
-    4. 工具执行历史（从工具历史记录中获取）
-    
+    导出会话的完整上下文
+
+    含系统提示词、工具定义、消息与工具调用历史。工具调用历史为全局记录
+    （记录内不含 session_id），无法按会话过滤，故全部导出。
+
     Args:
         session_id: 会话 ID
         db: 数据库会话
         agent_loop: Agent 循环实例
-        
+
     Returns:
-        dict: 包含系统提示词、工具定义、消息和工具历史的完整上下文
-        
+        dict: 系统提示词、工具定义、消息与工具历史的完整上下文
+
     Raises:
         HTTPException: 会话不存在
     """
     try:
         session_manager = SessionManager(db)
         
-        # 验证会话是否存在
         session = await session_manager.get_session(session_id)
         if session is None:
             raise HTTPException(
@@ -119,18 +135,14 @@ async def export_session_context(
                 detail=f"Session '{session_id}' not found"
             )
         
-        # 获取所有消息
         messages = await session_manager.get_messages(session_id=session_id)
         
-        # 构建系统提示词
         system_prompt = agent_loop.context_builder.build_system_prompt()
         
-        # 获取工具定义
         tool_definitions = []
         if agent_loop.tools:
             tool_definitions = agent_loop.tools.get_definitions()
         
-        # 构建消息历史
         message_history = []
         for msg in messages:
             message_history.append({
@@ -140,13 +152,10 @@ async def export_session_context(
                 "created_at": to_utc_iso(msg.created_at),
             })
         
-        # 获取工具执行历史（从工具注册表）
         tool_history = []
         if agent_loop.tools and hasattr(agent_loop.tools, 'history'):
-            # 过滤出属于当前会话的工具调用
+            # 工具历史不含 session_id，无法按会话过滤，故全部导出
             for record in agent_loop.tools.history:
-                # 工具历史记录可能没有 session_id，所以我们导出所有记录
-                # 并在前端/导出文件中标注这是全局工具历史
                 tool_history.append({
                     "tool": record.get("tool"),
                     "arguments": record.get("arguments"),
@@ -185,15 +194,15 @@ async def update_session_summary(
 ) -> dict:
     """
     更新会话总结
-    
+
     Args:
         session_id: 会话 ID
         request: 更新总结请求
         db: 数据库会话
-        
+
     Returns:
         dict: 更新结果
-        
+
     Raises:
         HTTPException: 会话不存在
     """
@@ -236,14 +245,14 @@ async def delete_session_summary(
 ) -> dict:
     """
     删除会话总结
-    
+
     Args:
         session_id: 会话 ID
         db: 数据库会话
-        
+
     Returns:
         dict: 删除结果
-        
+
     Raises:
         HTTPException: 会话不存在
     """
@@ -277,15 +286,16 @@ async def summarize_session_to_memory(
     db: AsyncSession = Depends(get_db),
     agent_loop: AgentLoop = Depends(get_agent_loop),
 ) -> SummarizeSessionResponse:
-    """总结会话内容并保存到长期记忆
-    
-    使用 LLM 直接总结对话为一行记忆条目，写入 MEMORY.md。
-    
+    """
+    总结会话内容并沉淀为长期记忆
+
+    经 ``append_entry`` 写入，key 由内容与来源派生，重复总结不产生重复条目。
+
     Args:
         session_id: 会话 ID
         db: 数据库会话
         agent_loop: Agent 循环实例
-        
+
     Returns:
         SummarizeSessionResponse: 总结结果
     """
@@ -298,7 +308,6 @@ async def summarize_session_to_memory(
         
         logger.info(f"Starting memory summarization for session {session_id}")
         
-        # 1. 验证会话
         result = await db.execute(
             select(Session).where(Session.id == session_id)
         )
@@ -310,7 +319,6 @@ async def summarize_session_to_memory(
                 detail=f"Session '{session_id}' not found"
             )
         
-        # 2. 获取消息
         session_manager = SessionManager(db)
         messages = await session_manager.get_messages(session_id=session_id)
         
@@ -320,7 +328,6 @@ async def summarize_session_to_memory(
                 detail="Session has no messages to summarize"
             )
         
-        # 3. 格式化消息
         analyzer = MessageAnalyzer()
         message_dicts = [
             {"role": msg.role, "content": msg.content}
@@ -328,7 +335,6 @@ async def summarize_session_to_memory(
         ]
         formatted = analyzer.format_messages_for_summary(message_dicts, max_chars=4000)
         
-        # 4. 用 LLM 生成总结
         prompt = render_prompt(CONVERSATION_TO_MEMORY_PROMPT, messages=formatted)
         
         summary_content = ""
@@ -342,7 +348,6 @@ async def summarize_session_to_memory(
         
         summary = summary_content.strip()
         
-        # 5. 如果 LLM 认为无需记录，直接返回
         from backend.modules.agent.prompts import is_memory_noop
 
         if is_memory_noop(summary):
@@ -352,16 +357,21 @@ async def summarize_session_to_memory(
                 message="对话无需记录到长期记忆",
             )
         
-        # 6. 写入记忆
         config = config_loader.config
         workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)
-        
-        # 确定来源 - 使用渠道标识而非会话名称
-        source = "web-chat"
-        line_num = memory.append_entry(source=source, content=summary)
+
+        # 来源取会话自身的渠道：在网页里给 QQ 会话点「沉淀记忆」，这条记忆仍属于 QQ。
+        # 会话没有渠道上下文时才按网页来源记录。
+        source = _resolve_session_source(session)
+        # 摘要由模型对历史复述而来，属于推断内容，只能进冷存档
+        line_num = memory.append_entry(
+            source=source,
+            content=summary,
+            confidence=Confidence.INFERRED,
+        )
         
         logger.info(f"Memory saved at line {line_num}: {summary[:80]}...")
         
