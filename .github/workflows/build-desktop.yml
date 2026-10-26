@@ -150,6 +150,7 @@ jobs:
             --hidden-import=backend.modules.channels.wecom \
             --hidden-import=backend.modules.channels.weibo \
             --hidden-import=backend.modules.channels.xiaozhi \
+            --hidden-import=backend.modules.channels.serverchan \
             --hidden-import=backend.modules.channels.media_utils \
             --hidden-import=backend.modules.config \
             --hidden-import=backend.modules.config.loader \
@@ -279,6 +280,13 @@ jobs:
             --exclude-module=s3transfer \
             --exclude-module=jmespath \
             --exclude-module=trafilatura \
+            --exclude-module=pygments \
+            --exclude-module=sqlalchemy.dialects.mssql \
+            --exclude-module=sqlalchemy.dialects.mysql \
+            --exclude-module=sqlalchemy.dialects.oracle \
+            --exclude-module=sqlalchemy.dialects.postgresql \
+            --exclude-module=PyObjCTest \
+            --exclude-module=pip \
             start_desktop.py
 
       - name: Build desktop app on Windows
@@ -352,6 +360,7 @@ jobs:
             --hidden-import=backend.modules.channels.wecom `
             --hidden-import=backend.modules.channels.weibo `
             --hidden-import=backend.modules.channels.xiaozhi `
+            --hidden-import=backend.modules.channels.serverchan `
             --hidden-import=backend.modules.channels.media_utils `
             --hidden-import=backend.modules.config `
             --hidden-import=backend.modules.config.loader `
@@ -483,6 +492,13 @@ jobs:
             --exclude-module=s3transfer `
             --exclude-module=jmespath `
             --exclude-module=trafilatura `
+            --exclude-module=pygments `
+            --exclude-module=sqlalchemy.dialects.mssql `
+            --exclude-module=sqlalchemy.dialects.mysql `
+            --exclude-module=sqlalchemy.dialects.oracle `
+            --exclude-module=sqlalchemy.dialects.postgresql `
+            --exclude-module=PyObjCTest `
+            --exclude-module=pip `
             start_desktop.py
 
       - name: Package macOS artifact
