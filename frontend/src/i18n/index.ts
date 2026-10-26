@@ -20,6 +20,10 @@ try {
     // localStorage 不可用（隐私模式等）时跳过迁移，走默认语言
 }
 
+// index.html 里写死 lang="zh-CN"，启动时按实际生效语言纠正，
+// 否则英文用户拿到的是中文 lang，影响读屏与字体回退。
+document.documentElement.setAttribute('lang', getEffectiveLocale())
+
 const i18n = createI18n({
     legacy: false,
     locale: getEffectiveLocale(),

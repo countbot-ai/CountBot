@@ -1,8 +1,8 @@
 <template>
   <div class="timeline-panel">
     <div class="timeline-header">
-      <h3 class="timeline-title">{{ $t('timeline.title') || '时间轴' }}</h3>
-      <button class="close-btn" @click="$emit('close')" :title="$t('common.close') || '关闭'">
+      <h3 class="timeline-title">{{ $t('timeline.title') }}</h3>
+      <button class="close-btn" @click="$emit('close')" :title="$t('common.close')">
         <component :is="XIcon" :size="18" />
       </button>
     </div>
@@ -13,14 +13,14 @@
       <input
         v-model="searchQuery"
         type="text"
-        :placeholder="$t('timeline.searchPlaceholder') || '搜索消息...'"
+        :placeholder="$t('timeline.searchPlaceholder')"
         class="search-input"
       />
       <button
         v-if="searchQuery"
         class="clear-search-btn"
         @click="searchQuery = ''"
-        :title="$t('common.clear') || '清除'"
+        :title="$t('common.clear')"
       >
         <component :is="XIcon" :size="14" />
       </button>
@@ -29,7 +29,7 @@
     <div class="timeline-content">
       <div v-if="filteredGroupedMessages.length === 0" class="timeline-empty">
         <component :is="searchQuery ? SearchIcon : ClockIcon" :size="48" class="empty-icon" />
-        <p>{{ searchQuery ? ($t('timeline.noResults') || '未找到匹配的消息') : ($t('timeline.empty') || '暂无消息') }}</p>
+        <p>{{ searchQuery ? $t('timeline.noResults') : $t('timeline.empty') }}</p>
       </div>
       
       <div v-else class="timeline-list">
@@ -76,12 +76,12 @@
                           :is="message.role === 'user' ? UserIcon : BotIcon"
                           :size="14"
                         />
-                        <span>{{ message.role === 'user' ? ($t('timeline.user') || '用户') : ($t('timeline.assistant') || '助手') }}</span>
+                        <span>{{ message.role === 'user' ? $t('timeline.user') : $t('timeline.assistant') }}</span>
                       </div>
                       <div class="timeline-text" v-html="highlightSearchText(truncateText(message.content, 80))"></div>
                       <div v-if="resolveToolCount(message) > 0" class="timeline-tools">
                         <component :is="WrenchIcon" :size="12" />
-                        <span>{{ resolveToolCount(message) }} {{ $t('timeline.tools') || '个工具' }}</span>
+                        <span>{{ resolveToolCount(message) }} {{ $t('timeline.tools') }}</span>
                       </div>
                     </div>
                   </div>
@@ -178,9 +178,9 @@ const groupedMessages = computed<MessageGroup[]>(() => {
     let dateLabel = ''
     
     if (dateKey === today.toISOString().split('T')[0]) {
-      dateLabel = t('timeline.today') || '今天'
+      dateLabel = t('timeline.today')
     } else if (dateKey === yesterday.toISOString().split('T')[0]) {
-      dateLabel = t('timeline.yesterday') || '昨天'
+      dateLabel = t('timeline.yesterday')
     } else {
       dateLabel = date.toLocaleDateString('zh-CN', {
         month: 'long',

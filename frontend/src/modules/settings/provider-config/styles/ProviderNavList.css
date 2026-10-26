@@ -285,18 +285,22 @@
     display: none;
   }
 
-  /* 图标条只有 34px 宽，删除按钮铺满整格：hover 时整格变成删除 */
+  /* 图标条只有 34px 宽：删除收成右上角小徽标，格子主体保留给「点击切换」。
+     整格覆盖会把选中入口完全挡死——hover 后所有点击都落到删除按钮上 */
   .provider-nav-remove {
-    inset: 0;
-    width: auto;
-    height: auto;
+    top: 1px;
+    right: 1px;
+    width: 18px;
+    height: 18px;
     transform: none;
-    border-radius: 10px;
+    border-radius: 6px;
     background: var(--color-bg-elevated);
+    box-shadow: 0 0 0 1px var(--color-border-primary);
   }
 
-  .provider-nav-item:hover .provider-nav-icon {
-    visibility: hidden;
+  .provider-nav-remove svg {
+    width: 11px;
+    height: 11px;
   }
 
   .provider-nav-dot {

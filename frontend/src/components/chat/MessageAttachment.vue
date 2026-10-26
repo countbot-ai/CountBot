@@ -31,7 +31,7 @@
       </div>
       <button
         class="attachment-download-btn"
-        :title="$t('chat.download') || '下载'"
+        :title="$t('chat.download')"
         @click="handleDownload"
       >
         <component :is="DownloadIcon" :size="16" />

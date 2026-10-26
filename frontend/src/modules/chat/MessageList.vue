@@ -11,10 +11,10 @@
           :disabled="isLoadingMore"
           @click="$emit('load-more')"
         >
-          {{ isLoadingMore ? ($t('common.loading') || '加载中...') : ($t('chat.loadOlderMessages') || '加载更早消息') }}
+          {{ isLoadingMore ? $t('common.loading') : $t('chat.loadOlderMessages') }}
         </button>
         <div class="history-load-more-note">
-          {{ $t('chat.historyPreviewNotice') || '当前先展示最近消息，历史内容按需继续加载。' }}
+          {{ $t('chat.historyPreviewNotice') }}
         </div>
       </div>
       <MessageItem

@@ -10,11 +10,11 @@
     >
       <span v-if="isConnecting || reconnectingVisible" class="status-bar-content">
         <span class="status-spinner" />
-        正在重连...（第 {{ reconnectAttemptsDisplay }}/10 次）
+        {{ $t('chat.connectionStatus.reconnecting', { attempt: reconnectAttemptsDisplay, max: 10 }) }}
       </span>
       <span v-else class="status-bar-content">
-        连接已断开
-        <button class="status-bar-action" @click="$emit('reconnect')">立即重连</button>
+        {{ $t('chat.connectionStatus.disconnected') }}
+        <button class="status-bar-action" @click="$emit('reconnect')">{{ $t('chat.connectionStatus.reconnectNow') }}</button>
       </span>
     </div>
   </transition>

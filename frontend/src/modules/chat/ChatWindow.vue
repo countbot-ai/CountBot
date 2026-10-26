@@ -546,16 +546,16 @@ const stopGeneration = async () => {
     const result = await Promise.race([cancelPromise, timeoutPromise]) as any
     
     if (result.success) {
-      toast.success('已停止生成')
+      toast.success(t('chat.stopped'))
     } else {
-      toast.warning(result.message || '没有正在执行的任务')
+      toast.warning(result.message || t('chat.noRunningTask'))
     }
   } catch (error: any) {
     console.error('[ChatWindow] 停止生成失败:', error)
     if (error.message === '停止操作超时') {
-      toast.warning('停止请求超时，但任务可能已停止')
+      toast.warning(t('chat.stopTimeout'))
     } else {
-      toast.error('停止失败，请重试')
+      toast.error(t('chat.stopFailed'))
     }
   } finally {
     // 无论成功失败，都清理流式状态
@@ -618,10 +618,10 @@ const handleDelete = async (messageId: string) => {
     
     messages.value.splice(messageIndex, 1)
     await chatStore.deleteMessage(chatStore.currentSessionId, parseInt(messageId))
-    toast.success(t('chat.messageDeleted') || '消息已删除')
+    toast.success(t('chat.messageDeleted'))
   } catch (error) {
     console.error('Failed to delete message:', error)
-    toast.error(t('chat.deleteMessageFailed') || '删除消息失败')
+    toast.error(t('chat.deleteMessageFailed'))
     
     if (chatStore.currentSessionId) {
       await loadSessionMessages(chatStore.currentSessionId)

@@ -341,7 +341,7 @@ const chatStore = useChatStore()
 const memoryStore = useMemoryStore()
 const toast = useToast()
 const { confirmDelete } = useConfirm()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 // 定义事件
 const emit = defineEmits<{
@@ -720,82 +720,84 @@ async function handleExportSession(sessionId: string) {
     let textContent = ''
     
     // 标题和元数据
+    const dateLocale = locale.value
+    const formatTime = (value?: string | number | null) =>
+      value ? new Date(value).toLocaleString(dateLocale) : t('sessions.export.unknown')
+
     textContent += '='.repeat(80) + '\n'
-    textContent += `会话导出 - ${session.name}\n`
+    textContent += t('sessions.export.title', { name: session.name }) + '\n'
     textContent += '='.repeat(80) + '\n\n'
-    
-    textContent += `会话ID: ${session.id}\n`
-    textContent += `会话名称: ${session.name}\n`
-    textContent += `创建时间: ${new Date(session.createdAt).toLocaleString('zh-CN')}\n`
-    textContent += `更新时间: ${new Date(session.updatedAt).toLocaleString('zh-CN')}\n`
-    textContent += `导出时间: ${new Date(response.exported_at).toLocaleString('zh-CN')}\n`
-    
+
+    textContent += t('sessions.export.sessionId', { id: session.id }) + '\n'
+    textContent += t('sessions.export.sessionName', { name: session.name }) + '\n'
+    textContent += t('sessions.export.createdAt', { time: formatTime(session.createdAt) }) + '\n'
+    textContent += t('sessions.export.updatedAt', { time: formatTime(session.updatedAt) }) + '\n'
+    textContent += t('sessions.export.exportedAt', { time: formatTime(response.exported_at) }) + '\n'
+
     // 过滤掉 role 为 'system' 的消息
     const userMessages = response.messages.filter(msg => msg.role !== 'system')
-    textContent += `消息数量: ${userMessages.length}\n`
-    
+    textContent += t('sessions.export.messageCount', { count: userMessages.length }) + '\n'
+
     if (response.tool_history && response.tool_history.length > 0) {
-      textContent += `工具调用数量: ${response.tool_history.length}\n`
+      textContent += t('sessions.export.toolCallCount', { count: response.tool_history.length }) + '\n'
     }
-    
+
     textContent += '\n'
-    
-    // 重要说明（更新为不包含系统提示词）
-    textContent += '⚠️ 重要说明\n'
+
+    // 导出内容不含系统提示词，这一点必须在文件里写明
+    textContent += t('sessions.export.noticeTitle') + '\n'
     textContent += '-'.repeat(80) + '\n'
-    textContent += '此导出仅包含用户和助手的对话内容，不包含系统提示词。\n'
-    textContent += '工具调用历史为全局记录，可能包含其他会话的工具调用。\n\n'
-    
+    textContent += t('sessions.export.noticeBody') + '\n'
+    textContent += t('sessions.export.noticeToolHistory') + '\n\n'
+
     // 工具执行历史
     if (response.tool_history && response.tool_history.length > 0) {
       textContent += '='.repeat(80) + '\n'
-      textContent += '工具执行历史 (Tool Execution History)\n'
+      textContent += t('sessions.export.toolHistoryTitle') + '\n'
       textContent += '='.repeat(80) + '\n\n'
-      
+
       response.tool_history.forEach((tool, index) => {
-        const status = tool.success ? '✓ 成功' : '✗ 失败'
-        const time = tool.timestamp ? new Date(tool.timestamp).toLocaleString('zh-CN') : '未知'
-        const duration = tool.duration ? `${tool.duration.toFixed(2)}ms` : '未知'
-        
-        textContent += `[工具 ${index + 1}] ${tool.tool} ${status}\n`
-        textContent += `时间: ${time}\n`
-        textContent += `耗时: ${duration}\n`
-        textContent += `参数: ${JSON.stringify(tool.arguments, null, 2)}\n`
-        
+        const status = tool.success ? t('sessions.export.toolSuccess') : t('sessions.export.toolFailed')
+        const time = tool.timestamp ? formatTime(tool.timestamp) : t('sessions.export.unknown')
+        const duration = tool.duration ? `${tool.duration.toFixed(2)}ms` : t('sessions.export.unknown')
+
+        textContent += t('sessions.export.toolIndex', { index: index + 1, tool: tool.tool, status }) + '\n'
+        textContent += t('sessions.export.time', { time }) + '\n'
+        textContent += t('sessions.export.duration', { duration }) + '\n'
+        textContent += t('sessions.export.arguments', { args: JSON.stringify(tool.arguments, null, 2) }) + '\n'
+
         if (tool.success && tool.result) {
-          textContent += `结果:\n${tool.result}\n`
+          textContent += `${t('sessions.export.result')}\n${tool.result}\n`
         } else if (tool.error) {
-          textContent += `错误: ${tool.error}\n`
+          textContent += t('sessions.export.error', { error: tool.error }) + '\n'
         }
-        
+
         textContent += '\n'
       })
     }
-    
+
     // 对话历史（过滤掉系统提示词）
     textContent += '='.repeat(80) + '\n'
-    textContent += '对话历史 (Conversation History)\n'
+    textContent += t('sessions.export.conversationTitle') + '\n'
     textContent += '='.repeat(80) + '\n\n'
-    
+
     userMessages.forEach((msg, index) => {
-      const role = msg.role === 'user' ? '👤 用户' : '🤖 AI助手'
-      const time = new Date(msg.created_at).toLocaleString('zh-CN')
-      
-      textContent += `[消息 ${index + 1}] ${role}\n`
-      textContent += `时间: ${time}\n`
+      const role = msg.role === 'user' ? t('sessions.export.roleUser') : t('sessions.export.roleAi')
+      const time = formatTime(msg.created_at)
+
+      textContent += t('sessions.export.messageIndex', { index: index + 1, role }) + '\n'
+      textContent += t('sessions.export.time', { time }) + '\n'
       textContent += `ID: ${msg.id}\n`
       textContent += '-'.repeat(80) + '\n'
       textContent += msg.content + '\n\n'
     })
-    
+
     textContent += '='.repeat(80) + '\n'
-    textContent += `导出完成 - 共 ${userMessages.length} 条消息`
-    if (response.tool_history && response.tool_history.length > 0) {
-      textContent += `，${response.tool_history.length} 次工具调用`
-    }
+    textContent += response.tool_history && response.tool_history.length > 0
+      ? t('sessions.export.completedWithTools', { messages: userMessages.length, tools: response.tool_history.length })
+      : t('sessions.export.completed', { count: userMessages.length })
     textContent += '\n'
     textContent += '='.repeat(80) + '\n'
-    
     // 创建并下载文件
     const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)

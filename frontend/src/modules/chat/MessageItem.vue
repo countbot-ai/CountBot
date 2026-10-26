@@ -54,11 +54,11 @@
                 v-if="shouldFetchHistoryToolCalls && !historyToolCallsLoaded && !historyToolCallsLoading"
                 class="tool-calls-note"
               >
-                为避免历史消息卡顿，工具调用按需加载。
+                {{ $t('chat.toolCallsLazyHint') }}
               </p>
               <div v-if="historyToolCallsLoading" class="tool-calls-note">
                 <component :is="Loader2Icon" :size="13" class="spin" />
-                <span>工具调用加载中...</span>
+                <span>{{ $t('chat.toolCallsLoading') }}</span>
               </div>
               <p v-if="historyToolCallsError" class="tool-calls-error">{{ historyToolCallsError }}</p>
 
@@ -90,7 +90,7 @@
                 v-if="historyToolCallsLoaded && regularToolCalls.length === 0 && hasSpecialVisibleToolCalls"
                 class="tool-calls-note"
               >
-                特殊工具调用已在下方工作流或子代理面板展示。
+                {{ $t('chat.toolCallsMovedHint') }}
               </p>
               <button
                 v-if="canLoadMoreToolCalls"
@@ -98,7 +98,7 @@
                 :disabled="historyToolCallsLoading"
                 @click.stop="loadMoreToolCalls"
               >
-                加载更多工具调用 ({{ loadedToolCallCount }}/{{ totalToolCallCount }})
+                {{ $t('chat.loadMoreToolCalls', { loaded: loadedToolCallCount, total: totalToolCallCount }) }}
               </button>
             </div>
           </transition>
@@ -145,7 +145,7 @@
                   @click.stop="wfCompareMode[toolCall.id] = false"
                 >
                   <component :is="ListIcon" :size="13" />
-                  <span>列表</span>
+                  <span>{{ $t('chat.workflowPanel.listView') }}</span>
                 </button>
                 <button
                   type="button"
@@ -153,12 +153,12 @@
                   @click.stop="wfCompareMode[toolCall.id] = true"
                 >
                   <component :is="LayoutGridIcon" :size="13" />
-                  <span>并排</span>
+                  <span>{{ $t('chat.workflowPanel.sideBySide') }}</span>
                 </button>
                 <button
                   type="button"
                   class="team-run-toolbar-icon"
-                  title="全屏查看"
+                  :title="$t('chat.workflowPanel.viewFullscreen')"
                   @click.stop="openFullscreen(toolCall)"
                 >
                   <component :is="MaximizeIcon" :size="13" />
@@ -272,7 +272,7 @@
           <button
             v-if="message.role === 'assistant'"
             class="action-btn"
-            :title="$t('chat.replay') || '重放'"
+            :title="$t('chat.replay')"
             @click="handleReplay"
           >
             <component
@@ -305,7 +305,7 @@
           </button>
           <button
             class="action-btn action-btn-delete"
-            :title="$t('chat.deleteMessage') || '删除消息'"
+            :title="$t('chat.deleteMessage')"
             @click="handleDelete"
           >
             <component
@@ -523,7 +523,7 @@ const loadHistoryToolCalls = async (append = false) => {
     historyToolCallsLoaded.value = true
   } catch (error) {
     console.error('[MessageItem] 加载工具调用失败:', error)
-    historyToolCallsError.value = '工具调用加载失败，请重试'
+    historyToolCallsError.value = t('chat.toolCallsLoadFailed')
     toast.error(historyToolCallsError.value)
   } finally {
     historyToolCallsLoading.value = false
@@ -1003,7 +1003,7 @@ const handleRegenerate = () => {
 }
 
 const handleDelete = () => {
-  if (confirm(t('chat.confirmDeleteMessage') || '确定要删除这条消息吗？')) {
+  if (confirm(t('chat.confirmDeleteMessage'))) {
     emit('delete', props.message.id)
   }
 }

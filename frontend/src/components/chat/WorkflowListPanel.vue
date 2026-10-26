@@ -18,7 +18,7 @@
           <span class="team-member-status-dot" />
         </span>
         <span class="team-member-name">{{ agent.label }}</span>
-        <span v-if="agent.toolCalls?.length" class="team-member-meta">{{ agent.toolCalls.length }} 个步骤</span>
+        <span v-if="agent.toolCalls?.length" class="team-member-meta">{{ $t('chat.workflowPanel.stepCount', { n: agent.toolCalls.length }) }}</span>
         <component
           :is="ChevronRightIcon"
           :size="12"

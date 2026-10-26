@@ -95,7 +95,7 @@
                       <span class="send-media-file-name">{{ getFileName(filePath) }}</span>
                       <button
                         class="send-media-download-btn"
-                        :title="$t('chat.download') || '下载'"
+                        :title="$t('chat.download')"
                         @click.stop="handleDownloadFile(filePath)"
                       >
                         <component :is="DownloadIcon" :size="13" />
@@ -529,9 +529,9 @@ const handleDownloadFile = async (path: string) => {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(blobUrl)
-    toast.success(t('common.downloaded') || '下载成功')
+    toast.success(t('common.downloaded'))
   } catch {
-    toast.error(t('common.downloadFailed') || '下载失败')
+    toast.error(t('common.downloadFailed'))
   }
 }
 </script>

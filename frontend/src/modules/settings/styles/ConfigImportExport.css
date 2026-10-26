@@ -104,16 +104,8 @@
   height: 40px;
   border-radius: var(--radius-md);
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-bg-tertiary) 100%);
-  color: white;
-}
-
-.header-icon.export {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-bg-tertiary) 100%);
-}
-
-.header-icon.import {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-bg-tertiary) 100%);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 .header-text {

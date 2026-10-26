@@ -7,8 +7,8 @@
           <div class="wf-fullscreen-header">
             <div class="wf-fullscreen-title">
               <component :is="NetworkIcon" :size="20" />
-              <h3>多智能体工作流详情</h3>
-              <span class="wf-fullscreen-count">{{ agentCount }} 个成员</span>
+              <h3>{{ $t('chat.workflowPanel.detailTitle') }}</h3>
+              <span class="wf-fullscreen-count">{{ $t('chat.workflowPanel.agentCount', { n: agentCount }) }}</span>
             </div>
             
             <div class="wf-fullscreen-controls">
@@ -20,7 +20,7 @@
                   @click="viewMode = 'grid'"
                 >
                   <component :is="LayoutGridIcon" :size="16" />
-                  <span>并排视图</span>
+                  <span>{{ $t('chat.workflowPanel.sideBySide') }}</span>
                 </button>
                 <button
                   class="wf-view-btn"
@@ -28,7 +28,7 @@
                   @click="viewMode = 'list'"
                 >
                   <component :is="ListIcon" :size="16" />
-                  <span>列表视图</span>
+                  <span>{{ $t('chat.workflowPanel.listView') }}</span>
                 </button>
               </div>
               

@@ -10,7 +10,8 @@ import {
     type SupportedLocale,
     getStoredLocale,
     setStoredLocale,
-    normalizeLocale
+    normalizeLocale,
+    detectSystemLanguage
 } from '@/i18n/utils/detector'
 import { useFormatter } from '@/i18n/utils/formatter'
 
@@ -74,15 +75,10 @@ export function useI18n() {
     }
 
     /**
-     * 初始化语言设置
+     * 初始化语言设置（优先级与 i18n/index.ts 的启动逻辑一致：存储 > 系统 > 兜底）
      */
     function initLocale() {
-        const stored = getStoredLocale()
-        if (stored) {
-            setLocale(stored)
-        } else {
-            setLocale('en-US')
-        }
+        setLocale(getStoredLocale() || detectSystemLanguage())
     }
 
     /**

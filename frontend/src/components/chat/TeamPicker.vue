@@ -3,10 +3,10 @@
     <div v-if="show" class="team-picker">
       <div class="team-picker-header">
         <component :is="UsersIcon" :size="13" />
-        选择团队
+        {{ $t('chat.teamPicker.title') }}
       </div>
       <div v-if="filteredTeams.length === 0" class="team-picker-empty">
-        无匹配团队
+        {{ $t('chat.teamPicker.empty') }}
       </div>
       <button
         v-for="(team, i) in filteredTeams"
@@ -23,6 +23,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Users as UsersIcon } from 'lucide-vue-next'
 import type { AgentTeam } from '@/store/agentTeams'
 
@@ -40,11 +42,16 @@ interface Emits {
 
 defineEmits<Emits>()
 
-const modeLabelMap: Record<string, string> = {
-  pipeline: '流水线',
-  graph: '依赖图',
-  council: '多视角评审',
-}
+const { t } = useI18n()
+
+/**
+ * 模式徽标文案：复用工作流面板的模式词表，避免两处维护同一组中文标签。
+ */
+const modeLabelMap = computed<Record<string, string>>(() => ({
+  pipeline: t('chat.workflowPanel.modes.pipeline'),
+  graph: t('chat.workflowPanel.modes.graph'),
+  council: t('chat.workflowPanel.modes.council'),
+}))
 </script>
 
 <style scoped>

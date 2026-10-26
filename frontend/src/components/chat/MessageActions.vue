@@ -7,7 +7,7 @@
       <button
         v-if="message.role === 'assistant'"
         class="action-btn"
-        :title="$t('chat.replay') || '重放'"
+        :title="$t('chat.replay')"
         @click="$emit('replay')"
       >
         <component :is="isReplaying ? SquareIcon : PlayIcon" :size="14" />
@@ -30,7 +30,7 @@
       </button>
       <button
         class="action-btn action-btn-delete"
-        :title="$t('chat.deleteMessage') || '删除消息'"
+        :title="$t('chat.deleteMessage')"
         @click="$emit('delete')"
       >
         <component :is="TrashIcon" :size="14" />

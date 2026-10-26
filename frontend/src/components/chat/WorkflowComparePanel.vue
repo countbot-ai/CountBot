@@ -33,7 +33,7 @@
           <!-- 工具调用头部 -->
           <div class="wf-tools-header" @click.stop="toggleAgentTools(agent.id)">
             <component :is="WrenchIcon" :size="14" class="wf-tools-icon" />
-            <span class="wf-tools-title">工具调用</span>
+            <span class="wf-tools-title">{{ $t('chat.workflowPanel.toolCalls') }}</span>
             <span class="wf-tools-count">{{ agent.toolCalls.length }}</span>
             <component :is="ChevronDownIcon" :size="14" class="wf-tools-chevron" :class="{ expanded: isAgentToolsOpen(agent.id) }" />
           </div>

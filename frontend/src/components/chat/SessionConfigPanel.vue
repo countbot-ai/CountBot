@@ -39,7 +39,7 @@
               </label>
               <div v-if="useCustomConfig" class="config-badge">
                 <Sparkles :size="14" />
-                <span>自定义</span>
+                <span>{{ $t('chat.sessionConfig.customBadge') }}</span>
               </div>
             </div>
           </div>
@@ -110,7 +110,7 @@
                       v-model="modelConfig.api_key"
                       type="password"
                       :placeholder="$t('chat.sessionConfig.leaveEmptyForGlobal')"
-                      hint="留空将使用全局配置的 API 密钥"
+                      :hint="$t('chat.sessionConfig.apiKeyHint')"
                     />
                   </div>
 
@@ -120,7 +120,7 @@
                       v-model="modelConfig.api_base"
                       type="text"
                       :placeholder="$t('chat.sessionConfig.leaveEmptyForGlobal')"
-                      hint="留空将使用全局配置的 API 地址"
+                      :hint="$t('chat.sessionConfig.apiBaseHint')"
                     />
                   </div>
 
@@ -163,12 +163,12 @@
               <div class="form-grid">
                 <div class="form-group">
                   <label>{{ $t('settings.persona.aiName') }}</label>
-                  <input v-model="personaConfig.ai_name" type="text" class="text-input" placeholder="小C" />
+                  <input v-model="personaConfig.ai_name" type="text" class="text-input" :placeholder="$t('settings.persona.aiNamePlaceholder')" />
                 </div>
 
                 <div class="form-group">
                   <label>{{ $t('settings.persona.userName') }}</label>
-                  <input v-model="personaConfig.user_name" type="text" class="text-input" placeholder="主人" />
+                  <input v-model="personaConfig.user_name" type="text" class="text-input" :placeholder="$t('settings.persona.userNamePlaceholder')" />
                 </div>
 
                 <div class="form-group full-width">
@@ -205,7 +205,7 @@
                   type="button"
                 >
                   <ChevronDown :size="16" />
-                  <span>展开更多性格</span>
+                  <span>{{ $t('chat.sessionConfig.showAllPersonalities') }}</span>
                 </button>
                 <button
                   v-else-if="canTogglePersonalities"
@@ -214,7 +214,7 @@
                   type="button"
                 >
                   <ChevronDown :size="16" style="transform: rotate(180deg)" />
-                  <span>收起</span>
+                  <span>{{ $t('chat.sessionConfig.collapse') }}</span>
                 </button>
               </div>
 
@@ -287,12 +287,12 @@
               <Globe :size="48" />
             </div>
             <h4>{{ $t('chat.sessionConfig.usingGlobalDefaults') }}</h4>
-            <p>启用自定义配置以为此会话设置专属的模型和角色</p>
+            <p>{{ $t('chat.sessionConfig.usingGlobalDefaultsDesc') }}</p>
           </div>
         </div>
 
         <!-- Fixed Footer -->
-        <div v-if="useCustomConfig" class="modal-footer">
+        <div class="modal-footer">
           <button @click="saveConfig" class="btn-primary" :disabled="saving">
             <Save :size="16" v-if="!saving" />
             <Loader2 :size="16" class="spin" v-if="saving" />
@@ -428,7 +428,7 @@ const emit = defineEmits<{
   (e: 'updated', action: SessionConfigUpdateAction): void
 }>()
 
-const useCustomConfig = ref(false)
+const useCustomConfig = ref(true)
 const saving = ref(false)
 const testing = ref(false)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
@@ -705,10 +705,12 @@ async function loadConfig() {
   try {
     const config = await chatAPI.getSessionConfig(props.sessionId)
     globalModelDefaults.value = normalizeModelConfig(config.global_defaults.model)
+    // 面板打开后默认开启「使用自定义配置」：已有保存的会话配置就回填，
+    // 否则用全局默认值预填；只有点击保存才会真正写入。
     if (config.use_custom_config) {
       applyConfig(config.model_config, config.persona_config, true)
     } else {
-      applyConfig(config.global_defaults.model, config.global_defaults.persona, false)
+      applyConfig(config.global_defaults.model, config.global_defaults.persona, true)
     }
   } catch (error) {
     console.error('Failed to load session config:', error)
@@ -717,13 +719,15 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
-  // 如果用户点击保存，说明要使用自定义配置
-  if (!useCustomConfig.value) {
-    useCustomConfig.value = true
-  }
-  
   saving.value = true
   try {
+    // 开关关闭时点击保存 = 提交「使用全局默认配置」
+    if (!useCustomConfig.value) {
+      await chatAPI.resetSessionConfig(props.sessionId)
+      emit('updated', 'reset')
+      return
+    }
+
     normalizeSessionHistoryLimitInput()
     const modelOverrides = buildModelConfigOverrides<SessionModelConfig>(
       modelConfig.value,
@@ -762,12 +766,10 @@ async function resetToDefaults() {
   }
 }
 
-async function onToggleCustomConfig() {
+function onToggleCustomConfig() {
   if (!useCustomConfig.value) {
-    const reset = await resetToDefaults()
-    if (!reset) {
-      useCustomConfig.value = true
-    }
+    // 关闭开关只是草稿状态：直接关闭面板会恢复原配置，
+    // 点击保存才会真正重置为全局默认。
     return
   }
 

@@ -29,17 +29,17 @@
                   v-model="useCustomModel"
                   :width="48"
                   :height="28"
-                  aria-label="为此团队使用自定义模型"
+                  :aria-label="$t('chat.teamConfig.useCustomModel')"
                   @change="onToggleCustomModel"
                 />
                 <div class="toggle-content">
-                  <span class="toggle-text">为此团队使用自定义模型</span>
-                  <span class="toggle-hint">团队成员将使用此配置的模型和 API</span>
+                  <span class="toggle-text">{{ $t('chat.teamConfig.useCustomModel') }}</span>
+                  <span class="toggle-hint">{{ $t('chat.teamConfig.useCustomModelHint') }}</span>
                 </div>
               </label>
               <div v-if="useCustomModel" class="config-badge">
                 <Sparkles :size="14" />
-                <span>自定义</span>
+                <span>{{ $t('chat.teamConfig.customBadge') }}</span>
               </div>
             </div>
           </div>
@@ -103,7 +103,7 @@
                       class="text-input"
                     />
                     <p class="hint">
-                      {{ globalDefaults?.api_key ? '✓ 全局已配置 API 密钥' : '⚠️ 全局未配置 API 密钥' }}
+                      {{ globalDefaults?.api_key ? $t('chat.teamConfig.globalKeySet') : $t('chat.teamConfig.globalKeyMissing') }}
                     </p>
                   </div>
 
@@ -116,7 +116,7 @@
                       class="text-input"
                     />
                     <p class="hint">
-                      {{ globalDefaults?.api_base ? `✓ 全局配置: ${globalDefaults.api_base}` : '⚠️ 全局未配置 Base URL' }}
+                      {{ globalDefaults?.api_base ? $t('chat.teamConfig.globalBaseSet', { url: globalDefaults.api_base }) : $t('chat.teamConfig.globalBaseMissing') }}
                     </p>
                   </div>
 
@@ -151,8 +151,8 @@
             <div class="empty-icon">
               <Globe :size="48" />
             </div>
-            <h4>使用全局默认配置</h4>
-            <p>启用自定义配置以为此团队设置专属的模型和 API</p>
+            <h4>{{ $t('chat.teamConfig.usingGlobalDefaults') }}</h4>
+            <p>{{ $t('chat.teamConfig.usingGlobalDefaultsDesc') }}</p>
           </div>
         </div>
 
@@ -161,11 +161,11 @@
           <button @click="saveConfig" class="btn-primary" :disabled="saving">
             <Save :size="16" v-if="!saving" />
             <Loader2 :size="16" class="spin" v-if="saving" />
-            <span>{{ saving ? '保存中...' : '保存' }}</span>
+            <span>{{ saving ? $t('chat.teamConfig.saving') : $t('chat.teamConfig.save') }}</span>
           </button>
           <button @click="resetToDefaults" class="btn-secondary">
             <RotateCcw :size="16" />
-            <span>重置为默认</span>
+            <span>{{ $t('chat.teamConfig.resetToDefault') }}</span>
           </button>
         </div>
       </div>
@@ -242,7 +242,7 @@ async function loadProviders() {
     ensureValidProviderSelection()
   } catch (error) {
     console.error('Failed to load providers:', error)
-    toast.error('加载服务商列表失败')
+    toast.error(t('chat.teamConfig.loadProvidersFailed'))
   }
 }
 
@@ -354,7 +354,7 @@ async function loadConfig() {
     }
   } catch (error) {
     console.error('Failed to load team config:', error)
-    toast.error('加载团队配置失败')
+    toast.error(t('chat.teamConfig.loadFailed'))
   }
 }
 
@@ -372,30 +372,30 @@ async function saveConfig() {
     )
 
     await agentTeamsApi.updateConfig(props.teamId, configToSave)
-    toast.success('团队配置已保存')
+    toast.success(t('chat.teamConfig.saved'))
     emit('updated')
   } catch (error) {
     console.error('Failed to save config:', error)
-    toast.error('保存配置失败')
+    toast.error(t('chat.teamConfig.saveFailed'))
   } finally {
     saving.value = false
   }
 }
 
 async function resetToDefaults() {
-  if (!confirm('确定要重置为全局默认配置吗？')) {
+  if (!confirm(t('chat.teamConfig.resetConfirm'))) {
     return false
   }
 
   try {
     await agentTeamsApi.resetConfig(props.teamId)
     await loadConfig()
-    toast.success('已重置为默认配置')
+    toast.success(t('chat.teamConfig.resetDone'))
     emit('updated')
     return true
   } catch (error) {
     console.error('Failed to reset config:', error)
-    toast.error('重置配置失败')
+    toast.error(t('chat.teamConfig.resetFailed'))
     return false
   }
 }
