@@ -86,6 +86,23 @@
             @keydown="handleKeydown"
             @paste="handlePaste"
           />
+
+          <!-- 模型选择器内嵌在输入框底部，与输入区同一边框 -->
+          <div v-if="showModelPicker" class="composer-footer">
+            <ModelPicker
+              :groups="modelGroups || []"
+              :provider-id="activeProviderId"
+              :model-id="activeModelId"
+              :is-session-override="isSessionOverride"
+              @select="handleModelSelect"
+            />
+            <ReasoningLevelSelect
+              v-if="showReasoningLevelSelect"
+              :levels="reasoningLevels || []"
+              :model-value="activeReasoningLevel"
+              @change="(level) => emit('select-reasoning-level', level)"
+            />
+          </div>
         </div>
 
         <div class="input-actions">
@@ -121,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   AlertCircle as AlertCircleIcon,
   File as FileIcon,
@@ -134,6 +151,9 @@ import {
   X as XIcon,
 } from 'lucide-vue-next'
 import TeamPicker from './TeamPicker.vue'
+import ModelPicker from './ModelPicker.vue'
+import ReasoningLevelSelect from './ReasoningLevelSelect.vue'
+import type { ModelPickerGroup } from './ModelPicker.vue'
 import type { AgentTeam } from '@/store/agentTeams'
 import type { ComposerAttachment } from '@/composables/useChatAttachments'
 
@@ -148,6 +168,14 @@ interface Props {
   isMac: () => boolean
   attachments: ComposerAttachment[]
   isUploadingAttachments: boolean
+  /** 模型选择器数据；为空数组时不渲染工具栏 */
+  modelGroups?: ModelPickerGroup[]
+  activeProviderId?: string
+  activeModelId?: string
+  isSessionOverride?: boolean
+  /** 当前模型的思考档位；为空数组时不渲染「思考强度」下拉 */
+  reasoningLevels?: string[]
+  activeReasoningLevel?: string | null
 }
 
 const props = defineProps<Props>()
@@ -160,6 +188,8 @@ interface Emits {
   (e: 'team-select', team: AgentTeam): void
   (e: 'files-selected', files: File[]): void
   (e: 'remove-attachment', id: string): void
+  (e: 'select-model', providerId: string, modelId: string): void
+  (e: 'select-reasoning-level', level: string): void
 }
 
 const emit = defineEmits<Emits>()
@@ -174,6 +204,16 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 const handleTeamSelect = (team: AgentTeam) => {
   emit('team-select', team)
+}
+
+const showModelPicker = computed(() => (props.modelGroups?.length ?? 0) > 0)
+
+const showReasoningLevelSelect = computed(
+  () => showModelPicker.value && (props.reasoningLevels?.length ?? 0) > 0,
+)
+
+const handleModelSelect = (providerId: string, modelId: string) => {
+  emit('select-model', providerId, modelId)
 }
 
 const openFileDialog = () => {

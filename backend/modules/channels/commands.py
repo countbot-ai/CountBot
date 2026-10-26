@@ -300,7 +300,10 @@ class ChannelCommandMixin:
         from backend.modules.providers.registry import get_provider_metadata
         from backend.modules.providers.runtime import get_provider_runtime_state
         from backend.modules.config.loader import config_loader
-        from backend.modules.session.runtime_config import resolve_session_runtime_config
+        from backend.modules.session.runtime_config import (
+            SESSION_MODEL_SOURCE_CHANNEL_COMMAND,
+            resolve_session_runtime_config,
+        )
         from sqlalchemy import select
         import json
         
@@ -436,9 +439,12 @@ class ChannelCommandMixin:
             # 并不读取 api_key/api_base（密钥始终在运行时从 provider 配置解析），
             # 把它们写进 session_model_config 只是明文落库的泄漏面，
             # 且 Web 端轮换密钥后此处会残留旧值。
+            # source 标记是「用户显式设置会话模型」的凭据：没有标记的历史绑定会被
+            # resolve_session_runtime_config 视为失效、回落全局默认模型。
             model_config = {
                 "provider": provider_id,
                 "model": model_name,
+                "source": SESSION_MODEL_SOURCE_CHANNEL_COMMAND,
             }
             
             session.session_model_config = json.dumps(model_config, ensure_ascii=False)

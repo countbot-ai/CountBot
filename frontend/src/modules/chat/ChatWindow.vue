@@ -87,8 +87,16 @@
       @stop="stopGeneration"
       @keydown="(e) => handleKeydown(e, filteredTeams, sendMessage)"
       @team-select="selectTeam"
+      :model-groups="modelGroups"
+      :active-provider-id="modelSelection.currentProviderId.value"
+      :active-model-id="modelSelection.currentModelId.value"
+      :is-session-override="modelSelection.isSessionOverride.value"
+      :reasoning-levels="reasoningLevels"
+      :active-reasoning-level="modelSelection.currentReasoningLevel.value"
       @files-selected="handleComposerFiles"
       @remove-attachment="removeAttachment"
+      @select-model="handleSelectModel"
+      @select-reasoning-level="handleSelectReasoningLevel"
     />
 
     <!-- Drag and Drop Overlay -->
@@ -207,10 +215,12 @@ import { useChatInput } from '@/composables/useChatInput'
 import { useQueuedMessages } from '@/modules/chat/composables/useQueuedMessages'
 import { useSessionHistoryLoader } from '@/modules/chat/composables/useSessionHistoryLoader'
 import { useChatRealtime } from '@/modules/chat/composables/useChatRealtime'
+import { useSessionModelSelection } from '@/modules/chat/composables/useSessionModelSelection'
 
 import { useI18n } from 'vue-i18n'
 import { useChatStore } from '@/store/chat'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
+import { useSettingsStore } from '@/store/settings'
 import { useToast } from '@/composables/useToast'
 import { useKeyboard, commonShortcuts } from '@/composables/useKeyboard'
 import { queueAPI } from '@/api/endpoints'
@@ -412,6 +422,7 @@ useChatRealtime({
 watch(() => chatStore.currentSessionId, (newSessionId, oldSessionId) => {
   clearAttachments()
   if (newSessionId) {
+    modelSelection.loadSessionSelection(newSessionId).catch(() => {})
     // 只有在真正切换会话时才清空消息
     // 如果是首次加载（oldSessionId 为 undefined），不清空（可能有缓存）
     const shouldClear = oldSessionId !== undefined && oldSessionId !== newSessionId
@@ -442,6 +453,44 @@ const sendMessage = () => {
 const handleComposerFiles = async (files: File[]) => {
   await addFiles(files, chatStore.currentSessionId)
 }
+
+// 输入框里的模型切换：写全局默认模型（持久化），会话已有自定义时同步该会话
+const settingsStore = useSettingsStore()
+const modelSelection = useSessionModelSelection()
+const modelGroups = computed(() => modelSelection.groups.value)
+
+const handleSelectModel = async (providerId: string, modelId: string) => {
+  try {
+    await modelSelection.selectModel(chatStore.currentSessionId || '', providerId, modelId)
+  } catch (error: any) {
+    toast.error(error?.response?.data?.detail || t('chat.modelPicker.switchFailed'))
+  }
+}
+
+const reasoningLevels = computed(() => modelSelection.reasoningLevels.value)
+
+// 输入框里的思考强度：只写会话自定义配置的覆盖值，不改模型条目默认
+const handleSelectReasoningLevel = async (level: string) => {
+  try {
+    await modelSelection.selectReasoningLevel(chatStore.currentSessionId || '', level)
+  } catch (error: any) {
+    toast.error(error?.response?.data?.detail || t('chat.reasoningLevel.saveFailed'))
+  }
+}
+
+/**
+ * 设置页保存后刷新下拉数据。
+ * 否则刚加好的供应商/模型要刷新页面才能在对话窗口里选到。
+ */
+watch(
+  () => settingsStore.persistedSettings,
+  persisted => {
+    if (persisted) {
+      modelSelection.refreshOptions().catch(() => {})
+    }
+  },
+  { deep: false },
+)
 
 const handleDragEnter = (event: DragEvent) => {
   if (!isConnected.value) return
@@ -593,6 +642,10 @@ const closePreviewModal = () => {
 // 面板管理
 const showPanel = (panel: Exclude<PanelType, null>) => {
   activePanel.value = panel
+  // 设置页信息密度高（左栏供应商 + 右栏卡片 + 模型清单），默认以最宽打开
+  if (panel === 'settings') {
+    panelWidth.value = clampPanelWidth(maxPanelWidth)
+  }
 }
 
 const closePanel = () => {
@@ -778,6 +831,7 @@ onMounted(async () => {
     
     await chatStore.loadSessions()
     agentTeamsStore.loadTeams().catch(() => {})
+    await modelSelection.loadGlobalDefaults().catch(() => {})
     
     if (chatStore.sessions.length === 0) {
       await chatStore.createSession()
@@ -787,6 +841,7 @@ onMounted(async () => {
     
     if (chatStore.currentSessionId) {
       initializeChat(chatStore.currentSessionId, false)  // 首次加载不清空
+      modelSelection.loadSessionSelection(chatStore.currentSessionId).catch(() => {})
     }
     
     // 监听页面刷新/关闭，缓存当前消息

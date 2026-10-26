@@ -1,0 +1,291 @@
+/* ModelPicker - 输入框里的模型下拉：供应商 -> 模型 两级 */
+
+.model-picker {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+}
+
+.model-picker-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 240px;
+    padding: 1px 6px 1px 2px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    line-height: 1.6;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.model-picker-trigger:hover {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+}
+
+.model-picker-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 170px;
+}
+
+.model-picker-badge {
+    flex-shrink: 0;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 10px;
+    color: var(--color-accent);
+    background: var(--color-accent-alpha);
+}
+
+.model-picker-caret {
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+/* ---------- 弹层 ---------- */
+
+.model-picker-popover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    width: 520px;
+    max-width: min(520px, calc(100vw - 24px));
+    padding: 8px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: 12px;
+    background: var(--color-bg-elevated);
+    box-shadow: var(--shadow-md);
+    text-align: left;
+}
+
+.model-picker-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--color-bg-secondary);
+}
+
+.model-picker-search-icon {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+}
+
+.model-picker-search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    outline: none;
+}
+
+/**
+ * 左供应商 / 右模型。
+ * 固定高度：切换供应商时内容长短不一，如果让容器自适应高度，
+ * 弹层会上下伸缩把鼠标下的那一行挤走，进而反复触发 mouseenter —— 看起来就是剧烈抖动。
+ */
+.model-picker-body {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 6px;
+    margin-top: 6px;
+    height: 296px;
+}
+
+.model-picker-providers {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 2px;
+    border-right: 1px solid var(--color-border-primary);
+    /* 滚动条出现/消失不再改变列宽，避免相邻区域左右抖动 */
+    scrollbar-gutter: stable;
+}
+
+.model-picker-provider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: 5px 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.model-picker-provider:hover {
+    background: var(--color-bg-secondary);
+}
+
+.model-picker-provider.is-active {
+    border-color: var(--color-border-secondary);
+    background: var(--color-bg-secondary);
+}
+
+.model-picker-provider-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+}
+
+.model-picker-provider-name {
+    font-size: 12px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.model-picker-provider-meta {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.model-picker-provider-check {
+    flex-shrink: 0;
+    color: var(--color-accent);
+}
+
+.model-picker-models {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+/* 模型行的默认图标：无品牌资源时的统一标识 */
+.model-picker-item-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--color-bg-tertiary);
+    color: var(--text-tertiary);
+}
+
+.model-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.model-picker-item:hover {
+    background: var(--color-bg-secondary);
+}
+
+.model-picker-item.is-active {
+    background: var(--color-accent-alpha);
+}
+
+.model-picker-item-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+}
+
+.model-picker-item-name {
+    font-size: 12px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.model-picker-item-id {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.model-picker-item-pill {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 6px;
+    background: var(--color-bg-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.model-picker-check {
+    flex-shrink: 0;
+    color: var(--color-accent);
+}
+
+.model-picker-empty {
+    margin: 0;
+    padding: 16px 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
+}
+
+/* 窄屏：收成单列，先挑供应商再进入模型列表 */
+@media (max-width: 640px) {
+    .model-picker-popover {
+        width: min(360px, calc(100vw - 24px));
+    }
+
+    .model-picker-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .model-picker-providers {
+        flex-direction: row;
+        gap: 4px;
+        height: auto;
+        padding: 0 0 6px;
+        border-right: none;
+        border-bottom: 1px solid var(--color-border-primary);
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    .model-picker-provider {
+        width: auto;
+        flex-shrink: 0;
+    }
+
+    .model-picker-provider-copy {
+        display: none;
+    }
+}

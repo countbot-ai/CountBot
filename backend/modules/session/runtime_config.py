@@ -11,6 +11,23 @@ from loguru import logger
 from backend.modules.config.schema import AppConfig, ModelConfig, PersonaConfig
 from backend.modules.providers.registry import get_provider_metadata
 
+# 会话级模型绑定的合法来源。只有带来源标记的绑定才算「用户显式设置的自定义模型」：
+# - channel_command：渠道命令 /m 写下；
+# - session_panel：前端「会话自定义配置」写下。
+# 老版本在对话窗口选模型会把绑定写进会话，形状与新写入完全一致却没有任何标记；
+# 这类历史绑定一律视为失效、回落全局默认模型（否则会一直钉在已不存在的模型上，
+# 表现为「所选模型不可用」）。
+SESSION_MODEL_SOURCE_CHANNEL_COMMAND = "channel_command"
+SESSION_MODEL_SOURCE_SESSION_PANEL = "session_panel"
+SESSION_MODEL_SOURCES = frozenset(
+    {SESSION_MODEL_SOURCE_CHANNEL_COMMAND, SESSION_MODEL_SOURCE_SESSION_PANEL}
+)
+
+
+def is_explicit_session_model_config(raw_model_overrides: Dict[str, Any]) -> bool:
+    """会话级模型绑定是否来自用户显式设置（带合法来源标记）。"""
+    return _normalized_text(raw_model_overrides.get("source")) in SESSION_MODEL_SOURCES
+
 
 def _normalize_api_mode(value: Any) -> str:
     return "chat_completions"
@@ -30,6 +47,7 @@ class SessionRuntimeConfig:
     max_tokens: int
     max_iterations: int
     thinking_enabled: bool
+    reasoning_level: Optional[str]
     api_key: str
     api_base: Optional[str]
     model_config: ModelConfig
@@ -56,6 +74,7 @@ def build_session_model_override(
         "max_tokens": runtime_config.max_tokens,
         "max_iterations": runtime_config.max_iterations,
         "thinking_enabled": runtime_config.thinking_enabled,
+        "reasoning_level": runtime_config.reasoning_level,
         "supports_image": runtime_config.model_config.supports_image,
         "api_key": runtime_config.api_key,
         "api_base": runtime_config.api_base or "",
@@ -120,6 +139,8 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
     """解析会话最终配置。
 
     优先级：会话配置 > 全局 provider 配置 > provider 默认值（仅 api_base）。
+    会话级模型绑定必须带来源标记（渠道命令 /m 或前端会话配置面板）；
+    没有标记的历史绑定视为失效，回落全局默认模型。
     """
 
     session_id = getattr(session, "id", None)
@@ -134,6 +155,8 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         if use_custom_config
         else {}
     )
+    if raw_model_overrides and not is_explicit_session_model_config(raw_model_overrides):
+        raw_model_overrides = {}
     raw_persona_overrides = (
         _parse_session_json(
             getattr(session, "session_persona_config", None),
@@ -149,7 +172,8 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         normalized = _normalized_text(raw_model_overrides.get(key))
         if normalized is not None:
             effective_model_data[key] = normalized
-    for key in ("temperature", "max_tokens", "max_iterations", "thinking_enabled", "api_mode", "supports_image"):
+    for key in ("temperature", "max_tokens", "max_iterations", "thinking_enabled",
+                "reasoning_level", "api_mode", "supports_image"):
         if raw_model_overrides.get(key) is not None:
             effective_model_data[key] = (
                 _normalize_api_mode(raw_model_overrides[key])
@@ -169,6 +193,13 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
     provider_config = app_config.providers.get(provider_name)
     provider_meta = get_provider_metadata(provider_name)
 
+    # 思考档位优先级：会话覆盖（已在 effective_model_config 里）> 模型条目默认 > 全局设置
+    reasoning_level = _normalized_text(effective_model_config.reasoning_level)
+    if reasoning_level is None and provider_config is not None:
+        model_entry = provider_config.find_model(effective_model_config.model)
+        if model_entry is not None:
+            reasoning_level = _normalized_text(model_entry.reasoning_level)
+
     session_api_key = _normalized_text(raw_model_overrides.get("api_key"))
     session_api_base = _normalized_text(raw_model_overrides.get("api_base"))
 
@@ -185,7 +216,8 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
 
     model_response = app_config.model.model_dump()
     for key, value in raw_model_overrides.items():
-        if key in {"api_key", "api_base"}:
+        # source 是绑定来源元数据，不属于模型配置，不能投影进响应
+        if key in {"api_key", "api_base", "source"}:
             continue
         if isinstance(value, str):
             normalized = _normalized_text(value)
@@ -220,6 +252,7 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         max_tokens=effective_model_config.max_tokens,
         max_iterations=effective_model_config.max_iterations,
         thinking_enabled=effective_model_config.thinking_enabled,
+        reasoning_level=reasoning_level,
         api_key=api_key,
         api_base=api_base,
         model_config=effective_model_config,

@@ -33,6 +33,7 @@ from backend.modules.external_agents.routing import (
     extract_explicit_external_agent_request,
 )
 from backend.modules.session import (
+    SESSION_MODEL_SOURCE_SESSION_PANEL,
     ConversationContextService,
     build_session_model_override,
     resolve_session_runtime_config,
@@ -114,9 +115,15 @@ async def get_session_config(
         runtime_config = resolve_session_runtime_config(config, session)
         global_defaults = resolve_session_runtime_config(config, None)
         
+        # 只有真的存在生效的自定义配置才算「本会话自定义」：失效的历史模型绑定
+        # 会被解析层丢弃，这里不能继续按库里的旧标记回报，否则前端会误显示自定义。
+        has_effective_custom_config = bool(
+            runtime_config.has_custom_model_config or runtime_config.has_custom_persona_config
+        )
+        
         return SessionConfigResponse(
             session_id=session_id,
-            use_custom_config=session.use_custom_config,
+            use_custom_config=has_effective_custom_config,
             model_config=runtime_config.model_response,
             persona_config=runtime_config.persona_response,
             global_defaults={
@@ -172,6 +179,10 @@ async def update_session_config(
         # 更新配置
         if request.model is not None:
             normalized_model = _normalize_session_model_overrides(dict(request.model))
+            if normalized_model:
+                # 打上来源标记：只有带标记的绑定才算用户显式设置的会话模型，
+                # 没有标记的历史绑定会被视为失效、回落全局默认模型。
+                normalized_model["source"] = SESSION_MODEL_SOURCE_SESSION_PANEL
             session.session_model_config = json.dumps(
                 normalized_model,
                 ensure_ascii=False,

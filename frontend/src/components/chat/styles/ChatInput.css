@@ -225,9 +225,18 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   min-height: 34px;
   padding: 0;
+}
+
+/* 输入框底栏：模型选择器贴底左对齐，与输入区共享同一层边框 */
+.composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 1px;
+  min-height: 0;
 }
 
 .chat-input {

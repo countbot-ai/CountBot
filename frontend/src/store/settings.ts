@@ -159,6 +159,28 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     /**
+     * 设置全局默认模型（供应商 + 模型名）并持久化。
+     *
+     * 对话输入框的模型下拉复用这个入口：选中的模型即全局默认，所有没有
+     * 会话/团队级自定义模型的地方都用它，下次进入对话也是它。
+     */
+    async function setGlobalDefaultModel(provider: string, model: string) {
+        saving.value = true
+        error.value = null
+        try {
+            const response = await settingsAPI.update({ model: { provider, model } })
+            settings.value = response
+            persistedSettings.value = cloneSettings(response)
+            return response
+        } catch (err: any) {
+            error.value = err.message || 'Failed to update model'
+            throw err
+        } finally {
+            saving.value = false
+        }
+    }
+
+    /**
      * 更新模型配置
      */
     function updateModel(config: Partial<ModelConfig>) {
@@ -217,6 +239,7 @@ export const useSettingsStore = defineStore('settings', () => {
         testConnection,
         updateProvider,
         updateModel,
+        setGlobalDefaultModel,
         updateWorkspace,
         updateSecurity,
         updateInjection
