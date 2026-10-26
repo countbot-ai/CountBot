@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.models.message import Message
 from backend.models.session import Session
 from backend.modules.agent.memory import MemoryStore
+from backend.modules.memory import Confidence
 from backend.modules.session.usage_recorder import (
     USAGE_KIND_COMPACTION,
     USAGE_KIND_SUMMARY,
@@ -80,7 +81,7 @@ class ContextMaintenanceRequest:
     model: Optional[str]
     message_formatter: MessageFormatter
     memory_store: Optional[MemoryStore]
-    auto_summary_source: str
+    auto_summary_source: Optional[str]
     enable_auto_memory_summary: bool = True
 
 
@@ -359,7 +360,7 @@ class ConversationContextService:
             if chunk.usage:
                 overflow_usage = chunk.usage
 
-        # 后台摘要同样消耗额度，计入用量统计才能反映真实成本
+        # 后台摘要同样消耗额度，需计入用量统计
         if overflow_usage:
             await record_usage(
                 session_id=session_id,
@@ -371,9 +372,14 @@ class ConversationContextService:
 
         summary = "".join(summary_parts).strip()
         if summary and not is_memory_noop(summary):
-            memory_store.append_entry(source="auto-overflow", content=summary)
+            # 溢出摘要是二手推断，可信度低，只落冷存档可检索，不进断言层。
+            memory_store.append_entry(
+                source="auto-overflow",
+                content=summary,
+                confidence=Confidence.INFERRED,
+            )
             logger.info(
-                f"溢出历史已总结并写入记忆 | 会话={session_id} | 历史窗口={max_history_messages}条 "
+                f"溢出历史已总结并存入冷存档 | 会话={session_id} | 历史窗口={max_history_messages}条 "
                 f"| 写入前溢出消息数={len(pending_messages)}\n"
                 f"{_format_log_content('溢出记忆内容', summary)}"
             )
@@ -399,9 +405,14 @@ class ConversationContextService:
         model: Optional[str] = None,
         memory_store: Optional[MemoryStore] = None,
         message_formatter: MessageFormatter = default_message_formatter,
-        source: str = "web-chat",
+        source: Optional[str] = None,
     ) -> bool:
-        """Optionally summarize the whole conversation to long-term memory."""
+        """Optionally summarize the whole conversation to long-term memory.
+
+        Resolve ``source`` from the current turn when empty instead of defaulting
+        to a specific channel, otherwise every summary would be recorded as
+        web-sourced.
+        """
         if provider is None or memory_store is None:
             return False
 
@@ -491,9 +502,10 @@ class ConversationContextService:
             )
             return False
 
-        memory_store.append_entry(source=source, content=summary)
+        # 摘要是推断内容，只能进冷存档；断言层只接受明确声明的事实。
+        memory_store.append_entry(source=source, content=summary, confidence=Confidence.INFERRED)
         logger.info(
-            f"整会话已自动总结并写入记忆 | 会话={session_id} | 消息数={message_count} "
+            f"整会话已自动总结并存入冷存档 | 会话={session_id} | 消息数={message_count} "
             f"| 增量消息数={incremental_message_count}\n"
             f"{_format_log_content('整会话记忆内容', summary)}"
         )
@@ -626,14 +638,15 @@ def schedule_context_maintenance(
     model: Optional[str] = None,
     message_formatter: MessageFormatter = default_message_formatter,
     memory_store: Optional[MemoryStore] = None,
-    auto_summary_source: str = "web-chat",
+    auto_summary_source: Optional[str] = None,
     enable_auto_memory_summary: bool = True,
 ) -> Optional[asyncio.Task[None]]:
     """Schedule post-response maintenance once per session.
 
-    enable_auto_memory_summary=False（injection.auto_memory_summary 关闭）时，
-    跳过溢出历史总结与整会话自动沉淀两类后台 LLM 调用，避免额外 token 消耗；
-    短期上下文摘要缓存仍受 enable_short_context_summary 独立控制。
+    When enable_auto_memory_summary=False (injection.auto_memory_summary off),
+    skip both background LLM calls (overflow summary and whole-session
+    distillation) to save tokens; the short context summary cache is still
+    governed by enable_short_context_summary independently.
     """
     request = ContextMaintenanceRequest(
         db_session_factory=db_session_factory,

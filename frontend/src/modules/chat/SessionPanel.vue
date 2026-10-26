@@ -264,6 +264,18 @@
                 />
               </button>
               <button
+                class="action-btn action-btn-compact"
+                :title="$t('sessions.compactContext')"
+                :disabled="isSummarizing(session.id, 'compact')"
+                @click="handleCompactSession(session)"
+              >
+                <component
+                  :is="CompactIcon"
+                  :size="16"
+                  :class="{ spinning: isSummarizing(session.id, 'compact') }"
+                />
+              </button>
+              <button
                 class="action-btn"
                 :title="$t('sessions.exportSession')"
                 @click="handleExportSession(session.id)"
@@ -310,6 +322,7 @@ import {
   Trash2 as TrashIcon,
   Download as DownloadIcon,
   Brain as BrainIcon,
+  Minimize2 as CompactIcon,
   Settings as SettingsIcon,
   Sparkles as SparklesIcon,
   Search as SearchIcon,
@@ -352,7 +365,8 @@ const SESSION_CHANNELS = new Set([
   'telegram',
   'discord',
   'wechat',
-  'weibo'
+  'weibo',
+  'serverchan'
 ])
 
 const currentSessionChannelMeta = computed(() => parseSessionChannelMeta(currentSessionName.value))
@@ -523,7 +537,7 @@ function formatSearchSnippet(snippet: string): string {
 }
 
 // 正在总结的会话 ID
-type SummaryTarget = 'long-term'
+type SummaryTarget = 'long-term' | 'compact'
 
 const summarizeState = ref<{ sessionId: string; target: SummaryTarget } | null>(null)
 
@@ -886,6 +900,33 @@ async function handleSummarizeSession(session: Session, target: SummaryTarget) {
 
 async function handleSummarizeToMemory(session: Session) {
   await handleSummarizeSession(session, 'long-term')
+}
+
+async function handleCompactSession(session: Session) {
+  if (summarizeState.value) return
+
+  const confirmed = confirm(t('sessions.confirmCompact'))
+  if (!confirmed) return
+
+  summarizeState.value = { sessionId: session.id, target: 'compact' }
+
+  try {
+    const result = await chatAPI.compactSessionContext(session.id)
+    if (result.success) {
+      toast.success(result.message || t('sessions.compactSuccess'))
+    } else {
+      toast.info(result.message || t('sessions.compactNoop'))
+    }
+  } catch (error: any) {
+    console.error('Failed to compact session:', error)
+    const errorMsg =
+      error.response?.data?.detail
+      || error.message
+      || t('sessions.compactError')
+    toast.error(errorMsg)
+  } finally {
+    summarizeState.value = null
+  }
 }
 
 

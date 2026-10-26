@@ -94,6 +94,7 @@ class AgentLoop:
         temperature: float = 0.0,
         max_tokens: int = 4096,
         thinking_enabled: bool = True,
+        reasoning_level: Optional[str] = None,
     ):
         self.provider = provider
         self.workspace = workspace
@@ -108,6 +109,7 @@ class AgentLoop:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_enabled = thinking_enabled
+        self.reasoning_level = reasoning_level
         self._key_rotation_count = 0
         
         logger.debug(
@@ -141,7 +143,7 @@ class AgentLoop:
     def _resolve_execution_runtime(
         self,
         model_override: Optional[Dict[str, Any]] = None,
-    ) -> tuple[Any, Optional[str], float, int, int, bool]:
+    ) -> tuple[Any, Optional[str], float, int, int, bool, Optional[str]]:
         """解析当前消息执行应使用的 provider 和模型参数。"""
         base_provider = self.provider
         base_model = self.model
@@ -149,6 +151,7 @@ class AgentLoop:
         base_max_tokens = self.max_tokens
         base_max_iterations = self.max_iterations
         base_thinking_enabled = self.thinking_enabled
+        base_reasoning_level = self.reasoning_level
         base_api_mode = getattr(base_provider, "api_mode", "chat_completions")
 
         if not model_override:
@@ -159,6 +162,7 @@ class AgentLoop:
                 base_max_tokens,
                 base_max_iterations,
                 base_thinking_enabled,
+                base_reasoning_level,
             )
 
         candidate_provider = base_provider
@@ -173,6 +177,10 @@ class AgentLoop:
         candidate_thinking_enabled = model_override.get(
             "thinking_enabled",
             base_thinking_enabled,
+        )
+        candidate_reasoning_level = model_override.get(
+            "reasoning_level",
+            base_reasoning_level,
         )
 
         override_provider = model_override.get("provider")
@@ -212,6 +220,7 @@ class AgentLoop:
                     timeout=getattr(self.provider, "timeout", 120.0),
                     max_retries=getattr(self.provider, "max_retries", self.max_retries),
                     provider_id=provider_id,
+                    api_type=runtime_state.api_type,
                 )
             except Exception as exc:
                 logger.warning(
@@ -225,6 +234,7 @@ class AgentLoop:
                     base_max_tokens,
                     base_max_iterations,
                     base_thinking_enabled,
+                    base_reasoning_level,
                 )
 
         return (
@@ -234,6 +244,7 @@ class AgentLoop:
             candidate_max_tokens,
             candidate_max_iterations,
             candidate_thinking_enabled,
+            candidate_reasoning_level,
         )
 
     async def process_message(
@@ -288,6 +299,7 @@ class AgentLoop:
             runtime_max_tokens,
             runtime_max_iterations,
             runtime_thinking_enabled,
+            runtime_reasoning_level,
         ) = self._resolve_execution_runtime(model_override)
 
         supports_image = resolve_supports_image(
@@ -333,7 +345,7 @@ class AgentLoop:
                 async for piece in self._consume_model_stream(
                     state, session_id,
                     runtime_model, runtime_temperature, runtime_max_tokens,
-                    runtime_thinking_enabled,
+                    runtime_thinking_enabled, runtime_reasoning_level,
                     cancel_token, yield_intermediate, reasoning_event_handler,
                 ):
                     yield piece
@@ -443,6 +455,7 @@ class AgentLoop:
         runtime_temperature: float,
         runtime_max_tokens: int,
         runtime_thinking_enabled: bool,
+        runtime_reasoning_level: Optional[str],
         cancel_token,
         yield_intermediate: bool,
         reasoning_event_handler,
@@ -473,6 +486,7 @@ class AgentLoop:
             temperature=runtime_temperature,
             max_tokens=runtime_max_tokens,
             thinking_enabled=runtime_thinking_enabled,
+            reasoning_level=runtime_reasoning_level,
             **provider_trace_kwargs,
         ):
             if chunk.is_content and chunk.content:
@@ -660,9 +674,8 @@ class AgentLoop:
                 pending_message_provider, session_id, state.request_trace_id
             )
             if injected:
-                # 只进上下文，不进回复流：这是用户自己刚说过的话，
-                # 混进助手输出会变成「助手在复述用户」，也会被当作
-                # 助手回复写入数据库。
+                # 仅写入上下文，不进入回复流：该内容由用户发出，若作为助手输出
+                # 会被持久化为一轮助手回复
                 state.messages.append(
                     {
                         "role": "user",
@@ -673,7 +686,7 @@ class AgentLoop:
                     }
                 )
                 # 每吸收一条插话即放行一轮（budget 同步 +1），
-                # 保证插话在本任务中得到回应而不是被静默丢弃
+                # 使插话在本任务内得到回应，而非被静默丢弃
                 state.iteration_budget += 1
 
     async def _run_single_tool(
@@ -1128,6 +1141,7 @@ class AgentLoop:
                 timeout=getattr(current_provider, "timeout", 120.0),
                 max_retries=getattr(current_provider, "max_retries", self.max_retries),
                 provider_id=provider_id,
+                api_type=runtime_state.api_type,
             )
             return new_provider
         except Exception as exc:
@@ -1166,6 +1180,7 @@ class AgentLoop:
         channel: str = "cli",
         chat_id: str = "direct",
         account_id: Optional[str] = None,
+        model_override: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         直接处理消息（用于 CLI 或 cron 使用）
@@ -1176,6 +1191,7 @@ class AgentLoop:
             channel: 来源渠道（用于上下文）
             chat_id: 来源聊天 ID（用于上下文）
             account_id: 当前机器人账号 ID（多机器人渠道）
+            model_override: 本次执行的模型覆盖（定时任务指定模型时使用）
         
         Returns:
             Agent 的响应
@@ -1190,6 +1206,7 @@ class AgentLoop:
             channel=channel,
             chat_id=chat_id,
             account_id=account_id,
+            model_override=model_override,
         ):
             response_parts.append(chunk)
         

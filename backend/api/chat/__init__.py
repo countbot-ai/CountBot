@@ -1,14 +1,4 @@
-"""
-Chat API。
-
-子模块：state 进程级共享状态；models 请求与响应模型；helpers 辅助函数；
-loop_factory AgentLoop 装配；attachments 附件；preview 请求预览；stream
-SSE 流式发送；sessions 会话；messages 消息；config 会话级配置；memory
-摘要与导出。
-
-全局 SubagentManager 集中在 state，本模块转发 get/set，保证 app.py、
-api/tasks.py、api/tools.py 读到同一实例。
-"""
+"""Chat API 的公开入口；SubagentManager 单例集中在 ``state``，本模块转发 get/set。"""
 
 from backend.api.chat._router import router
 from backend.api.chat.helpers import (
@@ -58,6 +48,7 @@ from backend.api.chat.state import (
 
 # 导入路由模块以完成 @router.xxx 注册（副作用导入，不能省略）
 from backend.api.chat import attachments as _attachments  # noqa: F401
+from backend.api.chat import compact as _compact  # noqa: F401
 from backend.api.chat import config as _config  # noqa: F401
 from backend.api.chat import memory as _memory  # noqa: F401
 from backend.api.chat import messages as _messages  # noqa: F401

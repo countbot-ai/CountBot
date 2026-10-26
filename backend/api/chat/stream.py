@@ -154,9 +154,8 @@ async def send_message(
         if context and context[-1].get("role") == "user":
             context = context[:-1]
 
-        from backend.modules.agent.task_manager import CancellationToken
-        cancel_token = CancellationToken()
-        
+        from backend.ws.connection import acquire_cancel_token, cleanup_cancel_token
+
         # 创建流式响应生成器
         async def event_stream() -> AsyncIterator[str]:
             """SSE 事件流生成器"""
@@ -165,7 +164,10 @@ async def send_message(
             direct_workflow_non_success = False
             turn_gate = get_session_gate()
             turn_acquired = False
-            
+            # 登记到会话取消令牌表：此前令牌仅在 WS 链路登记，
+            # /api/queue/cancel 与 /stop 无法中止 HTTP SSE 这条处理
+            cancel_token, token_created = acquire_cancel_token(request.session_id)
+
             try:
                 # 会话串行准入放在生成器内部：HTTP 响应一旦返回而客户端未真正读取，
                 # 生成器不会执行，也就不会占用会话；放在生成器外会留下无法释放的锁。
@@ -381,7 +383,16 @@ async def send_message(
                     agent_loop.tools.set_cancel_token(None)
                 if turn_acquired:
                     turn_gate.release(request.session_id)
+                # 仅清理自己登记的令牌，避免摘掉同会话其他链路正在使用的那个
+                if token_created:
+                    cleanup_cancel_token(request.session_id, cancel_token)
         
+        # 结束本请求已开启的读事务：流式响应可能持续数分钟（慢上游），
+        # 请求级会话会一直活到流结束；若此时挂着未结束的读事务，
+        # 在非 WAL 模式下会一直占着共享锁，把其它写请求全部堵死。
+        if db is not None:
+            await db.commit()
+
         # 返回 SSE 流式响应
         return StreamingResponse(
             event_stream(),

@@ -84,6 +84,7 @@ async def get_agent_loop(
             timeout=120.0,
             max_retries=3,
             provider_id=provider_name,
+            api_type=runtime_state.api_type,
         )
         
         # 初始化记忆系统和技能加载器
@@ -162,6 +163,7 @@ async def get_agent_loop(
             temperature=runtime_config.temperature,
             max_tokens=runtime_config.max_tokens,
             thinking_enabled=runtime_config.thinking_enabled,
+            reasoning_level=getattr(runtime_config, "reasoning_level", None),
         )
         
         return agent_loop
