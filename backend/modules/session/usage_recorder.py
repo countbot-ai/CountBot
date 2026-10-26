@@ -1,13 +1,4 @@
-"""模型用量记录。
-
-把各供应商返回的用量归一化后落库。字段名不统一：OpenAI 兼容侧是
-prompt_tokens / completion_tokens，Anthropic 侧是 input_tokens /
-output_tokens，缓存与推理 token 的字段也各不相同，这里统一换算，
-调用方只传原始字典。
-
-记录失败只打告警不上抛（统计是观测能力，不能影响对话主流程）；
-落库用独立短事务，不参与主流程的事务边界。
-"""
+"""归一化各供应商返回的用量字段后落库；记录失败只告警，不影响主流程。"""
 
 from typing import Any, Dict, Optional
 
@@ -34,7 +25,7 @@ __all__ = [
     "summarize_usage",
 ]
 
-# 各供应商/各字段命名习惯的别名映射，统一归一化到同一语义
+# 各供应商字段别名，统一归一化到同一语义
 _PROMPT_KEYS = ("prompt_tokens", "input_tokens", "promptTokens", "inputTokens")
 _COMPLETION_KEYS = ("completion_tokens", "output_tokens", "completionTokens", "outputTokens")
 _TOTAL_KEYS = ("total_tokens", "totalTokens")
@@ -54,8 +45,7 @@ _CACHE_WRITE_KEYS = (
 _REASONING_KEYS = ("reasoning_tokens", "reasoningTokens", "completion_tokens_details")
 
 
-# 嵌套用量明细的容器字段：OpenAI 系把缓存/推理 token 放在这些子对象里，
-# 例如 prompt_tokens_details.cached_tokens、completion_tokens_details.reasoning_tokens。
+# OpenAI 系把缓存/推理 token 放在这些 *_details 子对象里（如 prompt_tokens_details.cached_tokens）。
 _DETAIL_CONTAINER_KEYS = (
     "prompt_tokens_details",
     "completion_tokens_details",
@@ -67,22 +57,19 @@ _DETAIL_CONTAINER_KEYS = (
 def _first_int(raw: Dict[str, Any], keys: tuple) -> int:
     """按别名顺序取第一个可转换为整数的值。
 
-    先在顶层匹配别名；再下钻到 *_details 容器里匹配同一别名。后者是
-    OpenAI 系上报缓存命中的主要形式（``prompt_tokens_details.cached_tokens``），
-    只查顶层会把缓存命中一律算成 0。
+    顶层未命中时再下钻 *_details 容器，否则 OpenAI 系原生上报的缓存命中会被算成 0。
     """
     for key in keys:
         if key in raw:
             value = raw[key]
             if isinstance(value, dict):
-                # 该 key 本身是明细容器（如 completion_tokens_details 作为别名）
+                # 该 key 本身即明细容器（如 completion_tokens_details 作别名）
                 value = value.get(key) or value.get("reasoning_tokens", 0)
             try:
                 return int(value or 0)
             except (TypeError, ValueError):
                 pass
 
-    # 顶层没有，逐个明细容器里按同一别名再找一次
     for container_key in _DETAIL_CONTAINER_KEYS:
         container = raw.get(container_key)
         if not isinstance(container, dict):
@@ -247,7 +234,7 @@ async def summarize_usage(
                 )
             ).all()
 
-            # 缓存命中率：命中复用的 token 占全部输入的比例，越高越省钱
+            # 缓存命中率：复用 token 占全部输入的比例
             hit_rate = round(cache_read / prompt_tokens, 4) if prompt_tokens else 0.0
 
             return {
