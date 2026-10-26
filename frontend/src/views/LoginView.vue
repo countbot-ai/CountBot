@@ -9,7 +9,6 @@
         <h1 class="brand-name">
           <span class="brand-count">Count</span><span class="brand-bot">Bot</span>
         </h1>
-        <p class="brand-tagline">countbot.cn, AI Delivers</p>
       </div>
 
       <!-- Mode hint -->
@@ -248,13 +247,6 @@ async function handleSubmit() {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   font-weight: var(--font-weight-bold);
-}
-
-.brand-tagline {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 500;
 }
 
 /* ===== Hint ===== */

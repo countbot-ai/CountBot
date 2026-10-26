@@ -18,8 +18,8 @@ import {
 } from '@/i18n/utils/detector'
 
 const currentTheme = ref<'light' | 'dark'>('light')
-const themeMode = ref<Theme>('auto')
-const themePalette = ref<ThemePalette>('warm')
+const themeMode = ref<Theme>('light')
+const themePalette = ref<ThemePalette>('cool')
 
 let unwatchSystemTheme: (() => void) | null = null
 
