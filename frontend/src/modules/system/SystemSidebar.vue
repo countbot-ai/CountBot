@@ -146,9 +146,6 @@
                 <component :is="ExternalLinkIcon" :size="14" class="external-icon" />
               </a>
             </div>
-            <div class="project-tagline">
-              <p>countbot.cn, AI Delivers</p>
-            </div>
           </div>
 
           <!-- 用户信息 & 注销（仅远程登录时显示） -->

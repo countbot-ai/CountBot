@@ -79,6 +79,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
 import { useMemoryStore } from '@/store/memory'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useMermaid } from '@/composables/useMermaid'
@@ -96,6 +97,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const memoryStore = useMemoryStore()
 const { renderMarkdown } = useMarkdown()
 const rootEl = ref<HTMLElement | null>(null)
@@ -149,9 +151,14 @@ const handleSave = async () => {
   }
 }
 
-const handleClose = () => {
+const handleClose = async () => {
   if (hasChanges.value) {
-    const confirmed = confirm(t('memory.unsavedChanges'))
+    const confirmed = await confirm({
+      title: t('memory.unsavedChanges'),
+      type: 'warning',
+      confirmText: t('common.confirm'),
+      cancelText: t('common.cancel')
+    })
     if (!confirmed) return
   }
   emit('close')

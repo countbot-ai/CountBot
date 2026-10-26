@@ -607,6 +607,29 @@
   color: var(--color-success);
 }
 
+.detail-copy-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.detail-copy-btn:hover {
+  opacity: 1;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+}
+
 .detail-text {
   margin: 0;
   padding: 8px 10px;
@@ -621,6 +644,8 @@
   overflow-y: auto;
   border: 0;
   line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .detail-loading {

@@ -12,6 +12,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../modules/chat/ChatWindow.vue'),
     },
     {
+        // 新主窗口布局，验收通过前保留旧首页用于对比
+        path: '/next',
+        name: 'next-home',
+        component: () => import('../modules/chat/NextChatWindow.vue'),
+    },
+    {
         path: '/login',
         name: 'login',
         component: () => import(/* webpackChunkName: "login" */ '../views/LoginView.vue'),

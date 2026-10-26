@@ -56,198 +56,190 @@
       <p class="guide-text">{{ guide.detailText }}</p>
     </div>
 
-    <div class="bot-card bot-card-primary">
-      <div class="bot-card-header">
-        <div class="bot-card-summary">
-          <div class="bot-card-heading">
-            <div>
-              <h4>{{ t('settings.channels.multiBot.primaryTitle') }}</h4>
-              <p v-if="primaryExpanded">{{ t('settings.channels.multiBot.primaryHint') }}</p>
-              <p v-else class="bot-card-preview">{{ getBotCollapsedSummary(primaryBot, true) }}</p>
-            </div>
+    <div class="bot-list">
+      <div class="bot-item" :class="{ 'is-expanded': primaryExpanded }">
+        <div
+          class="bot-item-header"
+          role="button"
+          tabindex="0"
+          :aria-expanded="primaryExpanded"
+          @click="primaryExpanded = !primaryExpanded"
+          @keydown.enter.prevent="primaryExpanded = !primaryExpanded"
+          @keydown.space.prevent="primaryExpanded = !primaryExpanded"
+        >
+          <div class="bot-avatar" aria-hidden="true">
+            <component :is="BotIcon" :size="20" />
           </div>
-        </div>
-        <div class="bot-card-controls">
-          <div class="primary-enabled-toggle">
-            <span class="toggle-caption">{{ t('settings.channels.multiBot.enabled') }}</span>
+          <div class="bot-title">
+            <div class="bot-name-row">
+              <span class="bot-name">{{ getBotDisplayTitle(primaryBot, true) }}</span>
+              <span class="bot-status" :class="getBotStatusClass(primaryBot)">
+                {{ getBotStatusLabel(primaryBot) }}
+              </span>
+            </div>
+            <span class="bot-meta">{{ t('settings.channels.multiBot.defaultAccount') }}</span>
+          </div>
+          <div class="bot-actions" @click.stop>
+            <button
+              type="button"
+              class="bot-icon-button"
+              :title="t('settings.channels.multiBot.testAccount')"
+              :aria-label="t('settings.channels.multiBot.testAccount')"
+              :disabled="!canTestAccount(primaryBot) || isTesting(primaryBot)"
+              @click="handleTest(primaryBot)"
+            >
+              <component :is="PlayCircleIcon" :size="17" />
+            </button>
             <SwitchToggle
               v-model="primaryBot.enabled"
-              class="toggle-switch-inline"
-              :width="52"
-              :height="28"
+              :width="40"
+              :height="22"
               :aria-label="t('settings.channels.multiBot.enabled')"
               @change="handleChange"
             />
-          </div>
-          <Button
-            variant="secondary"
-            size="md"
-            class="test-button"
-            :icon="PlayCircleIcon"
-            :loading="isTesting(primaryBot)"
-            :disabled="!canTestAccount(primaryBot) || isTesting(primaryBot)"
-            @click="handleTest(primaryBot)"
-          >
-            {{ t('settings.channels.multiBot.testAccount') }}
-          </Button>
-          <button
-            type="button"
-            :class="['collapse-toggle', { 'collapse-toggle-expanded': primaryExpanded }]"
-            :aria-expanded="primaryExpanded"
-            @click="primaryExpanded = !primaryExpanded"
-          >
-            <component :is="ChevronRightIcon" :size="15" class="collapse-toggle-icon" :class="{ expanded: primaryExpanded }" />
-            <span class="collapse-toggle-label">
-              {{ primaryExpanded ? t('settings.channels.multiBot.collapseConfig') : t('settings.channels.multiBot.expandConfig') }}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div v-show="primaryExpanded" class="bot-card-body">
-        <div class="config-section">
-          <label class="config-label">{{ t('settings.channels.multiBot.botName') }}</label>
-          <input
-            v-model="primaryBot.display_name"
-            type="text"
-            :placeholder="t('settings.channels.multiBot.primaryBotNamePlaceholder')"
-            class="config-input"
-            @input="handleChange"
-          />
-          <p class="config-hint">{{ t('settings.channels.multiBot.botNameHint') }}</p>
-        </div>
-
-        <details class="advanced-group">
-          <summary class="advanced-summary">
-            <span class="advanced-summary-title">{{ t('settings.channels.routing.advancedTitle') }}</span>
-            <span class="advanced-summary-hint">{{ t('settings.channels.routing.advancedHint') }}</span>
-          </summary>
-
-          <div class="advanced-group-body">
-            <div class="config-section config-section-advanced">
-              <label class="config-label">
-                {{ t('settings.channels.multiBot.internalAccountId') }}
-                <span class="advanced-badge">高级</span>
-              </label>
-              <input
-                type="text"
-                :value="primaryBot.draft_account_id"
-                :placeholder="t('settings.channels.multiBot.primaryAccountPlaceholder')"
-                class="config-input"
-                @input="updateDraftAccountId(primaryBot, ($event.target as HTMLInputElement).value)"
-                @blur="commitAccountId(primaryBot, 'default')"
-                @keydown.enter.prevent="commitAccountId(primaryBot, 'default')"
-              />
-              <p class="config-hint">{{ t('settings.channels.multiBot.internalAccountIdHint') }}</p>
-            </div>
-
-            <ChannelRouteConfig :model="primaryBot" @change="handleChange" />
-          </div>
-        </details>
-
-        <slot
-          name="fields"
-          :model="primaryBot"
-          :handleChange="handleChange"
-          :botKey="primaryBot._draft_key"
-          :isPrimary="true"
-          :expanded="primaryExpanded"
-        />
-      </div>
-    </div>
-
-    <div class="accounts-toolbar">
-      <div class="accounts-summary">
-        <div class="accounts-heading">
-          <div>
-            <h4>{{ t('settings.channels.multiBot.accountsTitle') }}</h4>
-            <p>{{ t('settings.channels.multiBot.accountsHint') }}</p>
+            <button
+              type="button"
+              class="bot-icon-button bot-chevron"
+              :class="{ expanded: primaryExpanded }"
+              :aria-label="primaryExpanded ? t('settings.channels.multiBot.collapseConfig') : t('settings.channels.multiBot.expandConfig')"
+              @click="primaryExpanded = !primaryExpanded"
+            >
+              <component :is="ChevronDownIcon" :size="18" />
+            </button>
           </div>
         </div>
-        <span class="accounts-count">{{ accounts.length }}</span>
-      </div>
-      <div class="accounts-toolbar-actions">
-        <button
-          type="button"
-          :class="['collapse-toggle', { 'collapse-toggle-expanded': accountsExpanded }]"
-          :aria-expanded="accountsExpanded"
-          @click="accountsExpanded = !accountsExpanded"
-        >
-          <component :is="ChevronRightIcon" :size="15" class="collapse-toggle-icon" :class="{ expanded: accountsExpanded }" />
-          <span class="collapse-toggle-label">
-            {{ accountsExpanded ? t('settings.channels.multiBot.collapseList') : t('settings.channels.multiBot.expandList') }}
-          </span>
-        </button>
-        <Button type="button" variant="primary" size="md" class="add-bot-button" :icon="PlusIcon" @click="addAccount">
-          {{ t('settings.channels.multiBot.addAccount') }}
-        </Button>
-      </div>
-    </div>
 
-    <div v-if="accountsExpanded && accounts.length === 0" class="empty-accounts">
-      <p>{{ t('settings.channels.multiBot.emptyAccounts') }}</p>
-    </div>
-
-    <div v-for="account in accounts" v-show="accountsExpanded" :key="account._draft_key" class="bot-card">
-      <div class="bot-card-header">
-        <div class="bot-card-summary">
-          <div class="bot-card-heading">
-            <div>
-              <h4>{{ getBotDisplayTitle(account) }}</h4>
-              <p v-if="isAccountExpanded(account._draft_key)">
-                {{
-                  account.display_name
-                    ? t('settings.channels.multiBot.internalAccountIdBadge', { id: account.account_id })
-                    : t('settings.channels.multiBot.secondaryHint')
-                }}
-              </p>
-              <p v-else class="bot-card-preview">{{ getBotCollapsedSummary(account) }}</p>
-            </div>
+        <div v-show="primaryExpanded" class="bot-item-body">
+          <div v-if="getBotDeliveryError(primaryBot)" class="bot-delivery-error">
+            <span class="bot-delivery-error-title">{{ t('settings.channels.deliveryError') }}</span>
+            <span>{{ formatDeliveryError(getBotDeliveryError(primaryBot)) }}</span>
           </div>
-          <span class="account-state-badge" :class="{ enabled: account.enabled }">
-            {{ account.enabled ? t('settings.channels.multiBot.statusEnabled') : t('settings.channels.multiBot.statusDisabled') }}
-          </span>
-        </div>
-        <div class="bot-card-controls">
-          <Button
-            variant="secondary"
-            size="md"
-            class="test-button"
-            :icon="PlayCircleIcon"
-            :loading="isTesting(account)"
-            :disabled="!canTestAccount(account) || isTesting(account)"
-            @click="handleTest(account)"
-          >
-            {{ t('settings.channels.multiBot.testAccount') }}
-          </Button>
-          <button
-            type="button"
-            :class="['collapse-toggle', { 'collapse-toggle-expanded': isAccountExpanded(account._draft_key) }]"
-            :aria-expanded="isAccountExpanded(account._draft_key)"
-            @click="toggleAccountExpanded(account._draft_key)"
-          >
-            <component
-              :is="ChevronRightIcon"
-              :size="15"
-              class="collapse-toggle-icon"
-              :class="{ expanded: isAccountExpanded(account._draft_key) }"
+
+          <div class="config-section">
+            <label class="config-label">{{ t('settings.channels.multiBot.botName') }}</label>
+            <input
+              v-model="primaryBot.display_name"
+              type="text"
+              :placeholder="t('settings.channels.multiBot.primaryBotNamePlaceholder')"
+              class="config-input"
+              @input="handleChange"
             />
-            <span class="collapse-toggle-label">
-              {{
-                isAccountExpanded(account._draft_key)
-                  ? t('settings.channels.multiBot.collapseConfig')
-                  : t('settings.channels.multiBot.expandConfig')
-              }}
-            </span>
-          </button>
-          <button type="button" class="remove-account-button" @click="removeAccount(account._draft_key)">
-            {{ t('common.delete') }}
-          </button>
+            <p class="config-hint">{{ t('settings.channels.multiBot.botNameHint') }}</p>
+          </div>
+
+          <slot
+            name="fields"
+            :model="primaryBot"
+            :handleChange="handleChange"
+            :botKey="primaryBot._draft_key"
+            :isPrimary="true"
+            :expanded="primaryExpanded"
+          />
+
+          <details class="advanced-group">
+            <summary class="advanced-summary">
+              <span class="advanced-summary-title">{{ t('settings.channels.routing.advancedTitle') }}</span>
+              <span class="advanced-summary-hint">{{ t('settings.channels.routing.advancedHint') }}</span>
+            </summary>
+
+            <div class="advanced-group-body">
+              <div class="config-section config-section-advanced">
+                <label class="config-label">
+                  {{ t('settings.channels.multiBot.internalAccountId') }}
+                  <span class="advanced-badge">高级</span>
+                </label>
+                <input
+                  type="text"
+                  :value="primaryBot.draft_account_id"
+                  :placeholder="t('settings.channels.multiBot.primaryAccountPlaceholder')"
+                  class="config-input"
+                  @input="updateDraftAccountId(primaryBot, ($event.target as HTMLInputElement).value)"
+                  @blur="commitAccountId(primaryBot, 'default')"
+                  @keydown.enter.prevent="commitAccountId(primaryBot, 'default')"
+                />
+                <p class="config-hint">{{ t('settings.channels.multiBot.internalAccountIdHint') }}</p>
+              </div>
+
+              <ChannelRouteConfig :model="primaryBot" @change="handleChange" />
+            </div>
+          </details>
         </div>
       </div>
 
-      <div v-show="isAccountExpanded(account._draft_key)" class="bot-card-body">
-        <div class="account-meta-grid">
+      <div
+        v-for="account in accounts"
+        :key="account._draft_key"
+        class="bot-item"
+        :class="{ 'is-expanded': isAccountExpanded(account._draft_key) }"
+      >
+        <div
+          class="bot-item-header"
+          role="button"
+          tabindex="0"
+          :aria-expanded="isAccountExpanded(account._draft_key)"
+          @click="toggleAccountExpanded(account._draft_key)"
+          @keydown.enter.prevent="toggleAccountExpanded(account._draft_key)"
+          @keydown.space.prevent="toggleAccountExpanded(account._draft_key)"
+        >
+          <div class="bot-avatar" aria-hidden="true">
+            <component :is="BotIcon" :size="20" />
+          </div>
+          <div class="bot-title">
+            <div class="bot-name-row">
+              <span class="bot-name">{{ getBotDisplayTitle(account) }}</span>
+              <span class="bot-status" :class="getBotStatusClass(account)">
+                {{ getBotStatusLabel(account) }}
+              </span>
+            </div>
+            <span class="bot-meta">
+              {{ t('settings.channels.multiBot.internalAccountIdBadge', { id: account.account_id }) }}
+            </span>
+          </div>
+          <div class="bot-actions" @click.stop>
+            <button
+              type="button"
+              class="bot-icon-button"
+              :title="t('settings.channels.multiBot.testAccount')"
+              :aria-label="t('settings.channels.multiBot.testAccount')"
+              :disabled="!canTestAccount(account) || isTesting(account)"
+              @click="handleTest(account)"
+            >
+              <component :is="PlayCircleIcon" :size="17" />
+            </button>
+            <SwitchToggle
+              v-model="account.enabled"
+              :width="40"
+              :height="22"
+              :aria-label="t('settings.channels.multiBot.enabled')"
+              @change="handleChange"
+            />
+            <button
+              type="button"
+              class="bot-icon-button bot-icon-button-danger"
+              :title="t('common.delete')"
+              :aria-label="t('common.delete')"
+              @click="removeAccount(account._draft_key)"
+            >
+              <component :is="Trash2Icon" :size="17" />
+            </button>
+            <button
+              type="button"
+              class="bot-icon-button bot-chevron"
+              :class="{ expanded: isAccountExpanded(account._draft_key) }"
+              :aria-label="isAccountExpanded(account._draft_key) ? t('settings.channels.multiBot.collapseConfig') : t('settings.channels.multiBot.expandConfig')"
+              @click="toggleAccountExpanded(account._draft_key)"
+            >
+              <component :is="ChevronDownIcon" :size="18" />
+            </button>
+          </div>
+        </div>
+
+        <div v-show="isAccountExpanded(account._draft_key)" class="bot-item-body">
+          <div v-if="getBotDeliveryError(account)" class="bot-delivery-error">
+            <span class="bot-delivery-error-title">{{ t('settings.channels.deliveryError') }}</span>
+            <span>{{ formatDeliveryError(getBotDeliveryError(account)) }}</span>
+          </div>
+
           <div class="config-section">
             <label class="config-label">{{ t('settings.channels.multiBot.botName') }}</label>
             <input
@@ -258,6 +250,15 @@
               @input="handleChange"
             />
           </div>
+
+          <slot
+            name="fields"
+            :model="account"
+            :handleChange="handleChange"
+            :botKey="account._draft_key"
+            :isPrimary="false"
+            :expanded="isAccountExpanded(account._draft_key)"
+          />
 
           <details class="advanced-group">
             <summary class="advanced-summary">
@@ -282,32 +283,16 @@
                 />
               </div>
 
-              <div class="config-section account-enabled-field">
-                <label class="config-label">{{ t('settings.channels.multiBot.enabled') }}</label>
-                <SwitchToggle
-                  v-model="account.enabled"
-                  class="toggle-switch-inline"
-                  :width="52"
-                  :height="28"
-                  :aria-label="t('settings.channels.multiBot.enabled')"
-                  @change="handleChange"
-                />
-              </div>
-
               <ChannelRouteConfig :model="account" @change="handleChange" />
             </div>
           </details>
         </div>
-
-        <slot
-          name="fields"
-          :model="account"
-          :handleChange="handleChange"
-          :botKey="account._draft_key"
-          :isPrimary="false"
-          :expanded="isAccountExpanded(account._draft_key)"
-        />
       </div>
+
+      <button type="button" class="add-bot-row" @click="addAccount">
+        <component :is="PlusIcon" :size="16" />
+        <span>{{ t('settings.channels.multiBot.addAccount') }}</span>
+      </button>
     </div>
   </div>
 </template>
@@ -316,9 +301,15 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PropType } from 'vue'
-import { ChevronRight as ChevronRightIcon, PlayCircle as PlayCircleIcon, Plus as PlusIcon } from 'lucide-vue-next'
-import Button from '@/components/ui/Button.vue'
+import {
+  Bot as BotIcon,
+  ChevronDown as ChevronDownIcon,
+  PlayCircle as PlayCircleIcon,
+  Plus as PlusIcon,
+  Trash2 as Trash2Icon
+} from 'lucide-vue-next'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
+import { useChannelsStore } from '@/store/channels'
 import ChannelRouteConfig from './ChannelRouteConfig.vue'
 
 interface GuideConfig {
@@ -380,7 +371,8 @@ const emit = defineEmits<{
   test: [channelId: string, config: Record<string, any>, accountId?: string]
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
+const channelsStore = useChannelsStore()
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? {}))
 
@@ -438,7 +430,6 @@ const initialState = buildEditorState(props.config)
 const primaryBot = ref<EditorBotState>(initialState.primary)
 const accounts = ref<EditorBotState[]>(initialState.secondary)
 const primaryExpanded = ref(true)
-const accountsExpanded = ref(true)
 const accountExpandedState = ref<Record<string, boolean>>({})
 
 const syncAccountExpandedState = (items: EditorBotState[]) => {
@@ -540,25 +531,51 @@ const handleChange = () => {
 
 const canTestAccount = (account: EditorBotState) => props.canTest(account)
 
-const getBotDisplayTitle = (account: EditorBotState) =>
-  String(account.display_name || '').trim() || account.account_id
-
-const getBotCollapsedSummary = (account: EditorBotState, isPrimary = false) => {
-  const statusText = account.enabled
-    ? t('settings.channels.multiBot.statusEnabled')
-    : t('settings.channels.multiBot.statusDisabled')
-  const title = String(account.display_name || '').trim() || (
+const getBotDisplayTitle = (account: EditorBotState, isPrimary = false) =>
+  String(account.display_name || '').trim() || (
     isPrimary
-      ? t('settings.channels.multiBot.defaultAccount')
+      ? t('settings.channels.multiBot.primaryTitle')
       : account.account_id
   )
-  const accountId = String(account.account_id || '').trim()
-  const parts = [statusText, title]
 
-  if (accountId && accountId !== title) {
-    parts.push(accountId)
+const getAccountInstance = (accountId: string) =>
+  channelsStore.status[props.channelId]?.instances?.[accountId] || null
+
+const getBotStatusLabel = (account: EditorBotState) => {
+  const instance = getAccountInstance(account.account_id)
+  const state = String(instance?.runtime_status?.state || '').trim()
+  const stateKey = `settings.channels.runtimeState.${state}`
+  if (state && te(stateKey)) {
+    return t(stateKey)
   }
+  if (instance?.running) {
+    return t('settings.channels.running')
+  }
+  return account.enabled
+    ? t('settings.channels.multiBot.statusEnabled')
+    : t('settings.channels.multiBot.statusDisabled')
+}
 
+const getBotStatusClass = (account: EditorBotState) => {
+  const instance = getAccountInstance(account.account_id)
+  const state = String(instance?.runtime_status?.state || '').trim()
+  if (state === 'failed') return 'failed'
+  if (state === 'running' || instance?.running) return 'running'
+  if (state === 'starting' || state === 'connecting' || state === 'stopping') return 'enabled'
+  return account.enabled ? 'enabled' : 'stopped'
+}
+
+const getBotDeliveryError = (account: EditorBotState) =>
+  getAccountInstance(account.account_id)?.runtime_status?.delivery_error || null
+
+const formatDeliveryError = (detail: Record<string, any>) => {
+  const parts = [
+    detail.operation,
+    detail.status ? `HTTP ${detail.status}` : '',
+    detail.code !== undefined && detail.code !== null ? `code=${detail.code}` : '',
+    detail.msg || detail.error || '',
+    detail.log_id ? `log_id=${detail.log_id}` : ''
+  ].filter(Boolean)
   return parts.join(' · ')
 }
 
@@ -584,7 +601,6 @@ const addAccount = () => {
     nextAccountId
   )
   accounts.value.push(nextAccount)
-  accountsExpanded.value = true
   accountExpandedState.value = {
     ...accountExpandedState.value,
     [nextAccount._draft_key]: true

@@ -179,11 +179,13 @@ import {
 } from 'lucide-vue-next'
 import { personalitiesApi, type Personality } from '@/api/personalities'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import Button from '@/components/ui/Button.vue'
 import PersonalityEditDialog from './PersonalityEditDialog.vue'
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const personalities = ref<Personality[]>([])
 const loading = ref(false)
@@ -287,18 +289,23 @@ const toggleActive = async (personality: Personality) => {
 
 // 删除性格
 const deletePersonality = async (personality: Personality) => {
-  if (!confirm(t('settings.persona.confirmDelete', { name: personality.name }))) {
-    return
-  }
-
-  try {
-    await personalitiesApi.delete(personality.id)
-    toast.success(t('settings.persona.deleteSuccess'))
-    await loadPersonalities()
-  } catch (error: any) {
-    console.error('Failed to delete personality:', error)
-    toast.error(error.message || t('settings.persona.deleteFailed'))
-  }
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('settings.persona.confirmDelete', { name: personality.name }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      try {
+        await personalitiesApi.delete(personality.id)
+        toast.success(t('settings.persona.deleteSuccess'))
+        await loadPersonalities()
+      } catch (error: any) {
+        console.error('Failed to delete personality:', error)
+        toast.error(error.message || t('settings.persona.deleteFailed'))
+      }
+    }
+  })
 }
 
 // 保存性格

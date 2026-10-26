@@ -189,6 +189,7 @@
 import { onMounted, ref } from 'vue'
 import { useMcp } from '@/modules/mcp/composables/useMcp'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useI18n } from 'vue-i18n'
 import McpServerEditor from '@/modules/mcp/components/McpServerEditor.vue'
 import type { McpServerConfig } from '@/modules/mcp/types'
@@ -196,6 +197,7 @@ import { TRANSPORT_LABELS, inferTransport } from '@/modules/mcp/types'
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const {
   loading,
   saving,
@@ -288,14 +290,27 @@ function handleCancelEdit() {
   cancelEdit()
 }
 
-function handleDelete(index: number) {
-  if (!confirm(t('settings.mcp.deleteConfirm'))) return
+async function handleDelete(index: number) {
   const s = registry.value.servers[index]
-  if (editingServerId.value === s.id) {
-    cancelEdit()
-  }
-  registry.value.servers.splice(index, 1)
-  saveRegistry(registry.value).then(() => refreshAll()).catch(() => toast.error(t('settings.mcp.saveError')))
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('settings.mcp.deleteConfirm'),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      if (editingServerId.value === s.id) {
+        cancelEdit()
+      }
+      registry.value.servers.splice(index, 1)
+      try {
+        await saveRegistry(registry.value)
+        await refreshAll()
+      } catch {
+        toast.error(t('settings.mcp.saveError'))
+      }
+    }
+  })
 }
 
 async function handleTestServer(server: McpServerConfig) {

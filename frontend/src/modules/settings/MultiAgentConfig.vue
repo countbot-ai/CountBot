@@ -1,7 +1,7 @@
 <template>
   <div class="multiagent-config">
-    <!-- 团队列表视图 -->
-    <div v-if="!selectedTeam" class="teams-list-view">
+    <!-- 团队列表视图：详情改为抽屉，保留列表上下文与滚动位置 -->
+    <div class="teams-list-view">
       <div class="section-header">
         <div class="header-top">
           <h3 class="section-title">
@@ -269,23 +269,31 @@
       </Modal>
     </div>
 
-    <!-- 团队详情视图 -->
-    <TeamDetail
-      v-else
-      :team="selectedTeam"
-      @back="selectedTeam = null"
-      @updated="handleTeamUpdated"
-    />
+    <!-- 团队详情抽屉 -->
+    <Drawer
+      :model-value="!!selectedTeam"
+      size="wide"
+      :show-header="false"
+      @update:model-value="handleDetailVisible"
+    >
+      <TeamDetail
+        v-if="selectedTeam"
+        :team="selectedTeam"
+        @back="selectedTeam = null"
+        @updated="handleTeamUpdated"
+      />
+    </Drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Plus as PlusIcon, Trash as TrashIcon, Copy as CopyIcon, Users as UsersIcon, Search as SearchIcon, X as XIcon, LayoutTemplate as LayoutTemplateIcon, Network as NetworkIcon } from 'lucide-vue-next'
+import { Plus as PlusIcon, Trash as TrashIcon, Copy as CopyIcon, Users as UsersIcon, Search as SearchIcon, X as XIcon, LayoutTemplate as LayoutTemplateIcon } from 'lucide-vue-next'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useI18n } from 'vue-i18n'
-import { LoadingState, Modal } from '@/components/ui'
+import { Drawer, LoadingState, Modal } from '@/components/ui'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import TeamDetail from '@/modules/teams/TeamDetail.vue'
 import { agentTeamTemplates, templateCategories, type AgentTeamTemplate } from '@/data/agentTeamTemplates'
@@ -293,6 +301,7 @@ import { agentTeamTemplates, templateCategories, type AgentTeamTemplate } from '
 const { t } = useI18n()
 const teamsStore = useAgentTeamsStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const teams = computed(() => teamsStore.teams)
 const loading = computed(() => teamsStore.loading)
@@ -398,6 +407,11 @@ const viewTeamDetail = (team: AgentTeam) => {
   selectedTeam.value = team
 }
 
+// 抽屉关闭（Esc / 遮罩）时清空选中，列表状态保持不变
+const handleDetailVisible = (visible: boolean) => {
+  if (!visible) selectedTeam.value = null
+}
+
 const handleTeamUpdated = async () => {
   await teamsStore.loadTeams()
   // 更新选中的团队数据
@@ -410,14 +424,21 @@ const handleTeamUpdated = async () => {
 }
 
 const confirmDelete = async (team: AgentTeam) => {
-  if (!confirm(t('settings.multiagent.confirmDelete', { name: team.name }))) return
-  
-  try {
-    await teamsStore.deleteTeam(team.id)
-    toast.success(t('common.success'))
-  } catch (err: any) {
-    toast.error(err.message || t('common.error'))
-  }
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('settings.multiagent.confirmDelete', { name: team.name }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      try {
+        await teamsStore.deleteTeam(team.id)
+        toast.success(t('common.success'))
+      } catch (err: any) {
+        toast.error(err.message || t('common.error'))
+      }
+    }
+  })
 }
 
 const copyPayload = (team: AgentTeam) => {

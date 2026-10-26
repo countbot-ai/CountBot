@@ -13,7 +13,9 @@
       :is-connecting="isConnecting"
       :reconnecting-visible="reconnectingVisible"
       :reconnect-attempts-display="reconnectAttemptsDisplay"
-      @reconnect="() => manualReconnect(chatStore.currentSessionId || '')"
+      :max-attempts="maxReconnectAttempts"
+      :disconnected-reason="connectionError"
+      @reconnect="() => manualReconnect(chatStore.currentSessionId || undefined)"
     />
 
     <!-- 安全警告横幅 -->
@@ -222,6 +224,7 @@ import { useChatStore } from '@/store/chat'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
 import { useSettingsStore } from '@/store/settings'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useKeyboard, commonShortcuts } from '@/composables/useKeyboard'
 import { queueAPI } from '@/api/endpoints'
 import type { SettingsTab } from '@/types/settings'
@@ -230,6 +233,7 @@ const { t } = useI18n()
 const chatStore = useChatStore()
 const agentTeamsStore = useAgentTeamsStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // WebSocket 管理
 const {
@@ -237,6 +241,8 @@ const {
   isConnecting,
   reconnectingVisible,
   reconnectAttemptsDisplay,
+  connectionError,
+  maxReconnectAttempts,
   connectWebSocket,
   sendMessage: wsSendMessage,
   closeConnection,
@@ -415,7 +421,8 @@ useChatRealtime({
   refreshSessions: chatStore.loadSessions,
   cacheSessionMessages,
   flushNextQueuedMessage,
-  toast
+  toast,
+  isBusy: () => isStreaming.value
 })
 
 // 监听会话变化
@@ -574,20 +581,28 @@ async function clearCurrentChat() {
     return
   }
   
-  if (!confirm(t('chat.confirmClearChat'))) return
-  
-  try {
-    clearMessages()
-    clearAttachments()
-    if (chatStore.currentSessionId) {
-      await chatStore.clearMessages(chatStore.currentSessionId)
-      clearSessionCache(chatStore.currentSessionId)  // 清除缓存
+  // 危险操作：弹窗 loading 锁死，等清空完成后再关闭
+  await confirm({
+    title: t('common.confirmClear'),
+    message: t('chat.confirmClearChat'),
+    type: 'warning',
+    confirmText: t('common.clear'),
+    confirmVariant: 'warning',
+    onConfirm: async () => {
+      try {
+        clearMessages()
+        clearAttachments()
+        if (chatStore.currentSessionId) {
+          await chatStore.clearMessages(chatStore.currentSessionId)
+          clearSessionCache(chatStore.currentSessionId)  // 清除缓存
+        }
+        toast.success(t('chat.chatCleared'))
+      } catch (error) {
+        console.error('Failed to clear chat:', error)
+        toast.error(t('chat.clearChatFailed'))
+      }
     }
-    toast.success(t('chat.chatCleared'))
-  } catch (error) {
-    console.error('Failed to clear chat:', error)
-    toast.error(t('chat.clearChatFailed'))
-  }
+  })
 }
 
 const handleRegenerate = (messageId: string) => {

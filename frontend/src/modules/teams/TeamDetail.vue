@@ -497,6 +497,7 @@ import {
 import { useI18n } from 'vue-i18n'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { Modal } from '@/components/ui'
 import Button from '@/components/ui/Button.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
@@ -543,6 +544,7 @@ const { t } = useI18n()
 
 const teamsStore = useAgentTeamsStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const modeLabelMap: Record<string, string> = {
   pipeline: '流水线',
@@ -771,8 +773,15 @@ const removeDependency = (depId: string) => {
   }
 }
 
-const removeMember = (index: number) => {
-  if (!confirm('确定要删除这个成员吗？')) return
+const removeMember = async (index: number) => {
+  const confirmed = await confirm({
+    title: '确认删除',
+    message: '确定要删除这个成员吗？',
+    type: 'danger',
+    confirmText: '删除',
+    confirmVariant: 'danger'
+  })
+  if (!confirmed) return
   localAgents.value.splice(index, 1)
   saveChanges()
 }

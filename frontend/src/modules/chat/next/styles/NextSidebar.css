@@ -1,0 +1,437 @@
+/**
+ * 侧边栏：浅灰底、低对比、行高紧凑。
+ * 色彩全部走 --color-* / --nc-*，由 .nc-shell 统一提供。
+ */
+.nc-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 216px;
+  height: 100%;
+  flex: 0 0 216px;
+  padding: 10px 8px 8px;
+  background: var(--nc-sidebar-bg);
+  border-right: 1px solid var(--nc-sidebar-border);
+  overflow: hidden;
+}
+
+.nc-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+.nc-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nc-brand-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.nc-brand-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--nc-text);
+  white-space: nowrap;
+}
+
+.nc-icon-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-icon-button:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-sidebar-mobile-close {
+  display: none;
+}
+
+.nc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nc-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-2);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-nav-item:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-nav-item.is-active {
+  background: var(--nc-active);
+  color: var(--nc-text);
+}
+
+.nc-nav-item--primary {
+  color: var(--nc-text);
+  font-weight: 500;
+}
+
+.nc-nav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nc-kbd {
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--nc-text-3);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- 会话搜索 ---------- */
+
+.nc-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 8px 0;
+  padding: 0 8px;
+  height: 32px;
+  border: 1px solid var(--nc-border);
+  border-radius: 6px;
+  background: var(--nc-surface);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.nc-search:focus-within {
+  border-color: var(--nc-border-strong);
+  box-shadow:
+    0 0 0 1px var(--nc-border-strong),
+    0 0 0 4px var(--nc-border);
+}
+
+.nc-search-icon {
+  color: var(--nc-text-3);
+  flex-shrink: 0;
+}
+
+.nc-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin-left: 6px;
+  border: none;
+  background: transparent;
+  color: var(--nc-text);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.nc-search-input::placeholder {
+  color: var(--nc-text-3);
+}
+
+.nc-search-clear {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+}
+
+.nc-search-clear:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+/* ---------- 会话列表 ---------- */
+
+.nc-sessions {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.nc-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--nc-text-3);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.nc-section-title {
+  white-space: nowrap;
+}
+
+.nc-section-count {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.nc-section-action {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--nc-text-3);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-section-head:hover .nc-section-action,
+.nc-section-head:focus-within .nc-section-action {
+  opacity: 1;
+}
+
+.nc-section-action:hover {
+  color: var(--nc-text);
+}
+
+.nc-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-bottom: 2px;
+}
+
+.nc-session-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nc-session-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* 行容器承接背景，保证右侧操作按钮与行同底色、无割裂 */
+.nc-session-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: background var(--transition-fast);
+}
+
+.nc-session-row:hover,
+.nc-session-row:focus-within {
+  background: var(--nc-hover);
+}
+
+.nc-session-row.is-active {
+  background: var(--nc-active);
+}
+
+.nc-session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-2);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.nc-session-row:hover .nc-session-item {
+  color: var(--nc-text);
+}
+
+.nc-session-item.is-active {
+  color: var(--nc-text);
+  font-weight: 500;
+}
+
+/* 悬停时让出时间，给齿轮 / 重命名两个图标（避免与时间挤在一起） */
+.nc-session-row:hover .nc-session-time,
+.nc-session-row:focus-within .nc-session-time {
+  opacity: 0;
+}
+
+.nc-session-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+.nc-session-row:hover .nc-session-actions,
+.nc-session-row:focus-within .nc-session-actions {
+  display: flex;
+}
+
+.nc-session-action {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-session-action:hover {
+  background: var(--nc-surface);
+  color: var(--nc-text);
+}
+
+.nc-session-rename-input {
+  width: 100%;
+  height: 28px;
+  margin: 2px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--nc-border-strong);
+  border-radius: 6px;
+  background: var(--nc-surface);
+  color: var(--nc-text);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--nc-border-strong),
+    0 0 0 3px var(--nc-border);
+}
+
+.nc-session-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-session-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--nc-text-3);
+  font-weight: 400;
+}
+
+.nc-session-empty,
+.nc-session-loading {
+  padding: 16px 8px;
+  color: var(--nc-text-3);
+  font-size: 12px;
+}
+
+.nc-show-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-3);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.nc-show-more:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-sidebar-foot {
+  flex-shrink: 0;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--nc-sidebar-border);
+}
+
+/* ---------- 移动端抽屉 ---------- */
+
+@media (max-width: 860px) {
+  .nc-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: 264px;
+    flex-basis: 264px;
+    transform: translateX(-100%);
+    transition: transform var(--transition-base) var(--ease-snappy);
+    box-shadow: var(--shadow-md);
+  }
+
+  .nc-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .nc-sidebar-close {
+    display: none;
+  }
+
+  .nc-sidebar-mobile-close {
+    display: flex;
+  }
+}

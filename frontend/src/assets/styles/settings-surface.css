@@ -1,0 +1,181 @@
+/**
+ * 设置页表面规范 - 统一所有配置子页的卡片、标题、输入框密度
+ *
+ * 设置子页各自带 scoped CSS，逐个改容易走样；这一层用 .settings-panel 前缀
+ * 统一收口：卡片只留 1px 微边框 + 白底景深，区块标题降为 15px，
+ * 输入框统一 32px 高、8px 圆角、聚焦双环咬合（规则 2）。
+ */
+
+.settings-panel .config-section,
+.settings-panel .config-card,
+.settings-panel .security-card,
+.settings-panel .injection-card,
+.settings-panel .form-section,
+.settings-panel .setting-item {
+  background: var(--color-bg-primary) !important;
+  border: 1px solid var(--color-border-primary) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: none !important;
+}
+
+.settings-panel .config-section:hover,
+.settings-panel .config-card:hover,
+.settings-panel .security-card:hover,
+.settings-panel .injection-card:hover {
+  border-color: var(--color-border-secondary) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.settings-panel .config-section {
+  padding: 16px !important;
+  margin-bottom: 12px !important;
+}
+
+.settings-panel .section-label {
+  margin-bottom: 12px !important;
+  font-size: var(--font-size-base) !important;
+  font-weight: var(--font-weight-medium) !important;
+}
+
+.settings-panel .form-grid {
+  gap: 12px !important;
+}
+
+/* 卡片头部收紧到 4/8 网格，去掉上下双份 16px 留白 */
+.settings-panel .card-header {
+  padding: 12px 16px !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.settings-panel .card-body {
+  padding: 0 16px 14px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-panel .card-title {
+  font-size: var(--font-size-base) !important;
+  font-weight: var(--font-weight-medium) !important;
+  letter-spacing: -0.005em;
+}
+
+.settings-panel .card-desc,
+.settings-panel .config-hint,
+.settings-panel .hint,
+.settings-panel .field-hint,
+.settings-panel .section-desc {
+  max-width: 72ch;
+  font-size: var(--font-size-xs) !important;
+  line-height: 1.55 !important;
+  color: var(--color-text-tertiary) !important;
+  text-wrap: pretty;
+}
+
+/* 区块标题：20px 太重，压到 15px，和主窗口标题同一档 */
+.settings-panel .section-header {
+  gap: 4px !important;
+  padding: 0 !important;
+  margin-bottom: 2px;
+}
+
+.settings-panel .section-title {
+  font-size: var(--font-size-lg) !important;
+  font-weight: var(--font-weight-semibold) !important;
+  letter-spacing: -0.01em;
+}
+
+.settings-panel .config-options,
+.settings-panel .general-config {
+  gap: 12px !important;
+  padding: 0 !important;
+}
+
+/* 表单：字段间距 12px，标签与控件 6px */
+.settings-panel .form-group,
+.settings-panel .form-field,
+.settings-panel .editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px !important;
+  margin-bottom: 12px !important;
+}
+
+.settings-panel .config-label,
+.settings-panel .label {
+  font-size: var(--font-size-sm) !important;
+  font-weight: var(--font-weight-medium) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* 规则 2 - 输入框：32px 高、不加 outline、聚焦双环咬合 */
+.settings-panel .config-input,
+.settings-panel .editor-input,
+.settings-panel .form-input,
+.settings-panel .form-textarea,
+.settings-panel .config-textarea,
+.settings-panel .command-input {
+  min-height: 32px;
+  padding: 6px 10px !important;
+  border: 1px solid var(--color-border-secondary) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm) !important;
+  line-height: 1.45 !important;
+  box-shadow: none !important;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.settings-panel .config-textarea,
+.settings-panel .form-textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.settings-panel .config-input:focus,
+.settings-panel .editor-input:focus,
+.settings-panel .form-input:focus,
+.settings-panel .form-textarea:focus,
+.settings-panel .config-textarea:focus,
+.settings-panel .command-input:focus {
+  outline: none !important;
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-elevated);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 4px var(--color-border-primary) !important;
+}
+
+.settings-panel .config-input::placeholder,
+.settings-panel .editor-input::placeholder,
+.settings-panel .form-input::placeholder,
+.settings-panel .form-textarea::placeholder,
+.settings-panel .config-textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* 空态：不要 64px 上下留白的巨大空洞 */
+.settings-panel .empty-state {
+  padding: 28px 16px !important;
+  border: 1px dashed var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .settings-panel .card-header {
+    padding: 10px 12px !important;
+  }
+
+  .settings-panel .card-body {
+    padding: 0 12px 12px !important;
+  }
+}

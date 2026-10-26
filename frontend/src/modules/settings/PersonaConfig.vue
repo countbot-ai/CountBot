@@ -254,12 +254,15 @@
 
             <div v-if="showHeartbeatAccountId" class="form-group">
               <label class="label">{{ $t('settings.persona.heartbeat.accountId') }}</label>
-              <input
-                v-model="localPersona.heartbeat.account_id"
-                type="text"
-                class="input"
-                :placeholder="$t('settings.persona.heartbeat.accountIdPlaceholder')"
-              />
+              <select v-model="localPersona.heartbeat.account_id" class="input">
+                <option
+                  v-for="account in heartbeatAccountOptions"
+                  :key="account.accountId"
+                  :value="account.accountId"
+                >
+                  {{ account.label }}
+                </option>
+              </select>
               <p class="hint">{{ $t('settings.persona.heartbeat.accountIdHint') }}</p>
             </div>
 
@@ -555,6 +558,22 @@ const heartbeatChannelAccountIds = computed(() =>
 )
 
 const showHeartbeatAccountId = computed(() => heartbeatChannelAccountIds.value.length > 1)
+
+const heartbeatAccountOptions = computed(() => {
+  const channelId = localPersona.value.heartbeat.channel
+  const config = (channelsStore.channels[channelId]?.config || {}) as Record<string, any>
+  const accounts = (config.accounts || {}) as Record<string, Record<string, any>>
+  const primaryAccountId = String(config.account_id || 'default')
+
+  return heartbeatChannelAccountIds.value.map((accountId) => {
+    const account = accountId === primaryAccountId ? config : (accounts[accountId] || {})
+    const displayName = String(account.display_name || '').trim()
+    return {
+      accountId,
+      label: displayName ? `${displayName}（${accountId}）` : accountId,
+    }
+  })
+})
 
 watch(
   [() => localPersona.value.heartbeat.channel, showHeartbeatAccountId],

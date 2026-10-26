@@ -1,0 +1,326 @@
+/**
+ * 输入卡：白色浮层 + 顶部会话上下文条 + 底部工具行。
+ * 欢迎页（hero）与对话页（docked）共用同一张卡片，只改外部宽度与留白。
+ */
+.nc-composer-area {
+  position: relative;
+  z-index: 12;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.nc-composer-area.docked {
+  padding: 8px 24px 16px;
+}
+
+.nc-composer-area.hero {
+  padding: 0;
+}
+
+.nc-composer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--chat-column-width);
+  margin: 0 auto;
+  border: 1px solid var(--nc-border);
+  border-radius: var(--radius-xl);
+  background: var(--nc-surface);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.nc-composer-area.hero .nc-composer {
+  max-width: none;
+}
+
+/* 规则 2 - 聚焦不加 outline，用双环咬合造景深 */
+.nc-composer.focused {
+  border-color: var(--nc-border-strong);
+  box-shadow:
+    0 0 0 1px var(--nc-border-strong),
+    0 0 0 5px var(--nc-border);
+}
+
+.nc-composer.busy {
+  border-color: var(--nc-border-strong);
+}
+
+/* ---------- 上下文条 ---------- */
+
+.nc-composer-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+
+.nc-context-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: var(--nc-soft);
+  color: var(--nc-text-2);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-context-pill:hover {
+  background: var(--nc-active);
+  color: var(--nc-text);
+}
+
+.nc-context-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--nc-text-3);
+  flex-shrink: 0;
+}
+
+.nc-context-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-context-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ---------- 附件 ---------- */
+
+.nc-attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.nc-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--nc-border);
+  border-radius: 6px;
+  background: var(--nc-soft);
+  color: var(--nc-text-2);
+  font-size: 12px;
+}
+
+.nc-attachment-chip.status-error {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.nc-attachment-icon {
+  flex-shrink: 0;
+  color: var(--nc-text-3);
+}
+
+.nc-attachment-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-attachment-size {
+  flex-shrink: 0;
+  color: var(--nc-text-3);
+  font-size: 11px;
+}
+
+.nc-attachment-spinner {
+  flex-shrink: 0;
+  animation: nc-spin 0.9s linear infinite;
+}
+
+@keyframes nc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nc-attachment-remove {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nc-attachment-remove:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+/* ---------- 输入 ---------- */
+
+.nc-textarea {
+  width: 100%;
+  min-height: 56px;
+  max-height: 224px;
+  padding: 12px 16px 8px;
+  border: none;
+  background: transparent;
+  color: var(--nc-text);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  line-height: 20px;
+  resize: none;
+  outline: none;
+  appearance: none;
+  overflow-y: auto;
+}
+
+.nc-textarea::placeholder {
+  color: var(--nc-text-3);
+}
+
+.nc-textarea:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* ---------- 工具行 ---------- */
+
+.nc-composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 8px;
+}
+
+.nc-file-input {
+  display: none;
+}
+
+.nc-tool-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-tool-button:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-toolbar-spacer {
+  flex: 1;
+}
+
+.nc-send-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: var(--nc-soft);
+  color: var(--nc-text-3);
+  cursor: not-allowed;
+  flex-shrink: 0;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.nc-send-button svg {
+  transform: translateY(-0.5px);
+}
+
+.nc-send-button.ready {
+  background: var(--nc-primary);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+}
+
+.nc-send-button.ready:hover {
+  background: var(--nc-primary-hover);
+}
+
+.nc-send-button:active.ready {
+  transform: scale(0.95);
+}
+
+.nc-send-button.is-stop {
+  background: var(--nc-primary);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+}
+
+.nc-stop-square {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+/* ---------- 提示 ---------- */
+
+.nc-composer-hint {
+  max-width: var(--chat-column-width);
+  margin: 8px auto 0;
+  color: var(--nc-text-3);
+  font-size: 12px;
+  text-align: center;
+  user-select: none;
+}
+
+.nc-composer-area.hero .nc-composer-hint {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .nc-composer-area.docked {
+    padding: 6px 12px 10px;
+  }
+
+  .nc-composer {
+    border-radius: 14px;
+  }
+
+  .nc-textarea {
+    min-height: 46px;
+    padding: 10px 12px 4px;
+    font-size: 14px;
+  }
+
+  .nc-composer-toolbar {
+    padding: 2px 6px 6px;
+  }
+}

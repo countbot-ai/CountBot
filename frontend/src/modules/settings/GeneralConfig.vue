@@ -14,11 +14,7 @@
       <div class="config-card">
         <div class="card-header">
           <div class="header-left">
-            <component
-              :is="currentTheme === 'dark' ? MoonIcon : SunIcon"
-              :size="20"
-              class="icon"
-            />
+            <component :is="activeThemeIcon" :size="20" class="icon" />
             <div class="header-text">
               <h4 class="card-title">{{ $t('settings.general.theme') }}</h4>
               <p class="card-desc">{{ $t('settings.general.themeDesc') }}</p>
@@ -31,8 +27,8 @@
               v-for="theme in themes"
               :key="theme.value"
               class="theme-btn"
-              :class="{ active: currentTheme === theme.value }"
-              @click="setTheme(theme.value)"
+              :class="{ active: themePreset === theme.value }"
+              @click="setThemePreset(theme.value)"
             >
               <component :is="theme.icon" :size="18" />
               <span>{{ $t(theme.label) }}</span>
@@ -105,19 +101,22 @@ import {
   Sun as SunIcon,
   Moon as MoonIcon,
   Monitor as MonitorIcon,
+  Snowflake as SnowflakeIcon,
+  Trees as TreesIcon,
+  Flower2 as Flower2Icon,
   Languages as LanguagesIcon
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import Input from '@/components/ui/Input.vue'
 import { setLocale } from '@/i18n'
 import { useTheme } from '@/composables/useTheme'
+import type { ThemePreset } from '@/i18n/utils/detector'
 import { useSettingsStore } from '@/store/settings'
 
 const { locale } = useI18n()
-const { themeMode, setThemeMode } = useTheme()
+const { themePreset, setThemePreset } = useTheme()
 const settingsStore = useSettingsStore()
 
-const currentTheme = computed(() => themeMode.value)
 const currentLocale = computed(() => locale.value)
 const outputLanguage = computed({
   get: () => settingsStore.settings?.persona.output_language || '中文',
@@ -129,7 +128,7 @@ const outputLanguage = computed({
 })
 
 type ThemeOption = {
-  value: 'light' | 'dark' | 'auto'
+  value: ThemePreset
   label: string
   icon: Component
 }
@@ -137,17 +136,20 @@ type ThemeOption = {
 const themes: ThemeOption[] = [
   { value: 'light', label: 'settings.general.lightTheme', icon: SunIcon },
   { value: 'dark', label: 'settings.general.darkTheme', icon: MoonIcon },
-  { value: 'auto', label: 'settings.general.autoTheme', icon: MonitorIcon }
+  { value: 'auto', label: 'settings.general.autoTheme', icon: MonitorIcon },
+  { value: 'cool', label: 'settings.general.coolTheme', icon: SnowflakeIcon },
+  { value: 'forest', label: 'settings.general.forestTheme', icon: TreesIcon },
+  { value: 'sakura', label: 'settings.general.sakuraTheme', icon: Flower2Icon }
 ]
+
+const activeThemeIcon = computed(
+  () => themes.find((theme) => theme.value === themePreset.value)?.icon ?? SunIcon
+)
 
 const languages = [
   { value: 'zh-CN', label: '简体中文', flag: '🇨🇳' },
   { value: 'en-US', label: 'English', flag: '🇺🇸' }
 ]
-
-function setTheme(theme: 'light' | 'dark' | 'auto') {
-  setThemeMode(theme)
-}
 
 function setLanguage(lang: string) {
   // 统一走 i18n 的入口：同时更新 locale、localStorage（CountBot-language）和 <html lang>。
@@ -337,8 +339,9 @@ watch(
 
 .language-btn.active {
   border-color: var(--color-border-strong);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  /* 与主题卡片共用同一选中态令牌，避免两处选中色随色调切换后再次分叉 */
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .language-btn.active:hover {

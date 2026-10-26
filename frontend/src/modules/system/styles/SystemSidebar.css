@@ -321,22 +321,6 @@
   color: var(--color-primary);
 }
 
-.project-tagline {
-  padding: 12px;
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  text-align: center;
-}
-
-.project-tagline p {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-  line-height: 1.6;
-  font-style: italic;
-}
-
 /* 过渡动画 */
 .sidebar-slide-enter-active,
 .sidebar-slide-leave-active {

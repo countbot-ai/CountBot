@@ -226,10 +226,14 @@ defineExpose({
   position: relative;
   display: flex;
   align-items: center;
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   transition: all var(--transition-base);
+}
+
+.input-container:hover:not(.is-disabled) {
+  border-color: var(--border-secondary);
 }
 
 .input-container:focus-within {

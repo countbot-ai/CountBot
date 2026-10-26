@@ -361,6 +361,7 @@ import { useMarkdown } from '@/composables/useMarkdown'
 import { useMermaid } from '@/composables/useMermaid'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { chatAPI } from '@/api'
 import ToolCallCard from '@/components/chat/ToolCallCard.vue'
@@ -394,6 +395,7 @@ const emit = defineEmits<Emits>()
 const { renderMarkdown } = useMarkdown()
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const chatStore = useChatStore()
 
 const HISTORY_TOOL_PAGE_SIZE = 20
@@ -1002,8 +1004,15 @@ const handleRegenerate = () => {
   emit('regenerate', props.message.id)
 }
 
-const handleDelete = () => {
-  if (confirm(t('chat.confirmDeleteMessage'))) {
+const handleDelete = async () => {
+  const confirmed = await confirm({
+    title: t('common.confirmDelete'),
+    message: t('chat.confirmDeleteMessage'),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger'
+  })
+  if (confirmed) {
     emit('delete', props.message.id)
   }
 }

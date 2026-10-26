@@ -842,6 +842,7 @@ import {
 } from 'lucide-vue-next'
 import { useSkillsStore, type Skill, type SkillDetail } from '@/store/skills'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import Modal from '@/components/ui/Modal.vue'
 import SkillEditor from './SkillEditor.vue'
 import SkillConfigEditor from './SkillConfigEditor.vue'
@@ -851,6 +852,7 @@ import type { CreateSkillRequest, UpdateSkillRequest } from '@/api'
 const { t } = useI18n()
 const skillsStore = useSkillsStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // State
 const selectedSkill = ref<SkillDetail | null>(null)
@@ -1047,18 +1049,23 @@ const handleDeleteSkill = async () => {
     return
   }
   
-  if (!confirm(t('skills.deleteConfirm', { name }))) {
-    return
-  }
-  
-  try {
-    await skillsStore.deleteSkill(name)
-    toast.success(t('skills.deleteSuccess', { name }))
-    selectedSkill.value = null
-    await handleRefresh()
-  } catch (err: any) {
-    toast.error(t('skills.deleteError'))
-  }
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('skills.deleteConfirm', { name }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      try {
+        await skillsStore.deleteSkill(name)
+        toast.success(t('skills.deleteSuccess', { name }))
+        selectedSkill.value = null
+        await handleRefresh()
+      } catch (err: any) {
+        toast.error(t('skills.deleteError'))
+      }
+    }
+  })
 }
 
 const handleCloseEditor = () => {

@@ -1,4 +1,3 @@
-
 .multi-bot-editor {
   --editor-border: var(--color-border-primary);
   --editor-border-strong: var(--color-border-secondary);
@@ -8,7 +7,7 @@
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .config-section {
@@ -22,7 +21,6 @@
   border: 1px solid var(--color-border-primary);
   border-radius: 12px;
   padding: 16px;
-  margin-bottom: 8px;
 }
 
 .enable-toggle-wrapper {
@@ -59,15 +57,6 @@
   margin: 0;
 }
 
-.toggle-switch-inline {
-  margin-top: 6px;
-}
-
-.toggle-caption {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 .enable-warning {
   display: flex;
   align-items: center;
@@ -91,23 +80,6 @@
   border: 1px solid var(--editor-border);
   border-radius: 12px;
   background: var(--editor-panel-muted);
-}
-
-.primary-enabled-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--editor-border);
-  border-radius: 10px;
-  background: var(--editor-panel-muted);
-}
-
-.primary-enabled-toggle .toggle-switch-inline,
-.account-enabled-field .toggle-switch-inline {
-  margin-top: 0;
 }
 
 .guide-header {
@@ -149,164 +121,217 @@
   margin: 0;
 }
 
-.bot-card {
+/* 机器人列表：折叠卡片 */
+.bot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bot-item {
   border: 1px solid var(--editor-border);
   border-radius: 12px;
   background: var(--editor-panel-bg);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
 }
 
-.bot-card-primary {
-  border-color: var(--color-border-primary);
-  box-shadow: none;
+.bot-item:hover {
+  border-color: var(--editor-border-strong);
 }
 
-.bot-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--editor-border);
+.bot-item.is-expanded {
+  border-color: var(--editor-border-strong);
 }
 
-.bot-card-summary,
-.accounts-summary {
+.bot-item-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 0;
-  flex: 1;
-}
-
-.bot-card-heading,
-.accounts-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  text-align: left;
-}
-
-.bot-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.bot-card-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-
-.bot-card-header h4,
-.accounts-toolbar h4 {
-  margin: 0;
-  font-size: 16px;
-  color: var(--text-primary);
-}
-
-.bot-card-header p,
-.accounts-toolbar p,
-.empty-accounts p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.accounts-toolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
   padding: 14px 16px;
-  border: 1px solid var(--editor-border);
-  border-radius: 12px;
-  background: var(--editor-panel-bg);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
 }
 
-.accounts-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
+.bot-item-header:hover {
+  background: var(--editor-panel-muted);
 }
 
-.accounts-count,
-.account-state-badge {
+.bot-item-header:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.bot-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--editor-border);
-  background: var(--editor-panel-muted);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.bot-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bot-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.bot-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.account-state-badge.enabled {
-  border-color: var(--color-border-primary);
+.bot-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bot-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.bot-status.running {
   background: var(--color-success-light);
   color: var(--color-success);
 }
 
-.bot-card-preview {
+.bot-status.enabled {
+  background: var(--color-bg-tertiary);
   color: var(--text-secondary);
-  font-weight: 500;
 }
 
-.account-meta-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 160px;
+.bot-status.stopped {
+  background: var(--color-bg-tertiary);
+  color: var(--text-tertiary, var(--text-secondary));
 }
 
-.account-enabled-field {
-  justify-content: flex-end;
-}
-
-.empty-accounts {
-  padding: 18px 16px;
-  border: 1px dashed var(--editor-border);
-  border-radius: 10px;
-  background: var(--editor-panel-muted);
-}
-
-.remove-account-button {
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: 8px;
+.bot-status.failed {
   background: var(--color-error-light);
   color: var(--color-error);
+}
+
+.bot-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.bot-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.bot-icon-button:hover:not(:disabled) {
+  background: var(--editor-panel-hover);
+  color: var(--text-primary);
+}
+
+.bot-icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bot-icon-button-danger:hover:not(:disabled) {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.bot-chevron svg {
+  transition: transform 0.2s ease;
+}
+
+.bot-chevron.expanded svg {
+  transform: rotate(180deg);
+}
+
+.bot-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid var(--editor-border);
+}
+
+.bot-delivery-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  background: var(--color-warning-light);
+  font-size: 12px;
+  color: var(--color-warning);
+}
+
+.bot-delivery-error-title {
+  font-weight: 700;
+}
+
+.add-bot-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed var(--editor-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
-  transition: all 0.2s;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.remove-account-button:hover {
-  background: var(--color-error-light);
-  border-color: var(--color-border-primary);
+.add-bot-row:hover {
+  border-color: var(--editor-border-strong);
+  background: var(--editor-panel-muted);
+  color: var(--color-accent);
 }
 
+/* 渠道字段（来自各渠道的 #fields 插槽） */
 :deep(.config-label) {
   font-size: 14px;
   font-weight: 500;
@@ -403,7 +428,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 0 14px 14px;
+  padding: 12px 14px 14px;
   border-top: 1px dashed var(--editor-border);
 }
 
@@ -452,12 +477,7 @@
   transition: all 0.2s;
 }
 
-:deep(.remove-button:hover) {
-  background: var(--color-error);
-}
-
-:deep(.add-button),
-.test-button {
+:deep(.add-button) {
   min-height: 38px;
   padding: 0 16px;
   border-radius: 8px;
@@ -465,9 +485,6 @@
   font-size: 13px;
   font-weight: 600;
   transition: all 0.2s;
-}
-
-:deep(.add-button) {
   border: 1px dashed var(--editor-border);
   background: var(--editor-panel-muted);
   color: var(--text-secondary);
@@ -479,208 +496,39 @@
   background: var(--color-bg-tertiary);
 }
 
-.add-bot-button {
-  white-space: nowrap;
-}
-
-.test-button {
-  white-space: nowrap;
-}
-
-
-
-
-
-
-
-
-
-
-
-.collapse-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border-primary) !important;
-  border-radius: 10px;
-  background: var(--color-bg-tertiary) !important;
-  color: var(--color-accent) !important;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: var(--shadow-sm);
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-}
-
-.collapse-toggle-expanded {
-  border-color: var(--color-border-primary) !important;
-  background: var(--color-bg-tertiary) !important;
-  color: var(--color-accent) !important;
-}
-
-.collapse-toggle:hover {
-  background: var(--color-bg-tertiary) !important;
-  border-color: var(--color-border-primary) !important;
-  color: var(--color-accent) !important;
-}
-
-.collapse-toggle-expanded:hover {
-  background: var(--color-bg-tertiary) !important;
-  border-color: var(--color-border-primary) !important;
-  color: var(--color-accent) !important;
-}
-
-.collapse-toggle:focus-visible {
-  outline: none;
-  border-color: var(--color-border-primary) !important;
-  box-shadow: none;
-}
-
-.collapse-toggle-expanded:focus-visible {
-  border-color: var(--color-border-primary) !important;
-  box-shadow: var(--shadow-sm);
-}
-
-.collapse-toggle-label {
-  white-space: nowrap;
-}
-
-.collapse-toggle-icon {
-  transition: transform 0.2s ease;
-}
-
-.collapse-toggle-icon.expanded {
-  transform: rotate(90deg);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-.test-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-@container (max-width: 920px) {
-  .bot-card-header,
-  .accounts-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .bot-card-summary,
-  .accounts-summary,
-  .bot-card-controls,
-  .accounts-toolbar-actions {
-    width: 100%;
-  }
-
-  .bot-card-controls,
-  .accounts-toolbar-actions {
-    justify-content: flex-start;
-  }
-}
-
-@container (max-width: 640px) {
-  .enable-toggle-wrapper,
-  .bot-card-header,
-  .accounts-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .bot-card-summary,
-  .accounts-summary {
-    width: 100%;
-    justify-content: space-between;
+@container (max-width: 560px) {
+  .bot-item-header {
     align-items: flex-start;
   }
 
-  .bot-card-summary {
-    flex-wrap: wrap;
+  .bot-actions {
+    align-self: center;
   }
 
-  .accounts-toolbar-actions {
-    width: 100%;
-  }
-
-  .account-meta-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .bot-card-controls,
-  .accounts-toolbar-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
-  }
-
-  .bot-card-controls > *,
-  .accounts-toolbar-actions > * {
-    width: 100%;
-  }
-
-  .primary-enabled-toggle {
-    grid-column: 1 / -1;
-  }
-
-  .test-button,
-  .collapse-toggle,
-  .add-bot-button,
-  .remove-account-button {
-    justify-content: center;
+  .enable-toggle-wrapper {
+    align-items: flex-start;
   }
 }
 
-@container (max-width: 480px) {
-  .bot-card-controls,
-  .accounts-toolbar-actions {
-    grid-template-columns: 1fr;
+@container (max-width: 420px) {
+  .bot-avatar {
+    display: none;
   }
 
-  .bot-card,
-  .config-section-highlight,
-  .guide-card {
-    padding: 14px;
+  .bot-item-header {
+    gap: 8px;
+    padding: 12px;
   }
 
-  .bot-card-header,
-  .accounts-toolbar {
-    gap: 14px;
+  .bot-item-body {
+    padding: 12px;
   }
 
-  .accounts-summary,
-  .bot-card-summary {
-    flex-direction: column;
-    gap: 10px;
-    align-items: flex-start;
+  .bot-actions {
+    gap: 0;
   }
 
-  .bot-card-heading,
-  .accounts-heading {
-    width: 100%;
-  }
-
-  .accounts-count,
-  .account-state-badge {
-    min-width: 24px;
-    padding-inline: 8px;
+  .advanced-summary-hint {
+    display: none;
   }
 }

@@ -340,6 +340,7 @@ import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import ModelParameterFields from '@/components/ui/ModelParameterFields.vue'
 import ProviderPresetPanel from '@/modules/settings/ProviderPresetPanel.vue'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   findFirstSelectableProvider,
   findProviderById,
@@ -356,6 +357,7 @@ import {
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 type SessionConfigUpdateAction = 'saved' | 'reset'
 type ProviderOption = Pick<ProviderMetadata, 'id' | 'name'> & {
@@ -750,7 +752,14 @@ async function saveConfig() {
 }
 
 async function resetToDefaults() {
-  if (!confirm(t('chat.sessionConfig.confirmReset'))) {
+  const confirmed = await confirm({
+    title: t('common.confirm'),
+    message: t('chat.sessionConfig.confirmReset'),
+    type: 'warning',
+    confirmText: t('common.confirm'),
+    confirmVariant: 'warning'
+  })
+  if (!confirmed) {
     return false
   }
 

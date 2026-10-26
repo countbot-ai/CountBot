@@ -120,6 +120,7 @@ import {
   Shield as ShieldIcon
 } from 'lucide-vue-next'
 import ConfigForm from './components/ConfigForm.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import ConfigHelpModal from './components/ConfigHelpModal.vue'
 import { skillsAPI } from '@/api/endpoints'
 import type { ConfigFieldSchema } from '@/api/endpoints'
@@ -134,6 +135,8 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'saved'): void
 }>()
+
+const { confirm } = useConfirm()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -222,9 +225,14 @@ const handleFix = async () => {
   }
 }
 
-const handleClose = () => {
+const handleClose = async () => {
   if (hasChanges.value) {
-    if (confirm('有未保存的更改，确定要关闭吗？')) {
+    const confirmed = await confirm({
+      title: '未保存的更改',
+      message: '有未保存的更改，确定要关闭吗？',
+      type: 'warning'
+    })
+    if (confirmed) {
       emit('close')
     }
   } else {

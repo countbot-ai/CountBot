@@ -1,20 +1,29 @@
+/**
+ * 设置面板骨架
+ *
+ * 与主窗口同一套色板：内容区用页面底色，侧栏用沉一档的浅灰，
+ * 结构靠 1px 7% 微边框 + 背景阶梯表达，不再靠粗边和阴影。
+ */
 
 .settings-panel {
   display: flex;
   height: 100%;
-  background: var(--bg-secondary);
   min-width: 0;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
 }
 
-/* 侧边栏 */
+/* ---------- 侧边栏 ---------- */
+
 .sidebar {
-  width: 120px;
-  background: var(--bg-primary);
-  border-right: 1px solid var(--border-color);
+  width: 176px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  transition: width 0.3s ease;
+  background: var(--color-bg-secondary);
+  border-right: 1px solid var(--color-border-primary);
+  transition: width var(--transition-base) var(--ease-snappy);
 }
 
 .sidebar.is-collapsed {
@@ -22,97 +31,102 @@
 }
 
 .sidebar-header {
-  padding: 16px 12px;
-  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  height: 48px;
+  padding: 0 10px 0 14px;
+  flex-shrink: 0;
 }
 
 .sidebar.is-collapsed .sidebar-header {
-  padding: 16px 8px;
+  padding: 0 8px;
   justify-content: center;
 }
 
 .sidebar-header h2 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
 }
 
 .collapse-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
   flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .collapse-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .nav-menu {
   flex: 1;
-  padding: 12px 8px;
+  min-height: 0;
+  padding: 4px 8px 12px;
   overflow-y: auto;
 }
 
 .sidebar.is-collapsed .nav-menu {
-  padding: 12px 4px;
+  padding: 4px 6px 12px;
 }
 
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  padding: 9px 10px;
-  margin-bottom: 4px;
   min-width: 0 !important;
-  min-height: auto !important;
-  border: 1px solid transparent !important;
-  border-radius: 8px;
+  min-height: 32px !important;
+  padding: 0 9px !important;
+  margin-bottom: 1px;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
   background: transparent !important;
-  color: var(--text-secondary) !important;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
   box-shadow: none !important;
-  transition: all 0.2s ease;
+  color: var(--color-text-secondary) !important;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
   text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .sidebar.is-collapsed .nav-item {
-  padding: 9px;
   justify-content: center;
+  padding: 0 !important;
 }
 
 .nav-item:hover {
-  background: var(--bg-hover) !important;
-  border-color: var(--color-border-primary) !important;
-  color: var(--text-primary) !important;
-  box-shadow: none !important;
+  background: var(--color-bg-tertiary) !important;
+  color: var(--color-text-primary) !important;
 }
 
 .nav-item.active {
-  border-color: var(--color-border-strong) !important;
   background: var(--color-bg-tertiary) !important;
-  color: var(--text-primary) !important;
-  box-shadow: none !important;
+  color: var(--color-text-primary) !important;
+  font-weight: var(--font-weight-medium);
 }
 
 .nav-item:focus {
@@ -122,8 +136,7 @@
 
 .nav-item:focus-visible {
   outline: none !important;
-  border-color: var(--color-border-primary) !important;
-  box-shadow: none !important;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong) !important;
 }
 
 .nav-icon {
@@ -132,6 +145,7 @@
 
 .nav-label {
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -141,73 +155,77 @@
   display: none;
 }
 
+/* 唯一的彩色强调：选中项左侧 2px 暖色指示条 */
 .active-indicator {
   position: absolute;
-  left: 0;
+  left: -8px;
   top: 50%;
   transform: translateY(-50%);
-  width: 3px;
-  height: 20px;
-  background: var(--color-primary);
+  width: 2px;
+  height: 16px;
   border-radius: 0 2px 2px 0;
+  background: var(--color-accent);
 }
 
+.sidebar.is-collapsed .active-indicator {
+  left: -6px;
+}
 
+/* ---------- 主内容区 ---------- */
 
-
-
-/* 主内容区 */
 .main-content {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-width: 0;
 }
 
 .content-wrapper {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
-  padding: 32px;
+  padding: 24px 32px 32px;
   container-type: inline-size;
   container-name: settings-content;
-  min-width: 0;
 }
 
 .tab-pane {
   width: 100%;
-  max-width: 900px;
+  max-width: 860px;
   margin: 0 auto;
-  animation: fadeIn 0.3s ease;
   min-width: 0;
+  animation: settings-pane-in 180ms var(--ease-typewriter);
 }
 
 .tab-pane-full {
   max-width: none;
-  min-height: 640px;
   height: 100%;
+  min-height: 520px;
 }
 
-@keyframes fadeIn {
+@keyframes settings-pane-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-/* 底部操作栏 */
+/* ---------- 底部操作栏 ---------- */
+
 .footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 32px;
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-primary);
+  flex-shrink: 0;
+  height: 56px;
+  padding: 0 32px;
+  border-top: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
 }
 
 .footer-content {
@@ -220,51 +238,59 @@
 
 .footer-left {
   flex: 1;
+  min-width: 0;
 }
 
 .footer-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .save-hint {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
 }
 
-/* 按钮样式 - 灰色系 */
+/* 主操作唯一：保存是实心，其余都是描边/幽灵 */
 .action-button {
-  padding: 8px 16px;
-  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 14px;
   border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.action-button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .action-button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* 关闭按钮 - 透明 */
 .action-button-close {
   background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  color: var(--color-text-secondary);
 }
 
 .action-button-close:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--text-tertiary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
-/* 保存按钮 - 主色 */
 .action-button-save {
   background: var(--color-primary);
   color: var(--color-text-inverse);
@@ -274,30 +300,92 @@
   background: var(--color-primary-hover);
 }
 
-/* 保存全部按钮 - 次级 */
 .action-button-save-all {
-  background: var(--color-bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--color-border-primary);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .action-button-save-all:hover:not(:disabled) {
-  background: var(--hover-bg);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
 }
 
-/* 加载动画 */
+/* 加载动画 - 用三点脉动，不用省略号逐帧改宽 */
+.loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .loading-dots::after {
-  content: '...';
-  animation: dots 1.5s steps(4, end) infinite;
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  animation: settings-dot-pulse 900ms var(--ease-snappy) infinite;
 }
 
-@keyframes dots {
-  0%, 20% { content: '.'; }
-  40% { content: '..'; }
-  60%, 100% { content: '...'; }
+@keyframes settings-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
-/* 响应式 */
+/* ---------- Persona 子标签：分段控件 ---------- */
+
+.persona-tabs {
+  width: 100%;
+}
+
+.persona-tab-buttons {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  padding: 2px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+
+.persona-tab-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.persona-tab-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.persona-tab-btn.active {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.persona-tab-content {
+  width: 100%;
+}
+
+/* ---------- 响应式 ---------- */
+
 @media (max-width: 768px) {
   .settings-panel {
     flex-direction: column;
@@ -306,7 +394,7 @@
   .sidebar {
     width: 100% !important;
     border-right: none;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-border-primary);
     flex-shrink: 0;
   }
 
@@ -316,11 +404,10 @@
 
   .nav-menu {
     display: flex;
-    overflow-x: auto;
-    padding: 6px 8px;
     gap: 2px;
+    padding: 6px 8px;
+    overflow-x: auto;
     scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
   }
 
   .nav-menu::-webkit-scrollbar {
@@ -328,36 +415,31 @@
   }
 
   .nav-item {
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
     width: auto;
-    padding: 8px 10px;
-    text-align: center;
-    flex-shrink: 0;
-    border-radius: 6px;
+    min-height: 30px !important;
+    padding: 0 12px !important;
     margin-bottom: 0;
+    flex-shrink: 0;
   }
 
   .nav-label {
     display: block !important;
-    font-size: 11px;
-    white-space: nowrap;
+    font-size: var(--font-size-xs);
     flex: none;
   }
 
   .nav-icon {
-    width: 18px !important;
-    height: 18px !important;
+    width: 16px !important;
+    height: 16px !important;
   }
 
   .active-indicator {
     left: 50%;
     top: auto;
-    bottom: 0;
+    bottom: -1px;
     transform: translateX(-50%);
-    width: 20px;
-    height: 3px;
+    width: 16px;
+    height: 2px;
     border-radius: 2px 2px 0 0;
   }
 
@@ -366,64 +448,7 @@
   }
 
   .footer {
-    padding: 12px 16px;
+    height: auto;
+    padding: 10px 16px;
   }
-}
-
-@media (max-width: 480px) {
-  .nav-item {
-    padding: 6px 8px;
-  }
-
-  .nav-label {
-    font-size: 10px;
-  }
-
-  .content-wrapper {
-    padding: 12px;
-  }
-
-  .footer {
-    padding: 10px 12px;
-  }
-}
-
-/* Persona Sub-tabs */
-.persona-tabs {
-  width: 100%;
-}
-
-.persona-tab-buttons {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-  border-bottom: 2px solid var(--border-color);
-}
-
-.persona-tab-btn {
-  padding: 12px 20px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.2s;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-}
-
-.persona-tab-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.persona-tab-btn.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--text-secondary);
-}
-
-.persona-tab-content {
-  width: 100%;
 }

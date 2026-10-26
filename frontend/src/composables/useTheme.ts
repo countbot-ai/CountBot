@@ -4,19 +4,22 @@
  * 提供主题切换、持久化和系统主题检测功能
  */
 
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import {
     type Theme,
+    type ThemePalette,
+    type ThemePreset,
     detectSystemTheme,
     watchSystemTheme,
     getStoredTheme,
     setStoredTheme,
-    getEffectiveTheme
+    getStoredThemePalette,
+    setStoredThemePalette
 } from '@/i18n/utils/detector'
 
-const THEME_KEY = 'CountBot-theme'
 const currentTheme = ref<'light' | 'dark'>('light')
 const themeMode = ref<Theme>('auto')
+const themePalette = ref<ThemePalette>('warm')
 
 let unwatchSystemTheme: (() => void) | null = null
 
@@ -37,18 +40,72 @@ export function useTheme() {
     const isAuto = computed(() => themeMode.value === 'auto')
 
     /**
+     * 当前设置页应高亮的主题预设。
+     * auto 优先；暖色回落为 light/dark，非暖色色调直接作为预设值。
+     */
+    const themePreset = computed<ThemePreset>(() => {
+        if (themeMode.value === 'auto') return 'auto'
+        if (themePalette.value === 'warm') {
+            return themeMode.value === 'dark' ? 'dark' : 'light'
+        }
+        return themePalette.value
+    })
+
+    /**
+     * 应用色调
+     */
+    function applyPalette(palette: ThemePalette) {
+        themePalette.value = palette
+        setStoredThemePalette(palette)
+        document.documentElement.setAttribute('data-palette', palette)
+
+        // 触发自定义事件
+        window.dispatchEvent(
+            new CustomEvent('theme-change', {
+                detail: { theme: currentTheme.value, palette }
+            })
+        )
+    }
+
+    /**
      * 设置主题
      */
     function setTheme(theme: 'light' | 'dark') {
         currentTheme.value = theme
         document.documentElement.setAttribute('data-theme', theme)
+        document.documentElement.setAttribute('data-palette', themePalette.value)
 
         // 同时更新 body class（兼容某些组件库）
         document.body.classList.remove('light', 'dark')
         document.body.classList.add(theme)
 
         // 触发自定义事件
-        window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme } }))
+        window.dispatchEvent(
+            new CustomEvent('theme-change', {
+                detail: { theme, palette: themePalette.value }
+            })
+        )
+    }
+
+    /**
+     * 设置完整主题预设（设置页 6 个选项）。
+     * 「跟随系统」保留当前色调，只把明暗交给系统。
+     */
+    function setThemePreset(preset: ThemePreset) {
+        if (preset === 'auto') {
+            setThemeMode('auto')
+            return
+        }
+
+        if (preset === 'light' || preset === 'dark') {
+            applyPalette('warm')
+            setThemeMode(preset)
+            return
+        }
+
+        // 冷色 / 森绿 / 樱花：固定浅色外观，同时写入色调
+        applyPalette(preset)
+        setThemeMode('light')
     }
 
     /**
@@ -95,6 +152,12 @@ export function useTheme() {
      * 初始化主题
      */
     function initTheme() {
+        const storedPalette = getStoredThemePalette()
+        if (storedPalette) {
+            themePalette.value = storedPalette
+        }
+        document.documentElement.setAttribute('data-palette', themePalette.value)
+
         const stored = getStoredTheme()
 
         if (stored) {
@@ -131,6 +194,8 @@ export function useTheme() {
         // 状态
         theme: currentTheme,
         themeMode,
+        themePalette,
+        themePreset,
         isDark,
         isLight,
         isAuto,
@@ -138,6 +203,8 @@ export function useTheme() {
         // 方法
         setTheme,
         setThemeMode,
+        setThemePreset,
+        applyPalette,
         toggleTheme,
         initTheme,
         getSystemTheme,

@@ -202,6 +202,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
 import { useMermaid } from '@/composables/useMermaid'
 import {
   X as XIcon,
@@ -235,6 +236,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const { renderMarkdown } = useMarkdown()
 const rootEl = ref<HTMLElement | null>(null)
 
@@ -301,9 +303,15 @@ const handleRemoveRequirement = (index: number) => {
   formData.value.requirements.splice(index, 1)
 }
 
-const handleClose = () => {
+const handleClose = async () => {
   if (hasUnsavedChanges()) {
-    if (confirm(t('memory.unsavedChanges'))) {
+    const confirmed = await confirm({
+      title: t('memory.unsavedChanges'),
+      type: 'warning',
+      confirmText: t('common.confirm'),
+      cancelText: t('common.cancel')
+    })
+    if (confirmed) {
       emit('close')
     }
   } else {

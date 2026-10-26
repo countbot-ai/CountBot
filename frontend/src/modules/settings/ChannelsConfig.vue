@@ -124,55 +124,6 @@
         <transition name="slide-down">
           <div v-show="expandedChannel === id" class="card-body">
             <div class="card-body-inner">
-              <div v-if="getChannelInstances(id).length" class="instance-status-panel">
-                <div class="instance-status-header">
-                  <h5>{{ translateOr('settings.channels.multiBot.instanceStatusTitle', '账号运行状态') }}</h5>
-                  <span class="instance-status-summary">
-                    {{ getChannelInstances(id).length }} {{ translateOr('settings.channels.multiBot.instanceCount', '个账号') }}
-                  </span>
-                </div>
-                <div class="instance-status-list">
-                  <div
-                    v-for="instance in getChannelInstances(id)"
-                    :key="instance.instance_key"
-                    class="instance-status-item"
-                    :class="{ 'is-running': instance.running }"
-                  >
-                    <div class="instance-status-avatar" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                        <rect x="5" y="7" width="14" height="10" rx="4" fill="currentColor" opacity="0.16"></rect>
-                        <rect x="7" y="9" width="10" height="8" rx="3" stroke="currentColor" stroke-width="1.8"></rect>
-                        <path d="M10 6L8.5 4.5M14 6l1.5-1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-                        <circle cx="10" cy="13" r="1" fill="currentColor"></circle>
-                        <circle cx="14" cy="13" r="1" fill="currentColor"></circle>
-                        <path d="M10 15.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-                      </svg>
-                    </div>
-                    <div class="instance-status-main">
-                      <span class="instance-display-name">{{ getInstanceDisplayName(instance) }}</span>
-                      <span class="instance-account-id">{{ getInstanceMeta(instance) }}</span>
-                      <span
-                        v-if="getDeliveryError(instance)"
-                        class="instance-delivery-error"
-                      >
-                        <span class="instance-delivery-error-title">
-                          {{ t('settings.channels.deliveryError') }}
-                        </span>
-                        <span class="instance-delivery-error-detail">
-                          {{ formatDeliveryError(getDeliveryError(instance)) }}
-                        </span>
-                      </span>
-                    </div>
-                    <span
-                      class="instance-status-badge"
-                      :class="getInstanceStateClass(instance)"
-                    >
-                      {{ getInstanceStateLabel(instance) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
               <!-- 已实现渠道 -->
               <template v-if="isImplemented(id)">
                 <TelegramConfig
@@ -346,7 +297,6 @@ import WeComConfig from './channels/WeComConfig.vue'
 import XiaozhiConfig from './channels/XiaozhiConfig.vue'
 import WeiboConfig from './channels/WeiboConfig.vue'
 import ServerChanConfig from './channels/ServerChanConfig.vue'
-import type { ChannelInstanceStatus } from '@/store/channels'
 
 const { t, te } = useI18n()
 const channelsStore = useChannelsStore()
@@ -405,61 +355,6 @@ const isRunning = (channelId: string) => {
   return status && status.running
 }
 
-const getChannelInstances = (channelId: string): Array<ChannelInstanceStatus & { account_id: string; channel_id: string }> => {
-  const statusInstances = channelsStore.status[channelId]?.instances || {}
-  const config = channelsStore.channels[channelId]?.config || {}
-  const merged = new Map<string, ChannelInstanceStatus & { account_id: string; channel_id: string }>()
-
-  const hasConfiguredFields = (account: Record<string, any>) =>
-    Object.entries(account || {}).some(([key, value]) => {
-      if (['enabled', 'allow_from', 'account_id', 'draft_account_id', 'accounts'].includes(key)) {
-        return false
-      }
-      if (Array.isArray(value)) {
-        return value.length > 0
-      }
-      return Boolean(value)
-    })
-
-  const upsertInstance = (accountId: string, account: Record<string, any>, fromStatus = false) => {
-    const existing = merged.get(accountId)
-    const configured = hasConfiguredFields(account)
-    if (!configured && !account.enabled && !fromStatus) {
-      return
-    }
-
-    merged.set(accountId, {
-      channel_id: channelId,
-      account_id: accountId,
-      enabled: account.enabled ?? existing?.enabled ?? false,
-      running: account.running ?? existing?.running ?? false,
-      display_name:
-        account.display_name ||
-        existing?.display_name ||
-        '',
-      instance_key: account.instance_key || existing?.instance_key || `${channelId}:${accountId}`,
-      runtime_status: account.runtime_status ?? existing?.runtime_status
-    })
-  }
-
-  const primaryAccountId = String(config.account_id || 'default')
-  upsertInstance(primaryAccountId, config)
-
-  Object.entries(config.accounts || {}).forEach(([accountId, account]) => {
-    upsertInstance(accountId, account as Record<string, any>)
-  })
-
-  Object.entries(statusInstances).forEach(([accountId, instance]) => {
-    upsertInstance(accountId, instance as Record<string, any>, true)
-  })
-
-  return Array.from(merged.values()).sort((left, right) => {
-    if (left.account_id === 'default') return -1
-    if (right.account_id === 'default') return 1
-    return left.account_id.localeCompare(right.account_id)
-  })
-}
-
 const getChannelDisplayName = (channelId: string, fallback: string) => {
   const key = `settings.channels.catalog.${channelId}.name`
   return te(key) ? t(key) : fallback
@@ -468,46 +363,6 @@ const getChannelDisplayName = (channelId: string, fallback: string) => {
 const getChannelDisplayDescription = (channelId: string, fallback: string) => {
   const key = `settings.channels.catalog.${channelId}.description`
   return te(key) ? t(key) : fallback
-}
-
-const translateOr = (key: string, fallback: string) => (te(key) ? t(key) : fallback)
-
-const getDeliveryError = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) =>
-  instance.runtime_status?.delivery_error || null
-
-const getInstanceStateLabel = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) => {
-  const state = String(instance.runtime_status?.state || '').trim()
-  const keyMap: Record<string, string> = {
-    starting: 'settings.channels.runtimeState.starting',
-    connecting: 'settings.channels.runtimeState.connecting',
-    running: 'settings.channels.runtimeState.running',
-    stopping: 'settings.channels.runtimeState.stopping',
-    stopped: 'settings.channels.runtimeState.stopped',
-    failed: 'settings.channels.runtimeState.failed'
-  }
-  if (state && keyMap[state] && te(keyMap[state])) {
-    return t(keyMap[state])
-  }
-  if (instance.running) {
-    return t('settings.channels.running')
-  }
-  return instance.enabled
-    ? t('settings.channels.enabled')
-    : translateOr('settings.channels.multiBot.instanceStopped', '未运行')
-}
-
-const getInstanceStateClass = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) => {
-  const state = String(instance.runtime_status?.state || '').trim()
-  if (state === 'failed') {
-    return 'failed'
-  }
-  if (state === 'running') {
-    return 'running'
-  }
-  if (state === 'starting' || state === 'connecting' || state === 'stopping') {
-    return 'enabled'
-  }
-  return instance.running ? 'running' : (instance.enabled ? 'enabled' : 'stopped')
 }
 
 let statusPollTimer: number | null = null
@@ -535,47 +390,6 @@ watch(expandedChannel, (channelId) => {
 })
 
 onBeforeUnmount(stopStatusPolling)
-
-const formatDeliveryError = (detail: Record<string, any>) => {
-  const parts = [
-    detail.operation,
-    detail.status ? `HTTP ${detail.status}` : '',
-    detail.code !== undefined && detail.code !== null ? `code=${detail.code}` : '',
-    detail.msg || detail.error || '',
-    detail.log_id ? `log_id=${detail.log_id}` : ''
-  ].filter(Boolean)
-  return parts.join(' · ')
-}
-
-const formatInternalAccountId = (accountId: string) =>
-  te('settings.channels.multiBot.internalAccountIdBadge')
-    ? t('settings.channels.multiBot.internalAccountIdBadge', { id: accountId })
-    : `内部ID：${accountId}`
-
-const getInstanceDisplayName = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) => {
-  const explicitName = String(instance.display_name || '').trim()
-  const channelName = String(getChannelDisplayName(instance.channel_id, instance.channel_id)).trim().toLowerCase()
-  // 渠道名不适合当机器人名展示，空名时走统一兜底。
-  if (explicitName && explicitName.trim().toLowerCase() !== channelName) {
-    return explicitName
-  }
-
-  if (instance.account_id === 'default') {
-    return translateOr('settings.channels.multiBot.primaryTitle', '主机器人')
-  }
-
-  return te('settings.channels.multiBot.botLabelWithId')
-    ? t('settings.channels.multiBot.botLabelWithId', { id: instance.account_id })
-    : `机器人 ${instance.account_id}`
-}
-
-const getInstanceMeta = (instance: ChannelInstanceStatus & { account_id: string; channel_id: string }) => {
-  // 默认账号显示更友好的说明，其他账号保留内部 ID。
-  if (instance.account_id === 'default') {
-    return translateOr('settings.channels.multiBot.defaultAccount', '默认账号')
-  }
-  return formatInternalAccountId(instance.account_id)
-}
 
 const toggleChannelConfig = (channelId: string) => {
   expandedChannel.value = expandedChannel.value === channelId ? null : channelId

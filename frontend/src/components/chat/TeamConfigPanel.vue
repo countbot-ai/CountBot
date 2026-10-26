@@ -183,6 +183,7 @@ import {
 import { settingsAPI, type ProviderMetadata } from '@/api'
 import { agentTeamsApi, type TeamModelConfig } from '@/api/agentTeams'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import ModelParameterFields from '@/components/ui/ModelParameterFields.vue'
 import {
@@ -202,6 +203,7 @@ import {
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 type ProviderOption = Pick<ProviderMetadata, 'id' | 'name'> & {
   defaultApiBase?: string
@@ -383,7 +385,13 @@ async function saveConfig() {
 }
 
 async function resetToDefaults() {
-  if (!confirm(t('chat.teamConfig.resetConfirm'))) {
+  const confirmed = await confirm({
+    title: t('chat.teamConfig.resetConfirm'),
+    type: 'warning',
+    confirmText: t('common.confirm'),
+    confirmVariant: 'warning'
+  })
+  if (!confirmed) {
     return false
   }
 

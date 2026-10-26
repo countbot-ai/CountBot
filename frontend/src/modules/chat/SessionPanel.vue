@@ -340,7 +340,7 @@ import { chatAPI, type SessionSearchHit as ApiSessionSearchHit } from '@/api'
 const chatStore = useChatStore()
 const memoryStore = useMemoryStore()
 const toast = useToast()
-const { confirmDelete } = useConfirm()
+const { confirm, confirmDelete } = useConfirm()
 const { t, locale } = useI18n()
 
 // 定义事件
@@ -872,7 +872,13 @@ function formatDate(dateString: string): string {
 async function handleSummarizeSession(session: Session, target: SummaryTarget) {
   if (summarizeState.value) return
 
-  const confirmed = confirm(t('sessions.confirmSummarize'))
+  const confirmed = await confirm({
+    title: t('common.confirm'),
+    message: t('sessions.confirmSummarize'),
+    type: 'warning',
+    confirmText: t('common.confirm'),
+    confirmVariant: 'warning'
+  })
   if (!confirmed) return
 
   summarizeState.value = { sessionId: session.id, target }
@@ -907,7 +913,13 @@ async function handleSummarizeToMemory(session: Session) {
 async function handleCompactSession(session: Session) {
   if (summarizeState.value) return
 
-  const confirmed = confirm(t('sessions.confirmCompact'))
+  const confirmed = await confirm({
+    title: t('common.confirm'),
+    message: t('sessions.confirmCompact'),
+    type: 'warning',
+    confirmText: t('common.confirm'),
+    confirmVariant: 'warning'
+  })
   if (!confirmed) return
 
   summarizeState.value = { sessionId: session.id, target: 'compact' }

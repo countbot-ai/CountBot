@@ -80,7 +80,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { X as XIcon } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
 import Button from './Button.vue'
 
 interface Props {
@@ -107,14 +106,15 @@ const props = withDefaults(defineProps<Props>(), {
   title: '',
   size: 'medium',
   closable: true,
-  maskClosable: true,
+  // 默认禁止点击遮罩关闭：表单/危险确认误触会丢失录入内容。
+  // 纯展示类弹窗如需点击遮罩关闭，显式传 :mask-closable="true"。
+  maskClosable: false,
   showHeader: true,
   showFooter: false,
   confirmLoading: false
 })
 
 const emit = defineEmits<Emits>()
-// const { t: _t } = useI18n()
 
 const modalRef = ref<HTMLElement>()
 const isClosing = ref(false)
@@ -236,11 +236,11 @@ onBeforeUnmount(() => {
 }
 
 .modal-medium {
-  max-width: 600px;
+  max-width: 520px;
 }
 
 .modal-large {
-  max-width: 900px;
+  max-width: 800px;
 }
 
 .modal-full {
@@ -291,6 +291,8 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   color: var(--text-primary);
   background: var(--bg-primary);
+  /* 预留最小高度，避免「加载中 → 加载完成」时弹窗高度猛跳 */
+  min-height: 120px;
 }
 
 .modal-footer {

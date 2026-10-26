@@ -8,12 +8,17 @@
         'status-disconnected': !isConnected && !isConnecting && !reconnectingVisible
       }"
     >
-      <span v-if="isConnecting || reconnectingVisible" class="status-bar-content">
+      <span v-if="reconnectingVisible" class="status-bar-content">
         <span class="status-spinner" />
-        {{ $t('chat.connectionStatus.reconnecting', { attempt: reconnectAttemptsDisplay, max: 10 }) }}
+        {{ $t('chat.connectionStatus.reconnecting', { attempt: reconnectAttemptsDisplay, max: maxAttempts }) }}
+        <span v-if="disconnectedReason" class="status-bar-hint">· {{ disconnectedReason }}</span>
+      </span>
+      <span v-else-if="isConnecting" class="status-bar-content">
+        <span class="status-spinner" />
+        {{ $t('chat.connectionStatus.connecting') }}
       </span>
       <span v-else class="status-bar-content">
-        {{ $t('chat.connectionStatus.disconnected') }}
+        {{ disconnectedReason || $t('chat.connectionStatus.disconnected') }}
         <button class="status-bar-action" @click="$emit('reconnect')">{{ $t('chat.connectionStatus.reconnectNow') }}</button>
       </span>
     </div>
@@ -26,6 +31,8 @@ interface Props {
   isConnecting: boolean
   reconnectingVisible: boolean
   reconnectAttemptsDisplay: number
+  maxAttempts: number
+  disconnectedReason?: string
 }
 
 defineProps<Props>()
@@ -69,6 +76,11 @@ defineEmits<Emits>()
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.status-bar-hint {
+  opacity: 0.85;
+  font-weight: 400;
 }
 
 .status-spinner {

@@ -239,6 +239,13 @@
               <div class="detail-header">
                 <component :is="AlertCircleIcon" :size="14" />
                 <span class="detail-title">{{ $t('cron.lastError') }}</span>
+                <button
+                  class="detail-copy-btn"
+                  :title="$t('common.copy')"
+                  @click="handleCopyDetail(getJobDetail(job.id)?.last_error)"
+                >
+                  <component :is="CopyIcon" :size="13" />
+                </button>
               </div>
               <pre class="detail-text">{{ getJobDetail(job.id)?.last_error }}</pre>
             </div>
@@ -250,6 +257,13 @@
               <div class="detail-header">
                 <component :is="MessageSquareIcon" :size="14" />
                 <span class="detail-title">{{ $t('cron.lastResponse') }}</span>
+                <button
+                  class="detail-copy-btn"
+                  :title="$t('common.copy')"
+                  @click="handleCopyDetail(getJobDetail(job.id)?.last_response)"
+                >
+                  <component :is="CopyIcon" :size="13" />
+                </button>
               </div>
               <pre class="detail-text">{{ getJobDetail(job.id)?.last_response }}</pre>
             </div>
@@ -322,16 +336,20 @@ import {
   Send as SendIcon,
   BarChart as BarChartIcon,
   XCircle as XCircleIcon,
-  FileText as FileTextIcon
+  FileText as FileTextIcon,
+  Copy as CopyIcon
 } from 'lucide-vue-next'
 import { useCronStore } from '@/store/cron'
 import type { CronJob } from '@/api'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import JobEditor from './JobEditor.vue'
 
 const { t } = useI18n()
 const cronStore = useCronStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // State
 const showEditor = ref(false)
@@ -367,6 +385,16 @@ const toggleDetails = async (jobId: string) => {
 // Helper to get job detail
 const getJobDetail = (jobId: string) => {
   return cronStore.jobDetails.get(jobId)
+}
+
+const handleCopyDetail = async (text?: string | null) => {
+  if (!text) return
+  try {
+    await copyTextToClipboard(text)
+    toast.success(t('common.copied'))
+  } catch (err) {
+    toast.error(t('common.copyFailed'))
+  }
 }
 
 const getJobPreview = (job: CronJob): string => {
@@ -568,16 +596,21 @@ const handleToggleJob = async (id: string, enabled: boolean) => {
 }
 
 const handleDeleteJob = async (id: string, name: string) => {
-  if (!confirm(t('cron.deleteConfirm', { name }))) {
-    return
-  }
-
-  try {
-    await cronStore.deleteJob(id)
-    toast.success(t('cron.deleteSuccess', { name }))
-  } catch (err: any) {
-    toast.error(t('cron.deleteError'))
-  }
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('cron.deleteConfirm', { name }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      try {
+        await cronStore.deleteJob(id)
+        toast.success(t('cron.deleteSuccess', { name }))
+      } catch (err: any) {
+        toast.error(t('cron.deleteError'))
+      }
+    }
+  })
 }
 
 // Lifecycle

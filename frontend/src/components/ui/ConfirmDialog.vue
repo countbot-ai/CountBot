@@ -3,7 +3,8 @@
     v-model="internalShow"
     :title="title"
     :size="size"
-    @update:model-value="handleModalUpdate"
+    :mask-closable="false"
+    :closable="!loading"
   >
     <div class="confirm-dialog">
       <div
@@ -38,6 +39,7 @@
       <div class="confirm-dialog-actions">
         <Button
           variant="outline"
+          :disabled="loading"
           @click="handleCancel"
         >
           {{ cancelText || $t('common.cancel') }}
@@ -90,7 +92,8 @@ const emit = defineEmits<{
 const internalShow = computed({
   get: () => props.show,
   set: (value: boolean) => {
-    if (!value) {
+    // loading 期间禁止任何关闭路径
+    if (!value && !props.loading) {
       handleCancel()
     }
   }
@@ -111,14 +114,9 @@ const handleConfirm = () => {
 }
 
 const handleCancel = () => {
+  if (props.loading) return
   emit('cancel')
   emit('close')
-}
-
-const handleModalUpdate = (value: boolean) => {
-  if (!value) {
-    handleCancel()
-  }
 }
 </script>
 

@@ -1,0 +1,332 @@
+/**
+ * 扩展色调 - 冷色 / 森绿 / 樱花
+ *
+ * 暖色仍是 variables.css + themes/light.css + themes/dark.css 的默认值；
+ * 本文件只在 <html data-palette="..."> 时覆盖核心令牌，不改任何组件样式。
+ * 三种预设卡片固定为浅色外观；同时保留深色令牌，供「跟随系统」在
+ * 当前色调下解析系统深色时使用。
+ */
+
+/* ==================== 冷色 ==================== */
+
+[data-palette='cool'][data-theme='light'] {
+    --color-accent: #2563eb;
+    --color-accent-hover: #1d4ed8;
+    --color-accent-active: #1e40af;
+    --color-accent-light: #eff6ff;
+    --color-accent-alpha: rgba(37, 99, 235, 0.12);
+
+    --color-primary: #15181d;
+    --color-primary-hover: #262a31;
+    --color-primary-active: #343a43;
+    --color-primary-light: #f1f2f4;
+    --color-primary-alpha: rgba(21, 24, 29, 0.06);
+
+    --color-secondary: #5b6270;
+    --color-secondary-hover: #454b57;
+    --color-secondary-light: #f1f2f4;
+
+    --color-text-primary: #15181d;
+    --color-text-secondary: #5b6270;
+    --color-text-tertiary: #6f7680;
+    --color-text-disabled: #a8adb6;
+    --color-text-inverse: #ffffff;
+
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f2f3f5;
+    --color-bg-tertiary: #eaecf0;
+    --color-bg-elevated: #ffffff;
+    --color-bg-overlay: rgba(15, 23, 42, 0.32);
+
+    --color-border-primary: rgba(15, 23, 42, 0.07);
+    --color-border-secondary: rgba(15, 23, 42, 0.12);
+    --color-border-strong: rgba(15, 23, 42, 0.2);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(15, 23, 42, 0.06);
+    --color-shadow-hover: rgba(15, 23, 42, 0.1);
+    --color-overlay: rgba(15, 23, 42, 0.32);
+
+    --code-bg: #f3f4f6;
+    --code-text: #1f2937;
+    --code-comment: #6f7680;
+    --code-keyword: #1d4ed8;
+    --code-string: #0f766e;
+    --code-number: #b45309;
+    --code-function: #6d28d9;
+
+    --scrollbar-thumb: rgba(15, 23, 42, 0.14);
+    --scrollbar-thumb-hover: rgba(15, 23, 42, 0.24);
+
+    --tooltip-bg: #15181d;
+    --tooltip-text: #ffffff;
+}
+
+[data-palette='cool'][data-theme='dark'] {
+    --color-accent: #60a5fa;
+    --color-accent-hover: #3b82f6;
+    --color-accent-active: #2563eb;
+    --color-accent-light: #16233a;
+    --color-accent-alpha: rgba(96, 165, 250, 0.18);
+
+    --color-primary: #f1f3f5;
+    --color-primary-hover: #ffffff;
+    --color-primary-active: #cfd5dd;
+    --color-primary-light: #24272c;
+    --color-primary-alpha: rgba(241, 243, 245, 0.08);
+
+    --color-secondary: #b6bcc5;
+    --color-secondary-hover: #cbd2da;
+    --color-secondary-light: #24272c;
+
+    --color-text-primary: #f1f3f5;
+    --color-text-secondary: #b6bcc5;
+    --color-text-tertiary: #8b929c;
+    --color-text-disabled: #6f7680;
+    --color-text-inverse: #111317;
+
+    --color-bg-primary: #181a1e;
+    --color-bg-secondary: #131518;
+    --color-bg-tertiary: #24272c;
+    --color-bg-elevated: #202329;
+    --color-bg-overlay: rgba(0, 0, 0, 0.62);
+
+    --color-border-primary: rgba(255, 255, 255, 0.08);
+    --color-border-secondary: rgba(255, 255, 255, 0.12);
+    --color-border-strong: rgba(255, 255, 255, 0.2);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-hover: rgba(0, 0, 0, 0.52);
+    --color-overlay: rgba(0, 0, 0, 0.62);
+
+    --code-bg: #14161a;
+    --code-text: #dbe1e8;
+    --code-comment: #8b929c;
+    --code-keyword: #60a5fa;
+    --code-string: #6ee7b7;
+    --code-number: #fbbf24;
+    --code-function: #c4b5fd;
+
+    --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+
+    --tooltip-bg: #202329;
+    --tooltip-text: #f1f3f5;
+}
+
+/* ==================== 森绿 ==================== */
+
+[data-palette='forest'][data-theme='light'] {
+    --color-accent: #2f7d5a;
+    --color-accent-hover: #276a4c;
+    --color-accent-active: #1f553d;
+    --color-accent-light: #eaf4ee;
+    --color-accent-alpha: rgba(47, 125, 90, 0.12);
+
+    --color-primary: #1a211c;
+    --color-primary-hover: #2a332c;
+    --color-primary-active: #3a453c;
+    --color-primary-light: #eef2ed;
+    --color-primary-alpha: rgba(26, 33, 28, 0.06);
+
+    --color-secondary: #5b655d;
+    --color-secondary-hover: #49524b;
+    --color-secondary-light: #eef2ed;
+
+    --color-text-primary: #18201a;
+    --color-text-secondary: #525c54;
+    --color-text-tertiary: #7c857e;
+    --color-text-disabled: #aeb6b0;
+    --color-text-inverse: #fbfdfb;
+
+    --color-bg-primary: #fbfcfb;
+    --color-bg-secondary: #f1f5f2;
+    --color-bg-tertiary: #e8efe9;
+    --color-bg-elevated: #ffffff;
+    --color-bg-overlay: rgba(20, 30, 22, 0.32);
+
+    --color-border-primary: rgba(20, 40, 25, 0.07);
+    --color-border-secondary: rgba(20, 40, 25, 0.12);
+    --color-border-strong: rgba(20, 40, 25, 0.18);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(20, 40, 25, 0.06);
+    --color-shadow-hover: rgba(20, 40, 25, 0.1);
+    --color-overlay: rgba(20, 30, 22, 0.32);
+
+    --code-bg: #f1f5f1;
+    --code-text: #1f2a21;
+    --code-comment: #7c857e;
+    --code-keyword: #276a4c;
+    --code-string: #4a8a6c;
+    --code-number: #a1772a;
+    --code-function: #5d7ea8;
+
+    --scrollbar-thumb: rgba(20, 40, 25, 0.14);
+    --scrollbar-thumb-hover: rgba(20, 40, 25, 0.24);
+
+    --tooltip-bg: #1a211c;
+    --tooltip-text: #fbfdfb;
+}
+
+[data-palette='forest'][data-theme='dark'] {
+    --color-accent: #7fc9a3;
+    --color-accent-hover: #95d6b4;
+    --color-accent-active: #66b48d;
+    --color-accent-light: #16241b;
+    --color-accent-alpha: rgba(127, 201, 163, 0.16);
+
+    --color-primary: #eaf2ec;
+    --color-primary-hover: #f5fbf7;
+    --color-primary-active: #d5e4da;
+    --color-primary-light: #1b2620;
+    --color-primary-alpha: rgba(234, 242, 236, 0.08);
+
+    --color-secondary: #a8b5ac;
+    --color-secondary-hover: #bdc9c0;
+    --color-secondary-light: #1b2620;
+
+    --color-text-primary: #eaf2ec;
+    --color-text-secondary: #a8b5ac;
+    --color-text-tertiary: #7f8c83;
+    --color-text-disabled: #5a635c;
+    --color-text-inverse: #101713;
+
+    --color-bg-primary: #0d1410;
+    --color-bg-secondary: #121b15;
+    --color-bg-tertiary: #16241b;
+    --color-bg-elevated: #1a2a1f;
+    --color-bg-overlay: rgba(4, 8, 5, 0.62);
+
+    --color-border-primary: rgba(234, 242, 236, 0.08);
+    --color-border-secondary: rgba(234, 242, 236, 0.13);
+    --color-border-strong: rgba(234, 242, 236, 0.2);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-hover: rgba(0, 0, 0, 0.52);
+    --color-overlay: rgba(4, 8, 5, 0.62);
+
+    --code-bg: #131a16;
+    --code-text: #d8e4dc;
+    --code-comment: #7f8c83;
+    --code-keyword: #7fc9a3;
+    --code-string: #a3d9bd;
+    --code-number: #d9b46a;
+    --code-function: #9db8d8;
+
+    --scrollbar-thumb: rgba(234, 242, 236, 0.14);
+    --scrollbar-thumb-hover: rgba(234, 242, 236, 0.24);
+
+    --tooltip-bg: #1a2a1f;
+    --tooltip-text: #eaf2ec;
+}
+
+/* ==================== 樱花 ==================== */
+
+[data-palette='sakura'][data-theme='light'] {
+    --color-accent: #c25b7c;
+    --color-accent-hover: #a84a68;
+    --color-accent-active: #8d3c56;
+    --color-accent-light: #fbeef2;
+    --color-accent-alpha: rgba(194, 91, 124, 0.12);
+
+    --color-primary: #241a1e;
+    --color-primary-hover: #33262b;
+    --color-primary-active: #43343a;
+    --color-primary-light: #f4edef;
+    --color-primary-alpha: rgba(36, 26, 30, 0.06);
+
+    --color-secondary: #6b5c62;
+    --color-secondary-hover: #57494f;
+    --color-secondary-light: #f4edef;
+
+    --color-text-primary: #231a1e;
+    --color-text-secondary: #5f5258;
+    --color-text-tertiary: #8a7b81;
+    --color-text-disabled: #b6a8ae;
+    --color-text-inverse: #fffbfc;
+
+    --color-bg-primary: #fdfafa;
+    --color-bg-secondary: #f8f0f2;
+    --color-bg-tertiary: #f1e6e9;
+    --color-bg-elevated: #ffffff;
+    --color-bg-overlay: rgba(40, 20, 28, 0.32);
+
+    --color-border-primary: rgba(50, 25, 32, 0.07);
+    --color-border-secondary: rgba(50, 25, 32, 0.12);
+    --color-border-strong: rgba(50, 25, 32, 0.18);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(50, 25, 32, 0.06);
+    --color-shadow-hover: rgba(50, 25, 32, 0.1);
+    --color-overlay: rgba(40, 20, 28, 0.32);
+
+    --code-bg: #f8f0f2;
+    --code-text: #2b2024;
+    --code-comment: #8a7b81;
+    --code-keyword: #a84a68;
+    --code-string: #4a8a6c;
+    --code-number: #b98a2e;
+    --code-function: #5d7ea8;
+
+    --scrollbar-thumb: rgba(50, 25, 32, 0.14);
+    --scrollbar-thumb-hover: rgba(50, 25, 32, 0.24);
+
+    --tooltip-bg: #241a1e;
+    --tooltip-text: #fffbfc;
+}
+
+[data-palette='sakura'][data-theme='dark'] {
+    --color-accent: #e79ab2;
+    --color-accent-hover: #f0b3c6;
+    --color-accent-active: #d4839c;
+    --color-accent-light: #2a1a20;
+    --color-accent-alpha: rgba(231, 154, 178, 0.16);
+
+    --color-primary: #f6eaee;
+    --color-primary-hover: #fff7fa;
+    --color-primary-active: #e6d4da;
+    --color-primary-light: #241a1e;
+    --color-primary-alpha: rgba(246, 234, 238, 0.08);
+
+    --color-secondary: #bdaeb4;
+    --color-secondary-hover: #d0c1c7;
+    --color-secondary-light: #241a1e;
+
+    --color-text-primary: #f6eaee;
+    --color-text-secondary: #bdaeb4;
+    --color-text-tertiary: #8f8087;
+    --color-text-disabled: #665a60;
+    --color-text-inverse: #171013;
+
+    --color-bg-primary: #171114;
+    --color-bg-secondary: #1f1619;
+    --color-bg-tertiary: #271b1f;
+    --color-bg-elevated: #2d2024;
+    --color-bg-overlay: rgba(10, 4, 6, 0.62);
+
+    --color-border-primary: rgba(246, 234, 238, 0.08);
+    --color-border-secondary: rgba(246, 234, 238, 0.13);
+    --color-border-strong: rgba(246, 234, 238, 0.2);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-hover: rgba(0, 0, 0, 0.52);
+    --color-overlay: rgba(10, 4, 6, 0.62);
+
+    --code-bg: #1d1518;
+    --code-text: #ecdde2;
+    --code-comment: #8f8087;
+    --code-keyword: #e79ab2;
+    --code-string: #a3d9bd;
+    --code-number: #d9b46a;
+    --code-function: #9db8d8;
+
+    --scrollbar-thumb: rgba(246, 234, 238, 0.14);
+    --scrollbar-thumb-hover: rgba(246, 234, 238, 0.24);
+
+    --tooltip-bg: #2d2024;
+    --tooltip-text: #f6eaee;
+}

@@ -111,7 +111,7 @@
               @click="handleSave"
             >
               <span v-if="!settingsStore.saving">{{ $t('common.save') }}</span>
-              <span v-else class="loading-dots">保存中</span>
+              <span v-else class="loading-dots">{{ $t('common.saving') }}</span>
             </button>
             <button
               class="action-button action-button-save-all"
@@ -119,7 +119,7 @@
               @click="handleSaveAll"
             >
               <span v-if="!settingsStore.saving">{{ $t('settings.saveAll') }}</span>
-              <span v-else class="loading-dots">保存中</span>
+              <span v-else class="loading-dots">{{ $t('common.saving') }}</span>
             </button>
           </div>
         </div>

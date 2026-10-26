@@ -8,6 +8,11 @@ export interface ConfirmOptions {
     confirmText?: string
     cancelText?: string
     confirmVariant?: 'primary' | 'danger' | 'warning'
+    /**
+     * 确认后要执行的动作。提供后弹窗保持 loading 直到动作完成，
+     * 期间取消 / 关闭 / Esc 全部锁死，避免重复触发。
+     */
+    onConfirm?: () => void | Promise<void>
 }
 
 interface ConfirmState extends ConfirmOptions {
@@ -32,23 +37,33 @@ export function useConfirm() {
         })
 
     const handleConfirm = async () => {
-        if (state.value.resolve) {
-            state.value.loading = true
-            state.value.resolve(true)
-            // 延迟关闭，让调用者有机会处理
-            setTimeout(() => {
-                state.value.show = false
-                state.value.loading = false
-            }, 100)
+        if (!state.value.show || state.value.loading) return
+        const current = state.value
+
+        // 未提供动作：立即返回结果并关闭，绝不留出可重复点击的窗口
+        if (!current.onConfirm) {
+            current.resolve?.(true)
+            state.value.show = false
+            return
+        }
+
+        // 提供动作：先进入 loading 锁死交互，动作完成后才关窗
+        state.value.loading = true
+        try {
+            await current.onConfirm()
+            current.resolve?.(true)
+            state.value.show = false
+        } catch {
+            // 动作失败不自动关窗，解除 loading 让用户自行重试或取消
+            state.value.loading = false
+            current.resolve?.(false)
         }
     }
 
     const handleCancel = () => {
-        if (state.value.resolve) {
-            state.value.resolve(false)
-        }
+        if (state.value.loading) return
+        state.value.resolve?.(false)
         state.value.show = false
-        state.value.loading = false
     }
 
     // 便捷方法

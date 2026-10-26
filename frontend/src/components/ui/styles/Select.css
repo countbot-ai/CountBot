@@ -25,7 +25,7 @@
   align-items: center;
   min-height: 40px;
   padding: var(--spacing-xs) var(--spacing-md);
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   cursor: pointer;

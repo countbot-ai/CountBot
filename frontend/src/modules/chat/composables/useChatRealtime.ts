@@ -13,6 +13,8 @@ interface UseChatRealtimeOptions {
   cacheSessionMessages: (sessionId: string) => void
   flushNextQueuedMessage: (delay?: number) => void
   toast: ToastLike
+  /** 是否有对话正在处理中，用于让心跳避免误判连接失活 */
+  isBusy?: () => boolean
 }
 
 export function useChatRealtime(options: UseChatRealtimeOptions) {
@@ -69,6 +71,17 @@ export function useChatRealtime(options: UseChatRealtimeOptions) {
   }
 
   options.setHandlers({
+    isBusy: options.isBusy,
+    onOpen: (isReconnect) => {
+      if (!isReconnect) return
+      const sessionId = options.getCurrentSessionId()
+      if (!sessionId) return
+      // 断线期间可能错过流式分片或完成事件：重连后以服务端历史为准收敛一次，
+      // 同时也能结束可能残留的“执行中”状态。
+      Promise.resolve(options.refreshSessionMessages(sessionId)).catch((error) => {
+        console.warn('[ChatWindow] 重连后刷新消息失败:', error)
+      })
+    },
     onMessage: (message) => {
       if (message.type === 'error') {
         console.error('[ChatWindow] Error:', message.message)

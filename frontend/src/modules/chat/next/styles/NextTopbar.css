@@ -1,0 +1,94 @@
+/**
+ * 顶栏：与正文同底色，只用一条极浅分隔线压住层级。
+ */
+.nc-topbar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  background: var(--nc-surface);
+  border-bottom: 1px solid var(--nc-border);
+}
+
+.nc-topbar-left,
+.nc-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nc-topbar-left {
+  flex: 1;
+}
+
+.nc-topbar-right {
+  flex-shrink: 0;
+}
+
+.nc-topbar-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nc-topbar-button:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-topbar-title {
+  margin-left: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--nc-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nc-topbar-title.is-muted {
+  color: var(--nc-text-3);
+  font-weight: 400;
+}
+
+.nc-topbar-status-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-light);
+  animation: nc-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes nc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 860px) {
+  .nc-topbar {
+    height: 44px;
+    padding: 0 8px;
+  }
+}

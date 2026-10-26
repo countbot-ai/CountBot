@@ -7,9 +7,11 @@
 @import './base.css';
 @import './themes/light.css';
 @import './themes/dark.css';
+@import './themes/palettes.css';
 @import './dark-mode.css';
 @import './components.css';
 @import './design-system.css';
+@import './settings-surface.css';
 @import './syntax-highlight.css';
 
 html,
