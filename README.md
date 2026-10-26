@@ -1,10 +1,10 @@
 <div align="center">
  <h1>CountBot</h1>
-  <p>面向中文用户的开源 AI Agent 框架与运行中枢</p>
-  <p>连接大模型、IM 渠道、工作流与外部工具，帮助 AI 真正进入执行链路</p>
+  <p>An AI work assistant that runs on your server</p>
+  <p>Bind the chat tools you already use, and let it push digests and run tasks on schedule</p>
 
   <p>
-    中文 | <a href="README_EN.md">English</a>
+    <a href="README_ZH.md">中文</a> | English
   </p>
 
   <p>
@@ -12,166 +12,266 @@
     <a href="https://github.com/countbot-ai/countbot"><img src="https://img.shields.io/badge/Python-3.8+-blue.svg" alt="Python"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
   </p>
-  <img src="https://github.com/user-attachments/assets/5a848b1f-04bf-40ff-8249-8a453294f444" alt="CountBot Logo" width="680">
 </div>
 
 
 ---
 
-## CountBot 是什么
+## What Is CountBot
 
-CountBot 是一个更加符合中文用户习惯的轻量级 AI Agent 框架，也是一个面向本地部署与长期运行的 AI Agent 中枢。
+CountBot is a lightweight, low-footprint AI assistant that runs on your server and stays up. A modest machine is enough to host it. Once it is bound to the chat tools you already use, you can call it directly from Lark, WeCom, WeChat or QQ, or work with it through the web interface.
 
-它把角色、团队、工作流、工具调用、记忆、大模型、IM 渠道和本地工作空间连接起来，让 AI 具备长期运行、跨入口协作与任务执行能力。
+Unlike a plain chat bot, CountBot can actually execute work. It reads and writes files, runs commands, searches the web, takes screenshots and sends media. Beyond that, you can wrap your recurring routines into skills, let it run on a schedule, and have the results delivered to the channel you choose.
 
-你可以把 CountBot 理解为一个框架和中枢：
+Key points below.
 
-- 向上连接 100+ LLM 提供商与不同模型策略
-- 向外连接 Web、微信、飞书、钉钉、Telegram、企业微信、QQ、微博等入口
-- 向内组织角色、团队、工作流、记忆与安全边界
-- 向执行层连接文件、Shell、Web、屏幕、文件传输，以及 Claude Code、Codex、OpenCode 一类外部行业工具
-
-一句话概括：**CountBot 是连接模型、渠道、团队和工具的 AI Agent 框架与运行中枢。**
-
-CountBot 由自然语言而生。CountBot 的愿景，不是让更多人先学会复杂配置和编程再去使用 AI，而是让普通用户也能直接通过自然语言与 AI 交互，完成信息获取、内容生成、任务拆解、工具调用、流程编排，乃至搭建属于自己的个人助手、团队协作流与自动化系统。
+- Entry points are the IM tools you already use, including Lark, WeCom, WeChat, QQ, DingTalk, Telegram and Weibo, plus ServerChan for push-only delivery
+- Recurring routines can be wrapped into skills, triggered by a single instruction or run automatically by the scheduler
+- Scheduled tasks combine with proactive greetings to push digests, reminders and summaries on plan
+- Long-term memory keeps context across sessions, so earlier instructions do not have to be repeated
+- 22 model providers are built in, and models can be assigned per session or per task
 
 ---
 
-## 最新动态
+## Skills
+
+The skill system is the core mechanism of CountBot.
+
+A lot of daily work follows fixed procedures. Compiling a competitive digest every week, summarizing new content from a few sites every day, cleaning spreadsheets by a fixed rule. You have done these many times and know the steps by heart, yet still run them by hand each time.
+
+Skills fix that. Write the procedure once, and afterwards a single instruction triggers it, or the scheduler runs it automatically.
+
+Writing one is not hard. Describe when to use it and how it works, and that is enough. If you are not sure where to start, the built-in `skill-creator` walks you through the whole process, from clarifying the goal to validating the result. Finished skills can be enabled, disabled and configured from the panel, or installed from the SkillsHub.
+
+---
+
+## Multi-Agent Teams
+
+For more complex work, a single agent tends to lose track of things. Agent Teams let you group several roles, each owning one part, working in stages or in parallel.
+
+Three orchestration modes are available.
+
+`pipeline` runs stages in sequence, where the output of one stage becomes the input of the next. It suits tasks with a clear order of steps.
+
+`graph` lets you declare dependencies between roles first, then runs everything without unmet dependencies in parallel. It suits tasks with branches and a final merge. If the dependencies form a cycle, the system reports an error instead of looping.
+
+`council` has each member produce an independent result from their own perspective, then review each other, and finally consolidate. It suits judgment calls that need several angles weighed.
+
+Once a team exists, send `/team <team name> <task>` in a session to invoke it, or mention the team name with @.
+
+A team can carry its own model configuration. When configured, execution inside the team uses the team configuration; otherwise it inherits the model of the current session.
+
+---
+
+## Session-Level Model Configuration
+
+Changing models used to mean editing the global default, which affected every session. Now it can be switched inside a session.
+
+A model picker sits next to the chat input. The selection applies only to the current session and leaves the global default untouched. Right beside it, the reasoning effort for that session can be adjusted, with the available levels determined by the model.
+
+Switching the level on the same model is enough to cover different scenarios. Long tasks get a higher level, quick questions drop back to a lower one, without repeated trips to the settings page.
+
+Order of precedence is as follows. The model selected in a session applies to that session; if a team has its own model configured, execution inside the team follows the team configuration; when neither is configured, the global default applies.
+
+---
+
+## What It Can Do For You
+
+| Scenario | Description |
+|------|------|
+| Daily digest delivery | Scheduled tasks fetch and summarize the topics you specify by cron, then push to Lark, WeChat, QQ, ServerChan and other channels |
+| In-group assistant | Mention the bot in a group to ask questions, look up material, draft content and call tools |
+| Scheduled tasks and reminders | Run arbitrary instructions on a schedule, with a selectable delivery target and bot account, and a selectable model per task |
+| Proactive greetings | A heartbeat mechanism starts conversations or reminders at the frequency you set, suited to schedule reminders and shift handover briefings |
+| Material handling | Web scraping, document parsing, knowledge base retrieval, file read/write and batch processing |
+| Multi-role collaboration | Split complex work across an Agent Team, run it in parts and consolidate |
+| External coding tools | Connect Claude Code, Codex, OpenCode and dsh (DeepSeek Harness), either as callable tools or as agents bound to a channel |
+
+---
+
+## Supported Channels
+
+| Channel | Direction | Notes |
+|------|------|------|
+| Lark | Two-way | Event subscription, supports groups and direct messages |
+| WeCom | Two-way | Enterprise internal bot |
+| WeChat | Two-way | Multiple account binding supported |
+| QQ | Two-way | QQ Open Platform bot |
+| DingTalk | Two-way | Enterprise internal bot |
+| Telegram | Two-way | Direct Bot API |
+| Weibo | Two-way | Weibo bot |
+| Xiaozhi | Two-way | Xiaozhi AI hardware integration |
+| ServerChan | Push only | A single HTTP request delivers a notification to WeChat, with no persistent connection, suited to pure broadcasting |
+
+All two-way channels share the same session model. A session processes one turn at a time, so concurrent messages from multiple entry points do not interfere with each other.
+
+---
+
+## Supported Models
+
+22 providers are built in, covering mainstream Chinese and international models, along with OpenAI-compatible custom endpoints and local inference.
+
+```
+openrouter   anthropic   openai      deepseek   moonshot   zhipu
+groq         mistral     cohere      together   qwen       hunyuan
+ernie        doubao      yi          baichuan   minimax    vllm
+ollama       lm_studio   custom_openai          custom_anthropic
+```
+
+The request protocol is determined by the provider setting or by user selection.
+
+| Protocol | Endpoint |
+|------|------|
+| OpenAI Chat Completions | `/chat/completions` |
+| OpenAI Responses | `/responses` |
+| Anthropic Messages | `/v1/messages` |
+
+A single provider can hold multiple models, fetched from the upstream `/models` endpoint or entered manually. Each model records its context window, image input capability, reasoning levels and related metadata. The global default, session level and scheduled task level can each designate which model to use.
+
+---
+
+## Core Capabilities
+
+| Module | Description |
+|------|------|
+| Skill system | Turn recurring routines into skills that load automatically as callable capability. Supports enable/disable, parameter configuration and SkillsHub installs, with `skill-creator` built in for guided creation |
+| Multi-agent teams | Three orchestration modes, `pipeline`, `graph` and `council`, invoked through `/team` or @, with optional team-level model configuration |
+| Agent Loop | ReAct reasoning, tool invocation, result feedback and iteration control |
+| Layered configuration | Team, session and global layers fall back in order, and each layer can designate its own model |
+| Channel matrix | A single workspace serves multiple channels, bot accounts and business entry points |
+| Providers and models | Multiple model lists, three protocols, and context window and image capability metadata |
+| Reasoning levels | Levels declared per model, adjustable at session and task level, with support for custom values |
+| Context compaction | A four-stage pipeline of pruning, boundary, summarization and assembly, triggered automatically by water level or manually from the session list |
+| Memory | One fact per record, where a new value under the same key replaces the old one, across `pinned`, `recent` and `archived` tiers |
+| Built-in tools | Files, Shell, web, screenshots, memory, workflows, media delivery, file search, external coding tools |
+| External execution tools | Claude Code, Codex, OpenCode and dsh (DeepSeek Harness) connected to a unified runtime |
+| Knowledge base | Wiki module with BM25 full-text retrieval, which can layer a vector channel on top once an embedding endpoint is configured |
+| MCP | Multi-server connections, health checks and tool discovery, disabled by default |
+| Scheduling and heartbeat | Cron tasks, proactive greetings and long-running background operation, with selectable model and delivery target |
+| Security and workspace | Path restrictions, audit logs, timeout control, remote authentication boundary and a one-time initialization entry |
+
+---
+
+## Latest Updates
+
+- **v1.0.0 · 2026-10-24**
+  - Reworked the provider system: model lists per provider, the OpenAI Responses protocol and explicit protocol selection, with existing configuration migrated automatically
+  - Added reasoning levels: available levels declared per model, customizable, and assignable per session or scheduled task
+  - Added model switching in the chat input: per-session model and level without touching the global default
+  - Split context compaction into a standalone module (pruning, boundary, summarization, assembly) with a manual compaction entry in the session list
+  - Reworked memory into an assertion store: three lifecycle tiers, inferred content kept in cold storage only, plus a migration script
+  - Added the ServerChan push channel, with the session target field omitted for push-only channels on the scheduled task page
+  - Scheduled tasks now support a per-task model and reasoning level
+  - Enabled SQLite WAL and busy_timeout to reduce write lock waits under long-lived connections
+  - Completed usage accounting with cache hits and reasoning tokens, and filtered invisible upstream output to avoid rendering empty reasoning blocks
+  - Added a queued state for subagents, making cancellation propagation and terminal state convergence more reliable
+  - Messages now render interleaved in the order text and tool calls actually occur
+  - Front-end interface reworked and optimized for a better overall experience
 
 - **v0.9.0**
-  - 新增 MCP 客户端模块，支持多服务器连接、健康检查与工具发现，扩展 AI 执行能力边界。默认关闭，为个性化用户而新增的功能
-  - 新增 Wiki 知识库模块，基于 BM25 全文搜索，支持批量获取、相关性过滤与 LRU 缓存加速
-  - 新增 MCP、Wiki 管理面板，组件模块化拆分与国际化支持
-  - 新增 WebSocket 状态广播模块，实时同步 MCP 连接状态至前端会话
-  - 改进上下文管理与心跳机制，简化问候逻辑，减少 LLM 调用成本
-  - 完善工具注册与初始化流程，提升系统启动一致性与可维护性
-  - 新增 API Key 轮换机制与故障转移能力，支持多 key 自动切换
-  - 改进 send_media 工具网页版兼容性，支持在WEB UI 预览图片和下载附件
-  - 优化模型预设界面并更新构建产物
-  - 发布说明：[https://countbot.cn/docs/releases/v0.9.0](https://countbot.cn/docs/releases/v0.9.0)
+  - Added MCP client module with multi-server connections, health checks, and tool discovery. Disabled by default, designed for advanced users with personalized needs
+  - Added Wiki knowledge base module with BM25 full-text search, batch retrieval, relevance filtering, and LRU cache
+  - New MCP and Wiki management panels with component modularization and i18n support
+  - New WebSocket status broadcast module for real-time MCP connection state sync to frontend
+  - Improved context management and heartbeat mechanism, simplified greeting logic to reduce LLM calls
+  - Refined tool registration and initialization flow for better startup consistency
+  - Added API Key rotation with automatic failover and multi-key support
+  - Improved send_media tool compatibility for web mode, supports image preview and file download in Web UI
+  - Optimized model preset interface and updated build artifacts
+  - Release notes: [https://countbot.cn/docs/releases/v0.9.0](https://countbot.cn/docs/releases/v0.9.0)
 
 - **v0.8.0**
-  - 集中修复 issue 与用户反馈中的多项问题，修复一批高频使用场景下的已知 Bug
-  - 全面优化前端界面与交互体验，提升整体易用性与操作流畅度
-  - 持续优化系统响应链路，提升 AI 回复的准确性、及时性与整体稳定性
-  - 重构会话上下文维护链路，新增短期摘要缓存、溢出历史总结与整会话自动记忆沉淀
-  - 增强多渠道稳定性，补强微信、企微、飞书消息处理、去重与流式投递控制
-  - 优化主动问候与定时执行逻辑，避免未成功投递时提前计次，并支持配置变更后刷新当日计划
-  - 完善推理开关与运行时配置解析，补充不同提供商的思考字段映射与 persona 合并策略
-  - 统一启动时的监听地址与端口环境变量，补充 `COUNTBOT_HOST` / `COUNTBOT_PORT` 文档说明
-  - 发布说明：[https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0)
+  - Fixed a batch of issues reported by users and known bugs in high-frequency scenarios
+  - Overall improvements to the frontend interface and interaction experience
+  - Continued optimization of the response path for accuracy, timeliness and stability
+  - Reworked session context maintenance with short-term summary cache, overflow history summarization and whole-session memory persistence
+  - Strengthened multi-channel stability for WeChat, WeCom and Lark message handling, deduplication and streaming delivery
+  - Improved proactive greeting and scheduled execution logic, avoiding premature counting on failed delivery and refreshing the daily plan after configuration changes
+  - Refined reasoning switches and runtime configuration resolution, adding reasoning field mappings for different providers and persona merge strategy
+  - Unified host and port environment variables at startup, documented `COUNTBOT_HOST` / `COUNTBOT_PORT`
+  - Release notes: [https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0)
 
 - **v0.7.0**
-  - 集中解决多个 issue 反馈问题，修复一批已知 Bug，提升整体稳定性
-  - WEBUI 新增了文件上传和处理相关逻辑，优化了 Mermaid，提供更加友好的图表展示
-  - 优化前端界面与交互流程，技能、配置、工具等日常使用体验更顺手
-  - 优化 tool 调用链路与上下文组织，相比此前版本显著降低 token 消耗
-  - 新增模型思考控制开关，可按场景切换思考强度，在体感上获得更快的 AI 响应
-  - 新增 `find-skills`，全面接入腾讯云 SkillsHub，可通过对话完成 skills 的搜索、安装、启用、禁用与删除
-  - 新增 `ima-knowledge-base`、`ima-notes`，全面接入 IMA 知识库与笔记能力，支持知识库搜索、上传、网页导入，以及笔记搜索、读取、新建和追加
-  - 发布说明：[https://countbot.cn/docs/releases/v0.7.0](https://countbot.cn/docs/releases/v0.7.0)
+  - Resolved multiple issues and fixed a batch of known bugs for better overall stability
+  - Added file upload and processing logic to the Web UI, improved Mermaid chart rendering
+  - Refined the frontend interface and interaction flow for skills, configuration and tools
+  - Optimized the tool invocation path and context organization, significantly reducing token consumption
+  - Added a model reasoning switch to adjust effort per scenario for faster responses
+  - Added `find-skills`, fully integrated with Tencent Cloud SkillsHub for searching, installing, enabling, disabling and deleting skills through conversation
+  - Added `ima-knowledge-base` and `ima-notes`, integrating IMA knowledge base and note capabilities, including knowledge base search, upload and web import, plus note search, read, create and append
+  - Release notes: [https://countbot.cn/docs/releases/v0.7.0](https://countbot.cn/docs/releases/v0.7.0)
 
 - **v0.6.0**
-  - 新增微信ClawBot接入，支持多个账号绑定
-  - 新增外部编程工具接入（Claude/Codex/OpenCode）,可以作为工具提供LLM调用，亦可成为代理连接IM渠道
-  - 新增远程首次初始化安全入口 `/setup/<random>`
-  - 新增 `REMOTE_SETUP_SECRET_TTL_MINUTES`，远程初始化入口有效期可控
-  - 强化远程认证边界，覆盖 `/api/*` 与 `/ws/chat`
-  - 发布说明：[https://countbot.cn/docs/releases/v0.6.0](https://countbot.cn/docs/releases/v0.6.0)
+  - Added WeChat ClawBot integration with multiple account binding
+  - Added external coding tool integration (Claude/Codex/OpenCode), usable either as a tool for LLM invocation or as an agent bound to IM channels
+  - Added a remote first-time initialization entry at `/setup/<random>`
+  - Added `REMOTE_SETUP_SECRET_TTL_MINUTES` to control the validity window of the remote initialization entry
+  - Strengthened the remote authentication boundary, covering `/api/*` and `/ws/chat`
+  - Release notes: [https://countbot.cn/docs/releases/v0.6.0](https://countbot.cn/docs/releases/v0.6.0)
 
 - **v0.5.0**
-  - Agent Team 正式成型，支持多角色分工、上下文衔接与团队级编排
-  - 配置体系从会话级演进到角色级、团队级与多机器人协同
-  - 渠道系统进一步增强，支持更多企业与社交入口
-  - 前端聊天、配置、技能、团队与工具面板整体升级
-  - 发布说明：[https://countbot.cn/docs/releases/v0.5.0](https://countbot.cn/docs/releases/v0.5.0)
+  - Agent Team took shape, with multi-role division, context handoff and team-level orchestration
+  - Configuration evolved from session level to role level, team level and multi-bot coordination
+  - The channel system gained further enterprise and social entry points
+  - The frontend chat, configuration, skills, teams and tools panels were upgraded overall
+  - Release notes: [https://countbot.cn/docs/releases/v0.5.0](https://countbot.cn/docs/releases/v0.5.0)
 
 - **v0.4.0**
-  - 引入会话级配置，支持不同会话使用不同模型与提示词
-  - 扩展飞书、企业微信、微博、小智 AI 等渠道能力
-  - 优化多智能体协作，新增 `/help` 等使用入口
-  - 发布说明：[https://countbot.cn/docs/releases/v0.4.0](https://countbot.cn/docs/releases/v0.4.0)
+  - Introduced session-level configuration, allowing different models and prompts per session
+  - Extended channel support for Lark, WeCom, Weibo and Xiaozhi AI
+  - Improved multi-agent collaboration and added the `/help` entry
+  - Release notes: [https://countbot.cn/docs/releases/v0.4.0](https://countbot.cn/docs/releases/v0.4.0)
 
 - **v0.3.0**
-  - 多智能体协作（`pipeline` / `graph` / `council`）首次体系化落地
-  - 定时任务、技能配置、工作空间管理能力显著增强
-  - 发布说明：[https://countbot.cn/docs/releases/v0.3.0](https://countbot.cn/docs/releases/v0.3.0)
+  - Multi-agent collaboration (`pipeline` / `graph` / `council`) landed as a systematic capability
+  - Scheduled tasks, skill configuration and workspace management were significantly enhanced
+  - Release notes: [https://countbot.cn/docs/releases/v0.3.0](https://countbot.cn/docs/releases/v0.3.0)
 
 - **v0.2.0 · 2026-02-26**
-  - 聚焦 Bug 修复、交互体验优化与构建流程整理
-  - 让 CountBot 从“基础可运行”进一步走向“稳定可迭代”
+  - Focused on bug fixes, interaction improvements and build process cleanup
+  - Moved CountBot from "runnable" toward "stably iterable"
 
-- **正式开源 · 2026-02-21**
-  - CountBot 首次开源，开放基础框架、启动脚本、Agent 核心、渠道系统、工具系统、技能系统与前端基础能力
-  - 项目从这一天开始持续公开迭代
-
----
-
-## 为什么做 CountBot
-
-CountBot 从自然语言驱动软件的趋势出发，致力于让 AI 真正落地到真实任务与日常工作中。
-
-软件开发与使用方式正在发生变化：
-1. 人与软件的交互，正从复杂指令与代码，逐步走向自然语言。
-2. 工具与系统正从标准化产品，向更多人可自主定义、个性化创造的方向演进。
-
-当前 AI Agent 的核心挑战，已不再是单一模型能力，而是如何将大模型、工具调用、多渠道接入、权限边界与长期运行能力，整合为一套可落地、可维护的系统。
-
-OpenClaw 已经在本地执行、自主 Agent 方向上验证了可行路径。在此基础上，CountBot 聚焦补齐**中文场景适配、轻量化部署、易用性扩展、安全管控与治理能力**等关键缺口。
-
-CountBot 不只是对话式 AI 应用，而是一套面向真实任务、可部署、可扩展、可治理的开源基础设施，让普通用户也能通过自然语言驱动 AI、组织工具、连接渠道，真正落地业务与日常流程。
+- **First open source release · 2026-02-21**
+  - CountBot was open sourced for the first time, covering the base framework, startup scripts, agent core, channel system, tool system, skill system and base frontend
+  - Public iteration has continued since that day
 
 ---
 
-## 核心能力
+## Why CountBot
 
-| 模块 | 说明 |
-|------|------|
-| Agent Loop | ReAct 推理、工具调用、结果反馈与迭代控制 |
-| Agent Teams | `pipeline`、`graph`、`council` 三种协作模式 |
-| 多机器人渠道矩阵 | 一个工作区可服务多个渠道、多个机器人、多个业务入口 |
-| 配置分层 | 全局默认、角色、团队、会话运行时配置分层协同 |
-| 工具与技能 | 文件、Shell、Web、截图、记忆、工作流、媒体发送与技能扩展 |
-| 外部执行工具接入 | 将 Claude Code、Codex、OpenCode 等外部行业工具接入统一运行时 |
-| 记忆与会话 | 长期记忆、摘要、上下文注入、会话隔离 |
-| Cron 与 Heartbeat | 定时任务、主动提醒、后台长期运行 |
-| 安全与工作空间 | 本地可控、路径限制、审计日志、超时与远程认证边界 |
-| 多模型接入 | 兼容国产与国际主流模型接入，支持团队级模型覆盖 |
+The way software is used keeps changing. Commands had to be memorized and configuration learned; today more and more operations take a single natural-language sentence.
+
+The real difficulty is never the model itself, but how to bring models, tools, channels, permission boundaries and long-running operation into one system that can be deployed and maintained. Building a demo is not hard; running stably for months is a different order of requirement.
+
+OpenClaw proved the direction viable for local execution and autonomous agents. CountBot fills in what it does not cover, including Chinese-language scenarios, server-resident operation, a lower barrier to entry, security control and governance.
 
 ---
 
-## 适用场景
+## Quick Start
 
-- 希望把自然语言需求拆成多个角色协同完成的复杂任务
-- 希望在本地或私有环境中运行自己的 AI 助手、AI 团队或自动化流程
-- 需要同时服务 Web、企业微信、飞书、钉钉、Telegram、Discord 等多个入口
-- 希望将工具调用、文件操作、消息通知、定时任务整合进同一运行环境
-- 希望把大模型、消息渠道、工具调用和团队协作整合到一个统一中枢
-- 希望在 AI 助手之外，进一步构建可持续运行的 Agent 系统
-
----
-
-## 快速开始
-
-### 方式一：源码启动
+### Option 1: Run From Source
 
 ```bash
 git clone https://github.com/countbot-ai/CountBot.git
 cd CountBot
 
-# 默认安装
+# default install
 pip install -r requirements.txt
 
-# 国内网络可使用阿里云镜像
+# Aliyun mirror for networks in China
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 python start_app.py
 ```
 
-启动完成后默认打开 `http://127.0.0.1:8000`。
+Once started, `http://127.0.0.1:8000` opens by default.
 
-可通过环境变量覆盖默认监听地址与端口，优先级为 `COUNTBOT_HOST` / `COUNTBOT_PORT` > 默认值。
+The listen address and port can be overridden with environment variables, where `COUNTBOT_HOST` / `COUNTBOT_PORT` take precedence over the defaults.
+
+```bash
+# Linux / macOS, bind 0.0.0.0 for server-resident use and put a reverse proxy in front
+COUNTBOT_HOST=0.0.0.0 COUNTBOT_PORT=8000 python start_app.py
+```
 
 ```powershell
 $env:COUNTBOT_HOST = '0.0.0.0'
@@ -185,87 +285,89 @@ set COUNTBOT_PORT=8001
 python start_app.py
 ```
 
-如果国内网络访问 GitHub 受限，可切换到 Gitee：
+If GitHub is hard to reach from China, switch to Gitee.
 
 ```bash
 git clone https://gitee.com/countbot-ai/CountBot.git
 ```
 
-### 方式二：桌面版体验
+### Option 2: Desktop Build
 
 - Gitee Releases: https://gitee.com/countbot-ai/CountBot/releases
 - GitHub Releases: https://github.com/countbot-ai/CountBot/releases
-- 适用平台：Windows / macOS / Linux
+- Platforms: Windows / macOS / Linux
+
+### Deploying To A Server
+
+CountBot is an ordinary web service and can be hosted persistently with `systemd`, `supervisor` or a container. Before opening remote access, set the initialization password first, then open the port as needed and configure a reverse proxy. The initialization entry is one-time, and its validity window is controlled by `REMOTE_SETUP_SECRET_TTL_MINUTES`.
 
 ---
 
-## 文档入口
+## Project Status
 
-| 文档 | 说明 | 链接 |
-|------|------|------|
-| 快速开始 | 安装、配置、启动 | [https://countbot.cn/docs/getting-started/quick-start-guide](https://countbot.cn/docs/getting-started/quick-start-guide) |
-| 配置手册 | 完整配置说明 | [https://countbot.cn/docs/getting-started/configuration-manual](https://countbot.cn/docs/getting-started/configuration-manual) |
-| 部署与运维 | 启动、部署、排障 | [https://countbot.cn/docs/advanced/deployment](https://countbot.cn/docs/advanced/deployment) |
-| 远程访问指南 | 远程初始化、认证、排障 | [https://countbot.cn/docs/advanced/remote-access](https://countbot.cn/docs/advanced/remote-access) |
-| 认证说明 | 密码初始化与访问边界 | [https://countbot.cn/docs/advanced/auth](https://countbot.cn/docs/advanced/auth) |
-| API 参考 | REST API 与 WebSocket | [https://countbot.cn/docs/api-reference](https://countbot.cn/docs/api-reference) |
-| 发布说明 | 版本演进记录 | [https://countbot.cn/docs/releases/v0.8.0](https://countbot.cn/docs/releases/v0.8.0) |
+CountBot is still under active iteration. Since the early base framework, the provider and model system, context compaction, memory storage and channel matrix have all undergone substantial rework, so the directory structure may look different if you come back after a while.
 
-完整站点文档请查看：[https://countbot.cn/docs](https://countbot.cn/docs)
+Questions and bug reports are welcome through Issues, and pull requests for fixes, new capabilities and documentation are accepted.
 
 ---
 
-## 项目状态
+## Development And Contributing
 
-CountBot 短期内将不再由作者持续更新，当前主要供对 AI Agent 感兴趣的同学学习、研究和二次开发使用。欢迎各位开发者以 Issue、文档改进、功能修复或新能力等各种形式提交 PR，共同完善项目。
-
----
-
-## 开发与贡献
-
-### 本地开发
+### Local Development
 
 ```bash
+# backend
 uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+
+# frontend
+cd frontend && npm install && npm run dev
 ```
 
-### 社区交流
-
-- QQ 交流群：`1028356423`
-- 讨论方向：CountBot 使用、问题反馈、二次开发、场景共创
-
-### 问题反馈
+### Reporting Issues
 
 - GitHub Issues: https://github.com/countbot-ai/CountBot/issues
 
 ---
 
-## 开源协议与致谢
+## License And Credits
 
-### 开源协议
+### License
 
 MIT License
 
-### 项目灵感
+### Contributors
+
+Thanks to the following contributors for the code and documentation they have submitted.
+
+<p>
+<a href="https://github.com/ddggkkcc" title="ddggkkcc"><img src="https://github.com/ddggkkcc.png?size=96" width="48" height="48" alt="ddggkkcc"></a>
+<a href="https://github.com/23821" title="23821"><img src="https://github.com/23821.png?size=96" width="48" height="48" alt="23821"></a>
+<a href="https://github.com/ct-jaryn" title="ct-jaryn"><img src="https://github.com/ct-jaryn.png?size=96" width="48" height="48" alt="ct-jaryn"></a>
+<a href="https://github.com/hhzscreate" title="hhzscreate"><img src="https://github.com/hhzscreate.png?size=96" width="48" height="48" alt="hhzscreate"></a>
+<a href="https://github.com/Liears" title="Liears"><img src="https://github.com/Liears.png?size=96" width="48" height="48" alt="Liears"></a>
+<a href="https://github.com/mozhuanzuojing" title="mozhuanzuojing"><img src="https://github.com/mozhuanzuojing.png?size=96" width="48" height="48" alt="mozhuanzuojing"></a>
+<a href="https://github.com/ranpis02" title="ranpis02"><img src="https://github.com/ranpis02.png?size=96" width="48" height="48" alt="ranpis02"></a>
+</p>
+
+### Inspiration
 
 - OpenClaw
 - NanoBot
 - ZeroClaw
 - anthropics/skills
 
-### 技术致谢
+### Technical Credits
 
-感谢 FastAPI、Vue.js、SQLAlchemy、Pydantic、LiteLLM 等开源项目。
+Thanks to the open-source projects FastAPI, Vue.js, SQLAlchemy and Pydantic.
 
 ---
 
 <div align="center">
-  <p>连接模型、渠道、团队与工具的 AI Agent 中枢</p>
+  <p>An AI work assistant that runs on your server, for the long haul</p>
   <p>
-    <a href="https://countbot.cn">官方网站</a> ·
+    <a href="https://countbot.cn">Website</a> ·
     <a href="https://github.com/countbot-ai/countbot">GitHub</a> ·
     <a href="https://gitee.com/countbot-ai/CountBot">Gitee</a> ·
-    <a href="https://countbot.cn/docs">完整文档</a>
+    <a href="https://countbot.cn/docs">Documentation</a>
   </p>
-  <p><strong>说明：</strong><code>654321.ai</code> 域名已过期，不再使用；项目网站现为 <a href="https://countbot.cn">countbot.cn</a>。</p>
 </div>
