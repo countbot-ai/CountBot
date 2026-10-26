@@ -2,6 +2,7 @@
 
 import asyncio
 import contextvars
+import time
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -155,12 +156,35 @@ class SpawnTool(Tool):
 
         sub_task = self._manager.tasks[task_id]
         timeout = self._get_timeout()
+        deadline = time.monotonic() + timeout
         try:
-            await asyncio.wait_for(sub_task.done_event.wait(), timeout=timeout)
+            # 轮询等待子任务结束：done_event 不感知取消令牌，
+            # 单次长等待会让「父回合被取消」迟迟不生效，子任务也留成孤儿
+            while True:
+                if self._cancel_token is not None and self._cancel_token.is_cancelled:
+                    # 父回合已被取消：连带取消子任务，避免其继续占用并发额度
+                    await self._manager.cancel_task(task_id)
+                    return ToolResult.cancelled(
+                        f"子 Agent [{display_label}] 随父任务取消 (ID: {task_id})。"
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                await asyncio.wait_for(
+                    sub_task.done_event.wait(), timeout=min(0.5, remaining)
+                )
+                break
         except asyncio.TimeoutError:
             return ToolResult.unknown_outcome(
                 ErrorCategory.TIMEOUT,
                 f"子 Agent [{display_label}] 超时 (ID: {task_id})，任务仍在后台运行。",
+            )
+
+        # 等待期间父回合被取消：同样要收敛子任务
+        if self._cancel_token is not None and self._cancel_token.is_cancelled:
+            await self._manager.cancel_task(task_id)
+            return ToolResult.cancelled(
+                f"子 Agent [{display_label}] 随父任务取消 (ID: {task_id})。"
             )
 
         child_outcome = sub_task.outcome

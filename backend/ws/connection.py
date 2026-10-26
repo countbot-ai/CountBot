@@ -1,12 +1,4 @@
-"""WebSocket 连接处理
-
-实现 WebSocket 连接管理，支持：
-- 客户端连接/断开管理
-- 消息路由和处理
-- 流式响应推送
-- 工具调用通知
-- 错误处理和重连
-"""
+"""WebSocket 连接处理：连接/断开管理、消息路由、流式推送、工具调用通知与错误处理。"""
 
 import asyncio
 import json
@@ -19,7 +11,6 @@ from fastapi import WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-# 全局取消令牌管理器
 from backend.modules.agent.task_manager import CancellationToken
 
 _session_cancel_tokens: Dict[str, CancellationToken] = {}
@@ -34,7 +25,6 @@ class SessionTask:
     connection_count: int = 0  # 引用计数
 
 
-# 会话任务管理器
 _session_tasks: Dict[str, SessionTask] = {}
 _pending_cancellations: Dict[str, asyncio.Task] = {}
 
@@ -48,7 +38,6 @@ def get_cancel_token(session_id: str) -> CancellationToken:
     Returns:
         CancellationToken: 取消令牌
     """
-    # 如果已存在且已取消，先清理
     if session_id in _session_cancel_tokens:
         old_token = _session_cancel_tokens[session_id]
         if old_token.is_cancelled:
@@ -56,8 +45,7 @@ def get_cancel_token(session_id: str) -> CancellationToken:
             del _session_cancel_tokens[session_id]
             if session_id in _session_tasks:
                 del _session_tasks[session_id]
-    
-    # 创建新的取消令牌和任务信息
+
     if session_id not in _session_cancel_tokens:
         task_id = str(uuid.uuid4())
         cancel_token = CancellationToken()
@@ -70,6 +58,16 @@ def get_cancel_token(session_id: str) -> CancellationToken:
         logger.debug(f"Created new cancel token for session {session_id} (task_id={task_id})")
     
     return _session_cancel_tokens[session_id]
+
+
+def acquire_cancel_token(session_id: str) -> "tuple[CancellationToken, bool]":
+    """获取会话取消令牌，并指出本次调用是否新建。
+
+    复用令牌时调用方不得清理（该令牌归属进行中的回合），仅第二项为 True 时才清理。
+    """
+    existing = _session_cancel_tokens.get(session_id)
+    owns_existing = existing is not None and not existing.is_cancelled
+    return get_cancel_token(session_id), not owns_existing
 
 
 def increment_connection_count(session_id: str) -> int:
@@ -140,23 +138,20 @@ def cleanup_cancel_token(session_id: str, token=None):
 
 async def schedule_delayed_cancellation(session_id: str, delay_seconds: int = 5):
     """延迟取消会话任务
-    
-    当会话没有活跃连接时，延迟一段时间后自动取消任务。
-    如果在延迟期间有新连接，则取消此延迟任务。
-    
+
+    会话无活跃连接时延迟取消，期间出现新连接则取消本次延迟。
+
     Args:
         session_id: 会话 ID
         delay_seconds: 延迟秒数（默认 5 秒）
     """
-    # 获取当前任务信息（用于验证）
     current_task = _session_tasks.get(session_id)
     if not current_task:
         logger.debug(f"No task found for session {session_id}, skip scheduling cancellation")
         return
-    
+
     task_id = current_task.task_id
-    
-    # 取消之前的延迟任务（如果存在）
+
     cancel_key = f"{session_id}:{task_id}"
     if cancel_key in _pending_cancellations:
         _pending_cancellations[cancel_key].cancel()
@@ -166,19 +161,17 @@ async def schedule_delayed_cancellation(session_id: str, delay_seconds: int = 5)
         try:
             logger.info(f"Scheduled delayed cancellation for session {session_id} (task_id={task_id}, delay={delay_seconds}s)")
             await asyncio.sleep(delay_seconds)
-            
-            # 验证任务是否仍然是同一个（避免取消新任务）
+
+            # 任务已被替换说明是新任务，跳过取消
             current = _session_tasks.get(session_id)
             if not current or current.task_id != task_id:
                 logger.debug(f"Task changed for session {session_id}, skip cancellation")
                 return
-            
-            # 检查是否有新连接（使用引用计数）
+
             if current.connection_count > 0:
                 logger.debug(f"Session {session_id} has {current.connection_count} connections, skip cancellation")
                 return
-            
-            # 执行取消
+
             if cancel_session(session_id):
                 logger.info(f"Delayed cancellation executed for session {session_id} (task_id={task_id})")
             
@@ -187,24 +180,21 @@ async def schedule_delayed_cancellation(session_id: str, delay_seconds: int = 5)
         except Exception as e:
             logger.error(f"Error in delayed cancellation for session {session_id}: {e}")
         finally:
-            # 清理
             if cancel_key in _pending_cancellations:
                 del _pending_cancellations[cancel_key]
     
-    # 创建延迟任务
     task = asyncio.create_task(delayed_cancel())
     _pending_cancellations[cancel_key] = task
 
 
 def cancel_delayed_cancellation(session_id: str):
     """取消延迟取消任务
-    
-    当有新连接时调用，取消之前安排的延迟取消。
-    
+
+    有新连接时调用，取消此前安排的延迟取消。
+
     Args:
         session_id: 会话 ID
     """
-    # 获取当前任务信息
     current_task = _session_tasks.get(session_id)
     if not current_task:
         return
@@ -302,23 +292,14 @@ class ErrorMessage(ServerMessage):
 
 
 class ConnectionManager:
-    """WebSocket 连接管理器
-
-    管理所有活跃的 WebSocket 连接，支持：
-    - 连接注册和注销
-    - 消息广播
-    - 会话级别的消息推送
-    """
+    """WebSocket 连接管理器：管理活跃连接的注册注销、广播与会话级推送。"""
 
     def __init__(self):
         """初始化连接管理器"""
-        # 存储所有活跃连接: {connection_id: websocket}
         self._connections: Dict[str, WebSocket] = {}
 
-        # 存储会话到连接的映射: {session_id: set(connection_id)}
         self._session_connections: Dict[str, Set[str]] = {}
 
-        # 连接锁，防止并发修改
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, connection_id: Optional[str] = None) -> str:
@@ -350,25 +331,21 @@ class ConnectionManager:
         sessions_to_check = []
         
         async with self._lock:
-            # 从所有会话中移除此连接
             for session_id, conn_ids in list(self._session_connections.items()):
                 if connection_id in conn_ids:
                     conn_ids.discard(connection_id)
-                    # 减少连接计数
                     count = decrement_connection_count(session_id)
-                    
+
                     if not conn_ids:
                         del self._session_connections[session_id]
-                        # 记录需要检查的会话（连接数为 0）
                         if count == 0:
                             sessions_to_check.append(session_id)
 
-            # 移除连接
             if connection_id in self._connections:
                 del self._connections[connection_id]
                 logger.info(f"WebSocket 连接已断开: {connection_id}")
-        
-        # 在锁外处理延迟取消（避免死锁）
+
+        # 锁外处理延迟取消，避免死锁
         for session_id in sessions_to_check:
             await schedule_delayed_cancellation(session_id, delay_seconds=5)
 
@@ -383,16 +360,14 @@ class ConnectionManager:
             if session_id not in self._session_connections:
                 self._session_connections[session_id] = set()
             
-            # 只有新连接才增加计数
             is_new = connection_id not in self._session_connections[session_id]
             self._session_connections[session_id].add(connection_id)
             
             if is_new:
-                # 增加连接计数
                 count = increment_connection_count(session_id)
                 logger.debug(f"连接 {connection_id} 绑定到会话 {session_id} (连接数: {count})")
         
-        # 在锁外取消延迟取消（避免死锁）
+        # 锁外取消延迟取消，避免死锁
         if is_new:
             cancel_delayed_cancellation(session_id)
 
@@ -431,7 +406,7 @@ class ConnectionManager:
         """
         connection_ids = self._session_connections.get(session_id, set()).copy()
         if not connection_ids:
-            # 降级为 DEBUG：频道会话（QQ/Telegram 等）不使用 WebSocket，这是正常的
+            # 频道会话（QQ/Telegram 等）不走 WebSocket，无连接属正常，故降为 DEBUG
             logger.debug(f"[WS] 会话 {session_id} 无活跃 WebSocket 连接（可能是频道会话）")
             return 0
 
@@ -484,7 +459,6 @@ class ConnectionManager:
 # Global Connection Manager Instance
 # ============================================================================
 
-# 全局连接管理器实例
 connection_manager = ConnectionManager()
 
 
@@ -494,13 +468,7 @@ connection_manager = ConnectionManager()
 
 
 async def handle_websocket(websocket: WebSocket, agent_loop=None):
-    """处理 WebSocket 连接
-
-    这是 WebSocket 端点的主处理函数，负责：
-    1. 接受连接
-    2. 处理客户端消息
-    3. 管理连接生命周期
-    4. 错误处理
+    """处理 WebSocket 连接：接受连接、处理客户端消息、管理生命周期与错误处理。
 
     Args:
         websocket: WebSocket 连接
@@ -509,27 +477,22 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None):
     connection_id = None
 
     try:
-        # 建立连接
         connection_id = await connection_manager.connect(websocket)
 
-        # 发送连接成功消息
         await connection_manager.send_message(
             connection_id,
             ServerMessage(type="connected"),
         )
 
-        # 如果提供了 agent_loop，使用事件循环处理
         if agent_loop:
             from backend.ws.events import websocket_event_loop
             await websocket_event_loop(websocket, connection_id, agent_loop)
         else:
-            # 简单的消息处理循环（用于测试）
+            # 无 agent_loop 时的简单消息循环（用于测试）
             while True:
                 try:
-                    # 接收客户端消息
                     data = await websocket.receive_text()
 
-                    # 解析消息
                     try:
                         message_dict = json.loads(data)
                         client_message = ClientMessage(**message_dict)
@@ -544,19 +507,17 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None):
                         )
                         continue
 
-                    # 绑定会话
                     await connection_manager.bind_session(
                         connection_id, client_message.session_id
                     )
 
-                    # 处理消息（这里只是记录，实际处理逻辑在事件处理器中）
+                    # 此路径仅记录，实际处理逻辑在事件处理器中
                     content_preview = (client_message.content[:50] if client_message.content else "(empty)")
                     logger.info(
                         f"收到消息 (连接 {connection_id}, 会话 {client_message.session_id}): "
                         f"{content_preview}..."
                     )
 
-                    # 发送确认消息
                     await connection_manager.send_message(
                         connection_id,
                         ServerMessage(type="message_received"),
@@ -578,7 +539,6 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None):
     except Exception as e:
         logger.exception(f"WebSocket 连接错误: {e}")
     finally:
-        # 清理连接
         if connection_id:
             await connection_manager.disconnect(connection_id)
 

@@ -9,7 +9,7 @@
       <!-- 状态圆点 -->
       <div class="spawn-status-dot">
         <component
-          v-if="spawnTask.status === 'running' || spawnTask.status === 'pending'"
+          v-if="spawnTask.status === 'running' || spawnTask.status === 'queued' || spawnTask.status === 'pending'"
           :is="Loader2Icon"
           :size="12"
           class="spin"
@@ -66,7 +66,7 @@
 
         <!-- 无工具调用时的等待提示 -->
         <div
-          v-else-if="spawnTask.status === 'running' || spawnTask.status === 'pending'"
+          v-else-if="spawnTask.status === 'running' || spawnTask.status === 'queued' || spawnTask.status === 'pending'"
           class="spawn-waiting"
         >
           <component :is="Loader2Icon" :size="11" class="spin" />
@@ -221,7 +221,7 @@ const togglePanel = () => {
 }
 
 const getRecordStatus = (status: string): ToolCardStatus => {
-  if (status === 'pending') return 'pending'
+  if (status === 'pending' || status === 'queued') return 'pending'
   if (status === 'running') return 'running'
   if (status === 'error') return 'error'
   if (status === 'cancelled') return 'cancelled'

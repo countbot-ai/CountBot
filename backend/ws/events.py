@@ -205,7 +205,7 @@ async def _resolve_ws_runtime(
             f"{runtime_config.provider_name}/{runtime_config.model_name}"
         )
 
-    active_provider, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
+    active_provider, _, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
         model_override
     )
     return model_override, persona_override, active_provider
@@ -577,7 +577,15 @@ async def handle_tool_execution(
         arguments: 工具参数
         agent_loop: Agent 循环实例
     """
+    from backend.ws.connection import acquire_cancel_token, cleanup_cancel_token
     from backend.ws.tool_notifications import execute_tool_with_notifications
+
+    # 手动触发的工具执行也要登记取消令牌：否则 /stop 与队列取消在这条路径上
+    # 找不到令牌，长命令（exec）无法被中断，只能等命令超时
+    tool_registry = getattr(agent_loop, "tools", None)
+    cancel_token, token_created = acquire_cancel_token(session_id)
+    if tool_registry:
+        _inject_ws_tool_context(agent_loop, session_id, cancel_token)
 
     try:
         logger.info(f"执行工具 {tool_name} (会话 {session_id})")
@@ -609,6 +617,12 @@ async def handle_tool_execution(
     except Exception as e:
         logger.exception(f"工具执行失败: {e}")
         # 错误已经在 execute_tool_with_notifications 中通知了
+    finally:
+        if tool_registry:
+            tool_registry.set_cancel_token(None)
+        # 仅清理自己新建的令牌，避免摘掉并行消息回合正在使用的那个
+        if token_created:
+            cleanup_cancel_token(session_id, cancel_token)
 
 
 async def handle_ping_event(connection_id: str) -> None:

@@ -37,9 +37,12 @@ class TaskResponse(BaseModel):
 
 class TaskStatsResponse(BaseModel):
     """任务统计响应"""
-    
+
     total: int
     pending: int
+    # 已入队等待并发额度的任务数
+    queued: int = 0
+    # 真正在执行的任务数，不超过 max_concurrent
     running: int
     completed: int
     failed: int
@@ -81,7 +84,7 @@ async def list_tasks(
     列出所有任务
     
     Args:
-        status_filter: 状态过滤（pending, running, completed, failed, cancelled）
+        status_filter: 状态过滤（pending, queued, running, completed, failed, cancelled）
         session_id: 会话 ID 过滤
         
     Returns:

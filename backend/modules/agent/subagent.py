@@ -26,6 +26,8 @@ class TaskStatus(Enum):
     """任务状态枚举"""
 
     PENDING = "pending"
+    # 已提交到并发队列、等待执行额度，尚未真正开始执行
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -150,7 +152,7 @@ class SubagentManager:
         self.tasks: Dict[str, SubagentTask] = {}
         self.running_tasks: Dict[str, asyncio.Task] = {}
         self.cancel_token = None  # 全局取消令牌
-        # 并发上限：超出后新任务在信号量处排队，而不是无上限地并发打 provider
+        # 并发上限：超出后新任务在信号量处排队，避免无限并发调用 provider
         self.max_concurrent = max_concurrent
         self._concurrency = asyncio.Semaphore(max_concurrent)
         # 无活动超时：任务持续无 chunk / 工具结果超过该秒数即中止
@@ -259,16 +261,17 @@ class SubagentManager:
             logger.warning(f"Task {task_id} is not pending, current status: {task.status}")
             return
 
-        task.status = TaskStatus.RUNNING
-        task.started_at = datetime.now()
+        # 提交后先入队：并发额度在 _run_task 内获取，拿到额度才置 RUNNING，
+        # 否则排队任务会被计入 running，突破 max_concurrent 的观测口径
+        task.status = TaskStatus.QUEUED
         task.progress = 0
 
-        logger.info(f"Starting task {task_id}: {task.label}")
+        logger.info(f"Queued task {task_id}: {task.label}")
 
         async_task = asyncio.create_task(self._run_task(task))
         self.running_tasks[task_id] = async_task
-        # 任务可能在「已创建但还没被事件循环跑到 try/finally」的阶段被取消，
-        # 那时没人释放 done_event，调用方的 wait_for 只能等超时；用 done 回调兜底。
+        # 任务若在首个调度点之前被取消，协程体（含 _run_task 的 finally）
+        # 不会执行，done_event 无人释放；done 回调用以保证终态收敛
         async_task.add_done_callback(lambda _: self._settle_cancelled_task(task))
 
     async def _run_task(self, task: SubagentTask) -> None:
@@ -283,11 +286,14 @@ class SubagentManager:
             except Exception as e:
                 logger.warning(f"Failed to get subagent_timeout from config: {e}, using default: 1200s")
 
-        # 并发额度必须在 runner 之前获取：asyncio.create_task 会让协程在下一次
-        # 事件循环调度就自行开跑，把 acquire 放在 await runner 之外等于没有限流。
-        # 同时这里排队的时间不计入墙钟（任务 deadlines 在拿到额度后才起算）。
+        # 并发额度须先于 runner 获取：create_task 之后协程会在下一个调度点自行运行，
+        # acquire 若只包住 await runner，则不产生任何限流作用。
+        # 额度之前的排队时间不计入墙钟，超时 deadline 在取得额度后起算。
         try:
             async with self._concurrency:
+                # 取得并发额度即代表真正开始执行，此时才置 RUNNING 并记开始时间
+                task.status = TaskStatus.RUNNING
+                task.started_at = datetime.now()
                 task.task_deadline = asyncio.timeout(timeout_seconds)
                 task.last_activity = time.monotonic()
                 runner = asyncio.create_task(self._run_task_impl(task, handler))
@@ -335,9 +341,9 @@ class SubagentManager:
 
                     await self._save_task_to_db(task)
         except asyncio.CancelledError:
-            # 排队期间被取消：runner 可能还没创建，没人会给任务收敛状态，
-            # 这里补上终态，避免它在列表里一直挂着 running
-            if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+            # 排队期间被取消的任务可能尚未创建 runner，此处补齐终态，
+            # 避免任务长期停留在 running
+            if task.status in (TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING):
                 task.status = TaskStatus.CANCELLED
                 task.error = "任务已被取消"
                 task.completed_at = datetime.now()
@@ -686,6 +692,7 @@ class SubagentManager:
 
                     active_provider = create_provider(
                         provider_id=provider_name,
+                        api_type=runtime_state.api_type,
                         api_key=runtime_state.api_key or None,
                         api_keys=runtime_state.api_keys or None,
                         api_base=runtime_state.api_base,
@@ -1133,25 +1140,20 @@ You are an execution subagent created by the main agent. You only handle the tas
             logger.warning(f"Cannot cancel task {task_id}: not found")
             return False
         
-        if task.status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+        if task.status not in [TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING]:
             logger.warning(f"Cannot cancel task {task_id}: status is {task.status}")
             return False
         
-        # 设置任务的取消令牌
+        # 令牌先于 asyncio.Task 置位：执行体内部的取消检查依赖令牌，
+        # 且令牌取消幂等，重复置位无副作用
         if task.cancel_token:
             task.cancel_token.cancel()
             logger.info(f"Set cancel token for task {task_id}")
-        
-        # 取消异步任务
+
         async_task = self.running_tasks.get(task_id)
         if async_task:
             async_task.cancel()
-            if not task.cancel_token or not task.cancel_token.is_cancelled:
-                # 令牌未被取消时（外部直接取消 asyncio 任务）显式置位，
-                # 让执行体内部的取消检查也能看见
-                if task.cancel_token:
-                    task.cancel_token.cancel()
-            # 立即收敛：不等事件循环，避免调用方在 done_event 上空等
+            # 立即收敛终态：等待事件循环调度会让调用方在 done_event 上空转到超时
             self._settle_cancelled_task(task)
             logger.info(f"Cancelled async task {task_id}")
             return True
@@ -1159,13 +1161,12 @@ You are an execution subagent created by the main agent. You only handle the tas
         return False
 
     def _settle_cancelled_task(self, task: "SubagentTask") -> None:
-        """把取消中的任务幂等收敛为终态，并释放等待方。
+        """将取消中的任务幂等收敛到终态并释放等待方。
 
-        任务可能在排队阶段被取消（runner 未启动或已连带取消），这时
-        _run_task 的 try/finally 不一定有机会执行；缺了这里，任务会一直
-        挂在 running，父侧的 done_event.wait() 只能靠超时兜底。
+        排队阶段被取消的任务可能尚未启动 runner，_run_task 的 try/finally
+        不会执行；缺少本收敛时任务会滞留 running，且 done_event 无人释放。
         """
-        if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+        if task.status in (TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING):
             task.status = TaskStatus.CANCELLED
             task.error = task.error or "任务已被取消"
             task.completed_at = task.completed_at or datetime.now()
@@ -1269,7 +1270,7 @@ You are an execution subagent created by the main agent. You only handle the tas
 
         # 运行中的任务先同步取消（令牌 + asyncio.Task），再移除登记；
         # 反过来先删会让取消逻辑找不到任务，运行中的幽灵任务继续写库
-        if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+        if task.status in (TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING):
             if task.cancel_token:
                 task.cancel_token.cancel()
             async_task = self.running_tasks.pop(task_id, None)
@@ -1283,19 +1284,20 @@ You are an execution subagent created by the main agent. You only handle the tas
         return True
 
     def get_running_count(self) -> int:
-        """Return the number of currently running subagents."""
-        return len(self.running_tasks)
+        """正在执行中的任务数（不含排队任务）。"""
+        return len([t for t in self.tasks.values() if t.status is TaskStatus.RUNNING])
 
     def get_stats(self) -> Dict[str, int]:
         """
         获取任务统计信息
-        
+
         Returns:
             dict: 统计信息
         """
         return {
             "total": len(self.tasks),
             "pending": len([t for t in self.tasks.values() if t.status == TaskStatus.PENDING]),
+            "queued": len([t for t in self.tasks.values() if t.status == TaskStatus.QUEUED]),
             "running": len([t for t in self.tasks.values() if t.status == TaskStatus.RUNNING]),
             "completed": len([t for t in self.tasks.values() if t.status == TaskStatus.COMPLETED]),
             "failed": len([t for t in self.tasks.values() if t.status == TaskStatus.FAILED]),
