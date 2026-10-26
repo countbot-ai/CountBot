@@ -248,6 +248,20 @@
             "resetFailed": "重置当前会话配置失败",
             "updatedNextMessage": "当前会话配置已更新，将在下一条消息生效",
             "resetNextMessage": "当前会话配置已重置，将在下一条消息恢复全局默认"
+        },
+        "modelPicker": {
+            "title": "切换模型",
+            "sessionBadge": "本会话",
+            "placeholder": "选择模型",
+            "empty": "暂无可选模型",
+            "searchPlaceholder": "搜索模型",
+            "noMatch": "没有匹配的模型"
+        },
+        "reasoningLevel": {
+            "label": "思考强度",
+            "title": "选择思考强度（仅本会话生效）",
+            "placeholder": "思考强度",
+            "saveFailed": "设置思考强度失败"
         }
     },
     "sessions": {
@@ -288,6 +302,11 @@
         "hoursAgo": "{count} 小时前",
         "daysAgo": "{count} 天前",
         "summarizeToMemory": "总结到记忆",
+        "compactContext": "压缩上下文",
+        "confirmCompact": "确定要压缩这个会话的上下文吗？原文消息会保留，仅影响后续请求携带的历史。",
+        "compactSuccess": "上下文已压缩",
+        "compactNoop": "当前上下文无需压缩",
+        "compactError": "压缩上下文失败",
         "summarizeToSelfImproving": "总结到自我改进",
         "confirmSummarize": "确定要总结这个会话并保存到长期记忆吗？",
         "confirmSummarizeSelfImproving": "确定要总结这个会话并保存到自我改进记忆吗？",
@@ -893,7 +912,97 @@
                 "workspaceTitle": "配置",
                 "workspaceDesc": "",
                 "entryPoint": "预设入口"
-            }
+            },
+            "addProvider": "添加供应商",
+            "nameLabel": "显示名称",
+            "namePlaceholder": "供应商显示名称",
+            "noProvider": "未选择供应商",
+            "apiType": {
+                "label": "API 格式",
+                "hint": "决定请求使用的协议，选错会被上游拒绝。",
+                "options": {
+                    "openai-chat-completions": "OpenAI Chat Completions (/chat/completions)",
+                    "openai-responses": "OpenAI Responses (/responses)",
+                    "anthropic-messages": "Anthropic Messages (/v1/messages)"
+                }
+            },
+            "models": {
+                "title": "模型清单",
+                "count": "{count} 个模型",
+                "empty": "暂无模型",
+                "emptyHint": "没有可用模型",
+                "add": "添加模型",
+                "addPlaceholder": "模型 ID，例如 gpt-5.6-sol",
+                "fetch": "获取模型",
+                "fetching": "获取中...",
+                "reorderHint": "拖拽可调整模型下拉里的顺序",
+                "test": "测试",
+                "testingModel": "测试中...",
+                "testProvider": "测试连接",
+                "testingProvider": "测试中...",
+                "testModelSuccess": "{model} 可用",
+                "testModelFailed": "{model} 测试失败：{error}",
+                "testProviderSuccess": "连接成功（{count} 个模型，{latency}ms）",
+                "testProviderFailed": "连接失败：{error}",
+                "saveFailed": "保存模型设置失败",
+                "deleteConfirm": "确认删除模型「{model}」？",
+                "deleteFailed": "删除模型失败",
+                "configure": "模型设置",
+                "enabled": "启用",
+                "displayName": "显示名称",
+                "displayNamePlaceholder": "显示在模型下拉里的名称",
+                "contextWindow": "上下文长度",
+                "contextWindowPlaceholder": "例如 128000",
+                "supportsImage": "图片输入",
+                "supportsImageAuto": "自动",
+                "supportsImageOn": "支持",
+                "supportsImageOff": "不支持",
+                "reasoningLevels": "思考档位",
+                "reasoningLevelsRestore": "恢复内置建议",
+                "reasoningLevelsEmpty": "暂无档位，可从下方添加。",
+                "reasoningLevelsRemove": "点击移除该档位",
+                "reasoningLevelsAddPlaceholder": "自定义档位，例如 high2",
+                "reasoningLevelsAdd": "添加",
+                "reasoningLevelsHint": "勾选该模型支持的思考档位（可自由增删，不限于内置建议）。全部取消表示「改用内置建议档位」，并非关闭思考。",
+                "reasoningLevelsInvalid": "档位只能是小写字母/数字开头，可含 . _ -，最长 24 个字符。",
+                "reasoningLevelDefault": "默认档位",
+                "reasoningLevelDefaultPlaceholder": "选择默认档位",
+                "reasoningLevelDefaultHint": "聊天窗口默认使用的档位；未选时取档位列表第一项。",
+                "sourceManual": "手动",
+                "sourceFetched": "已获取",
+                "sourceBuiltin": "内置",
+                "moveUp": "上移",
+                "moveDown": "下移",
+                "contextWindowHint": "已列出常见档位，也可以直接填入任意数值。",
+                "contextWindowRequiredHint": "必填。上下文压缩的触发阈值按该窗口计算，缺失会使用兜底值。",
+                "emptySaveWarning": "「{provider}」还没有任何模型，它在对话窗口的模型下拉里不会出现。",
+                "modelIdLabel": "模型 ID",
+                "addHint": "填供应商要求的完整模型 ID，例如 deepseek-chat。"
+            },
+            "fetchDialog": {
+                "title": "获取模型",
+                "searchPlaceholder": "搜索模型",
+                "selectAll": "全选",
+                "clear": "清空",
+                "loading": "正在加载模型...",
+                "retry": "重试",
+                "empty": "该供应商未返回任何模型",
+                "noMatch": "没有匹配的模型",
+                "alreadyAdded": "已添加",
+                "selected": "已选 {count} 个",
+                "close": "关闭",
+                "confirm": "添加所选"
+            },
+            "filter": {
+                "showAll": "显示全部供应商（{count}）",
+                "showConfiguredOnly": "只看已配置"
+            },
+            "addProviderEmpty": "暂无可添加的供应商",
+            "unsavedBadge": "未保存",
+            "addedHint": "已添加「{provider}」。填好密钥与模型后点保存，就能在对话窗口的模型下拉里选到。",
+            "removeProvider": "删除供应商",
+            "removeConfirm": "确认删除「{provider}」？它的密钥与模型清单会被清空，左栏和对话窗口的模型下拉里都不再出现。",
+            "removedHint": "已删除「{provider}」。"
         },
         "presets": {
             "selectPreset": "选择预设",
@@ -1044,7 +1153,8 @@
                     "discord": "Discord",
                     "weibo": "微博",
                     "wechat": "微信",
-                    "qq": "QQ"
+                    "qq": "QQ",
+                    "serverchan": "Server酱"
                 }
             },
             "personalityEditor": "性格编辑器",
@@ -1360,6 +1470,10 @@
                 "xiaozhi": {
                     "name": "小智AI",
                     "description": "小智机器人 MCP 接入（工具调用/对话模式）"
+                },
+                "serverchan": {
+                    "name": "Server酱",
+                    "description": "Server酱 消息推送（微信 / Server酱³ App）"
                 }
             },
             "telegram": {
@@ -1568,6 +1682,16 @@
                 "userIdPlaceholder": "输入用户 ID",
                 "allowFromHint": "留空则允许所有用户（小智AI通常为单用户设备，可留空）",
                 "addUser": "添加用户"
+            },
+            "serverchan": {
+                "enabled": "接入 Server酱推送",
+                "enableHint": "启用后可在定时任务等场景把消息推送到微信或 Server酱³ App。",
+                "disabledWarning": "频道未启用，配置后不会生效",
+                "sendKey": "SendKey",
+                "sendKeyPlaceholder": "粘贴 SCT 或 SC3 的 SendKey",
+                "sendKeyHint": "Server酱推送密钥：SCT 以 SCT 开头，SC3 以 sctp 开头。",
+                "sendKeyGuide": "如何获取 SendKey",
+                "notice": "Server酱是单向推送渠道，只负责发送通知，不能接收消息。"
             }
         },
         "multiagent": {
@@ -2081,6 +2205,12 @@
         "chatIdHint": "输入群组 ID 或用户 ID,飞书、钉钉群组 ID、可以通过会话功能的会话名称查看",
         "chatIdCustom": "手动输入聊天 ID",
         "chatIdPickHint": "从该渠道已有的会话中选择，或选「手动输入聊天 ID」填写新的目标",
+        "chatIdNotRequiredHint": "该渠道为单向推送，无需填写聊天 ID",
+        "model": "任务模型",
+        "modelHint": "该任务执行时使用的模型；不选则跟随全局默认模型，可在对话窗口或设置里修改。",
+        "modelFollowGlobal": "跟随全局默认",
+        "modelMissingSuffix": "（已不在当前模型清单中）",
+        "modelEmptyHint": "还没有可用模型，请先到「设置 - 供应商」添加并启用模型。",
         "chatTypeGroup": "群聊",
         "chatTypeUser": "私聊",
         "channelNotRunning": "未运行",
@@ -2094,7 +2224,8 @@
             "discord": "Discord",
             "weibo": "微博",
             "wechat": "微信",
-            "qq": "QQ"
+            "qq": "QQ",
+            "serverchan": "Server酱"
         },
         "executionStatus": "执行状态",
         "lastStatus": "最近状态",
@@ -2190,6 +2321,7 @@
         "status": {
             "title": "任务状态",
             "pending": "等待中",
+            "queued": "排队中",
             "running": "运行中",
             "completed": "已完成",
             "failed": "失败"
@@ -2229,6 +2361,7 @@
         },
         "status": {
             "pending": "等待中",
+            "queued": "排队中",
             "running": "运行中",
             "completed": "已完成",
             "failed": "失败"

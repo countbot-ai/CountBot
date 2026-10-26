@@ -247,6 +247,20 @@
             "resetFailed": "Failed to reset session configuration",
             "updatedNextMessage": "Session configuration updated and will apply to the next message",
             "resetNextMessage": "Session configuration reset and global defaults will apply to the next message"
+        },
+        "modelPicker": {
+            "title": "Switch model",
+            "sessionBadge": "This chat",
+            "placeholder": "Select model",
+            "empty": "No models available",
+            "searchPlaceholder": "Search models",
+            "noMatch": "No matching models"
+        },
+        "reasoningLevel": {
+            "label": "Reasoning effort",
+            "title": "Select reasoning effort (this chat only)",
+            "placeholder": "Reasoning effort",
+            "saveFailed": "Failed to set reasoning effort"
         }
     },
     "sessions": {
@@ -287,6 +301,11 @@
         "hoursAgo": "{count} hours ago",
         "daysAgo": "{count} days ago",
         "summarizeToMemory": "Summarize to Memory",
+        "compactContext": "Compact Context",
+        "confirmCompact": "Compact this session's context? Original messages are kept; only the history sent with later requests is affected.",
+        "compactSuccess": "Context compacted",
+        "compactNoop": "Nothing to compact in the current context",
+        "compactError": "Failed to compact context",
         "summarizeToSelfImproving": "Summarize to Self-Improving",
         "confirmSummarize": "Are you sure you want to summarize this session and save it to long-term memory?",
         "confirmSummarizeSelfImproving": "Are you sure you want to summarize this session and save it to self-improving memory?",
@@ -882,7 +901,101 @@
                 "workspaceTitle": "Config",
                 "workspaceDesc": "",
                 "entryPoint": "Preset Entry"
-            }
+            },
+            "addProvider": "Add provider",
+            "nameLabel": "Display name",
+            "namePlaceholder": "Provider display name",
+            "noProvider": "No provider selected",
+            "testing": "Testing...",
+            "testSuccess": "Connection succeeded",
+            "testFailed": "Connection failed",
+            "apiKeyOptionalPlaceholder": "Optional for local models or self-hosted compatible endpoints",
+            "apiType": {
+                "label": "API Format",
+                "hint": "Determines which protocol requests use. A wrong choice will be rejected upstream.",
+                "options": {
+                    "openai-chat-completions": "OpenAI Chat Completions (/chat/completions)",
+                    "openai-responses": "OpenAI Responses (/responses)",
+                    "anthropic-messages": "Anthropic Messages (/v1/messages)"
+                }
+            },
+            "models": {
+                "title": "Models",
+                "count": "{count} models",
+                "empty": "No models yet",
+                "emptyHint": "No usable models",
+                "add": "Add model",
+                "addPlaceholder": "Model ID, e.g. gpt-5.6-sol",
+                "fetch": "Fetch models",
+                "fetching": "Fetching...",
+                "reorderHint": "Drag to change the order in the model picker",
+                "test": "Test",
+                "testingModel": "Testing...",
+                "testProvider": "Test connection",
+                "testingProvider": "Testing...",
+                "testModelSuccess": "{model} is available",
+                "testModelFailed": "{model} test failed: {error}",
+                "testProviderSuccess": "Connection succeeded ({count} models, {latency}ms)",
+                "testProviderFailed": "Connection failed: {error}",
+                "saveFailed": "Failed to save model settings",
+                "deleteConfirm": "Remove model \"{model}\"?",
+                "deleteFailed": "Failed to remove model",
+                "configure": "Model settings",
+                "enabled": "Enabled",
+                "displayName": "Display name",
+                "displayNamePlaceholder": "Shown in the model picker",
+                "contextWindow": "Context window",
+                "contextWindowPlaceholder": "e.g. 128000",
+                "supportsImage": "Image input",
+                "supportsImageAuto": "Auto",
+                "supportsImageOn": "Supported",
+                "supportsImageOff": "Not supported",
+                "reasoningLevels": "Reasoning levels",
+                "reasoningLevelsRestore": "Restore built-in suggestions",
+                "reasoningLevelsEmpty": "No levels yet — add one below.",
+                "reasoningLevelsRemove": "Click to remove this level",
+                "reasoningLevelsAddPlaceholder": "Custom level, e.g. high2",
+                "reasoningLevelsAdd": "Add",
+                "reasoningLevelsHint": "Pick the reasoning levels this model supports (add or remove freely, not limited to built-in suggestions). Clearing all means \"fall back to built-in suggestions\", not \"thinking disabled\".",
+                "reasoningLevelsInvalid": "A level must start with a lowercase letter or digit, may contain . _ -, and is at most 24 characters.",
+                "reasoningLevelDefault": "Default level",
+                "reasoningLevelDefaultPlaceholder": "Select a default level",
+                "reasoningLevelDefaultHint": "The level used by default in chat; falls back to the first level when unset.",
+                "sourceManual": "Manual",
+                "sourceFetched": "Fetched",
+                "sourceBuiltin": "Built-in",
+                "moveUp": "Move up",
+                "moveDown": "Move down",
+                "contextWindowHint": "Common presets are listed; any value can also be typed in.",
+                "contextWindowRequiredHint": "Required. The compaction threshold is derived from this window; a fallback is used when empty.",
+                "emptySaveWarning": "\"{provider}\" has no models yet — it will not be selectable in the chat model picker.",
+                "modelIdLabel": "Model ID",
+                "addHint": "Use the exact model ID the provider expects, e.g. deepseek-chat."
+            },
+            "fetchDialog": {
+                "title": "Fetch models",
+                "searchPlaceholder": "Search models",
+                "selectAll": "Select all",
+                "clear": "Clear",
+                "loading": "Loading models...",
+                "retry": "Retry",
+                "empty": "This provider returned no models",
+                "noMatch": "No matching models",
+                "alreadyAdded": "Added",
+                "selected": "{count} selected",
+                "close": "Close",
+                "confirm": "Add selected"
+            },
+            "filter": {
+                "showAll": "Show all providers ({count})",
+                "showConfiguredOnly": "Configured only"
+            },
+            "addProviderEmpty": "No providers left to add",
+            "unsavedBadge": "Unsaved",
+            "addedHint": "\"{provider}\" added. Fill in the API key and models, then save — it will show up in the chat model picker.",
+            "removeProvider": "Remove provider",
+            "removeConfirm": "Remove \"{provider}\"? Its API keys and model list will be cleared, and it will disappear from the sidebar and the chat model picker.",
+            "removedHint": "\"{provider}\" removed."
         },
         "presets": {
             "selectPreset": "Select Preset",
@@ -1012,7 +1125,8 @@
                     "discord": "Discord",
                     "weibo": "Weibo",
                     "wechat": "WeChat",
-                    "qq": "QQ"
+                    "qq": "QQ",
+                    "serverchan": "ServerChan"
                 },
                 "chatId": "Target ID",
                 "chatIdPlaceholder": "Enter group ID or user ID",
@@ -1245,6 +1359,10 @@
                 "xiaozhi": {
                     "name": "Xiaozhi AI",
                     "description": "Xiaozhi robot MCP access (tool calling / conversation mode)"
+                },
+                "serverchan": {
+                    "name": "ServerChan",
+                    "description": "ServerChan push notifications (WeChat / ServerChan³ App)"
                 }
             },
             "telegram": {
@@ -1453,6 +1571,16 @@
                 "userIdPlaceholder": "Enter user ID",
                 "allowFromHint": "Leave empty to allow all users. Xiaozhi AI devices are usually single-user, so leaving it empty is often fine.",
                 "addUser": "Add User"
+            },
+            "serverchan": {
+                "enabled": "Connect ServerChan Push",
+                "enableHint": "Once enabled, scheduled tasks and other scenarios can push messages to WeChat or the ServerChan³ App.",
+                "disabledWarning": "The channel is disabled, so the configuration will not take effect",
+                "sendKey": "SendKey",
+                "sendKeyPlaceholder": "Paste an SCT or SC3 SendKey",
+                "sendKeyHint": "ServerChan push key: SCT keys start with SCT, SC3 keys start with sctp.",
+                "sendKeyGuide": "How to get a SendKey",
+                "notice": "ServerChan is push-only: it sends notifications and cannot receive messages."
             }
         },
         "importExport": {
@@ -1944,6 +2072,12 @@
         "chatIdHint": "Feishu group ID, Telegram chat ID, etc.",
         "chatIdCustom": "Enter chat ID manually",
         "chatIdPickHint": "Pick from existing channel chats, or choose manual entry for a new target",
+        "chatIdNotRequiredHint": "This channel is push-only, no chat ID is required",
+        "model": "Task Model",
+        "modelHint": "Model used when this task runs. Leave it on the global default to follow the model selected in the chat window or settings.",
+        "modelFollowGlobal": "Follow global default",
+        "modelMissingSuffix": " (no longer in the model list)",
+        "modelEmptyHint": "No model available yet. Add and enable models in Settings - Providers first.",
         "chatTypeGroup": "Group",
         "chatTypeUser": "Direct",
         "channelNotRunning": "not running",
@@ -1957,7 +2091,8 @@
             "discord": "Discord",
             "weibo": "Weibo",
             "wechat": "WeChat",
-            "qq": "QQ"
+            "qq": "QQ",
+            "serverchan": "ServerChan"
         },
         "executionStatus": "Execution Status",
         "lastStatus": "Last Status",
@@ -2092,6 +2227,7 @@
         },
         "status": {
             "pending": "Pending",
+            "queued": "Queued",
             "running": "Running",
             "completed": "Completed",
             "failed": "Failed"
