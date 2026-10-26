@@ -4,6 +4,13 @@
 
 export type SupportedLocale = 'zh-CN' | 'en-US'
 export type Theme = 'light' | 'dark' | 'auto'
+/** 色调：warm 保持原有暖色，其余为新增预设 */
+export type ThemePalette = 'warm' | 'cool' | 'forest' | 'sakura'
+/** 设置页主题卡片对应的完整预设 */
+export type ThemePreset = Theme | Exclude<ThemePalette, 'warm'>
+
+const THEME_PALETTE_KEY = 'CountBot-palette'
+const THEME_PALETTES: ThemePalette[] = ['warm', 'cool', 'forest', 'sakura']
 
 /**
  * 检测系统语言
@@ -63,7 +70,7 @@ export function watchSystemTheme(callback: (theme: 'light' | 'dark') => void): (
  * 获取浏览器支持的语言列表
  */
 export function getBrowserLanguages(): string[] {
-    return navigator.languages || [navigator.language]
+    return [...(navigator.languages || [navigator.language])]
 }
 
 /**
@@ -120,6 +127,24 @@ export function getStoredTheme(): Theme | null {
  */
 export function setStoredTheme(theme: Theme): void {
     localStorage.setItem('CountBot-theme', theme)
+}
+
+/**
+ * 从存储中获取色调设置
+ */
+export function getStoredThemePalette(): ThemePalette | null {
+    const stored = localStorage.getItem(THEME_PALETTE_KEY)
+    if (stored && THEME_PALETTES.includes(stored as ThemePalette)) {
+        return stored as ThemePalette
+    }
+    return null
+}
+
+/**
+ * 保存色调设置到存储
+ */
+export function setStoredThemePalette(palette: ThemePalette): void {
+    localStorage.setItem(THEME_PALETTE_KEY, palette)
 }
 
 /**

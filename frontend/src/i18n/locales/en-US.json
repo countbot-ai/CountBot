@@ -109,6 +109,7 @@
         "tools": "Tools",
         "memory": "Memory Bank",
         "multiagent": "Multi-Agent",
+        "remoteConnection": "Remote Connection",
         "skills": "Skills Library",
         "cron": "Scheduler",
         "timeline": "Timeline",
@@ -137,6 +138,20 @@
             "setupTeamsDesc": "Configure multiple AIs to collaborate on tasks",
             "startHint": "Start typing in the input box below"
         },
+        "next": {
+            "greetingMorning": "Good morning. What should we start with?",
+            "greetingAfternoon": "Good afternoon. What should we start with?",
+            "greetingEvening": "Good evening. What should we start with?",
+            "searchSessions": "Search sessions",
+            "allSessions": "All",
+            "showMore": "Show more",
+            "showLess": "Show less",
+            "toggleSidebar": "Toggle sidebar",
+            "collapseSidebar": "Collapse sidebar",
+            "timeline": "Timeline",
+            "sessionSettings": "Session settings",
+            "renameSession": "Rename session"
+        },
         "newSession": "New Session",
         "sendMessage": "Send Message",
         "send": "Send",
@@ -149,8 +164,15 @@
         "download": "Download",
         "connectionStatus": {
             "reconnecting": "Reconnecting... (attempt {attempt}/{max})",
+            "connecting": "Connecting...",
             "disconnected": "Connection lost",
-            "reconnectNow": "Reconnect now"
+            "reconnectNow": "Reconnect now",
+            "authRequired": "Your session has expired, please sign in again",
+            "setupRequired": "Initial setup is incomplete. Reopen the page to finish setup",
+            "providerUnavailable": "Model provider unavailable: {reason}",
+            "serverRejected": "the request was rejected by the server",
+            "handshakeRejected": "The server rejected the connection. Check your sign-in state and model configuration",
+            "retryExhausted": "Automatic reconnect failed, waiting for the network to recover"
         },
         "noRunningTask": "No task is currently running",
         "stopped": "Generation stopped",
@@ -317,7 +339,8 @@
             "placeholder": "Select model",
             "empty": "No models available",
             "searchPlaceholder": "Search models",
-            "noMatch": "No matching models"
+            "noMatch": "No matching models",
+            "switchFailed": "Failed to switch model, please try again"
         },
         "reasoningLevel": {
             "label": "Reasoning effort",
@@ -794,6 +817,9 @@
             "lightTheme": "Light Theme",
             "darkTheme": "Dark Theme",
             "autoTheme": "Follow System",
+            "coolTheme": "Cool Theme",
+            "forestTheme": "Forest Theme",
+            "sakuraTheme": "Sakura Theme",
             "language": "Language",
             "languageDesc": "Select interface display language",
             "outputLanguage": "Output Language",

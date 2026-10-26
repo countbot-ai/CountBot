@@ -109,9 +109,10 @@
         "tools": "工具",
         "memory": "记忆库",
         "multiagent": "多智能体",
-        "skills": "技能库（Skills）",
+        "remoteConnection": "远程连接",
+        "skills": "技能库",
         "cron": "定时任务",
-        "wiki": "知识库（Wiki）",
+        "wiki": "知识库",
         "timeline": "时间轴",
         "sessionsTooltip": "查看会话历史",
         "memoryTooltip": "查看记忆库",
@@ -137,6 +138,20 @@
             "setupTeamsDesc": "配置多个 AI 协作完成任务",
             "startHint": "在下方输入框开始对话"
         },
+        "next": {
+            "greetingMorning": "早上好，今天想先做点什么？",
+            "greetingAfternoon": "下午好，今天想先做点什么？",
+            "greetingEvening": "晚上好，今天想先做点什么？",
+            "searchSessions": "搜索会话",
+            "allSessions": "全部",
+            "showMore": "显示更多",
+            "showLess": "收起",
+            "toggleSidebar": "展开/收起侧边栏",
+            "collapseSidebar": "收起侧边栏",
+            "timeline": "时间轴",
+            "sessionSettings": "会话设置",
+            "renameSession": "重命名会话"
+        },
         "newSession": "新建会话",
         "sendMessage": "发送消息",
         "send": "发送",
@@ -149,8 +164,15 @@
         "download": "下载",
         "connectionStatus": {
             "reconnecting": "正在重连...（第 {attempt}/{max} 次）",
+            "connecting": "正在连接...",
             "disconnected": "连接已断开",
-            "reconnectNow": "立即重连"
+            "reconnectNow": "立即重连",
+            "authRequired": "登录状态已失效，请重新登录",
+            "setupRequired": "尚未完成初始设置，请重新打开页面完成设置",
+            "providerUnavailable": "模型服务不可用：{reason}",
+            "serverRejected": "请求被服务端拒绝",
+            "handshakeRejected": "服务端拒绝了连接，请检查登录状态或模型配置",
+            "retryExhausted": "自动重连失败，正在后台等待网络恢复"
         },
         "noRunningTask": "没有正在执行的任务",
         "stopped": "已停止生成",
@@ -317,7 +339,8 @@
             "placeholder": "选择模型",
             "empty": "暂无可选模型",
             "searchPlaceholder": "搜索模型",
-            "noMatch": "没有匹配的模型"
+            "noMatch": "没有匹配的模型",
+            "switchFailed": "切换模型失败，请重试"
         },
         "reasoningLevel": {
             "label": "思考强度",
@@ -428,7 +451,7 @@
             "desc": "文件操作、命令执行等工具"
         },
         "skills": {
-            "title": "技能库（Skills）",
+            "title": "技能库",
             "desc": "管理和启用 AI 技能"
         },
         "cron": {
@@ -1372,6 +1395,9 @@
             "lightTheme": "浅色主题",
             "darkTheme": "深色主题",
             "autoTheme": "跟随系统",
+            "coolTheme": "冷色主题",
+            "forestTheme": "森绿主题",
+            "sakuraTheme": "樱花主题",
             "language": "语言设置",
             "languageDesc": "选择界面显示语言",
             "outputLanguage": "输出语言",
@@ -2019,7 +2045,7 @@
         "view": "查看"
     },
     "skills": {
-        "title": "技能库（Skills）",
+        "title": "技能库",
         "description": "管理和启用 AI 技能以扩展助手能力",
         "libraryTab": "技能列表",
         "countbotGuideTab": "CountBot 技能安装",
