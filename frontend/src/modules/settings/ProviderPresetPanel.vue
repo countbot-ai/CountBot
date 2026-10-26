@@ -383,6 +383,7 @@ import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import { usePresets } from '@/composables/usePresets'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import type { ProviderMetadata } from '@/types/settings'
 import { CODING_PLAN_PRESETS, type CodingPlanPreset } from '@/data/codingPlanPresets'
 import { sortProvidersForDisplay } from '@/utils/providerRuntime'
@@ -434,6 +435,7 @@ const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const { presets, createPreset, updatePreset, deletePreset, exportPresets, importPresets } = usePresets()
 
 const activeTab = ref<'saved' | 'codingplan'>('saved')
@@ -742,25 +744,31 @@ function saveEditorPreset() {
   }
 }
 
-function deleteEditorPreset() {
+async function deleteEditorPreset() {
   if (!presetEditor.id) {
     return
   }
 
-  if (!confirmDeletePresetById(presetEditor.id)) {
+  if (!(await confirmDeletePresetById(presetEditor.id))) {
     return
   }
 
   beginCreateFromCurrent()
 }
 
-function confirmDeletePresetById(presetId: string): boolean {
+async function confirmDeletePresetById(presetId: string): Promise<boolean> {
   const preset = presets.value.find(item => item.id === presetId)
   if (!preset) {
     return false
   }
 
-  const confirmed = window.confirm(t('settings.presets.deletePresetConfirm', { name: preset.name }))
+  const confirmed = await confirm({
+    title: t('common.confirmDelete'),
+    message: t('settings.presets.deletePresetConfirm', { name: preset.name }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger'
+  })
   if (!confirmed) {
     return false
   }
@@ -770,8 +778,8 @@ function confirmDeletePresetById(presetId: string): boolean {
   return true
 }
 
-function deleteSavedPreset(presetId: string) {
-  if (!confirmDeletePresetById(presetId)) {
+async function deleteSavedPreset(presetId: string) {
+  if (!(await confirmDeletePresetById(presetId))) {
     return
   }
 

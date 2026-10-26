@@ -203,10 +203,12 @@ import { useProviderDraft } from './provider-config/useProviderDraft'
 import { useProviderModels } from './provider-config/useProviderModels'
 import ProviderIcon from '@/components/ui/ProviderIcon.vue'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useSettingsStore } from '@/store/settings'
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const settingsStore = useSettingsStore()
 
 const showPresetPanel = ref(false)
@@ -368,7 +370,14 @@ function handleAddProvider(providerId: string): void {
 async function handleRemoveProvider(providerId: string): Promise<void> {
   const label =
     navigationProviders.value.find(item => item.id === providerId)?.name || providerId
-  if (!window.confirm(t('settings.providers.removeConfirm', { provider: label }))) {
+  const confirmed = await confirm({
+    title: t('common.confirmDelete'),
+    message: t('settings.providers.removeConfirm', { provider: label }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger'
+  })
+  if (!confirmed) {
     return
   }
 

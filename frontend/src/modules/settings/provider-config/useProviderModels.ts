@@ -12,6 +12,7 @@ import type { ProviderApiType, ProviderModelCatalogEntry, ProviderModelEntry } f
 import { useSettingsStore } from '@/store/settings'
 import { buildSendableModelConfig, formatContextLength } from '@/utils/modelConfig'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { useProviderModelCatalog } from '@/composables/useProviderModelCatalog'
 import type { ModelUpdatePayload } from './types'
 
@@ -53,6 +54,7 @@ export interface ProviderModelsDeps {
 export function useProviderModels(deps: ProviderModelsDeps): ProviderModelsState {
   const { t } = useI18n()
   const toast = useToast()
+  const { confirm } = useConfirm()
   const settingsStore = useSettingsStore()
   const catalog = useProviderModelCatalog()
 
@@ -192,7 +194,14 @@ export function useProviderModels(deps: ProviderModelsDeps): ProviderModelsState
     if (!deps.selectedProvider.value) {
       return
     }
-    if (!window.confirm(t('settings.providers.models.deleteConfirm', { model: modelId }))) {
+    const confirmed = await confirm({
+      title: t('common.confirmDelete'),
+      message: t('settings.providers.models.deleteConfirm', { model: modelId }),
+      type: 'danger',
+      confirmText: t('common.delete'),
+      confirmVariant: 'danger'
+    })
+    if (!confirmed) {
       return
     }
 

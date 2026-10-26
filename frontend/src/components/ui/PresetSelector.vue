@@ -95,6 +95,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   ChevronDown as ChevronDownIcon,
   X as XIcon,
@@ -116,6 +117,7 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const {
   presets,
@@ -157,15 +159,19 @@ function handleClearSelection() {
   emit('presetSelected', null)
 }
 
-function handleDeletePreset() {
+async function handleDeletePreset() {
   if (!currentSelectedPreset.value) {
     return
   }
 
   const presetToDelete = currentSelectedPreset.value
-  const confirmed = window.confirm(
-    t('settings.presets.deletePresetConfirm', { name: presetToDelete.name })
-  )
+  const confirmed = await confirm({
+    title: t('common.confirmDelete'),
+    message: t('settings.presets.deletePresetConfirm', { name: presetToDelete.name }),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger'
+  })
   if (!confirmed) {
     return
   }
