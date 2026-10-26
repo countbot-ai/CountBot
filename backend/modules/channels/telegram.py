@@ -1,8 +1,4 @@
-"""Telegram 频道模块
-
-使用 python-telegram-bot 库通过长轮询模式接收消息，无需 webhook 或公网 IP。
-python-telegram-bot 内置自动重连机制，无需额外处理。
-"""
+"""Telegram 频道：用 python-telegram-bot 长轮询收发消息，无需 webhook/公网 IP，SDK 内置自动重连。"""
 
 import asyncio
 from typing import Any, Dict
@@ -13,11 +9,7 @@ from backend.modules.channels.base import BaseChannel, OutboundMessage
 
 
 class TelegramChannel(BaseChannel):
-    """Telegram 频道
-
-    通过长轮询模式收发消息，支持私聊和群聊。
-    python-telegram-bot 内置连接管理和自动重连。
-    """
+    """Telegram 频道：长轮询收发消息，支持私聊与群聊。"""
 
     name = "telegram"
 

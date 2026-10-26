@@ -1,8 +1,4 @@
-"""频道管理器模块
-
-负责频道的初始化、生命周期管理和消息路由。
-所有频道在独立的监督任务中运行，异常退出后自动重连（指数退避）。
-"""
+"""频道管理器：负责频道初始化、生命周期管理与消息路由；各频道在独立监督任务中运行，异常退出后按指数退避重连。"""
 
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,18 +18,12 @@ _CHANNEL_REGISTRY: Dict[str, Tuple[str, str]] = {
     "weibo": ("backend.modules.channels.weibo", "WeiboChannel"),
     "wecom": ("backend.modules.channels.wecom", "WeComChannel"),
     "xiaozhi": ("backend.modules.channels.xiaozhi", "XiaozhiChannel"),
+    "serverchan": ("backend.modules.channels.serverchan", "ServerChanChannel"),
 }
 
 
 class ChannelManager:
-    """频道管理器
-
-    职责：
-    - 根据配置初始化已启用的频道
-    - 统一启动 / 停止所有频道
-    - 将出站消息路由到对应频道
-    - 监督频道运行状态，异常退出时自动重连
-    """
+    """频道管理器：按配置初始化已启用频道，统一启停、出站路由并监督运行状态（异常退出自动重连）。"""
 
     def __init__(self, config: Any, bus: EnterpriseMessageQueue):
         self.config = config
@@ -103,6 +93,7 @@ class ChannelManager:
             "feishu": ("app_id",),
             "weibo": ("app_id",),
             "wecom": ("bot_id",),
+            "serverchan": ("sendkey",),
         }
 
         def build_signature(config_data: Dict[str, Any]) -> Optional[str]:
@@ -338,7 +329,6 @@ class ChannelManager:
         if name not in _CHANNEL_REGISTRY:
             return {"success": False, "message": f"Unknown channel: {name}"}
 
-        # 已初始化的频道直接测试
         channel = self.get_channel(name, account_id=account_id)
         if channel:
             try:
@@ -347,7 +337,6 @@ class ChannelManager:
                 logger.error(f"Error testing {name}: {e}")
                 return {"success": False, "message": f"Test failed: {e}"}
 
-        # 未初始化则临时创建实例测试
         try:
             module_path, class_name = _CHANNEL_REGISTRY[name]
             module = __import__(module_path, fromlist=[class_name])

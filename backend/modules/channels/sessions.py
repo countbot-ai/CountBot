@@ -1,11 +1,4 @@
-"""频道会话管理（Mixin）
-
-从 channels/handler.py 拆出的会话管理方法（纯搬家，无逻辑改动）：
-- 会话路由键与列表范围记忆
-- 会话的查找/创建（含主账号群共享路由）
-- 非主机器人群聊问答镜像到主机器人主群会话
-ChannelMessageHandler 继承本 Mixin，行为与拆分前完全一致。
-"""
+"""频道会话管理（Mixin）：从 handler.py 拆出的路由键/列表范围记忆、会话查找创建（含主账号群共享路由）与非主机器人问答镜像到主群会话。"""
 
 import json
 from typing import Dict, List, Optional
@@ -159,7 +152,6 @@ class ChannelSessionMixin:
                     await db.commit()
                 return session.id
 
-            # 创建新会话，使用带时间戳的名称
             import uuid
             session_name = (
                 f"{msg.channel}:{account_id}:{session_chat_id}:"

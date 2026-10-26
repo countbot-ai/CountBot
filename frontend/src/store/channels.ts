@@ -194,6 +194,8 @@ export const useChannelsStore = defineStore('channels', () => {
       const data = await response.json()
 
       if (data.success) {
+        // 渠道启用/停用会改变可推送目标，缓存必须失效，否则定时任务页读到的还是旧列表
+        deliveryTargets.value = []
         // 重新获取渠道列表
         await fetchChannels()
         return true
@@ -243,6 +245,7 @@ export const useChannelsStore = defineStore('channels', () => {
 
       if (allSuccess) {
         pendingChanges.value = {}
+        deliveryTargets.value = []
         await fetchChannels() // 重新加载
         return true
       } else {

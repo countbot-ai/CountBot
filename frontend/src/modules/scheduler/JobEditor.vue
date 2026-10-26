@@ -126,34 +126,71 @@
             {{ $t('cron.accountIdHint') }}
           </p>
 
-          <label class="form-label" style="margin-top: var(--spacing-md)">
-            {{ $t('cron.chatId') }}
-          </label>
-          <select
-            v-if="chatOptions.length"
-            :value="selectedChatOption"
-            class="form-select"
-            @change="handleChatOptionChange"
-          >
-            <option
-              v-for="chat in chatOptions"
-              :key="chat.chat_id"
-              :value="chat.chat_id"
+          <template v-if="channelNeedsChatId">
+            <label class="form-label" style="margin-top: var(--spacing-md)">
+              {{ $t('cron.chatId') }}
+            </label>
+            <select
+              v-if="chatOptions.length"
+              :value="selectedChatOption"
+              class="form-select"
+              @change="handleChatOptionChange"
             >
-              {{ formatChatOption(chat) }}
-            </option>
-            <option value="__custom__">{{ $t('cron.chatIdCustom') }}</option>
-          </select>
-          <Input
-            v-if="selectedChatOption === '__custom__' || !chatOptions.length"
-            v-model="formData.chatId"
-            :placeholder="$t('cron.chatIdPlaceholder')"
-            style="margin-top: var(--spacing-sm)"
-          />
-          <p class="form-hint">
-            {{ chatOptions.length ? $t('cron.chatIdPickHint') : $t('cron.chatIdHint') }}
+              <option
+                v-for="chat in chatOptions"
+                :key="chat.chat_id"
+                :value="chat.chat_id"
+              >
+                {{ formatChatOption(chat) }}
+              </option>
+              <option value="__custom__">{{ $t('cron.chatIdCustom') }}</option>
+            </select>
+            <Input
+              v-if="selectedChatOption === '__custom__' || !chatOptions.length"
+              v-model="formData.chatId"
+              :placeholder="$t('cron.chatIdPlaceholder')"
+              style="margin-top: var(--spacing-sm)"
+            />
+            <p class="form-hint">
+              {{ chatOptions.length ? $t('cron.chatIdPickHint') : $t('cron.chatIdHint') }}
+            </p>
+          </template>
+          <p v-else class="form-hint" style="margin-top: var(--spacing-md)">
+            {{ $t('cron.chatIdNotRequiredHint') }}
           </p>
         </template>
+      </div>
+
+      <!-- Model Selection -->
+      <div class="form-group">
+        <label class="form-label">
+          {{ $t('cron.model') }}
+        </label>
+        <select v-model="modelSelectionKey" class="form-select">
+          <option value="">{{ followGlobalModelLabel }}</option>
+          <option v-if="currentModelMissing" :value="modelSelectionKey">
+            {{ formData.modelProvider }} / {{ formData.modelName }}{{ $t('cron.modelMissingSuffix') }}
+          </option>
+          <optgroup
+            v-for="group in modelGroups"
+            :key="group.providerId"
+            :label="group.providerName"
+          >
+            <option
+              v-for="model in group.models"
+              :key="`${group.providerId}:${model.id}`"
+              :value="`${group.providerId}:${model.id}`"
+            >
+              {{ model.display_name || model.id }}
+            </option>
+          </optgroup>
+        </select>
+        <p class="form-hint">
+          {{ $t('cron.modelHint') }}
+        </p>
+        <p v-if="!modelGroups.length" class="form-hint">
+          {{ $t('cron.modelEmptyHint') }}
+        </p>
       </div>
 
       <!-- Advanced Options Section -->
@@ -293,7 +330,13 @@ import Input from '@/components/ui/Input.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import CronBuilder from './CronBuilder.vue'
 import { useChannelsStore } from '@/store/channels'
-import type { CronJob } from '@/api'
+import { useSettingsStore } from '@/store/settings'
+import { settingsAPI } from '@/api'
+import type { CronJob, ProviderMetadata } from '@/api'
+import {
+  buildProviderOptions,
+  buildSelectableModelGroups,
+} from '@/composables/useProviderModelCatalog'
 
 interface Props {
   job?: CronJob | null
@@ -377,7 +420,8 @@ const syncAccountWithChannel = () => {
 }
 
 onMounted(() => {
-  void channelsStore.fetchDeliveryTargets()
+  // 强制刷新：渠道页刚启用/停用的渠道要立刻反映到推送目标里，不能吃旧缓存
+  void channelsStore.fetchDeliveryTargets(true)
 })
 
 watch(deliveryTargets, syncAccountWithChannel)
@@ -394,6 +438,8 @@ const formData = reactive({
   channel: props.job?.channel || 'web',
   accountId: props.job?.account_id || 'default',
   chatId: props.job?.chat_id || '',
+  modelProvider: props.job?.model_provider || '',
+  modelName: props.job?.model_name || '',
   enableRetry: props.job?.max_retries !== undefined ? props.job.max_retries > 0 : true,
   maxRetries: props.job?.max_retries || 1,
   retryDelay: props.job?.retry_delay || 60,
@@ -404,6 +450,83 @@ const errors = reactive({
   name: '',
   schedule: '',
   message: ''
+})
+
+// Server酱等只推送渠道没有会话目标，chat_id 用渠道名占位即可，无需用户填写
+const PUSH_ONLY_CHANNELS = ['serverchan']
+const channelNeedsChatId = computed(() => !PUSH_ONLY_CHANNELS.includes(formData.channel))
+
+const syncChatIdWithChannel = () => {
+  if (!channelNeedsChatId.value) {
+    formData.chatId = formData.channel
+    return
+  }
+  // 离开只推送渠道时清掉占位值，避免把渠道名当成真实聊天 ID 保存
+  if (PUSH_ONLY_CHANNELS.includes(formData.chatId.trim())) {
+    formData.chatId = ''
+  }
+}
+
+watch(() => formData.channel, syncChatIdWithChannel, { immediate: true })
+
+// 任务模型：复用「设置 -> 供应商」里的模型清单，与对话窗口的模型下拉同源
+const settingsStore = useSettingsStore()
+const providerMetadata = ref<ProviderMetadata[]>([])
+
+const modelGroups = computed(() =>
+  buildSelectableModelGroups(
+    buildProviderOptions(settingsStore.settings?.providers, providerMetadata.value)
+  )
+)
+
+const globalModelLabel = computed(() => {
+  const model = settingsStore.settings?.model
+  if (!model?.provider || !model?.model) {
+    return ''
+  }
+  return `${model.provider} / ${model.model}`
+})
+
+const followGlobalModelLabel = computed(() =>
+  globalModelLabel.value
+    ? `${t('cron.modelFollowGlobal')}（${globalModelLabel.value}）`
+    : t('cron.modelFollowGlobal')
+)
+
+/** 用 `供应商:模型` 作为下拉 key，空串表示跟随全局默认。 */
+const modelSelectionKey = computed({
+  get: () =>
+    formData.modelProvider && formData.modelName
+      ? `${formData.modelProvider}:${formData.modelName}`
+      : '',
+  set: (value: string) => {
+    if (!value) {
+      formData.modelProvider = ''
+      formData.modelName = ''
+      return
+    }
+    const separatorIndex = value.indexOf(':')
+    formData.modelProvider = value.slice(0, separatorIndex)
+    formData.modelName = value.slice(separatorIndex + 1)
+  },
+})
+
+// 任务保存的模型可能已从清单里移除（供应商被停用等），保底显示原值避免静默改写
+const currentModelMissing = computed(() => {
+  const key = modelSelectionKey.value
+  if (!key) {
+    return false
+  }
+  return !modelGroups.value.some(group =>
+    group.models.some(model => `${group.providerId}:${model.id}` === key)
+  )
+})
+
+onMounted(async () => {
+  if (!settingsStore.settings) {
+    await settingsStore.loadSettings().catch(() => {})
+  }
+  providerMetadata.value = await settingsAPI.getProviders().catch(() => [])
 })
 
 const validateForm = (): boolean => {
@@ -457,14 +580,19 @@ const handleSave = async () => {
       deliver_response: formData.deliverResponse,
       max_retries: formData.enableRetry ? formData.maxRetries : 0,
       retry_delay: formData.retryDelay,
-      delete_on_success: formData.deleteOnSuccess
+      delete_on_success: formData.deleteOnSuccess,
+      // 空字符串表示改回跟随全局默认模型
+      model_provider: formData.modelProvider.trim(),
+      model_name: formData.modelName.trim(),
     }
 
     // 只在启用渠道推送时包含渠道信息
     if (formData.deliverResponse) {
       data.channel = formData.channel
       data.account_id = formData.channel === 'web' ? null : (formData.accountId.trim() || 'default')
-      data.chat_id = formData.chatId.trim()
+      data.chat_id = channelNeedsChatId.value
+        ? formData.chatId.trim()
+        : (formData.chatId.trim() || formData.channel)
     } else {
       data.channel = null
       data.account_id = null

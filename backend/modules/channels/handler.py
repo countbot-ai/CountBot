@@ -93,6 +93,7 @@ class ChannelMessageHandler(
         temperature: float = 0.0,
         max_tokens: int = 4096,
         thinking_enabled: bool = True,
+        reasoning_level: Optional[str] = None,
         max_history_messages: int = 50,
         memory_store=None,
     ):
@@ -126,6 +127,7 @@ class ChannelMessageHandler(
             temperature=temperature,
             max_tokens=max_tokens,
             thinking_enabled=thinking_enabled,
+            reasoning_level=reasoning_level,
         )
 
     def _rebuild_tool_registry(self) -> None:
@@ -164,6 +166,7 @@ class ChannelMessageHandler(
         max_tokens: Optional[int] = None,
         max_iterations: Optional[int] = None,
         thinking_enabled: Optional[bool] = None,
+        reasoning_level: Optional[str] = None,
         max_history_messages: Optional[int] = None,
         persona_config=None,
         injection_config=None,
@@ -186,6 +189,8 @@ class ChannelMessageHandler(
             self.agent_loop.max_iterations = max_iterations
         if thinking_enabled is not None:
             self.agent_loop.thinking_enabled = thinking_enabled
+        if reasoning_level is not None:
+            self.agent_loop.reasoning_level = reasoning_level
         if max_history_messages is not None:
             self.max_history_messages = max_history_messages
 
@@ -407,9 +412,9 @@ class ChannelMessageHandler(
             # 一次连续回复，而不是两条互相踩踏的并发回复。
             gate = get_session_gate()
             if gate.is_busy(session_id):
-                # 先落库再登记：插话只会被「正在进行的那一轮」合并进上下文，
-                # 若不入库，下一轮从数据库重建历史时就彻底看不到这条消息了。
-                # 由排队补救流程重新投递的消息此前已落库，不能重复写入。
+                # 先落库再登记：插话由正在执行的那一轮合并进上下文，
+                # 未入库的消息在下一轮从数据库重建历史时不可见。
+                # 排队补救流程重新投递的消息此前已完成入库，不重复写入。
                 if not (msg.metadata or {}).get("_persisted"):
                     await self._save_message(
                         session_id,
@@ -466,7 +471,7 @@ class ChannelMessageHandler(
             _validate_runtime_provider(runtime_config)
             model_override = build_session_model_override(runtime_config, force=True)
             persona_override = runtime_config.persona_config
-            active_provider, _, _, _, _, _ = self.agent_loop._resolve_execution_runtime(
+            active_provider, _, _, _, _, _, _ = self.agent_loop._resolve_execution_runtime(
                 model_override
             )
             history = await self._get_session_history(
@@ -644,9 +649,9 @@ class ChannelMessageHandler(
             if session_id and self._active_tasks.get(session_id) is cancel_token:
                 del self._active_tasks[session_id]
             if turn_token_acquired:
-                # 本轮结束前若还有没被消费的插话（例如本轮被取消、异常退出，
-                # 或直接走了 workflow 结果返回路径），把它重新投递回队列，
-                # 让它在下一轮被正常处理，而不是烂在内存里。
+                # 本轮结束前若还有未被消费的插话（例如本轮被取消、异常退出，
+                # 或直接按 workflow 结果返回），将其重新投递回队列，
+                # 由下一轮继续处理，避免消息滞留在内存队列。
                 leftover = get_session_gate().drain_pending(session_id)
                 if leftover and not cancel_token.is_cancelled:
                     try:

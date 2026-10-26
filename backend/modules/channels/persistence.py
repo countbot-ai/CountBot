@@ -1,18 +1,11 @@
-"""频道消息持久化与上下文构建（Mixin）
-
-从 channels/handler.py 拆出的消息持久化方法（纯搬家，无逻辑改动）：
-- 渠道临时媒体转存到工作空间持久目录
-- 用户/助手消息上下文构建
-- 消息落库与会话历史重建（含历史压缩）
-ChannelMessageHandler 继承本 Mixin，行为与拆分前完全一致。
-"""
+"""频道消息持久化与上下文构建（Mixin）：从 handler.py 拆出的媒体转存、用户/助手消息上下文构建与消息落库历史重建（含压缩）。"""
 
 from typing import Dict, List, Optional
 
 from loguru import logger
 
 from backend.models.message import Message
-from backend.modules.agent.history_compactor import HistoryCompactor, should_compress
+from backend.modules.compression import build_engine
 from backend.modules.channels.base import InboundMessage
 from backend.modules.channels.inbound_utils import (
     _build_history_message,
@@ -150,6 +143,13 @@ class ChannelPersistenceMixin:
         if summary_provider is None:
             summary_provider = self.agent_loop.provider
 
+        # 每次取历史都用独立引擎实例：摘要随请求生命周期结束、不跨会话累积（跨会话复用会把 A 会话摘要注入 B 会话）
+        engine = build_engine(
+            provider=summary_provider,
+            model=getattr(self.agent_loop, "model", "") or "",
+            config=getattr(self.agent_loop, "config", None),
+        )
+
         limit = max_history_messages if max_history_messages != -1 else None
 
         async with self.db_session_factory() as db:
@@ -174,20 +174,13 @@ class ChannelPersistenceMixin:
                 result = await db.execute(query)
                 message_dicts = [_build_history_message(m) for m in result.scalars().all()]
 
-        if not summary_provider or not should_compress(message_dicts):
+        if not summary_provider or not engine.should_compress(message_dicts):
             return message_dicts
 
         try:
-            compactor = HistoryCompactor(
-                provider=summary_provider,
-                min_keep_recent=10,
-                threshold=15,
-                char_limit=12000,
-                token_threshold=80_000,
-            )
-            outcome = await compactor.compress_with_detail(message_dicts)
+            outcome = await engine.compress(message_dicts)
             if not outcome.ok:
-                # 记录未压缩原因：静默降级会让「压缩早就失效」长期不可见
+                # 记录未压缩原因：静默降级会让「压缩早已失效」长期不可见
                 logger.info(
                     f"[history] Compression skipped for session {session_id}: "
                     f"{outcome.reason} ({outcome.before_tokens} tokens, "

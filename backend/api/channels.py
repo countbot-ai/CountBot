@@ -80,7 +80,7 @@ def _mask_channel_secret(key: str, value: Any) -> Any:
     if value is None:
         return value
     lowered = key.lower()
-    if lowered in {"token", "secret", "app_secret", "client_secret", "bot_id"}:
+    if lowered in {"token", "secret", "app_secret", "client_secret", "bot_id", "sendkey"}:
         text = str(value)
         if not text:
             return ""
@@ -133,12 +133,12 @@ def _serialize_channel_for_list(channel_config: Any) -> Dict[str, Any]:
         "configured": any(
             bool(account_cfg.get(field))
             for account_cfg in [config_dict, *accounts.values()]
-            for field in ("token", "app_id", "client_id", "bot_id", "endpoint")
+            for field in ("token", "app_id", "client_id", "bot_id", "endpoint", "sendkey")
         ),
         "config": {
             **visible_config,
             "accounts": visible_accounts,
-            "account_count": (1 if any(config_dict.get(field) for field in ("token", "app_id", "client_id", "bot_id", "endpoint")) else 0) + len(visible_accounts),
+            "account_count": (1 if any(config_dict.get(field) for field in ("token", "app_id", "client_id", "bot_id", "endpoint", "sendkey")) else 0) + len(visible_accounts),
         },
     }
 
@@ -175,6 +175,7 @@ _CHANNEL_UNIQUE_ID_FIELDS: Dict[str, tuple[str, ...]] = {
     "feishu": ("app_id",),
     "weibo": ("app_id",),
     "wecom": ("bot_id",),
+    "serverchan": ("sendkey",),
 }
 
 
@@ -188,6 +189,7 @@ _DELIVERY_CHANNEL_IDS = (
     "weibo",
     "wecom",
     "discord",
+    "serverchan",
 )
 
 # 渠道标识形如 wecom / feishu，用于把普通会话名与渠道会话名区分开
@@ -202,6 +204,7 @@ _DELIVERY_CHANNEL_LABELS = {
     "weibo": "微博",
     "wecom": "企业微信",
     "discord": "Discord",
+    "serverchan": "Server酱",
 }
 
 
@@ -519,6 +522,7 @@ async def list_channels():
         weibo_data = _serialize_channel_for_list(channels_config.weibo)
         wecom_data = _serialize_channel_for_list(channels_config.wecom)
         xiaozhi_data = _serialize_channel_for_list(channels_config.xiaozhi)
+        serverchan_data = _serialize_channel_for_list(channels_config.serverchan)
 
         available_channels = {
             "telegram": {
@@ -574,6 +578,12 @@ async def list_channels():
                 "description": "小智机器人 MCP 接入（工具调用/对话模式）",
                 "icon": "xiaozhi",
                 **xiaozhi_data,
+            },
+            "serverchan": {
+                "name": "Server酱",
+                "description": "Server酱 消息推送（微信 / Server酱³ App）",
+                "icon": "serverchan",
+                **serverchan_data,
             }
         }
         
@@ -713,7 +723,7 @@ async def test_channel(request: ChannelTestRequest):
             from backend.modules.config.schema import (
                 QQConfig, FeishuConfig, DingTalkConfig,
                 TelegramConfig, DiscordConfig, WeChatConfig, WeiboConfig, WeComConfig,
-                XiaozhiConfig,
+                XiaozhiConfig, ServerChanConfig,
             )
             config_classes = {
                 "qq": QQConfig,
@@ -725,6 +735,7 @@ async def test_channel(request: ChannelTestRequest):
                 "weibo": WeiboConfig,
                 "wecom": WeComConfig,
                 "xiaozhi": XiaozhiConfig,
+                "serverchan": ServerChanConfig,
             }
 
             if request.channel not in config_classes:
@@ -747,6 +758,7 @@ async def test_channel(request: ChannelTestRequest):
             from backend.modules.channels.weibo import WeiboChannel
             from backend.modules.channels.wecom import WeComChannel
             from backend.modules.channels.xiaozhi import XiaozhiChannel
+            from backend.modules.channels.serverchan import ServerChanChannel
 
             channel_classes = {
                 "qq": QQChannel,
@@ -757,6 +769,7 @@ async def test_channel(request: ChannelTestRequest):
                 "weibo": WeiboChannel,
                 "wecom": WeComChannel,
                 "xiaozhi": XiaozhiChannel,
+                "serverchan": ServerChanChannel,
             }
             
             if request.channel in channel_classes:
@@ -1088,7 +1101,7 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
+        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi", "serverchan"]
         
         if request.channel not in supported_channels:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {request.channel}")
@@ -1100,6 +1113,7 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         from backend.modules.config.schema import (
             TelegramConfig, DiscordConfig, QQConfig,
             WeChatConfig, DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig,
+            ServerChanConfig,
         )
 
         config_classes = {
@@ -1112,6 +1126,7 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
             "weibo": WeiboConfig,
             "wecom": WeComConfig,
             "xiaozhi": XiaozhiConfig,
+            "serverchan": ServerChanConfig,
         }
 
         merged_config = _normalize_accounts_payload(channel_config.model_dump())
@@ -1164,7 +1179,7 @@ async def get_channel_config(channel: str):
         config = config_loader.config
         
         # 支持的渠道列表
-        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi"]
+        supported_channels = ["telegram", "discord", "qq", "wechat", "dingtalk", "feishu", "weibo", "wecom", "xiaozhi", "serverchan"]
 
         if channel not in supported_channels:
             raise HTTPException(status_code=404, detail=f"Channel not found: {channel}")
@@ -1175,13 +1190,15 @@ async def get_channel_config(channel: str):
             logger.warning(f"Channel configuration not found for {channel}, creating default")
             from backend.modules.config.schema import (
                 TelegramConfig, DiscordConfig, QQConfig, WeChatConfig,
-                DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig
+                DingTalkConfig, FeishuConfig, WeiboConfig, WeComConfig, XiaozhiConfig,
+                ServerChanConfig,
             )
             config_classes = {
                 "telegram": TelegramConfig, "discord": DiscordConfig,
                 "qq": QQConfig, "wechat": WeChatConfig, "dingtalk": DingTalkConfig,
                 "feishu": FeishuConfig, "weibo": WeiboConfig,
                 "wecom": WeComConfig, "xiaozhi": XiaozhiConfig,
+                "serverchan": ServerChanConfig,
             }
             channel_config = config_classes[channel]()
             setattr(config.channels, channel, channel_config)

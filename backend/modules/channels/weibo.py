@@ -1,19 +1,4 @@
-"""微博频道模块
-
-使用 WebSocket 长连接接收微博私信，支持文本、图片、文件消息。
-通过微博龙虾助手获取 App ID 和 App Secret。
-
-获取凭证步骤：
-1. 私信 @微博龙虾助手
-2. 发送 "连接龙虾"
-3. 获取 AppId 和 AppSecret
-
-实现方案：
-- 全局 WebSocket 客户端缓存（模拟 openclaw-weibo）
-- 持久连接保持活跃
-- 定期心跳保活（30 秒间隔）
-- 自动重连和 Token 刷新
-"""
+"""微博频道：通过 WebSocket 长连接收发私信（文本/图片/文件），凭证由微博龙虾助手提供。"""
 
 import asyncio
 import base64
@@ -29,21 +14,12 @@ from loguru import logger
 from backend.modules.channels.base import BaseChannel, OutboundMessage
 
 
-# 全局 WebSocket 客户端缓存（每个账号一个连接）
+# 每个账号一个连接
 _ws_clients: Dict[str, websockets.WebSocketClientProtocol] = {}
 
 
 class WeiboChannel(BaseChannel):
-    """微博频道
-
-    通过 WebSocket 长连接收发私信，支持文本、图片、文件。
-    
-    特点：
-    - 使用全局 WebSocket 客户端缓存
-    - 持久连接保持活跃
-    - 定期心跳保活
-    - 自动重连和 Token 刷新
-    """
+    """微博频道：通过 WebSocket 长连接收发私信，支持文本、图片、文件。"""
 
     name = "weibo"
 
@@ -70,7 +46,6 @@ class WeiboChannel(BaseChannel):
         self.set_runtime_state(self.RUNTIME_CONNECTING)
         logger.info(f"[{self._account_id}] Starting Weibo channel...")
 
-        # 主循环：自动重连
         while self._running:
             try:
                 await self._connect_and_listen()
@@ -91,7 +66,6 @@ class WeiboChannel(BaseChannel):
             )
             await asyncio.sleep(self._reconnect_delay)
 
-            # 指数退避
             self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
 
     async def stop(self) -> None:
@@ -99,7 +73,6 @@ class WeiboChannel(BaseChannel):
         self.set_runtime_state(self.RUNTIME_STOPPING)
         self._running = False
         
-        # 取消心跳任务
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             try:
@@ -107,7 +80,6 @@ class WeiboChannel(BaseChannel):
             except asyncio.CancelledError:
                 pass
         
-        # 关闭 WebSocket 连接
         ws = _ws_clients.pop(self._account_id, None)
         if ws:
             try:
@@ -127,7 +99,6 @@ class WeiboChannel(BaseChannel):
             }
 
         try:
-            # 尝试获取 Token 来验证凭据
             token_endpoint = getattr(
                 self.config,
                 "token_endpoint",
@@ -233,13 +204,11 @@ class WeiboChannel(BaseChannel):
         logger.info(f"[{self._account_id}] Connecting to Weibo WebSocket...")
 
         async with websockets.connect(url) as ws:
-            # 保存到全局缓存
             _ws_clients[self._account_id] = ws
-            self._reconnect_delay = 5  # 重置退避时间
+            self._reconnect_delay = 5
             self.set_runtime_state(self.RUNTIME_RUNNING, reconnect_attempts=0)
             logger.success(f"[{self._account_id}] Weibo WebSocket connected")
 
-            # 接收连接确认
             try:
                 message = await asyncio.wait_for(ws.recv(), timeout=5)
                 data = json.loads(message)
@@ -247,7 +216,6 @@ class WeiboChannel(BaseChannel):
             except asyncio.TimeoutError:
                 logger.warning(f"[{self._account_id}] No connection confirmation received")
 
-            # 启动心跳任务
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(ws))
 
             try:
@@ -267,7 +235,6 @@ class WeiboChannel(BaseChannel):
                 logger.error(f"[{self._account_id}] Error in WebSocket loop: {e}")
                 raise
             finally:
-                # 清理心跳任务
                 if self._heartbeat_task:
                     self._heartbeat_task.cancel()
                     try:
@@ -275,7 +242,6 @@ class WeiboChannel(BaseChannel):
                     except asyncio.CancelledError:
                         pass
                 
-                # 从缓存中移除
                 _ws_clients.pop(self._account_id, None)
 
     async def _heartbeat_loop(self, ws: websockets.WebSocketClientProtocol) -> None:
@@ -325,14 +291,12 @@ class WeiboChannel(BaseChannel):
                 logger.warning(f"[{self._account_id}] Received message without fromUserId")
                 return
 
-            # 处理附件（图片/文件）
             media_files = []
             input_data = payload.get("input", [])
 
             if input_data:
                 media_files = await self._process_attachments(input_data, message_id)
 
-            # 如果有附件但没有文本，生成描述
             if media_files and not text:
                 text = self._generate_attachment_description(media_files)
 
@@ -341,7 +305,6 @@ class WeiboChannel(BaseChannel):
                 f"({len(media_files)} attachments)"
             )
 
-            # 转发到消息处理器
             await self._handle_message(
                 sender_id=from_user_id,
                 chat_id=from_user_id,  # 微博私信是一对一
@@ -394,20 +357,17 @@ class WeiboChannel(BaseChannel):
                 logger.warning(f"Unsupported source type: {source.get('type')}")
                 return None
 
-            # 解码 base64 数据
             data_b64 = source.get("data", "")
             if not data_b64:
                 return None
 
             file_data = base64.b64decode(data_b64)
 
-            # 确定文件扩展名
             filename = content.get("filename", "")
             if not filename:
                 ext = ".jpg" if content_type == "input_image" else ".bin"
                 filename = f"{message_id}_{int(time.time())}{ext}"
 
-            # 保存到临时目录
             save_dir = Path("data/temp/weibo")
             save_dir.mkdir(parents=True, exist_ok=True)
             file_path = save_dir / filename
@@ -446,7 +406,6 @@ class WeiboChannel(BaseChannel):
             return
 
         try:
-            # 如果有媒体文件，发送带附件的消息
             if msg.media:
                 await self._send_with_media(msg, ws)
             else:

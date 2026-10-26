@@ -1,8 +1,4 @@
-"""频道基类模块
-
-定义所有聊天频道的抽象接口和消息数据结构。
-每个具体频道（Telegram、飞书、钉钉等）都应继承 BaseChannel 并实现其抽象方法。
-"""
+"""频道基类：定义聊天频道的抽象接口与消息数据结构，具体频道继承 BaseChannel 并实现抽象方法。"""
 
 import time
 from abc import ABC, abstractmethod
@@ -53,14 +49,7 @@ class OutboundMessage:
 
 
 class BaseChannel(ABC):
-    """频道抽象基类
-
-    所有聊天频道的公共接口，提供：
-    - 生命周期管理（start / stop）
-    - 消息收发（send / _handle_message）
-    - 权限校验（is_allowed）
-    - 连接测试（test_connection）
-    """
+    """频道抽象基类：公共接口含生命周期（start/stop）、消息收发（send/_handle_message）、权限校验（is_allowed）与连接测试（test_connection）。"""
 
     name: str = "base"
 

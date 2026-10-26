@@ -1,14 +1,4 @@
-"""频道入站消息处理纯函数
-
-从 channels/handler.py 拆出的模块级工具函数（纯搬家，无逻辑改动）：
-- 入站内容清洗（@mention 剥离）
-- 会话路由解析（群聊/私聊、主账号/子账号）
-- 消息上下文编解码与模型输入格式化
-- 错误信息友好化与 provider 可用性校验
-
-handler.py 通过 `from backend.modules.channels.inbound_utils import ...`
-继续以原名使用这些符号，类内调用零改动。
-"""
+"""频道入站消息工具：从 handler.py 拆出的纯函数（@mention 清洗、会话路由、上下文编解码、错误友好化与 provider 校验），handler 按原名导入使用。"""
 
 import json
 import re
@@ -29,12 +19,9 @@ from backend.modules.session.message_context import (
     strip_workflow_exec_metadata,
 )
 
-# 预编译 @mention 清理正则
-# 飞书格式: @_user_数字 (如 @_user_1)
-# 企业微信/钉钉格式: <at user_id="xxx">@用户名</at>
+# 飞书格式 @_user_数字；企业微信/钉钉格式 <at user_id="xxx">@用户名</at>
 _AT_MENTION_RE = re.compile(r"@_user_\d+\s*|<at[^>]*>.*?</at>\s*", re.IGNORECASE)
-# 纯文本唤醒 mention（例如企业微信/钉钉客户端展开后的 "@SBot "）
-# 仅移除消息开头连续的 mention 前缀，避免把正文中的 @账号 / 邮箱误删。
+# 纯文本唤醒 mention（如客户端展开后的 "@SBot "）；仅移除开头连续前缀，避免误删正文中的 @账号/邮箱。
 _LEADING_WAKEUP_MENTION_TOKEN_RE = re.compile(
     r"^(?:@|＠)(?P<name>[^\s@＠]{1,64})(?:[\s\u3000,:：，、;；]+|\s*$)",
     re.IGNORECASE,
@@ -262,11 +249,7 @@ def _format_message_for_model(role: str, content: str, message_context: Optional
 
 
 def _build_history_message(message: Message) -> dict:
-    """把数据库消息转换为模型可用的历史条目。
-
-    与 Web 端的转换保持一致：剥离 workflow 执行元数据，并还原思考内容，
-    否则渠道会话会把内部元数据反复喂回模型、且丢失此前的推理上下文。
-    """
+    """把数据库消息转换为模型可用的历史条目（与 Web 端一致：剥离 workflow 元数据并还原思考内容）。"""
     raw_message_context = getattr(message, "message_context", None)
     message_context = _decode_message_context(raw_message_context)
     entry = {
@@ -275,8 +258,7 @@ def _build_history_message(message: Message) -> dict:
             _format_message_for_model(message.role, message.content, message_context)
         ),
     }
-    # extract_reasoning_content_from_message_context 只接受原始 JSON
-    # 字符串（内部自行 json.loads），不能传解码后的 dict
+    # 该函数只接受原始 JSON 字符串（内部自行 json.loads），不能传解码后的 dict
     reasoning = extract_reasoning_content_from_message_context(raw_message_context)
     if reasoning:
         entry["reasoning_content"] = reasoning

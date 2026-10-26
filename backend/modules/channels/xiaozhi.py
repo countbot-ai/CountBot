@@ -1,19 +1,4 @@
-"""小智AI频道模块
-
-作为 MCP Client 连接到小智AI的 MCP Server。
-
-支持两种模式：
-1. 工具调用模式（默认）：小智AI直接调用已注册工具
-2. 对话模式：小智AI通过 send_message 工具发送用户消息 → Agent 处理 → 返回响应
-
-配置方式：
-1. 在小智AI后台获取 MCP Endpoint URL（包含 token）
-2. 将该 URL 填入本系统的小智AI频道配置
-3. 启用频道后，系统会作为 MCP Client 连接到小智AI
-
-流程：
-用户语音 -> 小智机器人 -> 小智AI LLM -> MCP工具调用 -> 本项目处理 -> 返回结果 -> 语音播报
-"""
+"""小智AI频道：作为 MCP Client 连接小智AI 的 MCP Server，支持工具调用（默认）与对话（send_message）两种模式。"""
 
 import asyncio
 import json
@@ -27,12 +12,10 @@ from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgr
 
 
 class XiaozhiChannel(BaseChannel):
-    """小智AI MCP Client 频道
-    
-    作为 MCP Client 连接到小智AI的 MCP Server。
-    
+    """小智AI MCP Client 频道。
+
     配置项（对应 XiaozhiConfig）：
-    - endpoint: 小智AI后台生成的 MCP Endpoint URL（包含 token）
+    - endpoint: 小智AI后台生成的 MCP Endpoint URL（含 token）
     - enable_conversation: 是否启用对话模式（默认 False）
     - allow_from: 用户白名单（可选）
     """
@@ -154,7 +137,6 @@ class XiaozhiChannel(BaseChannel):
         self._running = False
         logger.info("Stopping XiaozhiAI channel...")
         
-        # 清理待处理的响应
         if self._pending_responses:
             logger.debug(f"Cleaning up {len(self._pending_responses)} pending responses")
             for msg_id, future in list(self._pending_responses.items()):
@@ -165,7 +147,6 @@ class XiaozhiChannel(BaseChannel):
                         pass
             self._pending_responses.clear()
         
-        # 关闭 WebSocket 连接
         if self._websocket:
             try:
                 # 使用更短的超时，避免阻塞关闭流程
@@ -174,7 +155,6 @@ class XiaozhiChannel(BaseChannel):
                 logger.debug("WebSocket closed gracefully")
             except asyncio.TimeoutError:
                 logger.warning("WebSocket close timeout, forcing close")
-                # 强制关闭
                 try:
                     if hasattr(self._websocket, 'transport') and self._websocket.transport:
                         self._websocket.transport.close()
@@ -255,7 +235,6 @@ class XiaozhiChannel(BaseChannel):
                 enable_conversation = getattr(self.config, "enable_conversation", False)
                 
                 if enable_conversation:
-                    # 对话模式：只返回 send_message 工具
                     tool = tool_registry.get_tool("send_message")
                     if tool:
                         defn = tool.get_definition()
@@ -269,7 +248,6 @@ class XiaozhiChannel(BaseChannel):
                         logger.error("Conversation mode enabled but send_message tool not found in registry!")
                         logger.error(f"Available tools: {tool_registry.list_tools()}")
                 else:
-                    # 工具调用模式：返回所有工具
                     names = tool_registry.list_tools()
                     for tool_name in names:
                         tool = tool_registry.get_tool(tool_name)
@@ -296,7 +274,6 @@ class XiaozhiChannel(BaseChannel):
 
         try:
             if tool_name == "send_message" and getattr(self.config, "enable_conversation", False):
-                # 对话模式：处理 send_message 工具调用
                 user_message = arguments.get("message") or arguments.get("text", "")
                 
                 if not user_message:
@@ -350,7 +327,6 @@ class XiaozhiChannel(BaseChannel):
                     self._pending_responses.pop(msg_id, None)
 
             else:
-                # 工具调用模式：直接执行工具
                 from backend.app import get_tool_registry
                 tool_registry = get_tool_registry()
                 if not tool_registry:
@@ -430,11 +406,7 @@ class XiaozhiChannel(BaseChannel):
     # ------------------------------------------------------------------
 
     async def send(self, msg: OutboundMessage) -> None:
-        """发送出站消息
-        
-        如果消息包含 mcp_message_id，则作为工具调用响应返回；
-        否则作为通知消息推送。
-        """
+        """发送出站消息：带 mcp_message_id 时作为工具调用响应，否则作为通知消息推送。"""
         if not self._websocket or not self._initialized:
             logger.warning("XiaozhiAI not connected/initialized")
             return
@@ -449,7 +421,6 @@ class XiaozhiChannel(BaseChannel):
                 logger.warning(f"Future for mcp_message_id {mcp_message_id} already done")
             return
 
-        # 普通通知推送
         logger.debug(f"Sending notification message: {msg.content[:100]}")
         await self._send_mcp({
             "jsonrpc": "2.0",
@@ -462,10 +433,7 @@ class XiaozhiChannel(BaseChannel):
     # ------------------------------------------------------------------
 
     async def test_connection(self) -> Dict[str, Any]:
-        """测试与小智AI的连接
-        
-        执行完整的 MCP 协议握手来验证连接是否正常。
-        """
+        """测试与小智AI的连接：执行完整的 MCP 协议握手验证连通性。"""
         if not self.config.endpoint:
             return {"success": False, "message": "MCP 接入点未配置"}
         if not self.config.endpoint.startswith(("ws://", "wss://")):
@@ -478,7 +446,6 @@ class XiaozhiChannel(BaseChannel):
                 close_timeout=5,
                 open_timeout=10
             ) as ws:
-                # 等待 initialize 请求
                 try:
                     init_msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
                     init_data = json.loads(init_msg)
@@ -489,7 +456,6 @@ class XiaozhiChannel(BaseChannel):
                             "message": f"未收到 initialize 请求，收到: {init_data.get('method', 'unknown')}"
                         }
                     
-                    # 发送 initialize 响应
                     init_response = {
                         "jsonrpc": "2.0",
                         "id": init_data.get("id"),
@@ -501,7 +467,6 @@ class XiaozhiChannel(BaseChannel):
                     }
                     await ws.send(json.dumps(init_response))
                     
-                    # 等待 notifications/initialized
                     try:
                         notif_msg = await asyncio.wait_for(ws.recv(), timeout=3.0)
                         notif_data = json.loads(notif_msg)

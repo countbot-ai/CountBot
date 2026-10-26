@@ -1,16 +1,4 @@
-"""渠道扫码接入（Onboarding）
-
-对齐 zcode 的扫码绑定实现，支持 QQ、飞书、企业微信、钉钉四个长连接渠道。
-每个渠道都遵循同一套三段式流程：
-
-    begin -> 返回二维码 URL 与轮询参数
-    poll  -> 单次查询，返回 pending / success / expired / error
-
-设计约束：
-- 会话只保存在内存，成功、过期或失败后立即清理，凭据不在内存中常驻。
-- 轮询接口按“可重试”语义处理限流与临时网络故障，避免 UI 因一次失败停止轮询。
-- 任何日志都不打印 secret / token 明文。
-"""
+"""渠道扫码接入（Onboarding）：对齐 zcode 扫码绑定，支持 QQ/飞书/企业微信/钉钉；begin 返回二维码，poll 单次查询返回 pending/success/expired/error。"""
 
 from __future__ import annotations
 
@@ -28,8 +16,7 @@ from loguru import logger
 QQ_PORTAL_BASE = "https://q.qq.com"
 QQ_BIND_CREATE_PATH = "/lite/create_bind_task"
 QQ_BIND_POLL_PATH = "/lite/poll_bind_result"
-# 必须使用 QQ 开放平台认可的 source（官方 OpenClaw connector 使用 openclaw）。
-# 传未注册的 source 时，手机 QQ 侧的 SelectBindBot 鉴权会返回 401。
+# 必须使用 QQ 开放平台认可的 source（官方 OpenClaw connector 用 openclaw）；未注册的 source 会让手机 QQ 侧 SelectBindBot 鉴权返回 401。
 QQ_QR_URL_TEMPLATE = (
     "https://q.qq.com/qqbot/openclaw/connect.html?task_id={task_id}&_wv=2&source=openclaw"
 )
@@ -194,8 +181,7 @@ async def _poll_qq(client: httpx.AsyncClient, session: OnboardingSession) -> Dic
         headers=_qq_headers(),
         json={"task_id": session.state.get("task_id")},
     )
-    # q.qq.com 对 poll_bind_result 有频率限制，超限会返回非 0 retcode。
-    # 这是可重试状态而不是终态错误；但 401/403 表示鉴权失败，应直接提示用户。
+    # q.qq.com poll_bind_result 频率限制返回非 0 retcode（可重试）；401/403 是鉴权失败，需直接提示用户。
     retcode = int(payload.get("retcode") or 0)
     if response.status_code >= 400 or retcode != 0:
         logger.debug(
