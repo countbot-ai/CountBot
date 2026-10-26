@@ -52,7 +52,7 @@ def register_all_tools(
     # 保存构建参数，供 sync_disabled_tools 重建注册表
     build_params = dict(locals())
 
-    tools = ToolRegistry()
+    tools = ToolRegistry(workspace=workspace)
     
     # 配置审计日志
     tools.set_audit_enabled(audit_log_enabled)

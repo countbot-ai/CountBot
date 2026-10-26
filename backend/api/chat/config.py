@@ -70,10 +70,17 @@ from backend.api.chat.models import (
     SessionConfigRequest,
     SessionConfigResponse,
     SessionResponse,
+    SessionWorkspaceConfig,
+    SessionWorkspaceRequest,
     SummarizeSessionResponse,
     ToolCallResponse,
     UpdateSessionRequest,
     UpdateSessionSummaryRequest,
+)
+from backend.modules.workspace import (
+    get_global_workspace_path,
+    resolve_session_workspace,
+    validate_session_workspace_path,
 )
 
 @router.get("/sessions/{session_id}/config", response_model=SessionConfigResponse)
@@ -129,7 +136,12 @@ async def get_session_config(
             global_defaults={
                 "model": global_defaults.model_response,
                 "persona": global_defaults.persona_response,
-            }
+            },
+            workspace=SessionWorkspaceConfig(
+                path=session.workspace_path,
+                effective_path=str(resolve_session_workspace(session)),
+                global_path=str(get_global_workspace_path()),
+            ),
         )
         
     except HTTPException:
@@ -219,6 +231,72 @@ async def update_session_config(
             detail=f"Failed to update session config: {str(e)}"
         )
 
+@router.put("/sessions/{session_id}/workspace")
+async def update_session_workspace(
+    session_id: str,
+    request: SessionWorkspaceRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """设置或清除会话级工作空间。
+
+    path 为空表示恢复跟随全局配置；自定义路径必须是已存在的绝对目录，
+    避免用户输错路径时被自动创建成一堆空目录。
+    """
+    try:
+        from sqlalchemy import select
+        from backend.models.session import Session
+
+        result = await db.execute(
+            select(Session).where(Session.id == session_id)
+        )
+        session = result.scalar_one_or_none()
+
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session '{session_id}' not found"
+            )
+
+        raw_path = (request.path or "").strip()
+        if not raw_path:
+            session.workspace_path = None
+        else:
+            try:
+                resolved = validate_session_workspace_path(raw_path)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
+            session.workspace_path = str(resolved)
+
+        session.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(session)
+
+        logger.info(
+            f"Updated workspace for session {session_id}: "
+            f"{session.workspace_path or 'global'}"
+        )
+        await _notify_webui_session_updated(session_id)
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "workspace_path": session.workspace_path,
+            "effective_workspace_path": str(resolve_session_workspace(session)),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to update session workspace: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update session workspace: {str(e)}"
+        )
+
+
 @router.delete("/sessions/{session_id}/config")
 async def reset_session_config(
     session_id: str,
@@ -254,6 +332,8 @@ async def reset_session_config(
         session.session_model_config = None
         session.session_persona_config = None
         session.use_custom_config = False
+        # 重置为全局默认时，会话工作空间也一并恢复跟随全局
+        session.workspace_path = None
         session.updated_at = datetime.now(timezone.utc)
         
         await db.commit()

@@ -8,19 +8,6 @@
     />
 
     <div class="nc-composer" :class="{ focused: isInputFocused, busy: isUploadingAttachments }">
-      <div v-if="contextLabel" class="nc-composer-context">
-        <button
-          type="button"
-          class="nc-context-pill"
-          :title="contextLabel"
-          @click="$emit('open-context')"
-        >
-          <span class="nc-context-dot" aria-hidden="true" />
-          <span class="nc-context-name">{{ contextLabel }}</span>
-          <component :is="ChevronDownIcon" :size="12" class="nc-context-chevron" />
-        </button>
-      </div>
-
       <div v-if="attachments.length > 0" class="nc-attachment-strip">
         <div
           v-for="attachment in attachments"
@@ -102,6 +89,18 @@
         <span class="nc-toolbar-spacer" />
 
         <button
+          v-if="workspacePath"
+          type="button"
+          class="nc-workspace-button"
+          :title="workspacePath"
+          :aria-label="$t('chat.sessionConfig.openWorkspaceConfig')"
+          @click="$emit('open-workspace')"
+        >
+          <component :is="FolderIcon" :size="14" />
+          <span class="nc-workspace-name">{{ workspaceLabel }}</span>
+        </button>
+
+        <button
           v-if="isStreaming"
           class="nc-send-button is-stop"
           :aria-label="$t('chat.stopGenerationWarning')"
@@ -134,9 +133,9 @@ import { useI18n } from 'vue-i18n'
 import {
   AlertCircle as AlertCircleIcon,
   ArrowUp as ArrowUpIcon,
-  ChevronDown as ChevronDownIcon,
   File as FileIcon,
   Film as FilmIcon,
+  Folder as FolderIcon,
   Image as ImageIcon,
   Loader2 as Loader2Icon,
   Music4 as MusicIcon,
@@ -166,8 +165,8 @@ interface Props {
   isSessionOverride?: boolean
   reasoningLevels?: string[]
   activeReasoningLevel?: string | null
-  /** 当前会话名，作为输入卡顶部的上下文条 */
-  contextLabel?: string
+  /** 当前生效的工作空间路径，作为输入卡顶部的上下文条 */
+  workspacePath?: string
   /** hero：欢迎页居中独立卡片；docked：对话页贴底 */
   variant?: 'hero' | 'docked'
 }
@@ -179,7 +178,7 @@ const props = withDefaults(defineProps<Props>(), {
   isSessionOverride: false,
   reasoningLevels: () => [],
   activeReasoningLevel: null,
-  contextLabel: '',
+  workspacePath: '',
   variant: 'docked',
 })
 
@@ -193,7 +192,7 @@ const emit = defineEmits<{
   (e: 'remove-attachment', id: string): void
   (e: 'select-model', providerId: string, modelId: string): void
   (e: 'select-reasoning-level', level: string): void
-  (e: 'open-context'): void
+  (e: 'open-workspace'): void
 }>()
 
 const isInputFocused = ref(false)
@@ -207,6 +206,9 @@ const shortcutHint = computed(() =>
     ? `⌘+Enter ${t('chat.send')} · Enter ${t('chat.newLine')}`
     : `Enter ${t('chat.send')} · Shift+Enter ${t('chat.newLine')}`,
 )
+
+// 工具栏空间有限，路径用省略号截断，完整值放在 title 里
+const workspaceLabel = computed(() => (props.workspacePath || '').replace(/[\\/]+$/, ''))
 
 const showModelPicker = computed(() => (props.modelGroups?.length ?? 0) > 0)
 const showReasoningLevelSelect = computed(

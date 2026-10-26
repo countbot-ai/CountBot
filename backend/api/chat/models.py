@@ -61,6 +61,10 @@ class SessionResponse(BaseModel):
     updated_at: str
     summary: Optional[str] = None
     summary_updated_at: Optional[str] = None
+    # 会话自定义工作空间；为空表示跟随全局
+    workspace_path: Optional[str] = None
+    # 实际生效的工作空间（会话自定义或全局默认）
+    effective_workspace_path: Optional[str] = None
 
 
 class ToolCallResponse(BaseModel):
@@ -118,6 +122,23 @@ class SessionConfigRequest(BaseModel):
         populate_by_name = True
 
 
+class SessionWorkspaceConfig(BaseModel):
+    """会话工作空间配置"""
+
+    # 会话自定义路径；为空表示跟随全局
+    path: Optional[str] = None
+    # 实际生效路径
+    effective_path: str
+    # 全局默认路径
+    global_path: str
+
+
+class SessionWorkspaceRequest(BaseModel):
+    """设置会话工作空间请求；path 为空表示恢复跟随全局。"""
+
+    path: Optional[str] = None
+
+
 class SessionConfigResponse(BaseModel):
     """会话配置响应"""
     session_id: str
@@ -125,6 +146,7 @@ class SessionConfigResponse(BaseModel):
     model: Dict[str, Any] = Field(..., alias='model_config')
     persona: Dict[str, Any] = Field(..., alias='persona_config')
     global_defaults: Dict[str, Any]
+    workspace: SessionWorkspaceConfig
     
     class Config:
         populate_by_name = True

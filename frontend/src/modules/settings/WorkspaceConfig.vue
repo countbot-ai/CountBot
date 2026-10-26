@@ -10,6 +10,44 @@
     </div>
 
     <div class="config-options">
+      <!-- 当前会话工作空间：说明会话级覆盖与全局默认的关系 -->
+      <div v-if="currentSession" class="config-card">
+        <div class="card-header">
+          <div class="header-left">
+            <component
+              :is="FolderIcon"
+              :size="20"
+              class="icon"
+            />
+            <div class="header-text">
+              <h4 class="card-title">{{ $t('settings.workspace.currentSessionTitle') }}</h4>
+              <p class="card-desc">
+                {{
+                  currentSessionIsCustom
+                    ? $t('settings.workspace.currentSessionCustom')
+                    : $t('settings.workspace.currentSessionGlobal')
+                }}
+              </p>
+            </div>
+          </div>
+          <Button
+            v-if="currentSessionIsCustom"
+            variant="secondary"
+            size="sm"
+            @click="handleFollowGlobal"
+          >
+            {{ $t('settings.workspace.followGlobal') }}
+          </Button>
+        </div>
+        <div class="card-body">
+          <div class="path-display">
+            <component :is="FolderIcon" :size="16" />
+            <span>{{ currentSessionWorkspacePath }}</span>
+          </div>
+          <p class="hint-text">{{ $t('settings.workspace.currentSessionHint') }}</p>
+        </div>
+      </div>
+
       <!-- 重要提示卡片 -->
       <div class="config-card warning-card">
         <div class="card-header">
@@ -68,6 +106,7 @@
           <p v-if="defaultWorkspacePath" class="hint-text">
             {{ $t('settings.workspace.defaultPath') }}：{{ defaultWorkspacePath }}
           </p>
+          <p class="hint-text">{{ $t('settings.workspace.globalScopeHint') }}</p>
         </div>
       </div>
 
@@ -146,17 +185,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, AlertTriangle as AlertTriangleIcon } from 'lucide-vue-next'
 import Input from '@/components/ui/Input.vue'
 import Button from '@/components/ui/Button.vue'
 import { useSettingsStore } from '@/store/settings'
+import { useChatStore } from '@/store/chat'
 import { useToast } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
+import { chatAPI } from '@/api'
 
 const { t } = useI18n()
 const settingsStore = useSettingsStore()
+const chatStore = useChatStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const workspaceConfig = ref({
   path: ''
@@ -168,6 +212,44 @@ const isUpdating = ref(false)
 const isLoadingInfo = ref(false)
 const lastLoadTime = ref(0)
 const CACHE_TTL = 30000 // 30秒缓存
+
+const currentSession = computed(() =>
+  chatStore.sessions.find(session => session.id === chatStore.currentSessionId) || null
+)
+const currentSessionIsCustom = computed(() => !!currentSession.value?.workspacePath)
+const currentSessionWorkspacePath = computed(() =>
+  currentSession.value?.effectiveWorkspacePath
+    || workspaceConfig.value.path
+    || defaultWorkspacePath.value
+    || ''
+)
+
+async function handleFollowGlobal() {
+  const sessionId = chatStore.currentSessionId
+  if (!sessionId) {
+    return
+  }
+
+  const confirmed = await confirm({
+    title: t('common.confirm'),
+    message: t('settings.workspace.followGlobalConfirm'),
+    type: 'warning',
+    confirmText: t('common.confirm'),
+    confirmVariant: 'warning'
+  })
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    await chatAPI.updateSessionWorkspace(sessionId, null)
+    await chatStore.loadSessions()
+    toast.success(t('settings.workspace.followGlobalDone'), t('common.success'))
+  } catch (error) {
+    console.error('Failed to reset session workspace:', error)
+    toast.error(t('chat.sessionConfig.workspaceSaveFailed'), t('common.error'))
+  }
+}
 
 // 防抖加载工作空间信息
 let loadInfoTimer: number | null = null

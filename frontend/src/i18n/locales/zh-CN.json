@@ -307,7 +307,19 @@
             "customBadge": "自定义",
             "showAllPersonalities": "展开更多性格",
             "collapse": "收起",
-            "usingGlobalDefaultsDesc": "启用自定义配置以为此会话设置专属的模型和角色"
+            "usingGlobalDefaultsDesc": "启用自定义配置以为此会话设置专属的模型和角色",
+            "workspaceTitle": "会话工作空间",
+            "workspacePath": "工作空间路径",
+            "workspacePlaceholder": "留空跟随全局工作空间",
+            "workspaceHint": "只对当前会话生效；留空则跟随设置页的默认工作空间。",
+            "workspaceRemoteHint": "远程访问无法打开服务器上的文件夹选择器，请直接输入后端机器上的绝对路径。",
+            "selectWorkspaceDirectory": "选择目录",
+            "useGlobalWorkspace": "使用全局工作空间",
+            "workspaceEffective": "当前生效",
+            "workspacePickFailed": "选择目录失败",
+            "workspaceSaveFailed": "保存工作空间失败",
+            "workspaceApiNotReady": "后端缺少工作空间接口，请重启 CountBot 后再试",
+            "openWorkspaceConfig": "打开工作空间配置"
         },
         "teamConfig": {
             "customBadge": "自定义",
@@ -1311,8 +1323,16 @@
             "editBuiltinWarning": "内置性格不能直接修改。点击确定将基于「{name}」创建一个可编辑的自定义副本。"
         },
         "workspace": {
-            "title": "工作空间配置",
-            "description": "配置文件操作的工作空间目录，默认为程序目录下的 workspace 文件夹",
+            "title": "默认工作空间配置",
+            "description": "配置全局默认的工作空间目录，默认为程序目录下的 workspace 文件夹；会话级自定义工作空间不受此处影响",
+            "currentSessionTitle": "当前会话工作空间",
+            "currentSessionCustom": "已自定义，覆盖全局默认",
+            "currentSessionGlobal": "跟随全局默认",
+            "currentSessionHint": "在聊天输入框右下角的工作空间入口可以修改当前会话的目录。",
+            "followGlobal": "改为跟随全局",
+            "followGlobalConfirm": "确定让当前会话恢复使用全局默认工作空间吗？",
+            "followGlobalDone": "当前会话已恢复跟随全局工作空间",
+            "globalScopeHint": "这里只影响未自定义工作空间的会话，以及渠道、定时任务等全局能力。",
             "warning": {
                 "title": "重要提示",
                 "message": "修改工作空间路径后，需要手动迁移以下文件和数据：",

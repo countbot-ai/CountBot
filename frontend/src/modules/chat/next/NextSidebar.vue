@@ -216,15 +216,15 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  (e: 'create'): void
-  (e: 'select', sessionId: string): void
-  (e: 'config', sessionId: string): void
-  (e: 'rename', payload: { sessionId: string; name: string }): void
-  (e: 'delete', sessionId: string): void
-  (e: 'open-panel', panel: 'sessions' | 'skills' | 'cron' | 'wiki'): void
-  (e: 'open-settings', tab: SettingsTab): void
-  (e: 'toggle'): void
-  (e: 'close'): void
+  create: []
+  select: [sessionId: string]
+  config: [sessionId: string]
+  rename: [payload: { sessionId: string; name: string }]
+  delete: [sessionId: string]
+  'open-panel': [panel: 'sessions' | 'skills' | 'cron' | 'wiki']
+  'open-settings': [tab: SettingsTab]
+  toggle: []
+  close: []
 }>()
 
 const { t } = useI18n()

@@ -58,6 +58,9 @@ class Session(Base):
     use_custom_config: Mapped[bool] = mapped_column(Boolean, default=False)
     channel_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # 会话级工作空间；为空表示跟随全局配置
+    workspace_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     messages: Mapped[List["Message"]] = relationship(
         "Message", back_populates="session", cascade="all, delete-orphan"
     )

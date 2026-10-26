@@ -171,6 +171,7 @@ import {
 import { useToast } from '@/composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { chatAPI, type ToolCall as ApiToolCall } from '@/api'
+import { useChatStore } from '@/store/chat'
 
 type ToolCardStatus = 'pending' | 'running' | 'success' | 'error' | 'cancelled'
 type ToolCardContext = 'main' | 'agent' | 'subagent'
@@ -221,6 +222,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { t } = useI18n()
 const toast = useToast()
+const chatStore = useChatStore()
 const copied = ref(false)
 const isCollapsed = ref(props.defaultCollapsed)
 const isDetailLoading = ref(false)
@@ -477,11 +479,19 @@ const isImageFile = (path: string): boolean => {
 
 const getWorkspaceFileUrl = (path: string): string => {
   if (path.startsWith('http://') || path.startsWith('https://')) return path
-  if (!path.startsWith('/')) return `/api/chat/workspace/${encodeURIComponent(path)}`
+
+  // 会话可能使用自定义工作空间，优先走带 session 的下载接口
+  const buildUrl = (relativePath: string) => {
+    const sessionId = chatStore.currentSessionId
+    return sessionId
+      ? `/api/chat/sessions/${encodeURIComponent(sessionId)}/workspace/${encodeURIComponent(relativePath)}`
+      : `/api/chat/workspace/${encodeURIComponent(relativePath)}`
+  }
+
+  if (!path.startsWith('/')) return buildUrl(path)
   const workspaceIndex = path.indexOf('/workspace/')
   if (workspaceIndex !== -1) {
-    const relativePath = path.slice(workspaceIndex + '/workspace/'.length)
-    return `/api/chat/workspace/${encodeURIComponent(relativePath)}`
+    return buildUrl(path.slice(workspaceIndex + '/workspace/'.length))
   }
   return ''
 }

@@ -5,6 +5,7 @@ import contextvars
 import re
 import uuid
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -12,6 +13,10 @@ from loguru import logger
 
 from backend.modules.memory import source as memory_source
 from backend.modules.tools.base import Tool
+from backend.modules.tools._path_resolver import (
+    push_current_workspace,
+    reset_current_workspace,
+)
 from backend.modules.tools.execution_context import (
     ToolExecutionContext,
     push_tool_execution_context,
@@ -75,12 +80,18 @@ _TOOL_ARGUMENT_RAW_KEY = "__tool_argument_raw__"
 class ToolRegistry:
     """工具注册表 - 管理所有可用工具的注册、查询和执行"""
 
-    def __init__(self, ledger: Optional[OperationLedger] = None):
+    def __init__(
+        self,
+        ledger: Optional[OperationLedger] = None,
+        workspace: Optional[Path] = None,
+    ):
         """初始化工具注册表"""
         self._tools: Dict[str, Tool] = {}
         self._audit_enabled: bool = True
         self._definitions_cache: Optional[List[Dict[str, Any]]] = None
         self._operation_ledger = ledger or OperationLedger()
+        # 该注册表绑定的工作空间；执行工具时写入 contextvar，供相对路径解析使用
+        self._workspace = workspace.resolve() if workspace is not None else None
         # 注意：不再使用实例变量存储 session_id，改用 contextvars
         logger.debug("ToolRegistry initialized (using contextvars for session isolation)")
 
@@ -511,6 +522,9 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
             )
 
         self._operation_ledger.start(attempt.attempt_id)
+        # 把注册表绑定的工作空间注入当前异步上下文，让 shell/screenshot/send_media
+        # 等依赖 relative path 的工具跟随会话级目录。
+        workspace_token = push_current_workspace(self._workspace)
         context_token = push_tool_execution_context(
             ToolExecutionContext(
                 session_id=self._session_id,
@@ -535,6 +549,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
             )
         finally:
             reset_tool_execution_context(context_token)
+            reset_current_workspace(workspace_token)
 
         if not isinstance(result, ToolResult):
             return finalize(
@@ -658,6 +673,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
                 return error_msg
             
             logger.info(f"Executing tool: {tool_name} with arguments: {arguments}")
+            workspace_token = push_current_workspace(self._workspace)
             context_token = push_tool_execution_context(
                 ToolExecutionContext(
                     session_id=self._session_id,
@@ -669,6 +685,7 @@ PR1 只在进入 Tool body 前作出判断；执行中的 cancellation 与 effec
                 result = await tool.execute(**arguments)
             finally:
                 reset_tool_execution_context(context_token)
+                reset_current_workspace(workspace_token)
             
             # 计算执行时间
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)

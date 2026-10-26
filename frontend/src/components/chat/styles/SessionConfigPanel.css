@@ -753,6 +753,58 @@
   text-wrap: pretty; /* 规则 8 */
 }
 
+/* ========== Workspace ========== */
+.workspace-section {
+  margin: 20px 0;
+}
+
+.workspace-path-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-path-row .text-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.workspace-effective {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
+
+@media (max-width: 768px) {
+  .workspace-path-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 /* ========== Responsive ========== */
 @media (max-width: 768px) {
   .config-modal-overlay {

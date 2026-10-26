@@ -467,12 +467,13 @@ connection_manager = ConnectionManager()
 # ============================================================================
 
 
-async def handle_websocket(websocket: WebSocket, agent_loop=None):
+async def handle_websocket(websocket: WebSocket, agent_loop=None, loop_factory=None):
     """处理 WebSocket 连接：接受连接、处理客户端消息、管理生命周期与错误处理。
 
     Args:
         websocket: WebSocket 连接
         agent_loop: Agent 循环实例（可选，用于事件处理）
+        loop_factory: 按会话返回 AgentLoop 的工厂（可选，用于会话级工作空间）
     """
     connection_id = None
 
@@ -486,7 +487,12 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None):
 
         if agent_loop:
             from backend.ws.events import websocket_event_loop
-            await websocket_event_loop(websocket, connection_id, agent_loop)
+            await websocket_event_loop(
+                websocket,
+                connection_id,
+                agent_loop,
+                loop_factory=loop_factory,
+            )
         else:
             # 无 agent_loop 时的简单消息循环（用于测试）
             while True:

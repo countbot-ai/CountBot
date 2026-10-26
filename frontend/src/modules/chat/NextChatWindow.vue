@@ -67,8 +67,8 @@
               :ref="bindComposerRef"
               v-bind="(composerBindings as any)"
               variant="hero"
-              :context-label="currentSessionName"
-              @open-context="showPanel('sessions')"
+              :workspace-path="currentWorkspacePath"
+              @open-workspace="handleOpenWorkspaceConfig"
             />
           </template>
         </NextWelcome>
@@ -92,8 +92,8 @@
         :ref="bindComposerRef"
         v-bind="(composerBindings as any)"
         variant="docked"
-        :context-label="currentSessionName"
-        @open-context="showPanel('sessions')"
+        :workspace-path="currentWorkspacePath"
+        @open-workspace="handleOpenWorkspaceConfig"
       />
     </div>
 
@@ -361,11 +361,30 @@ const panelStyle = computed(() => ({
   maxWidth: 'calc(100vw - 24px)'
 }))
 
+const settingsStore = useSettingsStore()
+
 const currentSession = computed(() =>
   chatStore.sessions.find(session => session.id === chatStore.currentSessionId)
 )
 const currentSessionName = computed(() => currentSession.value?.name || '')
 const topbarTitle = computed(() => (messages.value.length > 0 ? currentSessionName.value : ''))
+
+// 输入框顶部展示实际生效的工作空间：会话自定义优先，否则用全局默认
+const currentWorkspacePath = computed(() => {
+  const sessionWorkspace = currentSession.value?.effectiveWorkspacePath
+  if (sessionWorkspace) {
+    return sessionWorkspace
+  }
+  return settingsStore.settings?.workspace?.path || ''
+})
+
+function handleOpenWorkspaceConfig() {
+  if (chatStore.currentSessionId) {
+    handleOpenSessionConfig(chatStore.currentSessionId)
+    return
+  }
+  openSettingsTab('workspace')
+}
 
 const filteredTeams = computed<AgentTeam[]>(() => {
   const active = agentTeamsStore.teams.filter(t => t.is_active)
@@ -473,7 +492,6 @@ const handleComposerFiles = async (files: File[]) => {
 }
 
 // 输入框里的模型切换
-const settingsStore = useSettingsStore()
 const modelSelection = useSessionModelSelection()
 const modelGroups = computed(() => modelSelection.groups.value)
 
@@ -712,6 +730,8 @@ const handleSettingsSaved = () => {
 
 const handleSessionConfigUpdated = (action: 'saved' | 'reset') => {
   showSessionConfig.value = false
+  // 刷新会话列表以同步自定义工作空间，输入框顶部胶囊立即更新
+  chatStore.loadSessions().catch(() => {})
   toast.success(
     action === 'reset'
       ? t('chat.sessionConfig.resetNextMessage')
@@ -923,6 +943,9 @@ onMounted(async () => {
       textareaRef.value = chatInputRef.value.textareaRef
     }
 
+    if (!settingsStore.settings) {
+      await settingsStore.loadSettings().catch(() => {})
+    }
     await chatStore.loadSessions()
     agentTeamsStore.loadTeams().catch(() => {})
     await modelSelection.loadGlobalDefaults().catch(() => {})

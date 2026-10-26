@@ -115,6 +115,11 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="auto_memory_summary_msg_id",
                 ddl="auto_memory_summary_msg_id INTEGER",
             ),
+            # 会话级工作空间：旧会话留空，继续跟随全局配置。
+            CompatibilityColumnMigration(
+                name="workspace_path",
+                ddl="workspace_path TEXT",
+            ),
         ),
     ),
     CompatibilityTableMigration(

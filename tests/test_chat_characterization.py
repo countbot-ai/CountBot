@@ -35,9 +35,11 @@ EXPECTED_ROUTES = {
     ("/api/chat/sessions/{session_id}/config", ("GET",)),
     ("/api/chat/sessions/{session_id}/config", ("PUT",)),
     ("/api/chat/sessions/{session_id}/config", ("DELETE",)),
+    ("/api/chat/sessions/{session_id}/workspace", ("PUT",)),
     ("/api/chat/sessions/{session_id}/attachments", ("POST",)),
     ("/api/chat/sessions/{session_id}/attachments/{attachment_path:path}", ("GET",)),
     ("/api/chat/sessions/{session_id}/workspace/{file_path:path}", ("GET",)),
+    ("/api/chat/sessions/{session_id}/compact", ("POST",)),
     ("/api/chat/workspace/{file_path:path}", ("GET",)),
     ("/api/chat/send", ("POST",)),
     ("/api/chat/preview", ("POST",)),
@@ -50,7 +52,7 @@ def test_route_table_unchanged():
         for route in chat_api.router.routes
     }
     assert actual == EXPECTED_ROUTES
-    assert len(actual) == 23
+    assert len(actual) == 25
 
 
 def test_router_prefix():

@@ -624,7 +624,32 @@ async def websocket_endpoint(websocket: WebSocket):
         reasoning_level=config.model.reasoning_level,
     )
 
-    await handle_websocket(websocket, agent_loop=agent_loop)
+    # 会话级工作空间：为指定了自定义目录的会话按需构建独立 AgentLoop
+    from pathlib import Path
+
+    from backend.api.chat.loop_factory import build_workspace_agent_loop
+    from backend.modules.workspace import resolve_session_workspace
+
+    global_workspace = Path(shared["workspace"]).resolve()
+    workspace_loops: dict[str, AgentLoop] = {}
+
+    def get_loop_for_session(session):
+        workspace = resolve_session_workspace(session)
+        if workspace == global_workspace:
+            return agent_loop
+
+        key = str(workspace)
+        loop = workspace_loops.get(key)
+        if loop is None:
+            loop = build_workspace_agent_loop(websocket.app.state, workspace)
+            workspace_loops[key] = loop
+        return loop
+
+    await handle_websocket(
+        websocket,
+        agent_loop=agent_loop,
+        loop_factory=get_loop_for_session,
+    )
 
 
 @app.get("/api/health")

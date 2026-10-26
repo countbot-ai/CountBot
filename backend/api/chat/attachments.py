@@ -85,7 +85,7 @@ async def upload_chat_attachment(
     db: AsyncSession = Depends(get_db),
 ) -> AttachmentItemResponse:
     """将前端拖拽/粘贴/选择的文件写入当前工作空间附件目录。"""
-    await _require_session(db, session_id)
+    session = await _require_session(db, session_id)
 
     raw_filename = req.headers.get("x-file-name", "").strip()
     try:
@@ -114,7 +114,7 @@ async def upload_chat_attachment(
                 detail=f"Attachment exceeds max size {MAX_CHAT_ATTACHMENT_SIZE} bytes",
             )
 
-    workspace = _resolve_active_workspace()
+    workspace = _resolve_active_workspace(session)
     relative_path, destination = build_workspace_attachment_destination(
         session_id=session_id,
         filename=decoded_filename or "attachment",
@@ -170,9 +170,9 @@ async def download_chat_attachment(
     from fastapi.responses import FileResponse
     import mimetypes
 
-    await _require_session(db, session_id)
+    session = await _require_session(db, session_id)
 
-    workspace = _resolve_active_workspace()
+    workspace = _resolve_active_workspace(session)
     safe_path = attachment_path.strip().replace("\\", "/")
     resolved_file = (workspace / safe_path).resolve()
 
@@ -214,9 +214,9 @@ async def download_workspace_file(
     from fastapi.responses import FileResponse
     import mimetypes
 
-    await _require_session(db, session_id)
+    session = await _require_session(db, session_id)
 
-    workspace = _resolve_active_workspace()
+    workspace = _resolve_active_workspace(session)
     safe_path = file_path.strip().replace("\\", "/")
     resolved_file = (workspace / safe_path).resolve()
 

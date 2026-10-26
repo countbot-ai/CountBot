@@ -34,8 +34,6 @@ from backend.modules.session.message_context import (
     resolve_workspace_attachments,
 )
 from backend.utils.datetime_utils import to_utc_iso
-from backend.utils.paths import WORKSPACE_DIR
-
 from backend.api.chat.models import ToolCallResponse
 
 MAX_CHAT_ATTACHMENT_SIZE = 25 * 1024 * 1024
@@ -56,9 +54,14 @@ def _extract_attachment_items_from_message_context(raw: Optional[str]) -> List[D
     return extract_attachment_items_from_message_context(raw)
 
 
-def _resolve_active_workspace() -> Path:
-    config = config_loader.config
-    return Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+def _resolve_active_workspace(session=None) -> Path:
+    """解析当前请求实际使用的工作空间。
+
+    传入 session 时优先使用会话自定义路径，否则跟随全局配置。
+    """
+    from backend.modules.workspace import resolve_session_workspace
+
+    return resolve_session_workspace(session)
 
 
 def _normalize_session_model_overrides(raw_model: Dict[str, Any]) -> Dict[str, Any]:

@@ -78,6 +78,23 @@ from backend.api.chat.models import (
     UpdateSessionSummaryRequest,
 )
 
+
+def _to_session_response(session) -> SessionResponse:
+    """统一补齐会话工作空间字段，避免各接口各自解析。"""
+    from backend.modules.workspace import resolve_session_workspace
+
+    return SessionResponse(
+        id=session.id,
+        name=session.name,
+        created_at=to_utc_iso(session.created_at),
+        updated_at=to_utc_iso(session.updated_at),
+        summary=session.summary,
+        summary_updated_at=to_utc_iso(session.summary_updated_at),
+        workspace_path=session.workspace_path,
+        effective_workspace_path=str(resolve_session_workspace(session)),
+    )
+
+
 @router.get("/sessions", response_model=List[SessionResponse])
 async def list_sessions(
     limit: Optional[int] = None,
@@ -99,17 +116,7 @@ async def list_sessions(
         session_manager = SessionManager(db)
         sessions = await session_manager.list_sessions(limit=limit, offset=offset)
         
-        return [
-            SessionResponse(
-                id=session.id,
-                name=session.name,
-                created_at=to_utc_iso(session.created_at),
-                updated_at=to_utc_iso(session.updated_at),
-                summary=session.summary,
-                summary_updated_at=to_utc_iso(session.summary_updated_at),
-            )
-            for session in sessions
-        ]
+        return [_to_session_response(session) for session in sessions]
         
     except Exception as e:
         logger.exception(f"Failed to list sessions: {e}")
@@ -137,12 +144,7 @@ async def create_session(
         session_manager = SessionManager(db)
         session = await session_manager.create_session(name=name)
         
-        return SessionResponse(
-            id=session.id,
-            name=session.name,
-            created_at=to_utc_iso(session.created_at),
-            updated_at=to_utc_iso(session.updated_at),
-        )
+        return _to_session_response(session)
         
     except Exception as e:
         logger.exception(f"Failed to create session: {e}")
@@ -220,12 +222,7 @@ async def update_session(
                 detail=f"Session '{session_id}' not found"
             )
         
-        return SessionResponse(
-            id=session.id,
-            name=session.name,
-            created_at=to_utc_iso(session.created_at),
-            updated_at=to_utc_iso(session.updated_at),
-        )
+        return _to_session_response(session)
         
     except HTTPException:
         raise
@@ -264,14 +261,7 @@ async def get_session(
                 detail=f"Session '{session_id}' not found"
             )
         
-        return SessionResponse(
-            id=session.id,
-            name=session.name,
-            created_at=to_utc_iso(session.created_at),
-            updated_at=to_utc_iso(session.updated_at),
-            summary=session.summary,
-            summary_updated_at=to_utc_iso(session.summary_updated_at),
-        )
+        return _to_session_response(session)
         
     except HTTPException:
         raise

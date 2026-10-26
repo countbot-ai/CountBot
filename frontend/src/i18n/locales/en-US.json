@@ -307,7 +307,19 @@
             "customBadge": "Custom",
             "showAllPersonalities": "Show all personalities",
             "collapse": "Show less",
-            "usingGlobalDefaultsDesc": "Enable custom configuration to set a dedicated model and persona for this session"
+            "usingGlobalDefaultsDesc": "Enable custom configuration to set a dedicated model and persona for this session",
+            "workspaceTitle": "Session Workspace",
+            "workspacePath": "Workspace Path",
+            "workspacePlaceholder": "Leave empty to follow the global workspace",
+            "workspaceHint": "Applies only to this session. Leave empty to follow the default workspace in Settings.",
+            "workspaceRemoteHint": "Remote access cannot open the server's folder picker. Enter an absolute path on the backend machine.",
+            "selectWorkspaceDirectory": "Select Folder",
+            "useGlobalWorkspace": "Use Global Workspace",
+            "workspaceEffective": "Effective",
+            "workspacePickFailed": "Failed to select folder",
+            "workspaceSaveFailed": "Failed to save workspace",
+            "workspaceApiNotReady": "The backend does not expose the workspace API. Restart CountBot and try again.",
+            "openWorkspaceConfig": "Open workspace settings"
         },
         "teamConfig": {
             "customBadge": "Custom",
@@ -1276,8 +1288,16 @@
             "editBuiltinWarning": "Built-in personalities cannot be modified directly. Click OK to create an editable custom copy based on '{name}'."
         },
         "workspace": {
-            "title": "Workspace Configuration",
-            "description": "Configure workspace directory for file operations, defaults to the workspace folder under the program directory",
+            "title": "Default Workspace Configuration",
+            "description": "Configure the global default workspace, which defaults to the workspace folder under the program directory. Session-level custom workspaces are not affected by this setting",
+            "currentSessionTitle": "Current Session Workspace",
+            "currentSessionCustom": "Customized, overriding the global default",
+            "currentSessionGlobal": "Following the global default",
+            "currentSessionHint": "Change this session's workspace from the workspace entry at the bottom right of the chat input.",
+            "followGlobal": "Follow Global",
+            "followGlobalConfirm": "Restore this session to the global default workspace?",
+            "followGlobalDone": "This session now follows the global workspace",
+            "globalScopeHint": "This only affects sessions without a custom workspace, plus channels, scheduled jobs, and other global capabilities.",
             "warning": {
                 "title": "Important Notice",
                 "message": "After changing the workspace path, you need to manually migrate the following files and data:",

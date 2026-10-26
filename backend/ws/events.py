@@ -363,6 +363,7 @@ async def handle_message_event(
     message: ClientMessage,
     agent_loop: AgentLoop,
     db: AsyncSession,
+    loop_factory=None,
 ) -> None:
     """处理客户端消息事件
 
@@ -417,10 +418,18 @@ async def handle_message_event(
 
         logger.info(f"会话验证通过: {session_id}")
 
+        # 会话指定了自定义工作空间时，切换到该工作空间专属的 AgentLoop
+        if loop_factory is not None:
+            agent_loop = loop_factory(session)
+
+        from backend.modules.workspace import resolve_session_workspace
+
+        session_workspace = resolve_session_workspace(session)
+
         try:
             resolved_attachments = _resolve_attachment_inputs(
                 message.attachments,
-                getattr(agent_loop, "workspace", config_loader.config.workspace.path or "."),
+                session_workspace,
             )
         except ValueError as exc:
             await send_error(session_id, str(exc), "INVALID_ATTACHMENT")
@@ -679,6 +688,7 @@ async def route_event(
     event_data: Dict[str, Any],
     agent_loop: AgentLoop,
     db: AsyncSession,
+    loop_factory=None,
 ) -> None:
     """路由事件到对应的处理器
 
@@ -693,7 +703,13 @@ async def route_event(
         if event_type == "message":
             # 处理消息事件
             message = ClientMessage(**event_data)
-            await handle_message_event(connection_id, message, agent_loop, db)
+            await handle_message_event(
+                connection_id,
+                message,
+                agent_loop,
+                db,
+                loop_factory=loop_factory,
+            )
 
         elif event_type == "tool_execute":
             # 处理工具执行事件
@@ -708,6 +724,12 @@ async def route_event(
                     "INVALID_EVENT",
                 )
                 return
+
+            # 手动执行工具同样要使用会话级工作空间
+            if loop_factory is not None:
+                session = await SessionManager(db).get_session(session_id)
+                if session is not None:
+                    agent_loop = loop_factory(session)
 
             await handle_tool_execution(session_id, tool_name, arguments, agent_loop)
 
@@ -759,6 +781,7 @@ async def websocket_event_loop(
     websocket: WebSocket,
     connection_id: str,
     agent_loop: AgentLoop,
+    loop_factory=None,
 ) -> None:
     """WebSocket 事件循环
 
@@ -813,6 +836,7 @@ async def websocket_event_loop(
                             event_data,
                             agent_loop,
                             db,
+                            loop_factory=loop_factory,
                         )
                     finally:
                         await db.close()

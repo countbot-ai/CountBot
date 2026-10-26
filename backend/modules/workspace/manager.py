@@ -349,3 +349,69 @@ class WorkspaceManager:
 
 # 全局实例
 workspace_manager = WorkspaceManager()
+
+
+def get_global_workspace_path() -> Path:
+    """返回全局配置里的工作空间；配置不可用时回退管理器单例。"""
+    try:
+        from backend.modules.config.loader import config_loader
+
+        configured = getattr(config_loader.config.workspace, "path", "") or ""
+    except Exception:
+        configured = ""
+
+    if configured:
+        candidate = Path(configured).expanduser()
+        try:
+            if candidate.is_dir():
+                return candidate.resolve()
+        except OSError as exc:
+            logger.warning(f"全局工作空间不可用: {configured}, error: {exc}")
+
+    return workspace_manager.workspace_path
+
+
+def resolve_session_workspace(session: Any = None) -> Path:
+    """解析会话实际使用的工作空间。
+
+    会话级路径优先；为空或目录已不可用时回退全局配置，避免历史会话在
+    移动盘/目录被删除后无法继续对话。
+    """
+    custom_path = getattr(session, "workspace_path", None) if session is not None else None
+    if custom_path:
+        candidate = Path(str(custom_path)).expanduser()
+        try:
+            if candidate.is_dir():
+                return candidate.resolve()
+        except OSError as exc:
+            logger.warning(f"会话工作空间不可用: {custom_path}, error: {exc}")
+
+        logger.warning(f"会话工作空间不可用，回退全局: {custom_path}")
+
+    return get_global_workspace_path()
+
+
+def validate_session_workspace_path(path: str) -> Path:
+    """校验会话自定义工作空间：必须是已存在的绝对目录，不自动创建。"""
+    normalized = str(path or "").strip()
+    if not normalized:
+        raise ValueError("工作空间路径不能为空")
+
+    candidate = Path(normalized).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("工作空间路径必须是绝对路径")
+
+    try:
+        resolved = candidate.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise ValueError(f"目录不存在: {candidate}") from exc
+    except OSError as exc:
+        raise ValueError(f"目录不可访问: {candidate} ({exc})") from exc
+
+    if not resolved.is_dir():
+        raise ValueError(f"路径不是目录: {resolved}")
+
+    if not os.access(resolved, os.R_OK | os.W_OK | os.X_OK):
+        raise ValueError(f"目录不可读写: {resolved}")
+
+    return resolved

@@ -44,6 +44,56 @@
             </div>
           </div>
 
+          <!-- 工作空间：独立于模型/人设开关，留空即跟随全局 -->
+          <section class="config-section workspace-section">
+            <div class="section-header">
+              <div class="section-heading">
+                <div class="section-icon">
+                  <Folder :size="20" />
+                </div>
+                <h4>{{ $t('chat.sessionConfig.workspaceTitle') }}</h4>
+              </div>
+              <div v-if="workspaceIsCustom" class="config-badge">
+                <Sparkles :size="14" />
+                <span>{{ $t('chat.sessionConfig.customBadge') }}</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>{{ $t('chat.sessionConfig.workspacePath') }}</label>
+              <div class="workspace-path-row">
+                <input
+                  v-model="workspacePath"
+                  type="text"
+                  class="text-input"
+                  :placeholder="globalWorkspacePath || $t('chat.sessionConfig.workspacePlaceholder')"
+                  @input="workspaceError = ''"
+                />
+                <Button
+                  v-if="canPickDirectory"
+                  variant="secondary"
+                  :icon="FolderOpen"
+                  @click="handleSelectWorkspaceDirectory"
+                >
+                  {{ $t('chat.sessionConfig.selectWorkspaceDirectory') }}
+                </Button>
+              </div>
+              <p class="hint">{{ $t('chat.sessionConfig.workspaceHint') }}</p>
+              <p v-if="!canPickDirectory" class="hint">
+                {{ $t('chat.sessionConfig.workspaceRemoteHint') }}
+              </p>
+              <p v-if="workspaceError" class="hint warning">{{ workspaceError }}</p>
+              <div class="workspace-actions">
+                <button type="button" class="link-btn" @click="useGlobalWorkspace">
+                  {{ $t('chat.sessionConfig.useGlobalWorkspace') }}
+                </button>
+                <span class="workspace-effective">
+                  {{ $t('chat.sessionConfig.workspaceEffective') }}: {{ effectiveWorkspacePath }}
+                </span>
+              </div>
+            </div>
+          </section>
+
           <div v-if="useCustomConfig" class="config-sections">
             <!-- 模型配置 -->
             <section class="config-section">
@@ -322,9 +372,10 @@ import {
   Save, RotateCcw, Loader2, Globe, CheckCircle, XCircle,
   Heart, Frown, Laugh, CloudLightning,
   Target, Snowflake, MessageSquare, BookOpen, Smile,
-  TrendingUp, Gamepad2, Clock, Edit3
+  TrendingUp, Gamepad2, Clock, Edit3, Folder, FolderOpen
 } from 'lucide-vue-next'
 import {
+  authAPI,
   chatAPI,
   settingsAPI,
   type ProviderMetadata,
@@ -434,6 +485,14 @@ const useCustomConfig = ref(true)
 const saving = ref(false)
 const testing = ref(false)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
+// 工作空间独立于模型/人设开关：留空表示跟随全局
+const workspacePath = ref('')
+const initialWorkspacePath = ref('')
+const globalWorkspacePath = ref('')
+const effectiveWorkspacePath = ref('')
+const workspaceError = ref('')
+const canPickDirectory = ref(false)
+const workspaceIsCustom = computed(() => !!workspacePath.value.trim())
 const providers = ref<ProviderOption[]>([])
 const showPresetPanel = ref(false)
 const personalities = ref<PersonalityOption[]>([])
@@ -659,8 +718,18 @@ function handleApplyPresetConfig(payload: PresetApplyPayload) {
   }
 }
 
+async function loadDirectoryCapability() {
+  try {
+    const status = await authAPI.status()
+    // 远程访问时不弹服务器桌面的目录选择框，改为手输绝对路径
+    canPickDirectory.value = status.is_local
+  } catch {
+    canPickDirectory.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadProviders(), loadPersonalities()])
+  await Promise.all([loadProviders(), loadPersonalities(), loadDirectoryCapability()])
   await loadConfig()
 })
 
@@ -700,6 +769,10 @@ watch(() => modelConfig.value.provider, (newProvider, oldProvider) => {
 async function loadConfig() {
   if (!props.sessionId) {
     globalModelDefaults.value = createDefaultModelConfig()
+    workspacePath.value = ''
+    initialWorkspacePath.value = ''
+    effectiveWorkspacePath.value = globalWorkspacePath.value
+    workspaceError.value = ''
     applyConfig(globalModelDefaults.value, createDefaultPersonaConfig(), false)
     return
   }
@@ -707,6 +780,12 @@ async function loadConfig() {
   try {
     const config = await chatAPI.getSessionConfig(props.sessionId)
     globalModelDefaults.value = normalizeModelConfig(config.global_defaults.model)
+    // 工作空间与会话模型/人设独立回填
+    workspacePath.value = config.workspace?.path || ''
+    initialWorkspacePath.value = config.workspace?.path || ''
+    globalWorkspacePath.value = config.workspace?.global_path || ''
+    effectiveWorkspacePath.value = config.workspace?.effective_path || ''
+    workspaceError.value = ''
     // 面板打开后默认开启「使用自定义配置」：已有保存的会话配置就回填，
     // 否则用全局默认值预填；只有点击保存才会真正写入。
     if (config.use_custom_config) {
@@ -720,12 +799,83 @@ async function loadConfig() {
   }
 }
 
+async function handleSelectWorkspaceDirectory() {
+  try {
+    const response = await fetch('/api/settings/workspace/select-directory', {
+      method: 'POST',
+    })
+    const data = await response.json()
+    if (data.success && data.path) {
+      workspacePath.value = data.path
+      workspaceError.value = ''
+      return
+    }
+    if (data.message) {
+      toast.info(data.message)
+    }
+  } catch (error) {
+    console.error('Failed to select workspace directory:', error)
+    toast.error(t('chat.sessionConfig.workspacePickFailed'))
+  }
+}
+
+function useGlobalWorkspace() {
+  workspacePath.value = ''
+  workspaceError.value = ''
+}
+
+async function saveWorkspaceIfNeeded(): Promise<boolean> {
+  if (!props.sessionId) {
+    return true
+  }
+
+  const nextPath = workspacePath.value.trim()
+  if (nextPath === initialWorkspacePath.value.trim()) {
+    return true
+  }
+
+  try {
+    const result = await chatAPI.updateSessionWorkspace(
+      props.sessionId,
+      nextPath || null,
+    )
+    initialWorkspacePath.value = result.workspace_path || ''
+    workspacePath.value = result.workspace_path || ''
+    effectiveWorkspacePath.value = result.effective_workspace_path
+    workspaceError.value = ''
+    return true
+  } catch (error: any) {
+    const status = error?.response?.status
+    const message = status === 404 || status === 405
+      ? t('chat.sessionConfig.workspaceApiNotReady')
+      : (error?.response?.data?.detail || t('chat.sessionConfig.workspaceSaveFailed'))
+    workspaceError.value = message
+    toast.error(message)
+    return false
+  }
+}
+
 async function saveConfig() {
   saving.value = true
   try {
+    // 工作空间先独立落库；校验失败时停在面板内提示
+    if (!(await saveWorkspaceIfNeeded())) {
+      return
+    }
+
     // 开关关闭时点击保存 = 提交「使用全局默认配置」
     if (!useCustomConfig.value) {
       await chatAPI.resetSessionConfig(props.sessionId)
+      // 重置会同时清空工作空间；用户显式填写了目录时再补写回去
+      const nextPath = workspacePath.value.trim()
+      if (nextPath) {
+        const result = await chatAPI.updateSessionWorkspace(props.sessionId, nextPath)
+        initialWorkspacePath.value = result.workspace_path || ''
+        effectiveWorkspacePath.value = result.effective_workspace_path
+      } else {
+        initialWorkspacePath.value = ''
+        effectiveWorkspacePath.value = globalWorkspacePath.value
+      }
       emit('updated', 'reset')
       return
     }

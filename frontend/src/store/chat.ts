@@ -19,6 +19,10 @@ export interface Session {
     name: string
     createdAt: string
     updatedAt: string
+    /** 会话自定义工作空间；为空表示跟随全局 */
+    workspacePath?: string | null
+    /** 实际生效的工作空间 */
+    effectiveWorkspacePath?: string | null
 }
 
 export interface Message {
@@ -78,7 +82,9 @@ export const useChatStore = defineStore('chat', () => {
                 id: s.id,
                 name: s.name,
                 createdAt: s.created_at,
-                updatedAt: s.updated_at
+                updatedAt: s.updated_at,
+                workspacePath: s.workspace_path ?? null,
+                effectiveWorkspacePath: s.effective_workspace_path ?? null
             }))
         } catch (error) {
             console.error('Failed to load sessions:', error)
@@ -101,7 +107,9 @@ export const useChatStore = defineStore('chat', () => {
                 id: response.id,
                 name: response.name,
                 createdAt: response.created_at,
-                updatedAt: response.updated_at
+                updatedAt: response.updated_at,
+                workspacePath: response.workspace_path ?? null,
+                effectiveWorkspacePath: response.effective_workspace_path ?? null
             }
 
             sessions.value.unshift(newSession)
@@ -159,7 +167,9 @@ export const useChatStore = defineStore('chat', () => {
                     id: response.id,
                     name: response.name,
                     createdAt: response.created_at,
-                    updatedAt: response.updated_at
+                    updatedAt: response.updated_at,
+                    workspacePath: response.workspace_path ?? null,
+                    effectiveWorkspacePath: response.effective_workspace_path ?? null
                 }
             }
         } catch (error) {

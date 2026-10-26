@@ -106,7 +106,7 @@ async def send_message(
         normalized_message = _validate_message_or_attachments(request.message, request.attachments)
         session = await _require_session(db, request.session_id)
         runtime_config = resolve_session_runtime_config(config_loader.config, session)
-        workspace = _resolve_active_workspace()
+        workspace = _resolve_active_workspace(session)
         resolved_attachments = _resolve_attachment_inputs(request.attachments, workspace)
         attachment_items = build_attachment_items_from_workspace(resolved_attachments)
         attachment_paths = [relative_path for relative_path, _ in resolved_attachments]

@@ -38,6 +38,8 @@ export interface Session {
     summary?: string | null
     summary_updated_at?: string | null
     use_custom_config?: boolean  // 是否使用自定义配置
+    workspace_path?: string | null  // 会话自定义工作空间；为空跟随全局
+    effective_workspace_path?: string | null  // 实际生效的工作空间
 }
 
 export interface SessionSearchHit {
@@ -243,6 +245,11 @@ export interface SessionConfigResponse {
     global_defaults: {
         model: SessionModelConfig
         persona: SessionPersonaConfig
+    }
+    workspace: {
+        path: string | null
+        effective_path: string
+        global_path: string
     }
 }
 
@@ -893,6 +900,14 @@ export const chatAPI = {
         message: string
     }> =>
         apiClient.delete(`/chat/sessions/${sessionId}/config`),
+
+    updateSessionWorkspace: (sessionId: string, path: string | null): Promise<{
+        success: boolean
+        session_id: string
+        workspace_path: string | null
+        effective_workspace_path: string
+    }> =>
+        apiClient.put(`/chat/sessions/${sessionId}/workspace`, { path }),
 }
 
 function normalizeOptionalText(value?: string | null): string | undefined {
