@@ -62,6 +62,15 @@ backend/scripts/
 *.pid
 data/.*.pid
 
+# ── 运行时数据（本地生成，不入库）──────────
+/data/
+workspace/uploads/
+workspace/memory/*.jsonl
+workspace/memory/*.lock
+workspace/memory/*.legacy
+workspace/skills/.skills_store_lock.json
+.backup-split/
+
 # ── Node ────────────────────────────────────
 node_modules/
 npm-debug.log*
