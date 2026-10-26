@@ -633,6 +633,28 @@ async def get_delivery_targets():
             status_instances = channel_status.get("instances", {}) or {}
 
             accounts: list[Dict[str, Any]] = []
+            config_dict = channel_config.model_dump()
+            # 顶层配置本身也是一个机器人账号（多账号模式下同样需要出现在推送目标里）
+            default_account_id = str(config_dict.get("account_id") or "default")
+            default_instance = status_instances.get(default_account_id, {})
+            top_level_configured = any(
+                bool(config_dict.get(field))
+                for field in ("token", "app_id", "client_id", "bot_id", "endpoint", "sendkey")
+            )
+            if top_level_configured or default_instance or not accounts_map:
+                accounts.append(
+                    {
+                        "account_id": default_account_id,
+                        "display_name": str(
+                            config_dict.get("display_name")
+                            or _DELIVERY_CHANNEL_LABELS.get(channel_id, channel_id)
+                            or default_account_id
+                        ),
+                        "enabled": bool(config_dict.get("enabled", True)),
+                        "running": bool(default_instance.get("running", False)),
+                    }
+                )
+
             for account_id, account_cfg in accounts_map.items():
                 instance_status = status_instances.get(str(account_id), {})
                 accounts.append(
@@ -644,21 +666,6 @@ async def get_delivery_targets():
                             or account_id
                         ),
                         "enabled": bool(account_cfg.get("enabled", True)),
-                        "running": bool(instance_status.get("running", False)),
-                    }
-                )
-
-            # 顶层配置（未拆分多账号）视为 default 账号
-            if not accounts:
-                instance_status = status_instances.get("default", {})
-                accounts.append(
-                    {
-                        "account_id": "default",
-                        "display_name": str(
-                            instance_status.get("display_name")
-                            or _DELIVERY_CHANNEL_LABELS.get(channel_id, channel_id)
-                        ),
-                        "enabled": bool(channel_config.model_dump().get("enabled", True)),
                         "running": bool(instance_status.get("running", False)),
                     }
                 )
@@ -1132,14 +1139,11 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
         merged_config = _normalize_accounts_payload(channel_config.model_dump())
         merged_config.update(request.config)
         merged_config = _normalize_accounts_payload(merged_config)
-        setattr(
-            config.channels,
-            request.channel,
-            config_classes[request.channel](**merged_config),
-        )
-        updated_channel_config = getattr(config.channels, request.channel)
+        updated_channel_config = config_classes[request.channel](**merged_config)
+        # 先校验再写回运行时配置，避免校验失败时内存中的配置已被污染
         _validate_duplicate_accounts(request.channel, updated_channel_config)
         _validate_external_coding_route_config(request.channel, updated_channel_config)
+        setattr(config.channels, request.channel, updated_channel_config)
         
         # 保存配置
         await config_loader.save()
@@ -1167,6 +1171,10 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
     
     except HTTPException:
         raise
+    except ValueError as e:
+        # 配置校验失败属于用户输入错误，返回 400 而不是 500
+        logger.warning(f"Invalid channel config: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating channel config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
