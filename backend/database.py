@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 from loguru import logger
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -16,6 +16,41 @@ from backend.utils.paths import DATA_DIR
 DATABASE_PATH = DATA_DIR / "countbot.db"
 DATABASE_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"
 SYNC_DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+
+# ======================================================================
+# SQLite 并发参数
+#
+# 默认的 rollback journal 模式下，一个读事务（SHARED 锁）就会挡住所有写操作；
+# 而本项目的对话/定时任务会在流式响应期间长时间持有请求级 DB 会话，
+# 一旦期间有读事务未结束，其它写请求全部报 "database is locked"（且长时间不恢复）。
+# 因此统一改用 WAL：读不挡写、写不挡读；再给每个连接加 busy_timeout，
+# 把短暂的写-写竞争变成「等待重试」而不是直接失败。
+# ======================================================================
+
+SQLITE_JOURNAL_MODE = "WAL"
+SQLITE_BUSY_TIMEOUT_MS = 15000
+SQLITE_SYNCHRONOUS = "NORMAL"
+_SQLITE_PRAGMAS: Tuple[str, ...] = (
+    f"PRAGMA journal_mode={SQLITE_JOURNAL_MODE}",
+    f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}",
+    f"PRAGMA synchronous={SQLITE_SYNCHRONOUS}",
+)
+
+
+def _apply_sqlite_pragmas(dbapi_connection: Any, _record: Any = None) -> None:
+    """在每次新建连接时应用 PRAGMA（busy_timeout 是连接级，必须逐连接设置）。"""
+    cursor = dbapi_connection.cursor()
+    try:
+        for pragma in _SQLITE_PRAGMAS:
+            cursor.execute(pragma)
+    finally:
+        cursor.close()
+
+
+def register_sqlite_pragmas(engine: Any) -> None:
+    """把 PRAGMA 注册到引擎（sync 引擎直接挂；async 引擎挂到其 sync_engine）。"""
+    target = getattr(engine, "sync_engine", engine)
+    event.listen(target, "connect", _apply_sqlite_pragmas)
 
 
 class Base(DeclarativeBase):
@@ -111,6 +146,15 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="account_id",
                 ddl="account_id VARCHAR",
             ),
+            # 定时任务可指定模型；旧行留空即跟随全局默认模型。
+            CompatibilityColumnMigration(
+                name="model_provider",
+                ddl="model_provider VARCHAR",
+            ),
+            CompatibilityColumnMigration(
+                name="model_name",
+                ddl="model_name VARCHAR",
+            ),
         ),
     ),
     CompatibilityTableMigration(
@@ -132,6 +176,7 @@ engine = create_async_engine(
     echo=False,
     future=True,
 )
+register_sqlite_pragmas(engine)
 
 # 同步引擎（用于非异步上下文）
 sync_engine = create_engine(
@@ -139,6 +184,7 @@ sync_engine = create_engine(
     echo=False,
     future=True,
 )
+register_sqlite_pragmas(sync_engine)
 
 # 会话工厂
 AsyncSessionLocal = async_sessionmaker(
