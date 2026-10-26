@@ -528,6 +528,9 @@ async def websocket_endpoint(websocket: WebSocket):
     if not is_local:
         auth_enabled = bool(await get_ws_password_hash())
         if not auth_enabled:
+            # 先完成握手再关闭：握手前 close 只会让浏览器拿到 403/1006，
+            # 前端无法区分“未认证”和“网络故障”，会无意义地反复重连。
+            await websocket.accept()
             await websocket.close(code=4003, reason="Authentication setup required")
             return
 
@@ -538,6 +541,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 token = auth_header[7:]
 
         if not token or not validate_ws_session(token):
+            await websocket.accept()
             await websocket.close(code=4001, reason="Authentication required")
             return
 
@@ -582,6 +586,8 @@ async def websocket_endpoint(websocket: WebSocket):
             runtime_state = fallback_state
             provider_id = fallback_state.provider_id
         else:
+            # 同上：先握手再关闭，前端才能拿到 1011 和不可用的具体原因
+            await websocket.accept()
             await websocket.close(
                 code=1011,
                 reason=build_provider_unavailable_message(
