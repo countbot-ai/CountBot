@@ -9,13 +9,13 @@ const routes: RouteRecordRaw[] = [
     {
         path: '/',
         name: 'home',
-        component: () => import('../modules/chat/ChatWindow.vue'),
+        component: () => import('../modules/chat/NextChatWindow.vue'),
     },
     {
-        // 新主窗口布局，验收通过前保留旧首页用于对比
-        path: '/next',
-        name: 'next-home',
-        component: () => import('../modules/chat/NextChatWindow.vue'),
+        // 旧版主窗口，保留用于对比与回退
+        path: '/classic',
+        name: 'classic-home',
+        component: () => import('../modules/chat/ChatWindow.vue'),
     },
     {
         path: '/login',
