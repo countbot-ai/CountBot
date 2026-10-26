@@ -72,6 +72,7 @@ def _create_shared_components(config, config_loader=None):
         timeout=120.0,
         max_retries=3,
         provider_id=provider_id,
+        api_type=runtime_state.api_type,
     )
 
     logger.info("Creating memory and skills directories...")
@@ -226,6 +227,7 @@ async def lifespan(app: FastAPI):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        reasoning_level=config.model.reasoning_level,
         max_history_messages=config.persona.max_history_messages,
         memory_store=shared["memory"],
     )
@@ -315,6 +317,7 @@ async def lifespan(app: FastAPI):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        reasoning_level=config.model.reasoning_level,
     )
     logger.info("Cron agent created")
 
@@ -357,9 +360,18 @@ async def lifespan(app: FastAPI):
         account_id: str,
         chat_id: str,
         deliver_response: bool,
+        model_provider: str = None,
+        model_name: str = None,
     ) -> str:
         return await cron_executor.execute(
-            job_id, message, channel, account_id, chat_id, deliver_response
+            job_id,
+            message,
+            channel,
+            account_id,
+            chat_id,
+            deliver_response,
+            model_provider,
+            model_name,
         )
 
     logger.info("Creating cron scheduler...")
@@ -589,6 +601,7 @@ async def websocket_endpoint(websocket: WebSocket):
         timeout=120.0,
         max_retries=3,
         provider_id=provider_id,
+        api_type=runtime_state.api_type,
     )
 
     agent_loop = AgentLoop(
@@ -602,6 +615,7 @@ async def websocket_endpoint(websocket: WebSocket):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        reasoning_level=config.model.reasoning_level,
     )
 
     await handle_websocket(websocket, agent_loop=agent_loop)

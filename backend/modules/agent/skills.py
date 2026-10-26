@@ -599,7 +599,7 @@ class SkillsLoader:
             "version": skill.metadata.get("version", ""),
             "license": skill.metadata.get("license", ""),
             "allowed_tools": list(skill.metadata.get("allowed_tools", [])),
-            # 诊断信息：frontmatter 坏了要能在 UI 上看见，而不是只躺在日志里
+            # 诊断字段：frontmatter 解析告警需对 UI 可见，不滞留于日志
             "warnings": list(skill.metadata.get("warnings", [])),
             "parse_error": skill.metadata.get("parse_error", ""),
         }

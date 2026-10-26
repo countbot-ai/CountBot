@@ -1,11 +1,4 @@
-"""远程首次初始化安全入口的启动提示。
-
-职责边界：
-- secret 的生成、校验、过期由 ``backend/modules/auth/middleware.py`` 负责；
-- 本模块只负责把「安全入口地址」以醒目的横幅形式输出到日志。
-
-两者只通过参数传递 secret，不共享额外状态，避免出现第二个所有者。
-"""
+"""远程首次初始化安全入口的启动提示：只把入口地址以横幅打到日志，secret 归 middleware 负责。"""
 
 from __future__ import annotations
 
@@ -18,7 +11,6 @@ from backend.utils.runtime_env import (
     resolve_bind_address,
 )
 
-# 横幅分隔线宽度（字符数）
 FRAME_WIDTH = 68
 ROW_INDENT = "  "
 URL_INDENT = "    "

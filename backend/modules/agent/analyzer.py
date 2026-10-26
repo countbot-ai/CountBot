@@ -1,10 +1,4 @@
-"""Message Analyzer - 对话分析工具
-
-提供对话消息的基础分析能力:
-- 格式化消息为文本（用于 LLM 总结）
-- 判断是否需要总结
-- 分割消息（要总结的 vs 要保留的）
-"""
+"""对话消息分析：格式化消息供 LLM 总结、判断是否需总结、切分要总结与要保留的消息。"""
 
 from typing import List, Tuple
 from loguru import logger
@@ -13,7 +7,7 @@ from loguru import logger
 class MessageAnalyzer:
     """对话消息分析器"""
 
-    # 短消息无意义词过滤前缀（长度 ≤ 8 且匹配时跳过）
+    # 短消息无意义词前缀（长度 ≤ 8 且命中即跳过）
     _SKIP_PREFIXES = (
         "好的", "知道了", "明白", "收到", "谢谢", "好", "行",
         "嗯", "哦", "ok", "OK", "Ok", "嗯嗯", "哦哦", "好好",
@@ -47,11 +41,9 @@ class MessageAnalyzer:
             if not content:
                 continue
 
-            # 短消息且以寒暄词开头 → 跳过
             if len(content) <= 8 and any(content.startswith(p) for p in self._SKIP_PREFIXES):
                 continue
 
-            # 截断过长内容
             if len(content) > 300:
                 content = content[:300] + "..."
 

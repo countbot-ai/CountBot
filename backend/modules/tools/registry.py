@@ -10,6 +10,7 @@ from datetime import datetime
 
 from loguru import logger
 
+from backend.modules.memory import source as memory_source
 from backend.modules.tools.base import Tool
 from backend.modules.tools.execution_context import (
     ToolExecutionContext,
@@ -44,9 +45,8 @@ from backend.modules.tools.execution import (
 _session_id_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'session_id', default=None
 )
-_channel_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    'channel', default=None
-)
+# 渠道标记由记忆模块统一持有：记忆写入来源与工具侧可见渠道必须是同一份状态，
+# 各存一份会在并发轮次里分叉
 _message_context: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
     'message_context', default=None
 )
@@ -136,13 +136,14 @@ class ToolRegistry:
     
     def set_channel(self, channel: Optional[str]) -> None:
         """设置当前上下文的消息来源渠道（异步安全）
-        
-        如 dingtalk, telegram, web-chat
-        """
-        _channel_context.set(channel)
 
-        # 更新记忆工具的默认来源（兼容统一 memory 工具和旧版 memory_write 工具）
-        memory_tool = self._tools.get('memory') or self._tools.get('memory_write')
+        如 dingtalk, telegram, web-chat。记忆写入来源读的是同一份标记，
+        因此每轮都必须在这里设置，否则条目会被记成 unknown。
+        """
+        memory_source.set_channel(channel)
+
+        # 旧版记忆工具把来源存在实例属性上，仍需同步一次
+        memory_tool = self._tools.get('memory_write')
         if memory_tool and hasattr(memory_tool, 'set_channel'):
             memory_tool.set_channel(channel)
 
@@ -161,7 +162,7 @@ class ToolRegistry:
     @property
     def channel(self) -> Optional[str]:
         """获取当前上下文的渠道（异步安全）"""
-        return _channel_context.get()
+        return memory_source.current_channel()
 
     @property
     def message_context(self) -> Optional[Dict[str, Any]]:

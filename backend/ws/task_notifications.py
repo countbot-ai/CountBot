@@ -1,11 +1,4 @@
-"""WebSocket 任务状态更新推送
-
-提供后台任务状态的实时推送功能：
-- 任务创建通知
-- 任务状态更新通知
-- 任务进度更新通知
-- 任务完成/失败通知
-"""
+"""WebSocket 任务状态更新推送：任务的创建、状态、进度、完成与失败通知。"""
 
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -107,14 +100,7 @@ class TaskToolResultMessage(ServerMessage):
 
 
 class TaskNotificationHandler:
-    """任务通知处理器
-
-    管理后台任务的状态通知，支持：
-    - 状态更新
-    - 进度跟踪
-    - 日志推送
-    - 完成/失败通知
-    """
+    """任务通知处理器：管理后台任务的状态、进度、日志与完成/失败通知。"""
 
     def __init__(self, task_id: str, label: str, session_id: Optional[str] = None):
         """初始化任务通知处理器
@@ -319,10 +305,7 @@ class TaskNotificationHandler:
 
 
 class TaskNotificationManager:
-    """任务通知管理器
-
-    管理所有任务的通知处理器。
-    """
+    """任务通知管理器：管理所有任务的通知处理器。"""
 
     def __init__(self):
         """初始化任务通知管理器"""
@@ -381,7 +364,6 @@ class TaskNotificationManager:
 # Global Task Notification Manager
 # ============================================================================
 
-# 全局任务通知管理器实例
 task_notification_manager = TaskNotificationManager()
 
 

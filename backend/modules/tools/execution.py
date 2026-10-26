@@ -1,9 +1,4 @@
-"""进程内 Tool 执行契约的基础类型。
-
-本模块刻意不包含重试策略或持久化存储。它为
-``ToolRegistry.execute_outcome`` 提供最小的进程内边界：一个 operation 可以
-包含多个 physical attempt，但每个 attempt 只能完成一次。
-"""
+"""进程内 Tool 执行契约的基础类型：为 ToolRegistry.execute_outcome 提供最小边界，一个 operation 可含多个 attempt，每个只完成一次；不含重试策略或持久化。"""
 
 from __future__ import annotations
 
@@ -108,8 +103,7 @@ class ToolExecutionRequest:
             arguments_fingerprint = fingerprint_arguments(arguments)
             fingerprint_error = None
         except (TypeError, ValueError) as exc:
-            # 不让 arguments 序列化异常逃出 canonical boundary；Registry 会将其
-            # 转换为进入 Tool body 前的失败 outcome。
+            # 参数序列化异常不逃出本边界，由 Registry 转成进入 Tool body 前的失败 outcome。
             arguments_fingerprint = f"invalid:{type(exc).__name__}"
             fingerprint_error = type(exc).__name__
 
@@ -133,12 +127,12 @@ class ToolExecutionRequest:
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
-    """Tool 返回给 Registry-owned attempt runner 的显式结果。
+    """Tool 返回给 Registry 持有的 attempt runner 的显式结果。
 
-``ToolResult`` 只向 runner 传递事实，不会直接修改 attempt。只有 runner 可以
-调用 ledger finalization。``UNKNOWN_OUTCOME`` 仍是 execution state；可选的独立
-error category 用于说明为什么无法确定结果。
-"""
+``ToolResult`` 只向 runner 传递事实，不直接修改 attempt；只有 runner 能调用
+ledger 的 finalization。``UNKNOWN_OUTCOME`` 仍是一种 execution state；独立的
+error category 用于说明为何无法确定结果。
+    """
 
     state: ExecutionState
     display_text: str
@@ -335,9 +329,9 @@ class _LedgerAttempt:
 class OperationLedger:
     """有界的进程内 attempt ledger。
 
-它刻意不提供进程重启恢复或 distributed idempotency。Registry replay 会返回已
-保存的 terminal outcome，而不是再次执行已完成的 operation。
-"""
+它刻意不提供进程重启恢复或分布式幂等；Registry replay 直接返回已保存的
+terminal outcome，而不是再次执行已完成的 operation。
+    """
 
     def __init__(self, *, max_completed_operations: int = 1024) -> None:
         if max_completed_operations < 0:
@@ -450,8 +444,7 @@ class OperationLedger:
             side_effect_state=result.side_effect_state,
             correlation_id=attempt.request.correlation_id,
         )
-        # 先构造并校验 immutable outcome，再修改 state，避免 finalization 留下
-        # 已进入 terminal state 但缺少 outcome 的 attempt。
+        # 先构造并校验不可变 outcome 再改 state，避免留下已 terminal 却缺 outcome 的 attempt。
         attempt.state = result.state
         attempt.outcome = outcome
         self._remember_completed_operation(attempt.request.operation_id)

@@ -1,9 +1,4 @@
-"""MCP 工具包装器：把远端 tools / resources / prompts 适配成本地 Tool。
-
-四个包装器共用的属性访问与文本接口由 _MCPWrapperBase 统一提供，子类只实现
-``_parameters_schema()`` 与 ``execute_outcome()``。此前每个类各写一遍
-name/description/parameters 三个 property 与 execute 转发，属纯样板。
-"""
+"""MCP 工具包装器：把远端 tools / resources / prompts 适配成本地 Tool。"""
 
 import asyncio
 from typing import Any, Dict, List
@@ -121,11 +116,7 @@ class MCPToolWrapper(_MCPWrapperBase):
 
 
 class MCPResourceWrapper(_MCPWrapperBase):
-    """单个 MCP resource 的包装器。
-
-    注册路径已改为按服务器聚合的 MCPResourceCatalogWrapper（工具面更小），
-    本类保留用于按 URI 精确绑定的场景与既有测试。
-    """
+    """单个 MCP resource 的包装器；注册已改用聚合的 MCPResourceCatalogWrapper，本类用于按 URI 精确绑定。"""
 
     def __init__(self, session, server_name: str, resource_def, resource_timeout: int = 30):
         self._session = session
@@ -182,11 +173,7 @@ class MCPResourceWrapper(_MCPWrapperBase):
 
 
 class MCPResourceCatalogWrapper(_MCPWrapperBase):
-    """以一个工具暴露某个 MCP 服务器的全部资源。
-
-    相比「每个 resource 一个工具」，工具面从 N 个降为 1 个，模型通过 uri 参数
-    选择目标。资源清单在描述中列出（超过上限时截断并提示按需列举）。
-    """
+    """以单个工具暴露某 MCP 服务器的全部资源（工具面由 N 降为 1），模型通过 uri 参数选择目标。"""
 
     # 描述中列出的资源条目上限，避免描述本身过长
     MAX_LISTED_RESOURCES = 20

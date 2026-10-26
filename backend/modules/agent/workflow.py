@@ -1,10 +1,4 @@
-"""WorkflowEngine：CountBot的多智能体编排引擎。
-
-执行模式：
-  pipeline - 顺序执行（上下文传递）
-  graph    - 依赖DAG（自动并行）
-  council  - 多视角审议（立场→评审→合成）
-"""
+"""WorkflowEngine：CountBot 的多智能体编排引擎，支持 pipeline / graph / council 三种执行模式。"""
 
 import asyncio
 import inspect
@@ -54,7 +48,7 @@ class AgentSlot:
     label: str
     prompt_template: str
     depends_on: List[str] = field(default_factory=list)
-    condition: Optional[dict] = None  # 可选：执行条件
+    condition: Optional[dict] = None
     phase: SlotPhase = SlotPhase.WAITING
     output: Optional[str] = None
     error: Optional[str] = None
@@ -77,12 +71,11 @@ class WorkflowEngine:
         self._session_id = session_id
         self._cancel_token = cancel_token
         self._skills = skills
-        self._team_model_config = team_model_config  # 团队模型配置
+        self._team_model_config = team_model_config
         self._event_callback = event_callback
         self._execution_data: Dict[str, dict] = {}
         self._child_failures: List[ToolResult] = []
-        # 本工作流派发的子任务登记：取消时按归属精确取消，
-        # 不能全表清杀 manager 上的任务（会误杀其他工作流/会话的子任务）
+        # 本工作流登记的子任务 ID：取消时按归属精确取消，不波及其他工作流/会话
         self._child_task_ids: set = set()
 
     @staticmethod
@@ -149,7 +142,6 @@ class WorkflowEngine:
         """检查是否已取消"""
         is_cancelled = bool(self._cancel_token and self._cancel_token.is_cancelled)
         if is_cancelled:
-            # 如果工作流被取消，尝试取消所有运行中的子任务
             asyncio.create_task(self._cancel_all_subagents())
         return is_cancelled
 
@@ -254,8 +246,8 @@ class WorkflowEngine:
             system_prompt=system_prompt,
             event_callback=_tool_event,
             enable_skills=enable_skills,
-            model_override=self._team_model_config,  # 传递团队模型配置
-            cancel_token=self._cancel_token,  # 传递取消令牌
+            model_override=self._team_model_config,
+            cancel_token=self._cancel_token,
         )
         self._child_task_ids.add(task_id)  # 登记归属，供按归属取消
         await self._mgr.execute_task(task_id)

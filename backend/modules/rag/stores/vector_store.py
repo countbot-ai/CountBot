@@ -1,50 +1,33 @@
-"""向量存储 - 余弦相似度检索（M2 混合检索的向量索引）
-
-设计目标（Phase 1 任务 3，implementation-plan §5）：
-- numpy 优先、纯 Python 兜底：`try: import numpy` 失败时用 math 手写
-  点积，保证 rag 模块「零第三方依赖」哲学不被破坏（与 jieba 同款
-  可选依赖模式：不安装只是慢，不是坏）；
-- 数据量级 = 全量块池（当前 1,423 块 × 1024 维 ≈ 5.8MB float32），
-  暴力余弦扫描即可（单次查询 ~1.5M 次乘加，纯 Python 也在毫秒级），
-  不引入 ANN 索引（规模不匹配，§1 范围纪律）；
-- 持久化双格式：numpy 可用时存 .npz（chunk_ids + vectors float32[N,dim]，
-  见 implementation-plan §6.2），否则 .json；load 按内容自探测格式，
-  两种环境互不破坏。
-
-与 ChunkedBM25Index 的分工：BM25 管 chunk_id → 词法倒排，
-VectorStore 管 chunk_id → 向量；两者以 chunk_id 对齐，
-由 service 层（任务 4）在同一 sync 事务内双写。
-"""
+"""向量存储：余弦相似度 top-k 检索，numpy 优先，缺失时回退纯 Python（§5 Phase 1 任务 3）。"""
 
 import json
 import math
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# 索引规模为全量块池（约 1.4k 块 × 1024 维），暴力余弦扫描即可，不引入 ANN（§1 范围纪律）
 try:
     import numpy as _np
-except ImportError:  # 纯 Python 兜底：不安装 numpy 只是慢，不是坏
+except ImportError:  # 缺失 numpy 时回退到纯 Python 实现，仅影响性能
     _np = None
 
 from loguru import logger
 
 
 def default_index_filename() -> str:
-    """向量索引默认文件名：numpy 可用 → .npz，否则 .json（service 层持久化用）"""
+    """向量索引默认文件名：numpy 可用为 .npz，否则 .json。"""
     return "vector_index.npz" if _np is not None else "vector_index.json"
 
 
 class VectorStore:
-    """以 chunk_id 为键的稠密向量池（余弦相似度 top-k 检索）"""
+    """以 chunk_id 为键的稠密向量池。"""
 
     def __init__(self, dim: Optional[int] = None):
         self.dim = dim  # 首次 add 时锁定；None 表示尚未确定
         self._ids: List[str] = []
         self._vecs: List[List[float]] = []
         self._pos: Dict[str, int] = {}  # chunk_id -> 下标（add/remove O(1) 定位）
-        # 调用方元数据（如 slug→mtime 过期追踪），随索引一并持久化。
-        # chunk_id 在内容变更时可能复用（同 slug#section），仅凭 id 存在
-        # 判断"向量未过期"不可靠，过期判定由调用方经 meta 完成。
+        # 调用方元数据（如 slug→mtime 过期追踪），随索引一并持久化
         self.meta: Dict[str, object] = {}
 
     def __len__(self) -> int:
@@ -53,7 +36,7 @@ class VectorStore:
     # ---------- 写入 ----------
 
     def add(self, chunk_id: str, vec: List[float]) -> None:
-        """添加/替换向量（upsert：同 chunk_id 重复 add 覆盖旧值，幂等）"""
+        """添加或替换向量（同 chunk_id 覆盖旧值，幂等）。"""
         if not chunk_id:
             raise ValueError("chunk_id 不能为空")
         if not vec:
@@ -139,7 +122,7 @@ class VectorStore:
     # ---------- 持久化 ----------
 
     def save_to_file(self, path: str) -> None:
-        """numpy 可用 → .npz（§6.2：chunk_ids + vectors float32[N,dim]）；否则 .json"""
+        """numpy 可用时存 .npz（chunk_ids + vectors float32[N,dim]，见 §6.2），否则 .json。"""
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         if _np is not None:

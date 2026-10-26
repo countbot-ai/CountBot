@@ -1,24 +1,4 @@
-"""RagService - WikiService 之上的分块检索服务
-
-职责：
-- M1：挂载在现有 WikiService 之上，按 mtime 增量同步分块 BM25 索引，
-  对外提供 search_chunks（块级检索，注入用），持久化 chunk_index.json；
-- M2（Phase 1 任务 4）：COUNTBOT_RAG_HYBRID=1 且嵌入端点已配置时，
-  同一 sync 事务内对新增/变更块双写向量（vector_index.npz/.json），
-  search_chunks 分派到 HybridRetriever（BM25 + Dense RRF 融合）。
-
-降级链（§4 三层防御第③层）：任一环未配置或失败，逐级回落到
-上一已验证形态——混合失败回落纯 BM25，纯 BM25 即 M1 现状。
-
-同步/异步桥接说明：search_chunks 保持同步签名（tool 层零改动的前提），
-嵌入调用经 _run_coro 在独立线程的事件循环中执行——可从任何上下文
-（同步工具处理、async ask、事件循环内）安全调用。代价是查询路径上
-调用线程阻塞一个嵌入 RTT（个人运行时可接受）；Phase 2 改造 _rag_ask
-时顺势全链路异步化。
-
-启用方式：COUNTBOT_RAG_CHUNKS=1（M1）+ COUNTBOT_RAG_HYBRID=1 与
-COUNTBOT_RAG_EMBEDDING_*（M2，见 embeddings.py）。
-"""
+"""分块检索服务：按 mtime 增量同步 BM25 索引（M1），混合启用时叠加向量通道（Phase 1 任务 4）。"""
 
 import asyncio
 import os
@@ -30,7 +10,7 @@ from loguru import logger
 
 
 def _hybrid_enabled() -> bool:
-    """M2 混合检索开关（默认关 = 纯 BM25，与 M1 行为完全一致）"""
+    """混合检索开关（默认关 = 纯 BM25，与 M1 行为一致）。"""
     return os.environ.get("COUNTBOT_RAG_HYBRID", "").lower() in ("1", "true", "yes", "on")
 
 
@@ -38,18 +18,18 @@ def _run_coro(coro):
     """在独立线程的事件循环中执行协程
 
     必须用线程而非 asyncio.run：调用方可能已在事件循环内（async ask 路径），
-    asyncio.run 会抛 RuntimeError；线程内的独立循环不受影响。
+    asyncio.run 会抛 RuntimeError；线程内的独立循环不受影响。代价是查询路径阻塞
+    一个嵌入 RTT，Phase 2 改造 _rag_ask 时顺势全链路异步化。
     """
     with ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coro).result()
 
 
 def chunk_embedding_text(chunk: dict) -> str:
-    """块的嵌入文本 = 「文档标题 › 节路径 + 块正文」
+    """块的嵌入文本 = 文档标题 › 节路径 + 块正文。
 
-    与 BM25 的标题加权（title ×3）对齐，让 Dense 通道也吃到标题上下文。
-    独立成函数：评测脚本（l1_eval.py 的 G2/G3 run）必须与生产用同一组装，
-    否则向量空间不可比。
+    与 BM25 的标题加权（title ×3）对齐，让 Dense 通道也吃到标题上下文。独立成函数，
+    使评测脚本（l1_eval.py 的 G2/G3 run）与生产共用同一组装，向量空间可比。
     """
     return f"{chunk['doc_title']} › {chunk.get('heading_path', chunk['section'])}\n{chunk['content']}"
 
@@ -79,7 +59,7 @@ class RagService:
             logger.info("Chunk index not found, building from wiki files")
             self.sync()
 
-        # ---- M2 混合检索（Phase 1 任务 4）----
+        # ---- 混合检索 ----
         if embedder is not None:
             self._embedder = embedder
         elif _hybrid_enabled():
@@ -89,7 +69,7 @@ class RagService:
         if self._embedder is not None:
             self._init_vector_layer(wiki_dir)
 
-    # ---------- M2 向量层 ----------
+    # ---------- 向量层 ----------
 
     def _init_vector_layer(self, wiki_dir: Path) -> None:
         from .retriever import HybridRetriever
@@ -111,11 +91,9 @@ class RagService:
                     f"({len(self._vector_store)} vectors, dim={self._vector_store.dim})")
 
     def _embed_slug(self, slug: str) -> int:
-        """单文档双写：对该文档全部块计算向量并写入向量索引
+        """单文档双写：对该文档全部块计算向量并写入向量索引。
 
-        嵌入文本 = 「文档标题 › 节路径 + 块正文」——与 BM25 的标题加权
-        （title ×3）对齐，让 Dense 通道也能吃到标题上下文。
-        失败时跳过该文档（检索自动回落 BM25-only），不阻断同步。
+        失败时跳过该文档（检索自动回落 BM25），不阻断同步。
         """
         chunk_ids = self._store.chunk_ids_of(slug)
         chunks = [c for c in (self._store.get_chunk(cid) for cid in chunk_ids) if c]
@@ -130,8 +108,7 @@ class RagService:
             return 0
         for chunk_id, vec in zip([c["chunk_id"] for c in chunks], vectors):
             self._vector_store.add(chunk_id, vec)
-        # 记录该文档的嵌入时点（BM25 mtime）：chunk_id 在内容变更时可能
-        # 复用（同 slug#section），仅凭 id 存在无法判定向量过期，mtime 才可靠
+        # 记录嵌入时点（BM25 mtime）用于过期判定：chunk_id 可能被复用，仅凭 id 存在不可靠
         self._vector_store.meta.setdefault("slug_mtimes", {})[slug] = self._store.get_mtime(slug)
         return len(vectors)
 
@@ -176,7 +153,6 @@ class RagService:
         for md_file in self._concepts_dir.glob("*.md"):
             current[md_file.stem] = md_file.stat().st_mtime
 
-        # 删除已不存在的文档
         for slug in self._store.known_slugs():
             if slug not in current:
                 self._store.remove_document(slug)
@@ -198,7 +174,7 @@ class RagService:
         if stats["added"] or stats["updated"] or stats["deleted"]:
             self._store.save_to_file(str(self._index_file))
             logger.info(f"Chunk index synced: +{stats['added']} ~{stats['updated']} -{stats['deleted']}")
-            # 同一 sync 事务内双写向量（§9：向量与 BM25 漂移 → 同步双写）
+            # 同一 sync 事务内双写向量，避免向量与 BM25 索引漂移（§9）
             if self._embedder is not None:
                 self._sync_vectors_incremental()
         return stats
@@ -235,9 +211,8 @@ class RagService:
         """块级检索：返回 [{chunk_id, slug, doc_title, section, score, content}]
 
         混合启用时走 HybridRetriever（RRF 融合分，min_score_ratio / max_per_doc
-        不参与——候选质量由双通道排序与下游 grader 把关）；否则纯 BM25
-        （含 #114 的单文档截断语义，默认 max_per_doc=1 与其一致）。
-        混合路径整体异常时回落纯 BM25（降级链）。
+        不参与）；否则纯 BM25（含 #114 的单文档截断语义，默认 max_per_doc=1 与其一致）。
+        混合路径整体异常时回落纯 BM25（降级链，§4 三层防御第③层）。
         """
         if self._retriever is not None:
             try:

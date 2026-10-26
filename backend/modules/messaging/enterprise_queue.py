@@ -1,14 +1,4 @@
-"""企业级消息队列 - 支持优先级调度、消息去重、死信处理与持久化
-
-特性：
-- 四级优先级队列（URGENT/HIGH/NORMAL/LOW）
-- 基于哈希的消息去重机制
-- 入站/出站消息分离
-- 死信队列（DLQ）处理失败消息
-- 可选的消息持久化
-- 自动重试机制（最多3次，降级优先级）
-- 实时监控指标
-"""
+"""企业级消息队列：四级优先级调度、内容哈希去重、死信队列与可选持久化，失败消息最多重试 3 次并降级优先级。"""
 
 import asyncio
 import hashlib
@@ -26,14 +16,7 @@ from backend.modules.channels.base import InboundMessage
 
 
 class MessagePriority(Enum):
-    """消息优先级枚举
-    
-    定义四级优先级，数值越大优先级越高：
-    - URGENT(3): 紧急消息，最高优先级
-    - HIGH(2): 高优先级消息
-    - NORMAL(1): 普通消息，默认优先级
-    - LOW(0): 低优先级消息
-    """
+    """消息优先级枚举，数值越大优先级越高。"""
     LOW = 0
     NORMAL = 1
     HIGH = 2
@@ -42,9 +25,7 @@ class MessagePriority(Enum):
 
 @dataclass
 class QueuedMessage:
-    """队列消息包装器
-    
-    封装原始消息及其队列元数据，用于队列内部管理。
+    """队列消息包装器：封装原始消息及其队列元数据。
     
     Attributes:
         id: 消息唯一标识符（UUID）
@@ -80,14 +61,7 @@ class QueuedMessage:
 
 
 class EnterpriseMessageQueue:
-    """企业级消息队列
-    
-    提供高可靠性的异步消息队列服务，支持：
-    - 优先级调度：四级优先级（URGENT > HIGH > NORMAL > LOW）
-    - 消息去重：基于内容哈希的滑动窗口去重
-    - 死信队列：自动处理失败消息
-    - 消息持久化：可选的磁盘持久化
-    - 重试机制：失败消息自动重试，逐级降低优先级
+    """企业级消息队列：优先级调度、内容哈希去重、死信处理与可选持久化。
     
     Attributes:
         _queues: 优先级队列映射
@@ -156,7 +130,6 @@ class EnterpriseMessageQueue:
                 return False
             self._message_hashes[msg_hash] = time.time()
         
-        # 创建队列消息
         queued_msg = QueuedMessage(
             id=str(uuid.uuid4()),
             message=message,
@@ -168,7 +141,6 @@ class EnterpriseMessageQueue:
         if self._persistence_enabled:
             await self._persist_message(queued_msg)
         
-        # 入队
         await self._queues[priority].put(queued_msg)
         self._metrics['total_received'] += 1
         
@@ -177,7 +149,6 @@ class EnterpriseMessageQueue:
     
     async def dequeue(self) -> QueuedMessage:
         """出队消息（按优先级）"""
-        # 按优先级顺序检查队列
         for priority in [
             MessagePriority.URGENT,
             MessagePriority.HIGH,
@@ -190,7 +161,6 @@ class EnterpriseMessageQueue:
                 logger.debug(f"Message dequeued: {msg.id[:8]} (priority: {priority.name})")
                 return msg
         
-        # 所有队列都空，等待任意队列有消息
         tasks = [
             asyncio.create_task(queue.get())
             for queue in self._queues.values()
@@ -198,11 +168,9 @@ class EnterpriseMessageQueue:
         
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         
-        # 取消其他任务
         for task in pending:
             task.cancel()
         
-        # 返回第一个完成的消息
         msg = done.pop().result()
         logger.debug(f"Message dequeued (waited): {msg.id[:8]}")
         return msg
@@ -230,7 +198,6 @@ class EnterpriseMessageQueue:
         """标记消息处理成功"""
         self._metrics['total_processed'] += 1
         
-        # 删除持久化文件
         if self._persistence_enabled:
             await self._delete_persisted_message(msg.id)
     
@@ -239,22 +206,16 @@ class EnterpriseMessageQueue:
         msg.retry_count += 1
         
         if msg.retry_count < msg.max_retries:
-            # 重新入队（降低优先级）
             lower_priority = MessagePriority(max(0, msg.priority.value - 1))
             await self._queues[lower_priority].put(msg)
             logger.warning(f"Message retry {msg.retry_count}/{msg.max_retries}: {msg.id[:8]}")
         else:
-            # 进入死信队列
             await self._dead_letter_queue.put((msg, error))
             self._metrics['total_failed'] += 1
             logger.error(f"Message moved to DLQ: {msg.id[:8]}, error: {error}")
     
     def _hash_message(self, msg: InboundMessage) -> str:
-        """计算消息哈希
-
-        附件必须参与哈希：同一文案配不同图片属于不同消息，若只按文本去重，
-        后到的图片消息会被当成重复项丢弃。
-        """
+        """计算消息哈希；附件必须参与，否则同文案不同图片的消息会被误判为重复。"""
         media = getattr(msg, "media", None) or []
         media_signature = "|".join(str(item) for item in media)
         content = (
@@ -266,11 +227,7 @@ class EnterpriseMessageQueue:
     _DEDUP_SWEEP_INTERVAL = 512
 
     def _sweep_expired_hashes(self, now: float) -> None:
-        """清理已过去重窗口的哈希条目。
-
-        仅在命中对应哈希时按需删除不够：长期运行下每条唯一消息都会永久留下
-        一个条目。改为定期全表扫描，把开销摊到低频路径上。
-        """
+        """清理已过去重窗口的哈希条目：按需删除会让条目永久累积，故定期全表扫描。"""
         expired = [
             key
             for key, timestamp in self._message_hashes.items()
@@ -289,7 +246,6 @@ class EnterpriseMessageQueue:
         if msg_hash not in self._message_hashes:
             return False
 
-        # 检查是否在去重窗口内
         timestamp = self._message_hashes[msg_hash]
         if now - timestamp > self._dedup_window:
             del self._message_hashes[msg_hash]

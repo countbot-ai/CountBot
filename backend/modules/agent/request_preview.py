@@ -1,11 +1,4 @@
-"""请求预览：展示即将发往模型的完整请求内容。
-
-输出三部分：system_prompt 按区块拆分并标注控制它的注入开关；tools 列出
-工具定义与各自体积；messages 为完整消息列表，首条用户消息里追加的动态
-上下文单独标出。
-
-只构建数据，不发请求、不落库。
-"""
+"""构建请求预览数据：拆分 system_prompt 区块、列出 tools 与完整 messages，只做数据不做请求。"""
 
 import json
 from typing import Any, Dict, List, Optional
@@ -25,9 +18,7 @@ def _content_text(message: Dict[str, Any]) -> str:
     return str(content or "")
 
 
-# system prompt 区块与注入开关的对应关系，用于说明「这块为什么在/不在」。
-# 值可以是单个开关名，也可以是一组开关名；后者表示该区块内部有多个段落，
-# 分别受不同开关控制（如 identity 的名称恒注入、环境信息随 core_rules）。
+# system prompt 区块与其注入开关的对应关系；值为一组开关时表示该区块由多个开关分别控制。
 _SECTION_SWITCH_MAP = {
     "identity": ("always", "core_rules"),
     "rules": "core_rules",
@@ -37,7 +28,7 @@ _SECTION_SWITCH_MAP = {
     "agent_teams": "agent_teams",
 }
 
-# 混合区块中各开关负责的部分，用于在预览里给出可理解的说明
+# 混合区块里各开关负责的部分说明
 _MIXED_SECTION_NOTES = {
     "identity": "名称与性格始终注入；环境信息（运行时/工作目录/路径）随 core_rules 开关",
 }
@@ -46,8 +37,7 @@ _MIXED_SECTION_NOTES = {
 def _section_switch_note(name: str, injection_config: Any) -> Dict[str, Any]:
     """给出某个区块的开关归属说明。
 
-    单个开关直接返回其取值；多个开关时分别列出各自状态，并标注该区块为部分受控，
-    避免把混合区块误报成「始终注入」。
+    多个开关时分别列出各自状态并标注 partial，避免把混合区块误报成「始终注入」。
     """
     switches = _SECTION_SWITCH_MAP.get(name, "always")
     if isinstance(switches, str):
@@ -72,7 +62,7 @@ def _section_switch_note(name: str, injection_config: Any) -> Dict[str, Any]:
         }
 
     if "always" in resolved:
-        # 混合：部分恒定、部分受控，不能简单回答「是否启用」
+        # 混合：部分恒定、部分受控，无法用单一启停状态表达
         return {
             "controlled_by": [k for k in resolved if k != "always"],
             "enabled": True,
@@ -122,13 +112,12 @@ def build_request_preview(
     """
     history = history or []
 
-    # 1) system prompt 分块
     try:
         sections = context_builder.build_system_prompt_sections(
             persona_config=persona_config,
             channel=channel,
         )
-    except Exception as exc:  # 区块构建失败时要能看到原因，而不是整个预览 500
+    except Exception as exc:  # 区块构建失败仍要展示原因，不能让预览整体 500
         sections = []
         sections_error = str(exc)
     else:
@@ -150,10 +139,7 @@ def build_request_preview(
 
     system_prompt = "\n\n---\n\n".join(section["content"].rstrip() for section in sections)
 
-    # 2) 完整消息列表
-    # 归一化为字符串：下游 build_messages 内部有 ``in message`` 之类的字符串运算，
-    # 传入 None 会抛 TypeError 使整个预览接口 500。预览是排查工具，不应因调用方
-    # 少传一个参数就整体失败。
+    # 归一化为字符串：下游 build_messages 对 None 做字符串运算会抛 TypeError
     message = str(message) if message is not None else ""
 
     messages = context_builder.build_messages(
@@ -173,12 +159,11 @@ def build_request_preview(
             first_user_message = str(item.get("content") or "")
             break
 
-    # 首条用户消息里除用户原文之外的部分，即为动态上下文注入
+    # 首条用户消息中超出用户原文的部分即动态上下文注入
     dynamic_context = ""
     if first_user_message and first_user_message != (message or ""):
         dynamic_context = first_user_message[len(message or ""):].strip()
 
-    # 3) 工具定义
     tools: List[Dict[str, Any]] = []
     tool_chars_total = 0
     if tool_registry is not None:
@@ -199,9 +184,8 @@ def build_request_preview(
                 }
             )
 
-    # 上下文占用按来源分桶：只告诉使用者「占了多少字符」不够，
-    # 真正的问题是「压哪里最划算」，这需要把 token 归到具体来源上。
-    from backend.modules.agent.history_compactor import (
+    # 上下文占用按来源分桶：总量不足以定位压缩点，需归到具体来源以判断压缩收益
+    from backend.modules.compression.tokens import (
         estimate_messages_tokens,
         estimate_tokens,
     )

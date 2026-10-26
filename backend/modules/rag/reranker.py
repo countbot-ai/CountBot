@@ -1,24 +1,4 @@
-"""Reranker 客户端 - OpenAI 兼容 /rerank 端点（Phase 2 精排层）
-
-分工（roadmap §3.4 / implementation-plan §5 Phase 2）：
-- reranker 管精排：cross-encoder 批量推理，毫秒级/块、零 token 成本，
-  从 top-50 候选选出 top-6 进生成；
-- grader 管拒答：LLM 语义判断"是否全不相关"，不再兼职块过滤——
-  LLM grader 每次过滤花 200-400 tokens 且秒级延迟，用 LLM 做机器能做的
-  事是 token 成本的隐形漏水点。Phase 1 端到端验收的实测证据：向量召回
-  把更多"看似相关"块喂给为 BM25 时代设计的 grader，误判面 5→9，
-  混合检索的端到端收益被抵消——这正是本模块的存在理由。
-
-降级安全（三层防御第②层）：端点未配置 build_reranker() 返回 None
-（上层回落检索排序，质量降级不中断）；调用失败抛 RuntimeError，
-由调用方决定回落。
-
-环境变量（implementation-plan §7）：
-  COUNTBOT_RAG_RERANK             开关（默认关）
-  COUNTBOT_RAG_RERANK_BASE_URL    端点（如 https://api.siliconflow.cn/v1）
-  COUNTBOT_RAG_RERANK_API_KEY     API Key
-  COUNTBOT_RAG_RERANK_MODEL       默认 BAAI/bge-reranker-v2-m3
-"""
+"""Reranker 客户端：调用 OpenAI 兼容 /rerank 端点做精排（roadmap §3.4 / implementation-plan §5 Phase 2）。"""
 
 import os
 from typing import List, Optional
@@ -33,23 +13,19 @@ MODEL_ENV = "COUNTBOT_RAG_RERANK_MODEL"
 
 DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
 
-# rerank top-1 分数 ≥ 该阈值时，调用方可跳过 LLM grader 直出生成（置信门控）。
-# ⚠️ 2026-09-06 冒烟校准后默认禁用（1.01 = 永不触发）：
-# 负样本问题"部署到 Kubernetes"对 Docker 部署块打分 0.9933，高于正样本
-# "如何用 Docker 部署"对同一块的 0.9046——cross-encoder 度量的是主题匹配
-# 而非可回答性，任何分数阈值都无法分离两者（与 roadmap §3.7/D2"分数门控
-# 挡不住负样本"的既有结论一致，换通道后依然成立）。门控机制保留，
-# 待出现有判别力的信号（如多块分数分布形态）再重新启用。
-# "单题 LLM 调用 ≤1.5"门禁因此暂不达成（实测约 2.0/题：grader+生成），
-# 诚实记录，见 work-log。
+# rerank top-1 分数 ≥ 该阈值时，调用方可跳过 LLM grader（置信门控）。
+# 2026-09-06 冒烟校准后默认禁用（1.01 = 永不触发）：cross-encoder 度量主题匹配而非
+# 可回答性，实测无法用分数分离正负样本（与 roadmap §3.7/D2 结论一致）；机制保留，
+# 待有判别力的信号出现后再启用。"单题 LLM 调用 ≤1.5"门禁因此暂不达成（实测约 2.0/题），
+# 见 work-log。
 RERANK_CONFIDENT_SCORE = 1.01
 
 _TIMEOUT = 30.0
-_MAX_DOC_CHARS = 2000  # 单块送入 rerank 的文本上限（块本体 ≤1200 字符，防御性截断）
+_MAX_DOC_CHARS = 2000  # 单块送入 rerank 的文本上限（防御性截断）
 
 
 class RerankerClient:
-    """SiliconFlow 风格 /rerank 客户端（OpenAI 兼容生态的事实格式）"""
+    """OpenAI 兼容的 /rerank 客户端。"""
 
     def __init__(
         self,

@@ -1,14 +1,4 @@
-"""MCP 客户端模块
-
-原单文件实现已按职责拆分：
-
-- ``helpers``    —— 常量、名称构造、schema 归一、失败结果构造
-- ``wrappers``   —— 远端 tools / resources / prompts 的 Tool 适配器
-- ``connection`` —— 服务器连接与连通性测试
-- ``manager``    —— 客户端管理器（生命周期、注册、健康检查）
-
-本模块作为门面重新导出全部对外符号，保持既有导入路径不变。
-"""
+"""MCP 客户端门面：重新导出 helpers/wrappers/connection/manager 的对外符号，保持既有导入路径不变。"""
 
 from backend.modules.mcp.connection import (
     connect_mcp_server,

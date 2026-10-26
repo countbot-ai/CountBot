@@ -306,8 +306,8 @@ class WebFetchTool(Tool):
                 logger.info(f"Fetched {url}: {result['length']} chars (mode: {result.get('mode', 'httpx')}, format: json)")
                 content = json.dumps(result, ensure_ascii=False)
             
-            # 可选落盘：output_path 提供后，抓取内容可被下游工具（read/send_media 等）消费，
-            # 不再只是「回给模型」的死胡同产出。
+            # 可选落盘：output_path 提供后，抓取内容可被下游工具（read/send_media 等）
+            # 消费，而非仅供模型单次读取
             saved_prefix = ""
             if output_path:
                 target = resolve_path(output_path)

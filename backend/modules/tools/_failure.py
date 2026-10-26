@@ -1,17 +1,6 @@
-"""失败隔离协议模块（Failure Isolation Protocol）
+"""失败隔离协议：失败细节给人看，一句话（``Error: … Next: …``）给模型看。"""
 
-核心原则（源自 Armin Ronacher《Agent Design Is Still Hard》）：
-- 失败完整细节给人看（logger / 审计落盘）。
-- 失败一句话给模型看：``Error: <事实>. <原因>. Next: <下一步建议>.``
-
-本模块对外暴露三个符号：
-- ``format_failure``：把错误格式化为模型可见的一句话模板；
-- ``RetryableToolError``：可重试错误（网络/超时/5xx 类），由上层（主循环）捕获后重试；
-- ``is_retryable``：判断一个异常是否属于可重试类别。
-
-仅依赖标准库，避免引入循环依赖。
-"""
-
+# 设计源：Armin Ronacher《Agent Design Is Still Hard》
 from typing import Tuple
 
 from backend.modules.tools.execution import ErrorCategory
@@ -66,11 +55,9 @@ def format_failure(
 class RetryableToolError(Exception):
     """可重试工具错误。
 
-    由 ``registry.execute`` 在 ``raise_on_retryable=True`` 时对网络/超时/5xx
-    类异常重新抛出，供主循环的 ``for attempt in range(max_retries)`` 捕获后重试。
-
-    ``__str__`` 返回**不含** ``Error:`` 前缀的模型可见单句（summary + Next），
-    避免主循环重试耗尽后的最终文案出现 ``Error: Error: ...`` 前缀重复。
+    由 ``registry.execute`` 在 ``raise_on_retryable=True`` 时对网络/超时/5xx 类异常
+    重新抛出，供主循环捕获后重试。``__str__`` 返回不含 ``Error:`` 前缀的模型可见单句，
+    避免重试耗尽后的最终文案出现 ``Error: Error: …`` 前缀重复。
     """
 
     def __init__(
@@ -128,11 +115,10 @@ def is_retryable(exc: BaseException) -> bool:
 
 
 def classify_exception(exc: BaseException) -> ErrorCategory:
-    """在 producer boundary 将 implementation exception 归一化。
+    """把实现层异常归一化为稳定的 ``ErrorCategory``。
 
-consumer 接收稳定的 category，而不是原始 exception class。独立的
-``is_retryable`` 仍是 legacy text path 的兼容 helper，不代表 retry safety。
-"""
+    独立保留的 ``is_retryable`` 只是文本路径的兼容 helper，不代表 retry safety。
+    """
 
     if isinstance(exc, PermissionError):
         return ErrorCategory.PERMISSION

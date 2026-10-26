@@ -1,14 +1,4 @@
-"""工具调用对话历史记录模块
-
-记录 AI 模型与工具之间的完整对话历史，包括：
-- 工具调用请求（AI 发起）
-- 工具执行结果（工具返回）
-- 时间戳、会话信息等
-
-支持两种存储模式：
-1. 内存模式：使用 deque，最多保留 50 条记录（默认）
-2. 数据库模式：持久化存储，支持查询和统计
-"""
+"""记录 AI 与工具之间的工具调用对话历史，支持内存（deque）与数据库两种存储模式。"""
 
 from collections import deque
 from datetime import datetime
@@ -24,17 +14,17 @@ from backend.modules.tools.outcome_projection import conversation_succeeded
 class ToolConversation:
     """工具调用对话记录"""
     
-    id: str  # 唯一标识
-    session_id: str  # 会话 ID
-    timestamp: str  # 时间戳（ISO 格式）
-    tool_name: str  # 工具名称
-    arguments: Dict[str, Any]  # 工具参数
-    message_id: Optional[int] = None  # 关联的消息ID
-    user_message: Optional[str] = None  # 触发工具调用的用户消息
-    result: Optional[str] = None  # 工具执行结果
-    error: Optional[str] = None  # 错误信息（如果有）
-    duration_ms: Optional[int] = None  # 执行耗时（毫秒）
-    outcome_projection: Optional[Dict[str, Any]] = None  # Preserve present unsupported data for readers.
+    id: str
+    session_id: str
+    timestamp: str  # ISO 格式
+    tool_name: str
+    arguments: Dict[str, Any]
+    message_id: Optional[int] = None
+    user_message: Optional[str] = None
+    result: Optional[str] = None
+    error: Optional[str] = None
+    duration_ms: Optional[int] = None  # 毫秒
+    outcome_projection: Optional[Dict[str, Any]] = None  # 为读取方保留已存在但不受支持的数据
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -83,10 +73,8 @@ class ToolConversationHistory:
         duration_ms: Optional[int] = None,
         outcome_projection: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """添加一条工具调用对话记录
+        """添加一条工具调用对话记录：outcome_projection 只承载结构化执行元数据，旧展示字段仍供历史界面读取。
 
-        outcome_projection 只承载结构化执行元数据；旧展示字段继续供历史界面读取。
-        
         Args:
             session_id: 会话 ID
             tool_name: 工具名称
@@ -117,7 +105,6 @@ class ToolConversationHistory:
             outcome_projection=outcome_projection,
         )
         
-        # 内存存储
         self._history.append(conversation)
         
         # 数据库存储（异步）
@@ -143,7 +130,6 @@ class ToolConversationHistory:
             from sqlalchemy import select, func, delete
             
             async for db in get_db():
-                # 1. 保存新记录
                 db_conv = DBToolConversation(
                     id=conversation.id,
                     session_id=conversation.session_id,
@@ -164,25 +150,21 @@ class ToolConversationHistory:
                 db.add(db_conv)
                 await db.commit()
                 
-                # 2. 检查总记录数
                 count_query = select(func.count()).select_from(DBToolConversation)
                 result = await db.execute(count_query)
                 total_count = result.scalar()
                 
-                # 3. 如果超过 200 条，删除最旧的记录
                 max_records = 200
                 if total_count > max_records:
                     records_to_delete = total_count - max_records
                     logger.info(f"工具对话历史超过 {max_records} 条，删除最旧的 {records_to_delete} 条记录")
                     
-                    # 获取最旧的记录 ID
                     oldest_query = select(DBToolConversation.id).order_by(
                         DBToolConversation.timestamp.asc()
                     ).limit(records_to_delete)
                     oldest_result = await db.execute(oldest_query)
                     oldest_ids = [row[0] for row in oldest_result.fetchall()]
                     
-                    # 删除最旧的记录
                     if oldest_ids:
                         delete_query = delete(DBToolConversation).where(
                             DBToolConversation.id.in_(oldest_ids)
@@ -207,7 +189,6 @@ class ToolConversationHistory:
             对话记录列表
         """
         if self.use_db:
-            # 从数据库读取
             try:
                 return await self._get_all_from_db(limit, offset)
             except Exception as e:
@@ -215,7 +196,6 @@ class ToolConversationHistory:
                 # 降级到内存模式
                 pass
         
-        # 从内存读取
         conversations = list(reversed(self._history))
         if offset:
             conversations = conversations[offset:]
@@ -390,7 +370,6 @@ class ToolConversationHistory:
         Returns:
             更新的记录数
         """
-        # 更新内存中的记录
         updated = 0
         for conv in self._history:
             if conv.session_id == session_id and conv.message_id is None:
@@ -405,7 +384,6 @@ class ToolConversationHistory:
             except Exception as e:
                 logger.error(f"Failed to await pending tool conversation writes: {e}")
 
-        # 更新数据库中的记录
         if self.use_db:
             try:
                 updated = await self._backfill_message_id_in_db(session_id, message_id)
@@ -473,17 +451,14 @@ class ToolConversationHistory:
                 "success_rate": 0.0
             }
         
-        # 按工具统计
         by_tool: Dict[str, int] = {}
         for conv in self._history:
             by_tool[conv.tool_name] = by_tool.get(conv.tool_name, 0) + 1
         
-        # 按会话统计
         by_session: Dict[str, int] = {}
         for conv in self._history:
             by_session[conv.session_id] = by_session.get(conv.session_id, 0) + 1
         
-        # 成功率
         success_count = sum(
             conversation_succeeded(conv.outcome_projection, conv.error)
             for conv in self._history
@@ -504,7 +479,6 @@ class ToolConversationHistory:
         from sqlalchemy import select, func
         
         async for db in get_db():
-            # 总数
             total_result = await db.execute(select(func.count(DBToolConversation.id)))
             total = total_result.scalar() or 0
             
@@ -516,21 +490,19 @@ class ToolConversationHistory:
                     "success_rate": 0.0
                 }
             
-            # 按工具统计
             tool_result = await db.execute(
                 select(DBToolConversation.tool_name, func.count(DBToolConversation.id))
                 .group_by(DBToolConversation.tool_name)
             )
             by_tool = {row[0]: row[1] for row in tool_result}
             
-            # 按会话统计
             session_result = await db.execute(
                 select(DBToolConversation.session_id, func.count(DBToolConversation.id))
                 .group_by(DBToolConversation.session_id)
             )
             by_session = {row[0]: row[1] for row in session_result}
             
-            # Canonical rows use structured state; legacy rows retain old display semantics.
+            # 规范行使用结构化状态；历史行保留旧的展示语义。
             rows = (await db.execute(select(DBToolConversation))).scalars().all()
             success_count = sum(
                 conversation_succeeded(row.outcome_projection, row.error)

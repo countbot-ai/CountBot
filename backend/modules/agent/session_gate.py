@@ -1,13 +1,4 @@
-"""会话级执行闸门：同一会话同一时刻只允许一轮 Agent 处理。
-
-WebSocket 与 IM 渠道都可能对同一会话并发发起处理：IM 消费到消息后直接
-create_task，工具执行期间再来一条消息就会并发进入 Agent 循环；WebSocket
-单连接内串行，但同一会话被多个连接（多端登录、刷新后旧连接未断）订阅时
-同样并发。两条链路共用这里的同一个闸门实例，先到者执行，后到者按到达
-顺序等待，不丢消息、不交错。
-
-命令类消息（/stop、/new 等）不经过本闸门，必须能在处理进行中立即生效。
-"""
+"""会话级执行闸门：同一会话同一时刻只允许一轮 Agent 处理（命令类消息不经过本闸门）。"""
 
 import asyncio
 import time
@@ -277,8 +268,7 @@ class SessionTurnGate:
         self._total_wait_seconds = 0.0
 
 
-# 进程级单例：Web 聊天、WebSocket、IM 渠道、定时任务共用同一闸门，
-# 否则各链路各自的锁无法阻止跨链路并发。
+# 进程级单例：各链路共用同一闸门，否则各自的锁无法阻止跨链路并发。
 _gate: Optional[SessionTurnGate] = None
 
 

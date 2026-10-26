@@ -1,11 +1,4 @@
-"""WebSocket 流式响应推送
-
-提供流式响应的高级功能：
-- 流式消息推送
-- 进度跟踪
-- 速率控制
-- 缓冲管理
-"""
+"""WebSocket 流式响应推送：分块推送、进度跟踪、速率控制与缓冲管理。"""
 
 import asyncio
 from typing import AsyncIterator, Callable, Dict, Optional
@@ -21,14 +14,7 @@ from backend.ws.connection import send_message_chunk
 
 
 class StreamingResponseHandler:
-    """流式响应处理器
-
-    管理流式响应的推送，支持：
-    - 自动分块
-    - 进度跟踪
-    - 速率控制
-    - 错误处理
-    """
+    """流式响应处理器：管理流式响应推送，支持自动分块、进度跟踪与速率控制。"""
 
     def __init__(
         self,
@@ -69,7 +55,6 @@ class StreamingResponseHandler:
         sent_count = 0
 
         if self.chunk_size > 0:
-            # 分块发送
             for i in range(0, total_length, self.chunk_size):
                 chunk = text[i : i + self.chunk_size]
                 count = await send_message_chunk(self.session_id, chunk)
@@ -79,15 +64,12 @@ class StreamingResponseHandler:
                     self.total_sent += len(chunk)
                     self.chunk_count += 1
 
-                    # 调用进度回调
                     if self.on_progress:
                         self.on_progress(self.total_sent, total_length)
 
-                    # 延迟
                     if self.delay_ms > 0:
                         await asyncio.sleep(self.delay_ms / 1000.0)
         else:
-            # 一次性发送
             count = await send_message_chunk(self.session_id, text)
             if count > 0:
                 sent_count = 1
@@ -117,7 +99,6 @@ class StreamingResponseHandler:
                     self.total_sent += len(chunk)
                     self.chunk_count += 1
 
-                    # 延迟
                     if self.delay_ms > 0:
                         await asyncio.sleep(self.delay_ms / 1000.0)
 
@@ -141,10 +122,7 @@ class StreamingResponseHandler:
 
 
 class BufferedStreamingHandler:
-    """缓冲流式响应处理器
-
-    使用缓冲区来优化小块的发送，减少网络开销。
-    """
+    """缓冲流式响应处理器：用缓冲区聚合小块发送以减少网络开销。"""
 
     def __init__(
         self,
@@ -176,7 +154,6 @@ class BufferedStreamingHandler:
         """
         self.buffer += text
 
-        # 检查是否需要刷新
         current_time = asyncio.get_event_loop().time()
         time_since_flush = (current_time - self._last_flush) * 1000
 
@@ -214,7 +191,7 @@ class BufferedStreamingHandler:
         Args:
             iterator: 异步迭代器
         """
-        # 迭代器中途抛错时仍需把已缓冲内容送出，否则尾部片段永远不会到达客户端
+        # 迭代器抛错时也需送出已缓冲内容，否则尾部片段无法到达客户端
         try:
             async for chunk in iterator:
                 if chunk:

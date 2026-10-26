@@ -1,17 +1,4 @@
-"""HybridRetriever - BM25 + Dense 双通道 RRF 融合（M2 混合检索）
-
-设计目标（Phase 1 任务 4，implementation-plan §5）：
-- 双通道互补（§4 三层防御第①层）：BM25 管精确标识符（命令/路径/参数名），
-  Dense 管语义变体（换个说法的同义提问）；
-- RRF（Reciprocal Rank Fusion）融合：score(d) = Σ 1/(k+rank_i(d))，
-  只用排名不用原始分——BM25 分数与余弦相似度不可通约，RRF 天然免疫量纲；
-- 降级安全（第③层）：Dense 通道失败（嵌入 API 抖动/未配置）→ 回落纯 BM25
-  排序，由 RagService.search_chunks 兜底；块在向量索引中但 BM25 无元数据
-  （索引漂移）→ 跳过并告警，绝不返回残缺结构。
-
-返回结构与 ChunkedBM25Index.search_chunks 一致（§6.1），
-score 字段为 RRF 融合分（仅用于排序展示，阈值语义归 grader / reranker）。
-"""
+"""混合检索：BM25 与 Dense 双通道经 RRF 融合（implementation-plan §5 Phase 1 任务 4）。"""
 
 from typing import Dict, List
 
@@ -55,13 +42,12 @@ class HybridRetriever:
         self.candidate_k = candidate_k  # 每通道候选池深度（对齐 §4 数据流 top-50）
 
     async def search(self, query: str, top_k: int = 6) -> List[dict]:
-        """混合检索：返回结构与 search_chunks 一致的块列表（§6.1）
+        """混合检索：返回结构与 search_chunks 一致的块列表（§6.1）。
 
-        Dense 通道任一异常都只降级不中断（回落 BM25-only 排序）。
+        Dense 通道任一异常都只降级不中断（回落 BM25 排序）。
         """
-        # 通道①：BM25（沿用生产阈值语义 min_score_ratio=0.3，弱词法匹配
-        # 本就不该进候选池；语义召回由 Dense 通道补位。
-        # max_per_doc=0：候选池不截断单文档块数，最终多样性由 RRF+精排决定）
+        # 通道①：BM25（弱词法匹配不进候选池，语义召回由 Dense 补位）。
+        # max_per_doc=0：候选池不截断单文档块数，多样性由 RRF + 精排决定
         bm25_ids = [cid for cid, _ in self._store.search(
             query, top_k=self.candidate_k, max_per_doc=0)]
 

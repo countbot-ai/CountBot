@@ -1,11 +1,4 @@
-"""文件审计日志模块
-
-将工具调用记录到文件系统，支持：
-- 按日期自动分割日志文件
-- 随机文件名（防止冲突）
-- JSON 格式存储
-- 自动清理旧日志
-"""
+"""把工具调用记录到文件系统的审计日志：按日期分文件、JSON 行存储、自动清理旧日志。"""
 
 import json
 import uuid
@@ -34,10 +27,8 @@ class FileAuditLogger:
         self.max_days = max_days
         self.enabled = False
         
-        # 确保日志目录存在
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        # 当前日志文件
         self._current_log_file: Optional[Path] = None
         self._current_date: Optional[str] = None
         self._recorded_attempt_ids: Optional[set[str]] = None
@@ -53,10 +44,7 @@ class FileAuditLogger:
         self, outcome: ToolExecutionOutcome, *, source: str,
         session_id: Optional[str] = None, task_id: Optional[str] = None,
     ) -> bool:
-        """追加脱敏 outcome 投影，并按 attempt_id 抑制重复写入。
-
-        投影只接受真实 terminal physical attempt；不从旧 audit 文本推断状态。
-        """
+        """按 attempt_id 去重地追加脱敏 outcome 投影；只接受真实 terminal attempt，不从旧文本推断状态。"""
         if not self.enabled:
             return False
         projection = project_attempt(
@@ -89,13 +77,9 @@ class FileAuditLogger:
             return False
     
     def _get_log_file(self) -> Path:
-        """获取当前日志文件路径
-        
-        日志文件命名格式：audit_YYYY-MM-DD_<random>.log
-        """
+        """获取当前日志文件，命名格式 audit_YYYY-MM-DD_<random>.log。"""
         today = datetime.now().strftime("%Y-%m-%d")
         
-        # 如果日期变化，创建新文件
         if self._current_date != today or self._current_log_file is None:
             self._current_date = today
             random_id = uuid.uuid4().hex[:8]
@@ -134,7 +118,6 @@ class FileAuditLogger:
                 "status": "pending"
             }
             
-            # 追加到日志文件
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         
@@ -174,7 +157,6 @@ class FileAuditLogger:
                 "duration_ms": duration_ms
             }
             
-            # 追加结果记录
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(update_record, ensure_ascii=False) + "\n")
         
@@ -212,7 +194,6 @@ class FileAuditLogger:
                 "duration_ms": duration_ms
             }
             
-            # 追加到日志文件
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         
@@ -232,7 +213,6 @@ class FileAuditLogger:
             return []
         
         try:
-            # 获取所有日志文件，按修改时间排序
             log_files = sorted(
                 self.log_dir.glob("audit_*.log"),
                 key=lambda f: f.stat().st_mtime,
@@ -241,7 +221,6 @@ class FileAuditLogger:
             
             records = []
             
-            # 读取日志文件
             for log_file in log_files:
                 if len(records) >= limit:
                     break
@@ -262,7 +241,6 @@ class FileAuditLogger:
                     logger.warning(f"Failed to read log file {log_file}: {e}")
                     continue
             
-            # 按时间戳倒序排序
             records.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
             
             return records[:limit]
@@ -370,7 +348,6 @@ class FileAuditLogger:
             
             for log_file in self.log_dir.glob("audit_*.log"):
                 try:
-                    # 从文件名提取日期
                     parts = log_file.stem.split("_")
                     if len(parts) >= 2:
                         file_date_str = parts[1]  # YYYY-MM-DD

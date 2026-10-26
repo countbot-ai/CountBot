@@ -632,8 +632,8 @@ class ExecTool(Tool):
             if unregister_cancel is not None:
                 unregister_cancel()
 
-    # 截断时头部保留的比例。命令失败原因（异常栈、编译错误汇总）通常在输出末尾，
-    # 而开头的提示信息也有价值，故采用「少量头部 + 大部分尾部」而非单纯保头部。
+    # 截断时头部保留比例。命令失败原因（异常栈、编译错误汇总）通常位于输出末尾，
+    # 而开头的提示信息同样有价值，故按小头部 + 大尾部保留，而非仅保留头部。
     HEAD_KEEP_RATIO = 0.25
 
     def _truncate_with_artifact(self, result: str, *, command: str = "") -> str:

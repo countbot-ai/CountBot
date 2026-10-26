@@ -1,7 +1,4 @@
-"""文件搜索工具
-
-跨平台文件搜索，支持通配符匹配、文件类型过滤和递归深度控制。
-"""
+"""跨平台文件搜索：支持通配符匹配、文件类型过滤和递归深度控制。"""
 
 import os
 import fnmatch
@@ -18,13 +15,7 @@ from backend.modules.tools.filesystem import WorkspaceValidator
 
 
 class FileSearchTool(Tool):
-    """文件搜索工具
-
-    在指定目录中搜索文件，支持：
-    - 文件名匹配（支持通配符）
-    - 文件类型过滤
-    - 递归深度控制
-    """
+    """在指定目录中按通配符搜索文件，支持类型过滤与递归深度控制。"""
 
     def __init__(
         self,
@@ -110,7 +101,6 @@ class FileSearchTool(Tool):
             return "Error: path parameter is required"
 
         try:
-            # 验证搜索路径
             search_dir = self.validator.validate_path(search_path)
             if not search_dir.exists():
                 return f"Error: Path does not exist: {search_path}"
@@ -120,7 +110,6 @@ class FileSearchTool(Tool):
 
             logger.info(f"Searching files in: {search_path} with pattern: {pattern}")
 
-            # 执行搜索
             results = []
             total_found = 0
             
@@ -133,7 +122,6 @@ class FileSearchTool(Tool):
             ):
                 total_found += 1
                 
-                # 只保存限制数量的结果
                 if len(results) < limit:
                     results.append(result)
 
@@ -145,7 +133,6 @@ class FileSearchTool(Tool):
                 f"Found {len(results)} file(s) matching '{pattern}' in: {search_path}",
             ]
             
-            # 如果还有更多结果，提示用户
             if total_found > len(results):
                 output_lines.append(f"(Showing first {len(results)} of {total_found} results. Use 'limit' parameter to see more)")
             
@@ -236,14 +223,12 @@ class FileSearchTool(Tool):
         Yields:
             dict: 匹配的文件信息
         """
-        # 检查深度限制
         if max_depth >= 0 and current_depth > max_depth:
             return
 
         try:
             for item in directory.iterdir():
                 try:
-                    # 获取文件信息
                     is_dir = item.is_dir()
                     is_file = item.is_file()
                     
@@ -251,18 +236,15 @@ class FileSearchTool(Tool):
                     if item.is_symlink():
                         continue
 
-                    # 文件类型过滤
                     if file_type == "file" and not is_file:
                         continue
                     if file_type == "dir" and not is_dir:
                         continue
 
-                    # 文件名匹配（不区分大小写）
                     item_name = item.name
                     matches = fnmatch.fnmatch(item_name.lower(), pattern.lower())
 
                     if matches:
-                        # 获取文件大小
                         file_size = -1
                         if is_file:
                             try:
@@ -270,14 +252,12 @@ class FileSearchTool(Tool):
                             except:
                                 pass
 
-                        # 返回匹配结果
                         yield {
                             "path": str(item),
                             "type": "DIR" if is_dir else "FILE",
                             "size": file_size,
                         }
 
-                    # 递归搜索子目录
                     if is_dir:
                         yield from self._search_files(
                             item,

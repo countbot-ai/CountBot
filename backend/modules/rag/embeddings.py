@@ -1,22 +1,4 @@
-"""Embedding 客户端 - OpenAI 兼容 /v1/embeddings 端点（M2 混合检索的向量通道）
-
-设计目标（Phase 1 任务 2，implementation-plan §5）：
-- 选型 BGE-M3 经 API 调用：零本地 torch 依赖，符合 rag 模块「零第三方
-  依赖」哲学（FlagEmbedding 本地方案保留为离线降级备选，不启用）；
-- 未配置时 build_embedding_client() 返回 None，上层回落纯 BM25（降级安全：
-  任何一环未配置逐级回落到上一已验证形态）；
-- httpx 直连而非 openai SDK：httpx 已是直接依赖，且嵌入端点结构简单，
-  直连可精确控制批量大小与超时。
-
-环境变量（implementation-plan §7）：
-  COUNTBOT_RAG_EMBEDDING_BASE_URL   嵌入端点（如 https://api.siliconflow.cn/v1）
-  COUNTBOT_RAG_EMBEDDING_API_KEY    API Key
-  COUNTBOT_RAG_EMBEDDING_MODEL      默认 BAAI/bge-m3
-  COUNTBOT_RAG_EMBEDDING_DIM        默认 1024（BGE-M3 输出维度）
-
-失败语义：HTTP 错误 / 响应结构异常抛 RuntimeError，维度与配置不符抛
-ValueError——是否降级由调用方决定（sync 侧跳过向量写入、查询侧回落 BM25）。
-"""
+"""Embedding 客户端：调用 OpenAI 兼容 /v1/embeddings 端点做向量化（implementation-plan §5 Phase 1 任务 2）。"""
 
 import os
 from typing import List, Optional
@@ -24,6 +6,7 @@ from typing import List, Optional
 import httpx
 from loguru import logger
 
+# 环境变量定义见 implementation-plan §7
 BASE_URL_ENV = "COUNTBOT_RAG_EMBEDDING_BASE_URL"
 API_KEY_ENV = "COUNTBOT_RAG_EMBEDDING_API_KEY"
 MODEL_ENV = "COUNTBOT_RAG_EMBEDDING_MODEL"
@@ -36,7 +19,7 @@ _TIMEOUT = 60.0
 
 
 class EmbeddingClient:
-    """OpenAI 兼容嵌入客户端（异步、无状态、可安全复用）"""
+    """OpenAI 兼容嵌入客户端，异步无状态，可安全复用。"""
 
     def __init__(
         self,

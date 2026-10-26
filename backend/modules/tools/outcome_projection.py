@@ -179,7 +179,7 @@ def task_read_view(legacy_status: str, value: Any) -> tuple[str, str, Optional[d
     disposition = parsed["disposition"]
     if disposition is None:
         # An active child may have prior attempts but no final disposition yet.
-        lifecycle_status = legacy_status if legacy_status in ("pending", "running") else "unknown"
+        lifecycle_status = legacy_status if legacy_status in ("pending", "queued", "running") else "unknown"
         return lifecycle_status, state.value, parsed
     canonical_status = (
         {"SUCCEEDED": "completed", "FAILED": "failed", "CANCELLED": "cancelled",

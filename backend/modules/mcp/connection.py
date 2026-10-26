@@ -178,7 +178,7 @@ async def _establish_mcp_session(
                     f"MCP server '{name}': 认证被拒绝({sorted(codes)})，重试后仍失败，"
                     f"请检查 headers/env 凭证配置"
                 )
-            # 把观测到的状态码挂在异常上，供调用方生成分类错误消息
+            # 将观测到的状态码附加到异常，供调用方生成分类错误消息
             exc.auth_codes = codes  # type: ignore[attr-defined]
             raise
     raise last_exc  # pragma: no cover - 循环内必然 return 或 raise
@@ -350,7 +350,7 @@ async def test_mcp_server(config: McpServerConfig) -> Dict[str, Any]:
             "normalized_url": normalized_url,
         }
     except Exception as exc:
-        # _establish_mcp_session 会把观测到的 401/403 挂在异常的 auth_codes 上
+        # _establish_mcp_session 将观测到的 401/403 写入异常的 auth_codes
         codes = _extract_auth_status_codes(exc) | set(getattr(exc, "auth_codes", []))
         if codes & {401, 403}:
             message = f"认证被拒绝({sorted(codes)})，请检查 headers/env 凭证配置"

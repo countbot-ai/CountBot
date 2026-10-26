@@ -1,15 +1,4 @@
-"""流量控制器 - 基于令牌桶算法的速率限制
-
-实现标准的令牌桶（Token Bucket）算法，用于：
-- 防止用户频繁请求
-- 平滑流量峰值
-- 保护下游服务
-
-算法特点：
-- 恒定速率补充令牌
-- 支持突发流量（桶容量）
-- 独立的用户级别限流
-"""
+"""流量控制器：基于令牌桶算法，恒定速率补充令牌、支持突发流量、按用户独立限流。"""
 
 import time
 from typing import Dict, Tuple
@@ -18,10 +7,7 @@ from loguru import logger
 
 
 class RateLimiter:
-    """令牌桶算法流量控制器
-    
-    实现标准的令牌桶算法，为每个用户维护独立的令牌桶。
-    令牌以恒定速率补充，请求消耗令牌，无令牌时拒绝请求。
+    """令牌桶算法流量控制器：为每个用户维护独立的令牌桶，无令牌时拒绝请求。
     
     Attributes:
         rate: 令牌补充速率（令牌数/时间窗口）
@@ -55,23 +41,19 @@ class RateLimiter:
         """
         now = time.time()
         
-        # 首次请求
         if user_id not in self._buckets:
             self._buckets[user_id] = (self.rate - 1, now)
             return True, ""
         
         tokens, last_update = self._buckets[user_id]
         
-        # 补充令牌
         elapsed = now - last_update
         tokens = min(self.rate, tokens + elapsed * (self.rate / self.per))
         
-        # 检查是否有足够令牌
         if tokens >= 1:
             self._buckets[user_id] = (tokens - 1, now)
             return True, ""
         else:
-            # 计算需要等待的时间
             wait_time = int((1 - tokens) * (self.per / self.rate))
             error_msg = f"发送太频繁，请等待 {wait_time} 秒后再试"
             logger.warning(f"Rate limit exceeded for user {user_id}, wait {wait_time}s")

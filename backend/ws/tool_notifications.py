@@ -1,11 +1,4 @@
-"""WebSocket 工具调用通知
-
-提供工具调用的实时通知功能：
-- 工具调用开始通知
-- 工具执行进度通知
-- 工具执行结果通知
-- 工具执行错误通知
-"""
+"""WebSocket 工具调用通知：工具的开始、进度、结果与错误通知。"""
 
 import asyncio
 import time
@@ -77,13 +70,7 @@ class ToolErrorMessage(ServerMessage):
 
 
 class ToolNotificationHandler:
-    """工具通知处理器
-
-    管理工具调用的通知，支持：
-    - 开始/完成/错误通知
-    - 进度跟踪
-    - 执行时间统计
-    """
+    """工具通知处理器：管理工具调用的开始/完成/错误通知、进度跟踪与耗时统计。"""
 
     def __init__(self, session_id: str, tool_name: str):
         """初始化工具通知处理器
@@ -216,7 +203,6 @@ async def execute_tool_with_notifications(
     handler = ToolNotificationHandler(session_id, tool_name)
 
     try:
-        # 通知开始
         await handler.notify_start(arguments)
 
         # executor 返回权威状态；展示文本只进入对应通知。
@@ -249,10 +235,7 @@ async def execute_tool_with_notifications(
 
 
 class BatchToolNotificationHandler:
-    """批量工具通知处理器
-
-    用于管理多个工具的并发执行通知。
-    """
+    """批量工具通知处理器：管理多个工具的并发执行通知。"""
 
     def __init__(self, session_id: str):
         """初始化批量工具通知处理器
@@ -335,16 +318,13 @@ async def notify_tool_execution(
         phase: 上游依据结构化状态选定的通知阶段
     """
     if phase == "non_success":
-        # 工具失败必须以 tool_error 事件回到发起调用的前端：只有它能携带
-        # tool 名并把正在转圈的卡片收敛为失败态。通用 error 事件会被前端
-        # 当作本轮对话终止信号，不能用于仍可继续的单个工具失败。
+        # 工具失败须用 tool_error 事件：可携带 tool 名并收敛失败态；通用 error 事件会被前端当作本轮终止信号。
         message = ToolErrorMessage(tool=tool_name, error=error or "")
         await connection_manager.send_to_session(session_id, message)
     elif phase == "success":
-        # 仅发送结果（tool_call 已在开始时发送，避免重复）
+        # 仅发送结果，tool_call 已在开始时发送，避免重复
         await send_tool_result(session_id, tool_name, result or "")
     else:
-        # 工具开始执行：发送调用通知
         await send_tool_call(session_id, tool_name, arguments)
 
 

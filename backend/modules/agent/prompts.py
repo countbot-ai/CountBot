@@ -1,12 +1,6 @@
-"""Agent Prompts - prompt templates.
-
-All built-in prompts are English to keep token usage low; every prompt that
-produces user-visible text instructs the model to answer in the conversation's
-language, so Chinese users still get Chinese output.
-"""
+"""Agent Prompts：内置提示词模板（统一英文以省 token，用户可见输出按会话语言）。"""
 
 # 对话总结 → 记忆条目提示词
-# 让 LLM 直接把对话总结为一行记忆格式
 CONVERSATION_TO_MEMORY_PROMPT = """You summarize conversations into memory entries.
 
 Rules:
@@ -69,17 +63,12 @@ Updated context summary:"""
 # 记忆条目模板（写入 MEMORY.md 的格式）
 MEMORY_ENTRY_TEMPLATE = "{date}|{source}|{content}"
 
-# 模型判定"无需写入记忆"时的输出标记。
-# 保留中文标记以兼容旧版提示词/历史模型输出。
+# 模型判定「无需写入记忆」的输出标记；保留中文标记以兼容旧提示词与历史输出。
 MEMORY_NOOP_SENTINELS = ("NOTHING_TO_RECORD", "无需记录")
 
 
 def is_memory_noop(text: str) -> bool:
-    """判断总结结果是否表示"没有值得记录的内容"。
-
-    只把「整段输出就是该标记」视为无内容：早先的实现做子串匹配，模型正常
-    总结里出现「无需记录」这类词会被整条丢弃。
-    """
+    """判断总结结果是否表示「没有值得记录的内容」（整段等于标记才算，非子串匹配）。"""
     normalized = (text or "").strip().strip("。.!！,，;；:：\"'“”‘’()（）[]【】")
     if not normalized:
         return True
@@ -89,9 +78,7 @@ def is_memory_noop(text: str) -> bool:
 def render_prompt(template: str, **values) -> str:
     """填充提示词模板。
 
-    不使用 str.format：模板里一旦混入字面花括号（例如 JSON 示例）就会整段
-    抛错或退化，导致所有占位符都填不上。这里逐个替换已知占位符，未提供值的
-    占位符与字面花括号原样保留。
+    不使用 str.format：模板里混入字面花括号（如 JSON 示例）会整段抛错或退化。
     """
     if not template:
         return ""
