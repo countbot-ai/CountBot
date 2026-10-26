@@ -262,12 +262,18 @@ class OpenAIResponsesProvider(LLMProvider):
 
             except Exception as stream_err:
                 is_timeout = self._is_timeout_exception(stream_err)
+                is_connection = self._is_connection_error(stream_err)
 
-                if not content_yielded and is_timeout and stream_retry < max_stream_retries:
+                if (
+                    not content_yielded
+                    and (is_timeout or is_connection)
+                    and stream_retry < max_stream_retries
+                ):
                     stream_retry += 1
                     wait = min(2 ** stream_retry, 30)
+                    reason = "超时" if is_timeout else "连接中断"
                     logger.warning(
-                        f"OpenAI Responses 流读取超时 [trace={request_trace_id}]"
+                        f"OpenAI Responses 流读取{reason} [trace={request_trace_id}]"
                         f"（第{stream_retry}/{max_stream_retries}次），{wait}s 后重试: {stream_err}"
                     )
                     await asyncio.sleep(wait)
@@ -799,6 +805,34 @@ class OpenAIResponsesProvider(LLMProvider):
             "socket",
         )
         return any(hint in err_type or hint in err_text for hint in timeout_hints)
+
+    @staticmethod
+    def _is_connection_error(error: Exception) -> bool:
+        """上游在流式响应中途关闭连接等传输层错误。"""
+        try:
+            import httpx
+
+            if isinstance(
+                error,
+                (
+                    httpx.RemoteProtocolError,
+                    httpx.ReadError,
+                    httpx.WriteError,
+                    httpx.ConnectError,
+                ),
+            ):
+                return True
+        except Exception:
+            pass
+
+        err_type = type(error).__name__.lower()
+        return err_type in {
+            "remoteprotocolerror",
+            "readerror",
+            "writeerror",
+            "connecterror",
+            "protocolerror",
+        }
 
     @staticmethod
     def _is_auth_error(error: Exception) -> bool:
