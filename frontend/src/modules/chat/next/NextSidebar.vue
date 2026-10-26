@@ -143,6 +143,14 @@
               >
                 <component :is="PencilIcon" :size="14" />
               </button>
+              <button
+                class="nc-session-action nc-session-action--danger"
+                :title="$t('chat.next.deleteSession')"
+                :aria-label="$t('chat.next.deleteSession')"
+                @click.stop="$emit('delete', session.id)"
+              >
+                <component :is="TrashIcon" :size="14" />
+              </button>
             </div>
           </template>
         </div>
@@ -187,6 +195,7 @@ import {
   Radio as RadioIcon,
   Search as SearchIcon,
   Settings as SettingsIcon,
+  Trash2 as TrashIcon,
   Users as UsersIcon,
   X as XIcon,
 } from 'lucide-vue-next'
@@ -211,6 +220,7 @@ const emit = defineEmits<{
   (e: 'select', sessionId: string): void
   (e: 'config', sessionId: string): void
   (e: 'rename', payload: { sessionId: string; name: string }): void
+  (e: 'delete', sessionId: string): void
   (e: 'open-panel', panel: 'sessions' | 'skills' | 'cron' | 'wiki'): void
   (e: 'open-settings', tab: SettingsTab): void
   (e: 'toggle'): void

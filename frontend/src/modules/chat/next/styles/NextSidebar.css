@@ -340,6 +340,12 @@
   color: var(--nc-text);
 }
 
+/* 删除为不可逆操作：仅悬停时以危险色提示，静态保持中性避免视觉噪音 */
+.nc-session-action--danger:hover {
+  background: var(--nc-surface);
+  color: var(--color-error);
+}
+
 .nc-session-rename-input {
   width: 100%;
   height: 28px;

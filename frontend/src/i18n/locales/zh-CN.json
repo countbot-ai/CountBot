@@ -150,7 +150,8 @@
             "collapseSidebar": "收起侧边栏",
             "timeline": "时间轴",
             "sessionSettings": "会话设置",
-            "renameSession": "重命名会话"
+            "renameSession": "重命名会话",
+            "deleteSession": "删除会话"
         },
         "newSession": "新建会话",
         "sendMessage": "发送消息",

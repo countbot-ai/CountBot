@@ -10,6 +10,7 @@
         @select="handleSelectSession"
         @config="handleOpenSessionConfig"
         @rename="handleRenameSession"
+        @delete="handleDeleteSession"
         @open-panel="handleOpenPanel"
         @open-settings="openSettingsTab"
         @toggle="toggleSidebar"
@@ -299,6 +300,26 @@ function handleOpenSessionConfig(sessionId: string) {
   if (activePanel.value === 'sessions') {
     closePanel()
   }
+}
+
+// 侧边栏删除会话：不可逆操作，确认弹窗 loading 锁死直到删除完成
+async function handleDeleteSession(sessionId: string) {
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('sessions.deleteConfirm'),
+    type: 'danger',
+    confirmText: t('common.delete'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      try {
+        await chatStore.deleteSession(sessionId)
+        clearSessionCache(sessionId)
+        toast.success(t('sessions.deleteSuccess'))
+      } catch (error) {
+        toast.error(t('sessions.deleteError'))
+      }
+    }
+  })
 }
 
 // 侧边栏行内改名：由侧边栏负责输入态，这里只落库并给出反馈

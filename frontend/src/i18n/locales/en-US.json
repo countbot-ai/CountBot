@@ -150,7 +150,8 @@
             "collapseSidebar": "Collapse sidebar",
             "timeline": "Timeline",
             "sessionSettings": "Session settings",
-            "renameSession": "Rename session"
+            "renameSession": "Rename session",
+            "deleteSession": "Delete session"
         },
         "newSession": "New Session",
         "sendMessage": "Send Message",
