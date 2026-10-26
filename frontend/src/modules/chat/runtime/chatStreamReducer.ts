@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatToolCall, WorkflowAgentState } from '@/types/chat'
+import type { ChatMessage, ChatMessageBlock, ChatToolCall, WorkflowAgentState } from '@/types/chat'
 
 interface SpawnTaskLink {
   messageId: string
@@ -173,6 +173,7 @@ function reduceMessageChunk(
       content,
       timestamp: new Date(),
       toolCalls: [],
+      blocks: [{ type: 'text', text: content }],
     }
 
     return {
@@ -185,8 +186,17 @@ function reduceMessageChunk(
 
   const currentMessage = state.messages[currentIndex]
   const updatedMessage: ChatMessage = currentMessage.isThinking
-    ? { ...currentMessage, isThinking: false, content }
-    : { ...currentMessage, content: `${currentMessage.content || ''}${content}` }
+    ? {
+        ...currentMessage,
+        isThinking: false,
+        content,
+        blocks: appendTextBlock(currentMessage.blocks, content),
+      }
+    : {
+        ...currentMessage,
+        content: `${currentMessage.content || ''}${content}`,
+        blocks: appendTextBlock(currentMessage.blocks, content),
+      }
 
   return {
     ...state,
@@ -305,6 +315,8 @@ function reduceToolCall(
     ...targetMessage,
     isThinking: false,
     toolCalls: [...toolCalls, initialToolCall],
+    // 工具调用同步落进顺序块，后续正文会另起一个文本块，从而实现「正文 → 工具 → 正文」的交织
+    blocks: [...(targetMessage.blocks || []), { type: 'tool', toolCallId }],
   }
 
   const nextMessages =
@@ -767,6 +779,26 @@ function reduceAddThinkingMessage(
     currentWorkflowToolCallId: null,
     isStreaming: true,
   }
+}
+
+/**
+ * 正文 chunk 落到顺序块上：紧挨着的 chunk 合并进尾部文本块，
+ * 一旦中间插入过工具调用，就另起一个文本块，保住「正文 → 工具 → 正文」的先后关系。
+ */
+function appendTextBlock(
+  blocks: ChatMessageBlock[] | undefined,
+  text: string
+): ChatMessageBlock[] {
+  const next = blocks ? [...blocks] : []
+  const last = next[next.length - 1]
+
+  if (last && last.type === 'text') {
+    next[next.length - 1] = { type: 'text', text: last.text + text }
+  } else {
+    next.push({ type: 'text', text })
+  }
+
+  return next
 }
 
 function ensureWorkflowAgent(

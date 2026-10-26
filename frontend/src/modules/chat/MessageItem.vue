@@ -33,11 +33,8 @@
           embedded
         />
         <InterleavedMessage
-          :content="interleavedContent"
-          :tool-calls="inlineToolCalls"
+          :blocks="interleavedBlocks"
           :is-replaying="isReplaying"
-          :replay-segment-count="replayInterleavedSegments"
-          shell-mode
         />
       </div>
 
@@ -377,7 +374,7 @@ import MessageAttachment from '@/components/chat/MessageAttachment.vue'
 import { normalizeHistoryToolCall } from '@/modules/chat/utils/historyMessages'
 import { splitReasoningSections } from '@/utils/reasoningSections'
 import { useChatStore } from '@/store/chat'
-import type { ChatMessage, ChatToolCall, WorkflowAgentState } from '@/types/chat'
+import type { ChatMessage, ChatToolCall, InterleavedRenderBlock, WorkflowAgentState } from '@/types/chat'
 
 interface Props {
   message: ChatMessage
@@ -776,8 +773,17 @@ const embeddedReasoningContent = computed(() => {
     .join('\n\n---\n\n')
 })
 
+// 工作流结果折叠后真正要展示的正文；思考过程在下方会单独走 ReasoningBlock。
+// 没有可拆分的正文时（例如流式过程中只收到 `## Reasoning`），正文保持为空，
+// 避免把思考过程再原样渲染一遍。
+const workflowBodyContent = computed(() => {
+  const sections = workflowReasoningSections.value
+  if (!sections) return displayContent.value
+  return sections.content ?? ''
+})
+
 const renderedContent = computed(() => {
-  const content = workflowReasoningSections.value?.content ?? displayContent.value
+  const content = workflowBodyContent.value
   if (props.message.role === 'assistant') {
     return renderMarkdown(content)
   }
@@ -865,12 +871,70 @@ const useInterleavedMode = computed(() => {
   return !hasSpecialTools
 })
 
-const interleavedContent = computed(() => {
-  if (!isReplaying.value) {
-    return renderedContent.value
+/**
+ * 交织渲染块：把正文与工具调用按发生顺序摊平，让「正文 → 工具 → 正文」按真实
+ * 执行顺序呈现，而不是把所有正文堆在一起、所有工具堆在另一处。
+ *
+ * - 实时消息带有 message.blocks（流式过程中记录的顺序），直接按记录还原；
+ * - 历史消息与旧缓存没有顺序记录，按「工具在前、正文在后」兜底——助手正文是整轮
+ *   结束后的结论，工具调用必然发生在它之前；
+ * - 重放沿用原有叙事：先逐个露出工具调用，再逐字输出正文。
+ */
+const interleavedBlocks = computed<InterleavedRenderBlock[]>(() => {
+  if (isReplaying.value) {
+    const replayBlocks: InterleavedRenderBlock[] = inlineToolCalls.value
+      .slice(0, replayInterleavedSegments.value)
+      .map((toolCall, index) => ({
+        kind: 'tool',
+        key: toolCall.id || `tool-${index}`,
+        toolCall,
+        showResult: true,
+      }))
+
+    if (replayContent.value !== null) {
+      replayBlocks.push({ kind: 'text', key: 'text', html: replayContent.value })
+    }
+
+    return replayBlocks
   }
 
-  return replayContent.value ?? ''
+  const recordedBlocks = props.message.blocks
+  if (recordedBlocks && recordedBlocks.length > 0) {
+    const toolCallsById = new Map(inlineToolCalls.value.map((toolCall) => [toolCall.id, toolCall]))
+    const blocks: InterleavedRenderBlock[] = []
+    let textIndex = 0
+
+    for (const block of recordedBlocks) {
+      if (block.type === 'tool') {
+        const toolCall = toolCallsById.get(block.toolCallId)
+        if (toolCall) {
+          blocks.push({ kind: 'tool', key: toolCall.id, toolCall, showResult: true })
+        }
+        continue
+      }
+
+      blocks.push({
+        kind: 'text',
+        key: `text-${textIndex}`,
+        html: renderMarkdown(block.text),
+      })
+      textIndex += 1
+    }
+
+    if (blocks.length > 0) {
+      return blocks
+    }
+  }
+
+  const fallbackBlocks: InterleavedRenderBlock[] = inlineToolCalls.value.map((toolCall, index) => ({
+    kind: 'tool',
+    key: toolCall.id || `tool-${index}`,
+    toolCall,
+    showResult: true,
+  }))
+  fallbackBlocks.push({ kind: 'text', key: 'text', html: renderedContent.value })
+
+  return fallbackBlocks
 })
 
 const visibleToolCalls = computed(() => {
@@ -1140,7 +1204,8 @@ const startTextReplay = () => {
   
   // 设置为空字符串，使内容区域可见（null = 隐藏）
   replayContent.value = ''
-  const rawText = displayContent.value
+  // 重放同样只重放折叠后的正文，避免思考过程在正文里再展开一遍
+  const rawText = workflowBodyContent.value
   let charIndex = 0
   const speed = 15
   

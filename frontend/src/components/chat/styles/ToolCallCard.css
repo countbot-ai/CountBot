@@ -1,11 +1,14 @@
 /* ============================================================
  * ToolCallCard - 单行摘要 + 按需展开
  *
- * 设计原则（对齐 ZCode 的工具行）：
- * - 收起态没有边框、没有底色、没有状态药丸，只有一行文字；
- * - 颜色只靠文字层级（二级 / 三级）表达，不靠色块；
- * - 展开箭头默认隐身，hover 才出现，避免每条都挂一个可点符号；
- * - 结果区是等宽阅读区，不做假终端装饰。
+ * 设计原则：
+ * - 收起态不套卡片、不画边框：层次靠「图标底 + 文字三级色阶」建立，
+ *   层级依次为 动作名 → 目标参数 → 状态/耗时；
+ * - 颜色只用在真正需要区分的地方：运行中用强调色、失败用错误色，
+ *   成功不额外上色，避免一屏工具五颜六色；
+ * - 连续的工具调用由外层（InterleavedMessage / MessageItem）包成一组，
+ *   这里只负责行本身；
+ * - 结果区是等宽阅读区，靠背景阶梯浮出，不做假终端装饰。
  * ============================================================ */
 
 .tool-call {
@@ -17,18 +20,18 @@
 .tool-call-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 4px 8px 4px 6px;
+  padding: 5px 8px 5px 6px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-family: inherit;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 12.5px;
+  line-height: 1.5;
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
@@ -43,33 +46,41 @@
   box-shadow: inset 0 0 0 1px var(--color-border-strong);
 }
 
+/* 图标底：给每行一个视觉锚点，同时承担状态染色 */
 .tool-call-glyph {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 16px;
-  width: 16px;
-  color: var(--color-text-tertiary);
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .tool-call-summary:hover .tool-call-glyph {
-  color: var(--color-text-secondary);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
+/* 一级：动作名 */
 .tool-call-kind {
   flex: 0 0 auto;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
 
+/* 二级：目标参数（路径 / 命令 / 查询词） */
 .tool-call-target {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-tertiary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -78,24 +89,33 @@
   color: var(--color-text-secondary);
 }
 
+/* 三级：状态 / 耗时，只在有内容时占位 */
 .tool-call-note {
   flex: 0 0 auto;
-  color: var(--color-text-tertiary);
-  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.6;
   white-space: nowrap;
+}
+
+.tool-call-summary:hover .tool-call-note {
+  background: var(--color-bg-primary);
 }
 
 .tool-call-duration {
   flex: 0 0 auto;
-  color: var(--color-text-disabled);
-  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .tool-call-chevron {
   flex: 0 0 auto;
-  color: var(--color-text-disabled);
+  color: var(--color-text-tertiary);
   opacity: 0;
   transform: rotate(0deg);
   transition: opacity var(--transition-fast), transform var(--transition-base) var(--ease-snappy);
@@ -112,17 +132,30 @@
 }
 
 /* ---------- 状态：只染真正需要注意的那一档 ---------- */
-.tool-call.status-error .tool-call-glyph,
-.tool-call.status-error .tool-call-note,
+.tool-call.status-error .tool-call-glyph {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
 .tool-call.status-error .tool-call-kind {
   color: var(--color-error);
 }
 
-.tool-call.status-cancelled .tool-call-kind {
+.tool-call.status-error .tool-call-note {
+  background: var(--color-error-light);
+  color: var(--color-error-hover);
+}
+
+.tool-call.status-cancelled .tool-call-glyph {
   color: var(--color-text-disabled);
 }
 
+.tool-call.status-cancelled .tool-call-kind {
+  color: var(--color-text-tertiary);
+}
+
 .tool-call.status-running .tool-call-glyph {
+  background: var(--color-accent-light);
   color: var(--color-accent);
 }
 
@@ -135,7 +168,8 @@
   margin-left: 6px;
   padding: 1px 4px;
   border-radius: 4px;
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-primary);
+  box-shadow: inset 0 0 0 1px var(--color-border-primary);
   color: var(--color-text-tertiary);
   font-size: 9.5px;
   font-weight: var(--font-weight-medium);
@@ -148,7 +182,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 2px 8px 4px 30px;
+  padding: 2px 8px 4px 38px;
 }
 
 .tool-call-progress-track {
@@ -191,12 +225,12 @@
   text-overflow: ellipsis;
 }
 
-/* ---------- 展开体 ---------- */
+/* ---------- 展开体：缩进对齐到动作名，视觉上挂在摘要行下面 ---------- */
 .tool-call-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 4px 8px 8px 30px;
+  padding: 2px 8px 10px 38px;
 }
 
 .tool-call-hint {
@@ -276,7 +310,7 @@
 
 .tool-call-arg-key {
   overflow: hidden;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.7;
@@ -293,7 +327,7 @@
   margin: 0;
   max-height: 160px;
   overflow: auto;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.7;
@@ -301,14 +335,16 @@
   word-break: break-word;
 }
 
+/* 结果区：比所在分层再亮一级，读起来像一张压在下面的纸 */
 .tool-call-result,
 .tool-call-error {
   margin: 0;
   max-height: 280px;
   overflow: auto;
   padding: 10px 12px;
+  border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-md);
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-elevated);
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -319,6 +355,7 @@
 }
 
 .tool-call-error {
+  border-color: transparent;
   background: var(--color-error-light);
   color: var(--color-error-hover);
 }
@@ -364,7 +401,7 @@
   padding: 4px 8px;
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-primary);
+  background: var(--color-bg-elevated);
   color: var(--color-text-secondary);
   font-size: 11.5px;
 }
@@ -480,6 +517,10 @@
 
 /* ---------- 移动端 ---------- */
 @media (max-width: 640px) {
+  .tool-call-summary {
+    gap: 8px;
+  }
+
   .tool-call-arg {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;

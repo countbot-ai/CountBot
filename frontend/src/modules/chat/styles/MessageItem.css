@@ -160,12 +160,17 @@
   opacity: 1;
 }
 
+/* 工具调用组：连续的工具行合成一块「执行轨迹」，与正文形成层次对照 */
 .tool-calls-list {
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
   margin-left: -6px;
+  padding: 4px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
 }
 
 .tool-calls-note {
