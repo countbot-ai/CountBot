@@ -15,8 +15,16 @@ from .base import (
     _TOOL_ARGUMENT_PARSE_ERROR_KEY,
     _TOOL_ARGUMENT_RAW_KEY,
     is_auth_error,
+    read_usage_detail_int,
+    append_upstream_detail,
+    has_visible_text,
 )
-from .thinking_profiles import apply_reasoning_request_fields, clear_reasoning_request_fields
+from .thinking_profiles import (
+    apply_reasoning_request_fields,
+    clear_reasoning_request_fields,
+    is_reasoning_off,
+    normalize_reasoning_level,
+)
 
 
 class OpenAIProvider(LLMProvider):
@@ -129,6 +137,7 @@ class OpenAIProvider(LLMProvider):
             request_params["tools"] = tools
             request_params["tool_choice"] = "auto"
 
+        reasoning_level = kwargs.pop("reasoning_level", None)
         request_params.update(kwargs)
         thinking_enabled = kwargs.get("thinking_enabled")
         if self._should_disable_thinking_for_tool_calls(
@@ -141,7 +150,7 @@ class OpenAIProvider(LLMProvider):
                 "to preserve tool-call argument budget"
             )
             thinking_enabled = False
-        self._apply_reasoning_config(request_params, thinking_enabled)
+        self._apply_reasoning_config(request_params, thinking_enabled, reasoning_level)
         self._apply_cached_compatibility(request_params, compatibility_key)
 
         logger.debug(
@@ -258,7 +267,9 @@ class OpenAIProvider(LLMProvider):
                     reasoning_delta = self._extract_reasoning_delta(delta)
                     if reasoning_delta:
                         content_yielded = True
-                        yield StreamChunk(reasoning_content=reasoning_delta)
+                        # 上游偶尔只回零宽字符占位，照抄会让前端渲染出空的思考块
+                        if has_visible_text(reasoning_delta):
+                            yield StreamChunk(reasoning_content=reasoning_delta)
 
                     if hasattr(delta, "tool_calls") and delta.tool_calls:
                         content_yielded = True
@@ -287,11 +298,7 @@ class OpenAIProvider(LLMProvider):
                     if choice.finish_reason:
                         usage_dict = None
                         if hasattr(chunk, "usage") and chunk.usage:
-                            usage_dict = {
-                                "prompt_tokens": getattr(chunk.usage, "prompt_tokens", 0),
-                                "completion_tokens": getattr(chunk.usage, "completion_tokens", 0),
-                                "total_tokens": getattr(chunk.usage, "total_tokens", 0),
-                            }
+                            usage_dict = self._extract_chat_usage(chunk.usage)
 
                         for tc_data in tool_call_buffer.values():
                             if not tc_data["name"]:
@@ -449,6 +456,7 @@ class OpenAIProvider(LLMProvider):
         self,
         request_params: Dict[str, Any],
         thinking_enabled: Optional[bool],
+        reasoning_level: Optional[str] = None,
     ) -> None:
         """对 OpenAI 兼容 provider 注入 provider-aware 的思考控制参数。"""
         applied_fields = apply_reasoning_request_fields(
@@ -457,8 +465,14 @@ class OpenAIProvider(LLMProvider):
             model=request_params.get("model"),
             api_base=self.api_base,
             thinking_enabled=thinking_enabled,
+            reasoning_level=reasoning_level,
         )
-        if thinking_enabled is False:
+        # 显式档位为关闭（none/off）时同样要清掉历史思考内容
+        level_off = (
+            normalize_reasoning_level(reasoning_level) is not None
+            and is_reasoning_off(reasoning_level)
+        )
+        if thinking_enabled is False or level_off:
             self._strip_message_reasoning_content(request_params)
 
         request_params.pop("thinking_enabled", None)
@@ -468,6 +482,33 @@ class OpenAIProvider(LLMProvider):
                 "Applied reasoning control fields for provider "
                 f"{self.provider_id or 'openai-compatible'}: {', '.join(applied_fields)}"
             )
+
+    @staticmethod
+    def _extract_chat_usage(usage: Any) -> Optional[Dict[str, int]]:
+        """chat.completions 的 usage -> 内部统一字段（含缓存命中与推理明细）。
+
+        缓存命中/推理 token 只在 *_details 子对象里（prompt_tokens_details
+        .cached_tokens、completion_tokens_details.reasoning_tokens），只抄顶层
+        三个整数会让缓存命中与推理统计永远是 0。
+        """
+        if usage is None:
+            return None
+        extracted: Dict[str, int] = {
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+            "completion_tokens": getattr(usage, "completion_tokens", 0),
+            "total_tokens": getattr(usage, "total_tokens", 0),
+        }
+        cached_tokens = read_usage_detail_int(
+            getattr(usage, "prompt_tokens_details", None), "cached_tokens"
+        )
+        if cached_tokens:
+            extracted["cache_read_tokens"] = cached_tokens
+        reasoning_tokens = read_usage_detail_int(
+            getattr(usage, "completion_tokens_details", None), "reasoning_tokens"
+        )
+        if reasoning_tokens:
+            extracted["reasoning_tokens"] = reasoning_tokens
+        return extracted
 
     def _should_disable_thinking_for_tool_calls(
         self,
@@ -1197,7 +1238,13 @@ class OpenAIProvider(LLMProvider):
 
     @staticmethod
     def _format_error_message(raw: str) -> str:
-        """将 OpenAI 原始错误转换为用户友好提示"""
+        """将 OpenAI 原始错误转换为用户友好提示，并附上上游原始返回"""
+        return append_upstream_detail(
+            OpenAIProvider._friendly_error_message(raw), raw
+        )
+
+    @staticmethod
+    def _friendly_error_message(raw: str) -> str:
         lower = raw.lower()
 
         if "image_url" in lower and any(
@@ -1214,10 +1261,22 @@ class OpenAIProvider(LLMProvider):
         ):
             return "当前模型或接口不支持图片输入，请切换支持视觉的模型后重试。"
 
-        if any(k in lower for k in ("429", "余额不足", "quota", "rate limit", "insufficient_quota", "insufficient balance", "资源包", "balance")):
-            if "余额" in raw or "资源包" in raw or "充值" in raw or "balance" in lower:
-                return "API 账户余额不足，请前往服务商控制台充值后重试。"
-            return "请求过于频繁或 API 配额已用尽，请稍后重试或检查账户额度。"
+        # 余额/欠费类：403 或明确提到余额、充值、资源包的场景（优先于限流判定，
+        # 因为这类响应里常同时带 quota 字样）
+        if any(
+            k in lower
+            for k in ("余额", "资源包", "充值", "欠费", "insufficient balance",
+                      "insufficient_quota", "insufficient_quota_exceeded", "no credit")
+        ) or ("403" in lower and any(k in lower for k in ("quota", "balance", "额度"))):
+            return "API 账户余额不足或额度已用尽，请前往服务商控制台充值后重试。"
+
+        # 429 / rate limit 类：限流，不是余额问题
+        if any(
+            k in lower
+            for k in ("429", "rate limit", "rate_limit", "too many requests",
+                      "overloaded", "负载已饱和", "capacity")
+        ):
+            return "请求过于频繁，上游限流，请稍后重试。"
 
         if any(k in lower for k in ("401", "unauthorized", "invalid.*api.*key", "authentication", "token is unusable", "invalid token", "api key")):
             return "API 密钥无效或已过期，请在设置中检查并更新密钥。"
@@ -1234,7 +1293,8 @@ class OpenAIProvider(LLMProvider):
         if any(k in lower for k in ("timeout", "connection", "network", "ssl", "timed out")):
             return "网络连接异常，请检查网络设置后重试。"
 
-        return f"AI 调用出错: {raw[:200]}"
+        # 兜底不再重复拼接原始文本，统一由 append_upstream_detail 附在提示后面
+        return "AI 调用出错"
 
     def get_default_model(self) -> str:
         """获取默认模型"""

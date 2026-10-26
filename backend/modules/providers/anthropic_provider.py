@@ -14,8 +14,12 @@ from .base import (
     ToolCall,
     _TOOL_ARGUMENT_PARSE_ERROR_KEY,
     _TOOL_ARGUMENT_RAW_KEY,
+    append_upstream_detail,
+    has_visible_text,
     is_auth_error,
 )
+
+from .thinking_profiles import is_reasoning_off, resolve_supported_reasoning_level
 
 
 class AnthropicProvider(LLMProvider):
@@ -98,6 +102,7 @@ class AnthropicProvider(LLMProvider):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         thinking_enabled = kwargs.pop("thinking_enabled", None)
+        reasoning_level = kwargs.pop("reasoning_level", None)
         system_content, filtered_messages = self._normalize_messages(messages)
 
         request_params: Dict[str, Any] = {
@@ -126,7 +131,7 @@ class AnthropicProvider(LLMProvider):
         if anthropic_tools:
             request_params["tools"] = anthropic_tools
 
-        self._apply_thinking_config(request_params, thinking_enabled)
+        self._apply_thinking_config(request_params, thinking_enabled, reasoning_level)
         request_params.update(kwargs)
 
         logger.debug(
@@ -465,8 +470,29 @@ class AnthropicProvider(LLMProvider):
         self,
         request_params: Dict[str, Any],
         thinking_enabled: Optional[bool],
+        reasoning_level: Optional[str] = None,
     ) -> None:
-        """Inject Anthropic extended thinking config when enabled."""
+        """Inject Anthropic extended thinking config when enabled.
+
+        显式档位优先：新版 Claude 用 `thinking.type=adaptive` + `output_config.effort`
+        表达强度（档位原样下发，含用户自定义档位）；档位为关闭时直接移除 thinking。
+        未给档位时保持原行为（budget_tokens），避免影响存量模型。
+        """
+        supported_level = resolve_supported_reasoning_level(
+            reasoning_level,
+            model=str(request_params.get("model") or ""),
+        )
+        if supported_level is not None:
+            if is_reasoning_off(supported_level):
+                request_params.pop("thinking", None)
+                request_params.pop("output_config", None)
+                return
+            request_params["thinking"] = {"type": "adaptive"}
+            request_params["output_config"] = {"effort": supported_level}
+            return
+
+        request_params.pop("output_config", None)
+
         if thinking_enabled is None:
             request_params.pop("thinking", None)
             return
@@ -620,7 +646,8 @@ class AnthropicProvider(LLMProvider):
                                     "thinking",
                                 )
                                 block["thinking"] = f"{block.get('thinking', '')}{thinking}"
-                                yield StreamChunk(reasoning_content=thinking)
+                                if has_visible_text(thinking):
+                                    yield StreamChunk(reasoning_content=thinking)
                         elif delta.type == "signature_delta":
                             signature = getattr(delta, "signature", "")
                             block = self._ensure_content_block(
@@ -809,7 +836,9 @@ class AnthropicProvider(LLMProvider):
                                             "thinking",
                                         )
                                         block["thinking"] = f"{block.get('thinking', '')}{thinking}"
-                                        yield StreamChunk(reasoning_content=thinking)
+                                        # 上游偶尔只回零宽字符占位，对外不输出空思考块
+                                        if has_visible_text(thinking):
+                                            yield StreamChunk(reasoning_content=thinking)
                                 elif delta_type == "signature_delta":
                                     block = self._ensure_content_block(
                                         content_block_buffer,
@@ -1111,7 +1140,13 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _format_error_message(raw: str) -> str:
-        """Convert raw provider errors to user-facing messages."""
+        """Convert raw provider errors to user-facing messages（附上游原始返回）。"""
+        return append_upstream_detail(
+            AnthropicProvider._friendly_error_message(raw), raw
+        )
+
+    @staticmethod
+    def _friendly_error_message(raw: str) -> str:
         lower = raw.lower()
 
         if lower in {"", "readtimeout", "timeoutexception"}:
@@ -1120,8 +1155,20 @@ class AnthropicProvider(LLMProvider):
         if "no module named 'anthropic'" in lower or 'no module named "anthropic"' in lower:
             return "未安装 anthropic Python 依赖，或当前运行环境未打包该模块。"
 
-        if any(k in lower for k in ("429", "rate limit", "quota")):
-            return "请求过于频繁或 API 配额已用尽，请稍后重试并检查额度。"
+        # 余额/欠费类优先：这类响应常同时带 quota 字样，先判余额再判限流
+        if any(
+            k in lower
+            for k in ("余额", "资源包", "充值", "欠费", "insufficient balance",
+                      "insufficient_quota", "no credit", "credit balance")
+        ) or ("403" in lower and any(k in lower for k in ("quota", "balance", "额度"))):
+            return "API 账户余额不足或额度已用尽，请前往服务商控制台充值后重试。"
+
+        if any(
+            k in lower
+            for k in ("429", "rate limit", "rate_limit", "too many requests",
+                      "overloaded", "负载已饱和", "capacity")
+        ):
+            return "请求过于频繁，上游限流，请稍后重试。"
 
         if any(k in lower for k in ("401", "unauthorized", "invalid api key", "authentication")):
             return "API 密钥无效或已过期，请检查并更新。"
@@ -1141,7 +1188,8 @@ class AnthropicProvider(LLMProvider):
         if any(k in lower for k in ("timeout", "connection", "network", "ssl")):
             return "网络连接异常，请检查网络或代理设置。"
 
-        return f"AI 调用出错: {raw[:200]}"
+        # 兜底不再重复拼接原始文本，统一由 append_upstream_detail 附在提示后面
+        return "AI 调用出错"
 
     def get_default_model(self) -> str:
         """Return the configured default model."""

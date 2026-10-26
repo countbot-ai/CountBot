@@ -156,6 +156,55 @@ def is_rate_limit_error(error: Exception) -> bool:
     return any(hint in text for hint in RATE_LIMIT_HINTS)
 
 
+# 零宽字符：部分上游用它们给思考/正文占位，展开后就是一片空白
+_INVISIBLE_CHARS = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"), None)
+
+
+def has_visible_text(text: Any) -> bool:
+    """是否含可见内容；纯零宽/空白字符视为不可见，避免前端渲染出空块。"""
+    return bool(str(text or "").translate(_INVISIBLE_CHARS).strip())
+
+
+def format_upstream_detail(raw: str, *, limit: int = 300) -> str:
+    """把上游原始错误压成单行文本，附在友好提示后，便于用户/排查看到真实原因。"""
+    compact = " ".join(str(raw or "").split())
+    if not compact:
+        return ""
+    if len(compact) > limit:
+        compact = compact[:limit] + "…"
+    return compact
+
+
+def append_upstream_detail(message: str, raw: str) -> str:
+    """拼接友好提示与上游原始返回；无原始内容时原样返回提示。"""
+    detail = format_upstream_detail(raw)
+    if not detail:
+        return message
+    return f"{message}\n\n上游原始返回：{detail}"
+
+
+def read_usage_detail_int(details: Any, key: str) -> int:
+    """读 usage 明细子对象里的整数字段（SDK 模型或原始 dict 都支持），取不到按 0。
+
+    缓存命中与推理 token 都只在明细里（prompt_tokens_details.cached_tokens、
+    input_tokens_details.cached_tokens、output_tokens_details.reasoning_tokens），
+    顶层取不到；不显式带出来会被统一记成 0。
+    """
+    if details is None:
+        return 0
+    if isinstance(details, dict):
+        value = details.get(key)
+    else:
+        value = getattr(details, key, None)
+        if value is None:
+            extra = getattr(details, "model_extra", None)
+            value = extra.get(key) if isinstance(extra, dict) else None
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 # ======================================================================
 # 工具参数解析失败哨兵 key（单一来源）。
 # provider 层与 tools/registry 共用同一标识，避免出现两份字符串字面量漂移。
