@@ -59,6 +59,9 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Prune unused lark_oapi API modules
+        run: python scripts/prune_lark_oapi.py
+
       - name: Resolve icon path
         id: icon
         shell: bash
@@ -287,11 +290,14 @@ jobs:
             --exclude-module=sqlalchemy.dialects.postgresql \
             --exclude-module=PyObjCTest \
             --exclude-module=pip \
+            --exclude-module=setuptools \
+            --exclude-module=pkg_resources \
             start_desktop.py
 
       - name: Build desktop app on Windows
         if: runner.os == 'Windows'
         run: |
+          python scripts/prune_lark_oapi.py
           pyinstaller --clean --noconfirm `
             --name=CountBot `
             --onedir `
@@ -499,6 +505,8 @@ jobs:
             --exclude-module=sqlalchemy.dialects.postgresql `
             --exclude-module=PyObjCTest `
             --exclude-module=pip `
+            --exclude-module=setuptools `
+            --exclude-module=pkg_resources `
             start_desktop.py
 
       - name: Package macOS artifact
