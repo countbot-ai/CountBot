@@ -407,9 +407,12 @@ class WeiboChannel(BaseChannel):
 
         try:
             if msg.media:
-                await self._send_with_media(msg, ws)
-            else:
-                await self._send_text(msg, ws)
+                # 微博通道没有实现媒体发送（也不存在 _send_with_media），
+                # 直接降级为文本，避免 AttributeError 把整条消息吞掉。
+                logger.warning(
+                    f"[{self._account_id}] 微博通道暂不支持媒体，已降级为文本发送"
+                )
+            await self._send_text(msg, ws)
 
         except Exception as e:
             logger.error(f"[{self._account_id}] Error sending message: {e}")
