@@ -89,9 +89,7 @@ export function useChatInput() {
   
   // 处理键盘事件
   const handleKeydown = (e: KeyboardEvent, filteredTeams: AgentTeam[], onSend: () => void) => {
-    // 中文/日文输入法组词期间，Enter 是"确认候选词"，不能当发送；
-    // keyCode 229 是部分浏览器在组词阶段上报的兜底值。
-    if (e.isComposing || e.keyCode === 229) return
+    // 输入法组字与伴生 Enter 已由 utils/imeGuard 在捕获阶段截断，此处只收到真实按键。
 
     // 选择器打开时的导航
     if (showTeamPicker.value) {
