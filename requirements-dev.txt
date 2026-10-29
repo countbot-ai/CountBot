@@ -1,0 +1,5 @@
+# 测试与开发期依赖；运行应用只需 requirements.txt
+-r requirements.txt
+
+pytest>=8.0
+pytest-asyncio>=0.23

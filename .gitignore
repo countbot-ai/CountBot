@@ -95,6 +95,8 @@ data/workspace/
 temp/
 *.tmp
 *.txt
+# 依赖清单是源码，不受上面的 *.txt 影响
+!requirements*.txt
 *.xlsx
 *.xls
 
