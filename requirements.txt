@@ -5,7 +5,9 @@
 # ── 核心框架 ──────────────────────────────
 fastapi>=0.115.0
 uvicorn==0.32.0
-sqlalchemy>=2.0.36
+# 必须带 [asyncio] extra：SQLAlchemy 2.1 起 greenlet 改为可选依赖，
+# 不带 extra 安装时 sqlalchemy.ext.asyncio 会在启动阶段抛 ModuleNotFoundError
+sqlalchemy[asyncio]>=2.0.36
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 loguru>=0.7.3
