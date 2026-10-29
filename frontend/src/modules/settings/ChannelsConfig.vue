@@ -283,7 +283,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChannelsStore } from '@/store/channels'
 import { useToast } from '@/composables/useToast'
@@ -367,6 +367,11 @@ const getChannelDisplayDescription = (channelId: string, fallback: string) => {
 
 let statusPollTimer: number | null = null
 
+// 展开某个渠道时加快刷新（2s），平时用较慢的间隔（10s）；
+// 轮询只在渠道设置页挂载期间运行，离开页面立即停止，避免后台持续刷请求。
+const STATUS_POLL_INTERVAL_IDLE = 10000
+const STATUS_POLL_INTERVAL_ACTIVE = 2000
+
 const stopStatusPolling = () => {
   if (statusPollTimer !== null) {
     window.clearInterval(statusPollTimer)
@@ -374,20 +379,22 @@ const stopStatusPolling = () => {
   }
 }
 
-const startStatusPolling = () => {
+const startStatusPolling = (intervalMs: number) => {
   stopStatusPolling()
   statusPollTimer = window.setInterval(() => {
     void channelsStore.fetchStatus()
-  }, 2000)
+  }, intervalMs)
 }
 
-watch(expandedChannel, (channelId) => {
-  if (channelId) {
-    startStatusPolling()
-  } else {
-    stopStatusPolling()
-  }
-})
+const syncStatusPolling = () => {
+  startStatusPolling(
+    expandedChannel.value ? STATUS_POLL_INTERVAL_ACTIVE : STATUS_POLL_INTERVAL_IDLE
+  )
+}
+
+onMounted(syncStatusPolling)
+
+watch(expandedChannel, syncStatusPolling)
 
 onBeforeUnmount(stopStatusPolling)
 

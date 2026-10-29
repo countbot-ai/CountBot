@@ -312,15 +312,12 @@ export const useChannelsStore = defineStore('channels', () => {
     }
   }
 
-  // 初始化
+  // 初始化：只拉一次数据。
+  // 状态轮询由具体页面组件负责（挂载时启动、卸载时清理），
+  // 否则每次进入设置页都会新增一个永不停止的 interval，请求会越积越多。
   function init() {
     fetchChannels()
     fetchStatus()
-
-    // 定期更新状态
-    setInterval(() => {
-      fetchStatus()
-    }, 10000) // 每 10 秒更新一次
   }
 
   return {
