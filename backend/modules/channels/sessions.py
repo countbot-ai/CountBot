@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 
 from loguru import logger
 
+from backend.models.message import Message
 from backend.models.session import Session
 from backend.modules.channels.base import InboundMessage
 from backend.modules.channels.inbound_utils import (

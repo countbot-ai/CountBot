@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from loguru import logger
 
 from backend.modules.workspace.manager import workspace_manager
 

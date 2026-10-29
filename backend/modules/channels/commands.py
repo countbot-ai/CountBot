@@ -24,6 +24,7 @@ from backend.modules.channels.base import InboundMessage
 from backend.modules.channels.inbound_utils import (
     _WORKFLOW_META_RE,
     _encode_message_context,
+    _resolve_session_route,
 )
 from backend.modules.config.loader import config_loader
 
