@@ -57,17 +57,17 @@
       </label>
       <p class="parameter-help">{{ $t('settings.model.maxIterationsDesc') }}</p>
       <input
-        v-model.number="maxIterationsValue"
+        v-model.number="maxIterationsSliderIndex"
         type="range"
-        min="1"
-        max="150"
+        min="0"
+        :max="MAX_ITERATIONS_SLIDER_MAX"
         step="1"
         class="parameter-slider"
       >
       <div class="parameter-scale">
         <span>1</span>
-        <span>75</span>
-        <span>150</span>
+        <span>{{ Math.round(MAX_ITERATIONS_LIMIT / 2) }}</span>
+        <span>{{ $t('settings.model.maxIterationsUnlimited') }}</span>
       </div>
     </div>
 
@@ -93,11 +93,16 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import {
+  MAX_ITERATIONS_LIMIT,
+  MAX_ITERATIONS_SLIDER_MAX,
   MAX_TOKENS_PRESET_VALUES,
   MAX_TOKENS_SLIDER_MAX,
   MAX_TOKENS_SLIDER_STEP,
   MODEL_CONFIG_FALLBACK,
+  formatMaxIterationsValue,
   formatMaxTokensValue,
+  getMaxIterationsSliderIndex,
+  getMaxIterationsValueFromSliderIndex,
   getMaxTokensSliderIndex,
   getMaxTokensValueFromSliderIndex,
   normalizeMaxTokensValue,
@@ -138,9 +143,10 @@ const maxTokensValue = computed({
   set: (value: number) => emit('update:maxTokens', normalizeMaxTokensValue(value)),
 })
 
-const maxIterationsValue = computed({
-  get: () => props.maxIterations,
-  set: (value: number) => emit('update:maxIterations', value),
+const maxIterationsSliderIndex = computed({
+  get: () => getMaxIterationsSliderIndex(props.maxIterations),
+  set: (value: number) =>
+    emit('update:maxIterations', getMaxIterationsValueFromSliderIndex(value)),
 })
 
 const thinkingEnabledValue = computed({
@@ -180,9 +186,9 @@ const maxTokensLabel = computed(() =>
 )
 
 const maxIterationsLabel = computed(() =>
-  props.maxIterations === MODEL_CONFIG_FALLBACK.max_iterations
-    ? t('common.default')
-    : String(props.maxIterations)
+  formatMaxIterationsValue(props.maxIterations, {
+    unlimitedLabel: t('settings.model.maxIterationsUnlimited'),
+  })
 )
 </script>
 

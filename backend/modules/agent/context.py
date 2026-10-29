@@ -114,16 +114,18 @@ class ContextBuilder:
         skill_names: Optional[List[str]] = None,
         persona_config=None,
         channel: Optional[str] = None,
+        tool_budget: Optional[int] = None,
     ) -> str:
         """组装 system prompt。
 
         各区块受 injection 开关控制；涉及具体工具的文案只在对应工具可用时输出，
-        保证提示词与实际工具列表一致。
+        保证提示词与实际工具列表一致。tool_budget 为额度，None 表示不限制。
         """
         sections = self.build_system_prompt_sections(
             skill_names=skill_names,
             persona_config=persona_config,
             channel=channel,
+            tool_budget=tool_budget,
         )
         # 归一化区块间距，保证重复构建结果一致
         return "\n\n---\n\n".join(section["content"].rstrip() for section in sections)
@@ -133,6 +135,7 @@ class ContextBuilder:
         skill_names: Optional[List[str]] = None,
         persona_config=None,
         channel: Optional[str] = None,
+        tool_budget: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """按区块组装 system prompt，返回每一块的名字与内容。
 
@@ -150,7 +153,12 @@ class ContextBuilder:
         )
 
         if self._injection_flag("core_rules"):
-            sections.append({"name": "rules", "content": self._get_rules_block()})
+            sections.append(
+                {
+                    "name": "rules",
+                    "content": self._get_rules_block(tool_budget=tool_budget),
+                }
+            )
 
         channel_rules = self._get_channel_rules(channel)
         if channel_rules:
@@ -423,11 +431,12 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
             )
         return "Skills are documents that describe procedures; follow them when relevant."
 
-    def _get_rules_block(self) -> str:
+    def _get_rules_block(self, tool_budget: Optional[int] = None) -> str:
         """规则段：文档检索、工具执行、记忆、安全。
 
         受 injection.core_rules 控制；外部编码代理指引另有独立开关。
         每条提及具体工具的规则均以工具可用为前提，避免提示词与工具列表不一致。
+        tool_budget 有值时才声明额度。
         """
         external_coding_guidance = (
             self._build_external_coding_guidance()
@@ -449,7 +458,24 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
             "- Run routine tools silently; explain only for high-risk edits, outbound sends, "
             "deletions, or when asked.",
             "- Verify with tools before asking the user; ask only when truly stuck.",
+            "- Batch independent steps into ONE `exec` call (e.g. `cd x && ls && grep ...`) "
+            "instead of one command per call; split only when a later step needs an earlier result.",
+            "- Run an expensive command at most once: redirect it to `temp/<name>.log`, then "
+            "inspect slices with `read_file` (`offset`/`limit`). Never re-run it just to see "
+            "another part of the output.",
+            "- Do not repeat a finished lookup with another tool or slightly different flags; "
+            "re-query only when the earlier result was an error.",
         ]
+        if tool_budget is not None:
+            execution_rules.append(
+                f"- This request allows at most {tool_budget} tool calls in total. Plan before "
+                "acting: use few targeted calls and keep budget to finish the answer."
+            )
+        if self._tool_available("file_search"):
+            execution_rules.append(
+                "- To locate code, config or text, call `file_search` with `content` — one call "
+                "returns `file:line: snippet`; prefer it over chaining `grep` commands."
+            )
         if self._tool_available("spawn"):
             available_targets = [
                 tool for tool in ("exec", "external_coding_agent") if self._tool_available(tool)
@@ -506,6 +532,7 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         account_id: Optional[str] = None,
         persona_config=None,
         supports_image: bool = False,
+        tool_budget: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
         messages = []
@@ -517,6 +544,7 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
             skill_names,
             persona_config=persona_config,
             channel=channel,
+            tool_budget=tool_budget,
         )
         
         # session_summary / channel / chat_id / account_id 属于随会话变化的动态内容，

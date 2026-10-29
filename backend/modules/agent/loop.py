@@ -3,9 +3,10 @@
 import asyncio
 import inspect
 import json
+import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -23,6 +24,27 @@ from backend.modules.tools.execution import (
 from backend.modules.providers.base import AUTH_ERROR_HINTS, RATE_LIMIT_HINTS
 from backend.modules.providers.media_capabilities import resolve_supports_image
 from backend.modules.session.usage_recorder import record_usage
+
+
+# max_iterations=0 表示不限制；折算成内部上界，同时兜底防止死循环。
+UNLIMITED_TOOL_BUDGET = 9999
+# 同一调用最多真正执行几次，之后回放上次结果。
+MAX_IDENTICAL_TOOL_CALLS = 2
+# 连续熔断多少次后硬停止本轮工具调用。
+MAX_CONSECUTIVE_REPEAT_SKIPS = 3
+# 回放给模型的历史结果长度上限。
+REPEAT_REPLAY_CHARS = 1200
+
+
+def resolve_tool_budget(value: Any) -> int:
+    """把 max_iterations 折算成额度上界；0/空/非法值视为不限制。"""
+    try:
+        budget = int(value)
+    except (TypeError, ValueError):
+        return UNLIMITED_TOOL_BUDGET
+    if budget <= 0:
+        return UNLIMITED_TOOL_BUDGET
+    return budget
 
 
 def _is_key_rotation_eligible_error(error_text: str) -> bool:
@@ -46,6 +68,18 @@ class _LoopState:
     iteration: int = 0
     iteration_budget: int = 0
     total_tool_calls: int = 0
+    # 额度不限制时，触顶也不提示「达到最大工具调用次数」
+    tool_budget_unlimited: bool = False
+    # 连续成功执行同一调用的次数（失败/超时不计，允许重试）
+    repeat_count: int = 0
+    # 上次调用指纹；换了调用即重置 repeat_count
+    last_tool_signature: str = ""
+    # 连续熔断次数，达到阈值后硬停止
+    consecutive_repeat_skips: int = 0
+    # 硬停止标记，供收尾输出说明
+    repeat_stop: bool = False
+    # 回放用的上次结果摘要
+    tool_result_cache: Dict[str, str] = field(default_factory=dict)
     final_content: str = ""
     direct_result_selected: bool = False
     tool_call_limit_reached: bool = False
@@ -88,7 +122,8 @@ class AgentLoop:
         session_manager=None,
         subagent_manager=None,
         model: Optional[str] = None,
-        max_iterations: int = 25,
+        # 0 = 不限制工具调用次数
+        max_iterations: int = 0,
         max_retries: int = 3,
         retry_delay: float = 1.0,
         temperature: float = 0.0,
@@ -124,6 +159,71 @@ class AgentLoop:
             tool_name = str(getattr(tool_call, "name", "") or "").strip() or "<unknown>"
             parts.append(f"{tool_name}#{tool_id}")
         return ", ".join(parts) if parts else "<none>"
+
+    @staticmethod
+    def _normalize_exec_command(command: str) -> str:
+        """把同一条命令的不同输出版本归一成同一指纹。
+
+        只剥离不改变语义的包装（前导 cd/timeout、head/tail/wc 管道、静默重定向）。
+        """
+        text = command or ""
+        # 前导 cd <dir> &&
+        text = re.sub(r"^\s*(?:cd\s+\S+\s*&&\s*)+", "", text)
+        # 前导 timeout N
+        text = re.sub(r"^\s*timeout\s+\d+\s+", "", text)
+        # 输出切片管道 | head/tail/wc
+        text = re.sub(r"\|\s*(?:head|tail|wc)(?:\s+[^|]*)?", "", text)
+        # 静默重定向 2>/dev/null、2>&1
+        text = re.sub(r"\d*>+\s*/dev/null", "", text)
+        text = re.sub(r"\d*>&\d+", "", text)
+        return " ".join(text.split())
+
+    @classmethod
+    def _tool_signature(cls, tool_name: str, tool_args: Any) -> str:
+        """生成「同名 + 归一化参数」的调用指纹，用于识别重复调用。"""
+        if tool_name == "exec" and isinstance(tool_args, dict):
+            normalized_args = dict(tool_args)
+            command = normalized_args.get("command")
+            if isinstance(command, str):
+                normalized_args["command"] = cls._normalize_exec_command(command)
+            tool_args = normalized_args
+        try:
+            normalized = json.dumps(
+                tool_args, sort_keys=True, ensure_ascii=False, default=str
+            )
+        except Exception:
+            normalized = str(tool_args)
+        return f"{tool_name}:{normalized}"
+
+    @staticmethod
+    def _build_repeat_notice(tool_name: str, attempt: int, cached: Optional[str]) -> str:
+        """重复调用被熔断时返回给模型的说明（含上次结果摘要）。"""
+        lines = [
+            f"[重复调用拦截] 这是本次请求里第 {attempt} 次完全相同的 `{tool_name}` 调用，"
+            "已跳过执行——同样的输入不会得到不同的输出。",
+            "请换参数、换工具，或直接基于下面的上次结果继续，不要再重复这条调用。",
+        ]
+        if cached:
+            lines.append("上次结果（已截断）：\n" + cached)
+        else:
+            lines.append("上次调用没有留下可用结果，请换一种方式重试。")
+        return "\n".join(lines)
+
+    def _resolve_call_timeout(self, tool_args: Any) -> int:
+        """单次工具调用的外层超时（秒）。
+
+        取配置默认值与入参 timeout+缓冲的较大者，避免长命令被外层提前掐断。
+        """
+        configured = self._resolve_tool_timeout_seconds()
+        requested = tool_args.get("timeout") if isinstance(tool_args, dict) else None
+        # timeout 可能是字符串（"180"），需一并识别
+        try:
+            requested_seconds = int(float(requested)) if requested is not None else 0
+        except (TypeError, ValueError):
+            requested_seconds = 0
+        if requested_seconds > 0:
+            return max(configured, requested_seconds + 5)
+        return configured
 
     def _resolve_tool_timeout_seconds(self) -> int:
         """解析主循环工具调用超时（秒）。
@@ -315,13 +415,19 @@ class AgentLoop:
             f"supports_image={supports_image}"
         )
 
+        # max_iterations=0（默认）表示不限制；折算值统一用于循环上界与额度校验。
+        tool_budget_unlimited = resolve_tool_budget(runtime_max_iterations) == UNLIMITED_TOOL_BUDGET
+        runtime_max_iterations = resolve_tool_budget(runtime_max_iterations)
+
         state = _LoopState(
             messages=self._prepare_messages(
                 message, context, session_summary, media, channel, chat_id,
                 account_id, persona_override, supports_image,
+                tool_budget=None if tool_budget_unlimited else runtime_max_iterations,
             ),
             iteration=0,
             iteration_budget=runtime_max_iterations,
+            tool_budget_unlimited=tool_budget_unlimited,
             active_provider=active_provider,
             request_trace_id=f"{session_id[:8]}-{uuid.uuid4().hex[:8]}",
         )
@@ -423,8 +529,12 @@ class AgentLoop:
         account_id: Optional[str],
         persona_override,
         supports_image: bool,
+        tool_budget: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """构建发送给模型的 messages 列表（原 process_message 前段）。"""
+        """构建发送给模型的 messages 列表（原 process_message 前段）。
+
+        tool_budget 为 None 表示不限制调用次数，不向模型声明额度。
+        """
         if self.context_builder and context is not None:
             return self.context_builder.build_messages(
                 history=context,
@@ -436,6 +546,7 @@ class AgentLoop:
                 account_id=account_id,
                 persona_config=persona_override,
                 supports_image=supports_image,
+                tool_budget=tool_budget,
             )
 
         if context is None:
@@ -639,7 +750,8 @@ class AgentLoop:
                 msg.update(state.provider_payload)
             state.messages.append(msg)
 
-        for tool_call in state.tool_calls_buffer:
+        executed_count = 0
+        for index, tool_call in enumerate(state.tool_calls_buffer):
             if state.total_tool_calls >= runtime_max_iterations:
                 logger.warning(
                     f"Reached max tool calls limit ({runtime_max_iterations}), "
@@ -653,6 +765,7 @@ class AgentLoop:
                 return
 
             state.total_tool_calls += 1
+            executed_count = index + 1
             async for piece in self._run_single_tool(
                 state, session_id, message, tool_call,
                 cancel_token, tool_event_handler, prefer_direct_workflow_result,
@@ -662,6 +775,25 @@ class AgentLoop:
                 return
             if state.stop_tool_loop:
                 break
+            if state.stop_loop:
+                break  # 硬停止：剩余调用不再执行
+
+        # 提前结束时补占位结果，保持 tool_calls 与 tool 结果一一配对
+        if executed_count < len(state.tool_calls_buffer):
+            for tool_call in state.tool_calls_buffer[executed_count:]:
+                placeholder = "[已跳过：本轮工具调用提前结束]"
+                if self.context_builder:
+                    state.messages = self.context_builder.add_tool_result(
+                        state.messages, tool_call.id, tool_call.name, placeholder,
+                    )
+                else:
+                    state.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.name,
+                        "content": placeholder,
+                    })
+
         if state.direct_result_selected:
             state.stop_loop = True
             return
@@ -739,6 +871,66 @@ class AgentLoop:
         except Exception as e:
             logger.warning(f"Failed to send tool notification: {e}")
 
+        # 重复调用熔断：同名 + 归一化参数一致且已连续成功足够次数，回放上次结果
+        signature = self._tool_signature(tool_name, tool_args)
+        if state.last_tool_signature != signature:
+            state.last_tool_signature = signature
+            state.repeat_count = 0
+        if state.repeat_count >= MAX_IDENTICAL_TOOL_CALLS:
+            state.consecutive_repeat_skips += 1
+            notice = self._build_repeat_notice(
+                tool_name,
+                state.repeat_count + state.consecutive_repeat_skips,
+                state.tool_result_cache.get(signature),
+            )
+            hard_stop = state.consecutive_repeat_skips >= MAX_CONSECUTIVE_REPEAT_SKIPS
+            if hard_stop:
+                # 无限额度下也需要硬停止，避免空转
+                state.repeat_stop = True
+                state.stop_loop = True
+                notice += "\n已连续多次重复同一调用，本轮工具调用到此为止。"
+            logger.warning(
+                "重复工具调用已熔断: "
+                f"trace={state.request_trace_id}, name={tool_name}, "
+                f"consecutive_skips={state.consecutive_repeat_skips}, hard_stop={hard_stop}"
+            )
+            # 没有真正执行，不占工具的调用额度
+            state.total_tool_calls = max(0, state.total_tool_calls - 1)
+            if self.context_builder:
+                state.messages = self.context_builder.add_tool_result(
+                    state.messages, tool_id, tool_name, notice,
+                )
+            else:
+                state.messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_id,
+                    "name": tool_name,
+                    "content": notice,
+                })
+            if tool_event_handler:
+                try:
+                    maybe_result = tool_event_handler(
+                        "tool_result",
+                        {
+                            "tool_name": tool_name,
+                            "arguments": tool_args,
+                            "result": notice,
+                            "session_id": session_id,
+                            "duration_ms": 0,
+                            "execution_state": "REPEATED_SKIPPED",
+                            "operation_id": "",
+                            "attempt_id": "",
+                        },
+                    )
+                    if inspect.isawaitable(maybe_result):
+                        await maybe_result
+                except Exception as e:
+                    logger.warning(f"Tool event handler failed on repeat skip: {e}")
+            return
+
+        # 真正进入执行流程，重置连续拦截计数
+        state.consecutive_repeat_skips = 0
+
         start_time = time.time()
         # 一个 LLM Tool call 只创建一个 operation；tool_id 仅用于关联。
         # Registry 为获准执行的每次物理尝试另建 attempt_id。
@@ -749,7 +941,7 @@ class AgentLoop:
 
         if self.tools:
             self.tools.set_tool_event_handler(tool_event_handler)
-        tool_timeout = self._resolve_tool_timeout_seconds()
+        tool_timeout = self._resolve_call_timeout(tool_args)
         # 自管闹钟的长任务工具（spawn / workflow_run /
         # external_coding_agent）内部已有有界等待与超时返回文案，
         # 主循环不叠加外层 wait_for，避免长任务被默认短超时误杀。
@@ -841,6 +1033,7 @@ class AgentLoop:
 
         if isinstance(outcome, ToolExecutionInProgress):
             # IN_PROGRESS 只是 operation 准入结果，不记录为物理尝试终态。
+            state.repeat_count = 0
             progress_text = outcome.display_text
             if self.context_builder:
                 state.messages = self.context_builder.add_tool_result(
@@ -858,6 +1051,9 @@ class AgentLoop:
             )
         elif isinstance(outcome, ToolExecutionOutcome) and outcome.state is ExecutionState.SUCCEEDED:
             result = outcome.display_text
+            # 只有成功才计入连续重复
+            state.repeat_count += 1
+            state.tool_result_cache[signature] = (result or "")[:REPEAT_REPLAY_CHARS]
             try:
                 conversation_history = get_conversation_history()
                 conversation_history.add_conversation(
@@ -935,6 +1131,8 @@ class AgentLoop:
                 f"status=success, duration_ms={duration_ms}"
             )
         else:
+            # 失败/超时不计入，允许重试
+            state.repeat_count = 0
             if outcome is not None:
                 error_msg = outcome.display_text
                 if (not isinstance(outcome, ToolExecutionRejected)
@@ -1035,7 +1233,19 @@ class AgentLoop:
         纯文本收尾轮（无新工具调用）不应被工具额度误伤而追加警告。
         """
         pending_exhausted = state.iteration >= state.iteration_budget
+        if state.repeat_stop:
+            logger.warning(
+                f"Stopped after {MAX_CONSECUTIVE_REPEAT_SKIPS} consecutive repeated tool calls"
+            )
+            return "\n\n[检测到连续重复调用，已停止本轮工具调用]"
         if state.tool_call_limit_reached or pending_exhausted:
+            if state.tool_budget_unlimited:
+                # 触顶属于死循环级异常，只留日志，不向用户报「达到上限」
+                logger.error(
+                    f"Unlimited tool budget hit internal ceiling ({runtime_max_iterations}); "
+                    "possible runaway loop"
+                )
+                return None
             if state.tool_call_limit_reached:
                 logger.warning(f"Max tool calls ({runtime_max_iterations}) reached")
                 return f"\n\n[达到最大工具调用次数 {runtime_max_iterations}]"
@@ -1180,6 +1390,7 @@ class AgentLoop:
         channel: str = "cli",
         chat_id: str = "direct",
         account_id: Optional[str] = None,
+        context: Optional[List[Dict[str, Any]]] = None,
         model_override: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
@@ -1191,6 +1402,7 @@ class AgentLoop:
             channel: 来源渠道（用于上下文）
             chat_id: 来源聊天 ID（用于上下文）
             account_id: 当前机器人账号 ID（多机器人渠道）
+            context: 可选的历史消息；为空表示每次执行完全独立
             model_override: 本次执行的模型覆盖（定时任务指定模型时使用）
         
         Returns:
@@ -1198,11 +1410,10 @@ class AgentLoop:
         """
         response_parts = []
         
-        # 传入空的 context 列表
         async for chunk in self.process_message(
             message=content,
             session_id=session_id,
-            context=[],  
+            context=[] if context is None else context,
             channel=channel,
             chat_id=chat_id,
             account_id=account_id,

@@ -17,12 +17,18 @@ export const MODEL_CONFIG_FALLBACK: Required<ModelConfigLike> = {
   api_mode: 'chat_completions',
   temperature: 0,
   max_tokens: 0,
-  max_iterations: 25,
+  // 0 = 不限制工具调用次数
+  max_iterations: 0,
   thinking_enabled: true,
   supports_image: null,
   api_key: '',
   api_base: '',
 }
+
+/** 工具调用次数的显式上限最大值。 */
+export const MAX_ITERATIONS_LIMIT = 150
+/** 滑块档位：0..149 对应 1..150，最后一档表示无限。 */
+export const MAX_ITERATIONS_SLIDER_MAX = MAX_ITERATIONS_LIMIT
 
 export const MAX_TOKENS_INPUT_STEP = 1000
 export const MAX_TOKENS_INPUT_MAX = 2_000_000
@@ -250,6 +256,50 @@ export function formatMaxTokensValue(
   return String(value)
 }
 
+/** 归一化工具调用上限：<=0 视为无限（0），其余夹在 1..MAX_ITERATIONS_LIMIT。 */
+export function normalizeMaxIterationsValue(value?: number | null): number {
+  if (value == null || !Number.isFinite(value) || value <= 0) {
+    return 0
+  }
+  return Math.min(MAX_ITERATIONS_LIMIT, Math.max(1, Math.round(value)))
+}
+
+/** 上限值 → 滑块档位，最后一档表示无限。 */
+export function getMaxIterationsSliderIndex(value?: number | null): number {
+  const normalized = normalizeMaxIterationsValue(value)
+  if (normalized === 0) {
+    return MAX_ITERATIONS_SLIDER_MAX
+  }
+  return Math.min(MAX_ITERATIONS_SLIDER_MAX - 1, normalized - 1)
+}
+
+/** 滑块档位 → 上限值，最后一档返回 0（无限）。 */
+export function getMaxIterationsValueFromSliderIndex(index?: number | null): number {
+  if (index == null || !Number.isFinite(index)) {
+    return 0
+  }
+  const normalizedIndex = Math.min(
+    MAX_ITERATIONS_SLIDER_MAX,
+    Math.max(0, Math.round(index)),
+  )
+  if (normalizedIndex >= MAX_ITERATIONS_SLIDER_MAX) {
+    return 0
+  }
+  return normalizedIndex + 1
+}
+
+/** 0 显示为「无限」，其余显示具体次数。 */
+export function formatMaxIterationsValue(
+  value?: number | null,
+  labels?: { unlimitedLabel?: string },
+): string {
+  const normalized = normalizeMaxIterationsValue(value)
+  if (normalized === 0) {
+    return labels?.unlimitedLabel || 'Unlimited'
+  }
+  return String(normalized)
+}
+
 /** 上下文长度预设档位，供模型设置里的预设选择使用。 */
 export const CONTEXT_WINDOW_PRESET_VALUES = [
   32_000,
@@ -271,20 +321,22 @@ export function formatModelConfigSummary(
   labels?: {
     defaultLabel?: string
     unlimitedLabel?: string
+    unlimitedIterationsLabel?: string
   },
 ): string {
   const defaultLabel = labels?.defaultLabel || 'Default'
   const unlimitedLabel = labels?.unlimitedLabel || 'Provider Default'
+  const unlimitedIterationsLabel =
+    labels?.unlimitedIterationsLabel || labels?.unlimitedLabel || 'Unlimited'
 
   const temperatureLabel =
     config.temperature == null || config.temperature === MODEL_CONFIG_FALLBACK.temperature
       ? defaultLabel
       : String(config.temperature)
   const maxTokensLabel = formatMaxTokensValue(config.max_tokens, { unlimitedLabel })
-  const maxIterationsLabel =
-    config.max_iterations == null || config.max_iterations === MODEL_CONFIG_FALLBACK.max_iterations
-      ? defaultLabel
-      : String(config.max_iterations)
+  const maxIterationsLabel = formatMaxIterationsValue(config.max_iterations, {
+    unlimitedLabel: unlimitedIterationsLabel,
+  })
 
   return `Temp ${temperatureLabel} · Tokens ${maxTokensLabel} · Iterations ${maxIterationsLabel}`
 }

@@ -117,4 +117,6 @@ async def preview_request(
         chat_id=payload.session_id,
         persona_config=runtime_config.persona_config,
         tool_registry=agent_loop.tools,
+        # 传入实际生效的额度，保持预览与真实请求一致
+        tool_budget=runtime_config.max_iterations,
     )

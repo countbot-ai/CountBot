@@ -77,7 +77,7 @@
               <ModelParameterFields
                 :temperature="modelConfig.temperature ?? 0"
                 :max-tokens="modelConfig.max_tokens ?? 0"
-                :max-iterations="modelConfig.max_iterations ?? 25"
+                :max-iterations="modelConfig.max_iterations ?? 0"
                 :thinking-enabled="modelConfig.thinking_enabled ?? true"
                 @update:temperature="modelConfig.temperature = $event"
                 @update:maxTokens="modelConfig.max_tokens = $event"

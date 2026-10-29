@@ -82,17 +82,17 @@
         {{ $t('settings.model.maxIterationsDesc') }}
       </p>
       <input
-        v-model.number="modelConfig.maxIterations"
+        v-model.number="maxIterationsSliderIndex"
         type="range"
-        min="1"
-        max="150"
+        min="0"
+        :max="MAX_ITERATIONS_SLIDER_MAX"
         step="1"
         class="slider"
       >
       <div class="slider-labels">
         <span>1</span>
-        <span>75</span>
-        <span>150</span>
+        <span>{{ Math.round(MAX_ITERATIONS_LIMIT / 2) }}</span>
+        <span>{{ $t('settings.model.maxIterationsUnlimited') }}</span>
       </div>
     </div>
 
@@ -134,13 +134,18 @@ import { useSettingsStore } from '@/store/settings'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import Select from '@/components/ui/Select.vue'
 import {
+  MAX_ITERATIONS_LIMIT,
+  MAX_ITERATIONS_SLIDER_MAX,
   MAX_TOKENS_PRESET_VALUES,
   MAX_TOKENS_SLIDER_MAX,
   MAX_TOKENS_SLIDER_STEP,
   MODEL_CONFIG_FALLBACK,
   buildEffectiveModelConfig,
+  formatMaxIterationsValue,
   formatMaxTokensValue,
   formatModelConfigSummary,
+  getMaxIterationsSliderIndex,
+  getMaxIterationsValueFromSliderIndex,
   getMaxTokensSliderIndex,
   getMaxTokensValueFromSliderIndex,
 } from '@/utils/modelConfig'
@@ -213,6 +218,7 @@ const savedSummary = computed(() => {
   return formatModelConfigSummary(savedModel, {
     defaultLabel: t('common.default'),
     unlimitedLabel: t('settings.model.maxTokensAuto'),
+    unlimitedIterationsLabel: t('settings.model.maxIterationsUnlimited'),
   })
 })
 
@@ -281,10 +287,17 @@ const temperatureLabel = computed(() =>
     : modelConfig.value.temperature,
 )
 
+const maxIterationsSliderIndex = computed({
+  get: () => getMaxIterationsSliderIndex(modelConfig.value.maxIterations),
+  set: (value: number) => {
+    modelConfig.value.maxIterations = getMaxIterationsValueFromSliderIndex(value)
+  },
+})
+
 const maxIterationsLabel = computed(() =>
-  modelConfig.value.maxIterations === MODEL_CONFIG_FALLBACK.max_iterations
-    ? t('common.default')
-    : modelConfig.value.maxIterations,
+  formatMaxIterationsValue(modelConfig.value.maxIterations, {
+    unlimitedLabel: t('settings.model.maxIterationsUnlimited'),
+  })
 )
 
 const isDraftChanged = computed(() => {

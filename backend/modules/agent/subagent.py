@@ -602,11 +602,18 @@ class SubagentManager:
         return tool_timeout
 
     def _resolve_child_max_iterations(self) -> int:
-        """从配置获取子代理的最大迭代次数。"""
+        """从配置获取子代理的最大迭代次数。
+
+        与主循环同源：0 表示不限制，需折算成内部上界，否则子代理一步都不跑。
+        """
         max_iterations = 15
         if self.config_loader:
             try:
-                max_iterations = self.config_loader.config.model.max_iterations
+                from backend.modules.agent.loop import resolve_tool_budget
+
+                max_iterations = resolve_tool_budget(
+                    self.config_loader.config.model.max_iterations
+                )
                 logger.debug(f"Using max_iterations from config: {max_iterations}")
             except Exception as e:
                 logger.warning(f"Failed to get max_iterations from config: {e}, using default: 15")

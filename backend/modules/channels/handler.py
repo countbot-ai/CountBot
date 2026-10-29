@@ -88,7 +88,7 @@ class ChannelMessageHandler(
         context_builder: ContextBuilder,
         tool_params: dict,
         subagent_manager=None,
-        max_iterations: int = 10,
+        max_iterations: int = 0,
         rate_limiter: Optional[RateLimiter] = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,

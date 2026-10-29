@@ -10,6 +10,11 @@ from backend.database import AsyncSessionLocal
 from backend.models.setting import Setting
 from backend.modules.config.schema import AppConfig
 
+# 旧默认值；升级后语义变为「不限制」，存量配置需迁移一次
+LEGACY_DEFAULT_MAX_ITERATIONS = 25
+# 迁移标记（独立于 config.* 命名空间）
+MIGRATION_KEY_MAX_ITERATIONS = "migration.max_iterations_unlimited_v1"
+
 
 class ConfigLoader:
     """配置加载器"""
@@ -50,8 +55,9 @@ class ConfigLoader:
                         if "model" not in provider_data:
                             provider_data["model"] = None
 
-            self.config = AppConfig(**config_dict)
+            await self._migrate_legacy_max_iterations(session, config_dict)
 
+            self.config = AppConfig(**config_dict)
             from backend.modules.workspace import workspace_manager
             workspace_path, used_fallback = workspace_manager.resolve_workspace_path_or_default(
                 self.config.workspace.path
@@ -65,6 +71,37 @@ class ConfigLoader:
             
             logger.info("配置加载完成")
             return self.config
+
+    async def _migrate_legacy_max_iterations(
+        self,
+        session: Any,
+        config_dict: Dict[str, Any],
+    ) -> None:
+        """把存量配置中的旧默认上限 25 一次性迁移为「不限制」。
+
+        用独立 marker key 记录，迁移后用户再手动设 25 也不会被翻回。
+        """
+        model_cfg = config_dict.get("model")
+        if not isinstance(model_cfg, dict):
+            return
+        if model_cfg.get("max_iterations") != LEGACY_DEFAULT_MAX_ITERATIONS:
+            return
+
+        marker = await session.get(Setting, MIGRATION_KEY_MAX_ITERATIONS)
+        if marker is not None:
+            return
+
+        model_cfg["max_iterations"] = 0
+        await session.merge(
+            Setting(key="config.model.max_iterations", value=json.dumps(0))
+        )
+        await session.merge(
+            Setting(key=MIGRATION_KEY_MAX_ITERATIONS, value=json.dumps(True))
+        )
+        await session.commit()
+        logger.info(
+            f"已将旧默认的工具调用上限 {LEGACY_DEFAULT_MAX_ITERATIONS} 迁移为「不限制」"
+        )
 
     async def save(self) -> None:
         """保存配置到数据库"""

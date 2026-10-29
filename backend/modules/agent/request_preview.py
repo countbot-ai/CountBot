@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Optional
 from backend.modules.agent.context import ContextBuilder
 
 
+# 哨兵：区分「未传额度」（回落全局配置）与「显式传 0（不限制）」
+_TOOL_BUDGET_UNSET = object()
+
+
 def _content_text(message: Dict[str, Any]) -> str:
     """取消息的纯文本内容（多模态只取文本块），用于统计体积。"""
     content = message.get("content")
@@ -92,6 +96,7 @@ def build_request_preview(
     account_id: Optional[str] = None,
     persona_config=None,
     tool_registry=None,
+    tool_budget: Any = _TOOL_BUDGET_UNSET,
 ) -> Dict[str, Any]:
     """构建一次请求的预览数据。
 
@@ -106,16 +111,28 @@ def build_request_preview(
         account_id: 渠道账号
         persona_config: 人设配置
         tool_registry: 工具注册表，用于列出工具定义
+        tool_budget: 本次请求的工具调用额度（0/None=不限制），不传时回落全局配置。
 
     Returns:
         可直接返回给前端的预览字典
     """
     history = history or []
 
+    # 与真实请求一致：显式上限才声明额度，0/缺失表示不限制
+    if tool_budget is _TOOL_BUDGET_UNSET:
+        try:
+            from backend.modules.config.loader import config_loader
+
+            tool_budget = config_loader.config.model.max_iterations
+        except Exception:
+            tool_budget = None
+    resolved_tool_budget = tool_budget if tool_budget and tool_budget > 0 else None
+
     try:
         sections = context_builder.build_system_prompt_sections(
             persona_config=persona_config,
             channel=channel,
+            tool_budget=resolved_tool_budget,
         )
     except Exception as exc:  # 区块构建失败仍要展示原因，不能让预览整体 500
         sections = []
@@ -151,6 +168,7 @@ def build_request_preview(
         chat_id=chat_id,
         account_id=account_id,
         persona_config=persona_config,
+        tool_budget=resolved_tool_budget,
     )
 
     first_user_message = ""

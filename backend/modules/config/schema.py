@@ -122,7 +122,8 @@ class ModelConfig(BaseModel):
         le=MAX_TOKENS_LIMIT,
         description="最大输出 token 数，0 表示不发送",
     )
-    max_iterations: int = Field(default=25, ge=1, le=150)
+    # 0 = 不限制（默认）；1~150 为一次请求内的工具调用总数上限。
+    max_iterations: int = Field(default=0, ge=0, le=150)
     thinking_enabled: bool = Field(default=True, description="是否启用模型思考模式")
     reasoning_level: Optional[str] = Field(
         default=None,
