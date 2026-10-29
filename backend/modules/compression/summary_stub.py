@@ -25,7 +25,7 @@ _ARG_KEYS_BY_TOOL: Dict[str, Tuple[str, ...]] = {
     "execute_command": ("command", "cmd"),
     "web_fetch": ("url",),
     "web_search": ("query", "q"),
-    "file_search": ("pattern", "query", "path"),
+    "file_search": ("content", "pattern", "query", "path"),
     "spawn": ("label", "task"),
     "send_media": ("path", "file"),
 }
