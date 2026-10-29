@@ -37,7 +37,11 @@ def _is_local_client_addr(client_addr: object) -> bool:
 
 
 class SuppressNoisyAccessFilter(logging.Filter):
-    """Suppress noisy access logs for scans and expected remote 401 responses."""
+    """只保留错误的访问日志。
+
+    成功响应（2xx/3xx）一律不打印：轮询和正常请求的访问记录对排查没有帮助。
+    4xx/5xx 仍然保留，另外继续过滤远程 401 与扫描器 404 这类已知噪音。
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
         args = getattr(record, "args", ())
@@ -49,6 +53,10 @@ class SuppressNoisyAccessFilter(logging.Filter):
             normalized_status_code = int(status_code)
         except (TypeError, ValueError):
             return True
+
+        # 成功请求不写访问日志
+        if normalized_status_code < 400:
+            return False
 
         if normalized_status_code == 401 and not _is_local_client_addr(client_addr):
             return False
