@@ -15,6 +15,14 @@ class JobStatus(Enum):
     DISABLED = "disabled"
 
 
+class CronDeliveryError(RuntimeError):
+    """渠道推送失败。
+
+    与 AI 执行失败区分开：推送失败同样让任务记为失败，
+    但错误信息保留「推送失败」前缀，前端可以单独提示。
+    """
+
+
 @dataclass
 class CronJobInfo:
     """Cron 任务信息"""

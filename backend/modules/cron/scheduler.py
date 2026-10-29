@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional, Set
 
 from backend.modules.cron.service import CronService, SHANGHAI_TZ
+from backend.modules.cron.types import CronDeliveryError
 from backend.utils.logger import logger
 
 
@@ -84,14 +85,26 @@ class CronScheduler:
         logger.info("Cron scheduler stopped")
     
     async def _recompute_next_runs(self):
-        """重新计算过期任务的 next_run"""
+        """重新计算过期任务的 next_run，并修复上次进程中断留下的「运行中」状态"""
         try:
             async with self.db_session_factory() as db:
                 service = CronService(db)
-                jobs = await service.list_jobs(enabled_only=True)
+                jobs = await service.list_jobs(enabled_only=False)
                 
                 now = _now_shanghai()
                 for job in jobs:
+                    # 进程重启时不可能还有任务在跑，把残留的 running 收敛为失败，
+                    # 否则页面会一直显示「执行中」。
+                    if job.last_status == "running":
+                        logger.warning(f"Recovering interrupted job {job.id} ({job.name})")
+                        job.last_status = "error"
+                        job.last_error = "服务重启，上次执行被中断"
+                        job.last_finished_at = now
+                        job.retry_count = 0
+                        job.error_count = (job.error_count or 0) + 1
+
+                    if not job.enabled:
+                        continue
                     try:
                         # 保留未过期任务的 next_run，避免破坏一次性任务
                         if job.next_run and job.next_run > now:
@@ -219,35 +232,97 @@ class CronScheduler:
                         )
             except asyncio.TimeoutError:
                 logger.error(f"Job {job.id} timed out after {self.job_timeout}s")
-                # 超时后更新状态
-                try:
-                    async with self.db_session_factory() as db:
-                        service = CronService(db)
-                        timed_out_job = await service.get_job(job.id)
-                        if timed_out_job:
-                            timed_out_job.last_run = _now_shanghai()
-                            timed_out_job.last_status = "error"
-                            timed_out_job.last_error = f"Timed out after {self.job_timeout}s"
-                            timed_out_job.error_count = (timed_out_job.error_count or 0) + 1
-                            timed_out_job.run_count = (timed_out_job.run_count or 0) + 1
-                            if timed_out_job.enabled:
-                                try:
-                                    timed_out_job.next_run = service.calculate_next_run(timed_out_job.schedule)
-                                except Exception:
-                                    pass
-                            await self._safe_commit(db)
-                except Exception as e:
-                    logger.error(f"Failed to update timeout status for {job.id}: {e}")
+                await self._mark_timeout(job.id)
             except Exception as e:
                 logger.error(f"Unexpected error executing job {job.id}: {e}")
             finally:
                 self._active_jobs.discard(job.id)
-    
-    async def _execute_job(self, job, service: CronService):
-        """执行单个任务"""
+
+    async def run_job_manually(self, job_id: str) -> None:
+        """立即执行任务。
+
+        调用方需先通过 try_acquire_job 占用执行权；执行状态由 _execute_job
+        统一落库，保证手动执行与定时触发走同一条链路。
+        """
+        try:
+            async with self.db_session_factory() as db:
+                service = CronService(db)
+                job = await service.get_job(job_id)
+                if job is None:
+                    logger.warning(f"Manual run skipped, job not found: {job_id}")
+                    return
+                await asyncio.wait_for(
+                    self._execute_job(job, service, manual=True),
+                    timeout=self.job_timeout,
+                )
+        except asyncio.TimeoutError:
+            logger.error(f"Manual job {job_id} timed out after {self.job_timeout}s")
+            await self._mark_timeout(job_id, manual=True)
+        except Exception as e:
+            logger.error(f"Manual job {job_id} failed: {e}")
+            await self._mark_failed(job_id, f"执行异常：{e}", manual=True)
+        finally:
+            self.release_job(job_id)
+
+    async def _mark_timeout(self, job_id: str, manual: bool = False) -> None:
+        """超时后把任务收敛为失败，避免前端一直停留在执行中。"""
+        try:
+            async with self.db_session_factory() as db:
+                service = CronService(db)
+                job = await service.get_job(job_id)
+                if job is None:
+                    return
+                job.last_status = "error"
+                job.last_error = f"执行超时（超过 {self.job_timeout} 秒）"
+                job.last_finished_at = _now_shanghai()
+                job.error_count = (job.error_count or 0) + 1
+                job.run_count = (job.run_count or 0) + 1
+                if job.enabled:
+                    try:
+                        job.next_run = service.calculate_next_run(job.schedule)
+                    except Exception:
+                        pass
+                await self._safe_commit(db)
+                await self._broadcast_status(job, "error", manual=manual)
+        except Exception as e:
+            logger.error(f"Failed to update timeout status for {job_id}: {e}")
+
+    async def _mark_failed(self, job_id: str, error: str, manual: bool = False) -> None:
+        """兜底失败状态：执行链路在 _execute_job 之外抛错时使用。"""
+        try:
+            async with self.db_session_factory() as db:
+                service = CronService(db)
+                job = await service.get_job(job_id)
+                if job is None:
+                    return
+                job.last_status = "error"
+                job.last_error = error[:1000]
+                job.last_finished_at = _now_shanghai()
+                job.error_count = (job.error_count or 0) + 1
+                await self._safe_commit(db)
+                await self._broadcast_status(job, "error", manual=manual)
+        except Exception as e:
+            logger.error(f"Failed to update failure status for {job_id}: {e}")
+
+    async def _execute_job(self, job, service: CronService, manual: bool = False):
+        """执行单个任务（定时触发与手动触发共用）"""
         started_at = _now_shanghai()
         logger.info(f"Executing: {job.name} ({job.id})")
-        
+
+        # 先落库「运行中」：任务可能跑几分钟，页面刷新/重进都要能看到当前状态
+        job.last_status = "running"
+        job.last_run = started_at
+        job.last_finished_at = None
+        job.last_error = None
+        job.last_delivery_status = None
+        job.last_delivery_error = None
+        job.updated_at = started_at
+        try:
+            await self._safe_commit(service.db)
+        except Exception as e:
+            logger.error(f"Failed to persist running status for {job.id}: {e}")
+        await self._broadcast_status(job, "running", manual=manual)
+
         try:
             if self.on_execute:
                 response = await self.on_execute(
@@ -259,13 +334,18 @@ class CronScheduler:
                     job.deliver_response,
                     job.model_provider,
                     job.model_name,
+                    bool(job.link_context),
                 )
                 
                 # 执行成功
-                job.last_run = started_at
                 job.last_status = "ok"
                 job.last_error = None
                 job.last_response = response[:1000] if response else None
+                job.last_finished_at = _now_shanghai()
+                job.last_delivery_status = (
+                    "ok" if job.deliver_response and job.channel and job.chat_id else "skipped"
+                )
+                job.last_delivery_error = None
                 job.run_count = (job.run_count or 0) + 1
                 job.retry_count = 0
                 
@@ -274,6 +354,7 @@ class CronScheduler:
                 # 执行成功，检查是否自动删除
                 if job.delete_on_success:
                     logger.info(f"Job completed successfully, auto-deleting: {job.name}")
+                    await self._broadcast_status(job, "ok", manual=manual)
                     await service.db.delete(job)
                     await self._safe_commit(service.db)
                     return
@@ -281,6 +362,8 @@ class CronScheduler:
             else:
                 logger.warning(f"No executor: {job.name}")
                 job.last_status = "skipped"
+                job.last_finished_at = _now_shanghai()
+                job.last_delivery_status = "skipped"
             
             # 计算下次运行时间
             if job.enabled:
@@ -295,14 +378,20 @@ class CronScheduler:
                     job.last_error = f"Invalid schedule: {e}"
             
             await self._safe_commit(service.db)
+            await self._broadcast_status(job, job.last_status or "ok", manual=manual)
             
         except Exception as e:
             logger.error(f"Job failed: {job.name} - {e}")
             
-            job.last_run = started_at
+            job.last_finished_at = _now_shanghai()
             job.last_error = str(e)[:1000]
             job.error_count = (job.error_count or 0) + 1
             job.run_count = (job.run_count or 0) + 1
+
+            # 推送失败单独留痕，前端可以把「AI 失败」和「推送失败」分开提示
+            if isinstance(e, CronDeliveryError):
+                job.last_delivery_status = "failed"
+                job.last_delivery_error = str(e)[:1000]
             
             # 检查是否需要重试
             if job.max_retries > 0 and job.retry_count < job.max_retries:
@@ -338,6 +427,26 @@ class CronScheduler:
                         job.last_error = f"Failed to calculate next run: {e}"
             
             await self._safe_commit(service.db)
+            await self._broadcast_status(job, job.last_status or "error", manual=manual)
+
+    async def _broadcast_status(self, job, status: str, manual: bool = False) -> None:
+        """通过 WebSocket 广播任务状态，前端据此更新卡片并弹出告警。"""
+        try:
+            from backend.ws.connection import connection_manager
+            from backend.ws.task_notifications import CronJobStatusMessage
+
+            await connection_manager.broadcast(
+                CronJobStatusMessage(
+                    job_id=job.id,
+                    job_name=job.name,
+                    status=status,
+                    delivery_status=job.last_delivery_status,
+                    error=job.last_delivery_error or job.last_error,
+                    is_manual=manual,
+                )
+            )
+        except Exception as e:
+            logger.debug(f"Failed to broadcast cron status for {job.id}: {e}")
     
     async def _safe_commit(self, db):
         """带重试的安全 commit（应对 SQLite 并发锁）"""

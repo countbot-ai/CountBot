@@ -38,6 +38,7 @@ class CronService:
         max_retries: int = 0,
         retry_delay: int = 60,
         delete_on_success: bool = False,
+        link_context: bool = False,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
     ) -> CronJob:
@@ -63,6 +64,7 @@ class CronService:
             max_retries=max_retries,
             retry_delay=retry_delay,
             delete_on_success=delete_on_success,
+            link_context=link_context,
             model_provider=model_provider,
             model_name=model_name,
             next_run=next_run,
@@ -91,6 +93,28 @@ class CronService:
         )
         return result.scalar_one_or_none()
 
+    async def mark_job_running(self, job_id: str) -> Optional[CronJob]:
+        """把任务标记为运行中并立即落库。
+
+        手动执行时需要在接口返回前写入状态，前端刷新/重进页面才能看到
+        「正在执行」，而不是等任务跑完才知道结果。
+        """
+        job = await self.get_job(job_id)
+        if job is None:
+            return None
+
+        job.last_status = "running"
+        job.last_run = datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
+        job.last_finished_at = None
+        job.last_error = None
+        job.last_delivery_status = None
+        job.last_delivery_error = None
+        job.updated_at = datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
+
+        await self.db.commit()
+        await self.db.refresh(job)
+        return job
+
     async def list_jobs(self, enabled_only: bool = False) -> List[CronJob]:
         """列出所有任务"""
         query = select(CronJob).order_by(CronJob.created_at.desc())
@@ -115,6 +139,7 @@ class CronService:
         max_retries: Optional[int] = None,
         retry_delay: Optional[int] = None,
         delete_on_success: Optional[bool] = None,
+        link_context: Optional[bool] = None,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
     ) -> Optional[CronJob]:
@@ -157,6 +182,9 @@ class CronService:
         
         if delete_on_success is not None:
             job.delete_on_success = delete_on_success
+
+        if link_context is not None:
+            job.link_context = link_context
 
         # 空字符串表示「改回跟随全局默认模型」，因此不能沿用 `is not None` 的写法
         if model_provider is not None:

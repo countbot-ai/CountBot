@@ -94,6 +94,18 @@ class TaskToolResultMessage(ServerMessage):
     timestamp: float
 
 
+class CronJobStatusMessage(ServerMessage):
+    """定时任务执行状态通知（运行中 / 完成 / 失败 / 待重试）"""
+
+    type: str = "cron_job_status"
+    job_id: str
+    job_name: str
+    status: str  # running, ok, error, retrying, skipped
+    delivery_status: Optional[str] = None  # ok, failed, skipped
+    error: Optional[str] = None
+    is_manual: bool = False
+
+
 # ============================================================================
 # Task Notification Handler
 # ============================================================================

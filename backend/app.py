@@ -362,6 +362,7 @@ async def lifespan(app: FastAPI):
         deliver_response: bool,
         model_provider: str = None,
         model_name: str = None,
+        link_context: bool = False,
     ) -> str:
         return await cron_executor.execute(
             job_id,
@@ -372,6 +373,7 @@ async def lifespan(app: FastAPI):
             deliver_response,
             model_provider,
             model_name,
+            link_context,
         )
 
     logger.info("Creating cron scheduler...")

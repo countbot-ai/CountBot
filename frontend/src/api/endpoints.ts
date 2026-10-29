@@ -552,15 +552,20 @@ export interface CronJob {
     model_provider?: string | null
     model_name?: string | null
     last_run?: string | null
+    last_finished_at?: string | null
     next_run?: string | null
     last_status?: string | null
     last_error?: string | null
+    last_delivery_status?: string | null
+    last_delivery_error?: string | null
     run_count: number
     error_count: number
     created_at: string
     max_retries?: number
     retry_delay?: number
     delete_on_success?: boolean
+    link_context?: boolean
+    is_running?: boolean
 }
 
 export interface CronJobDetail extends CronJob {
@@ -580,6 +585,7 @@ export interface CreateCronJobRequest {
     max_retries?: number
     retry_delay?: number
     delete_on_success?: boolean
+    link_context?: boolean
     model_provider?: string | null
     model_name?: string | null
 }
@@ -596,6 +602,7 @@ export interface UpdateCronJobRequest {
     max_retries?: number
     retry_delay?: number
     delete_on_success?: boolean
+    link_context?: boolean
     model_provider?: string | null
     model_name?: string | null
 }

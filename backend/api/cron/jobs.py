@@ -1,25 +1,19 @@
 """Cron 任务的增删改查路由。"""
 
-from typing import Optional
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
 from backend.modules.cron.service import CronService
 
 from backend.api.cron._common import (
     BUILTIN_PREFIX,
-    _now_beijing,
-    _to_shanghai_iso,
+    build_job_info,
     get_cron_service,
     router,
 )
-from backend.api.cron.helpers import _get_cron_job_or_404, _find_cron_session
 from backend.api.cron.models import (
     CreateCronJobRequest,
     CronJobDetailResponse,
-    CronJobInfo,
     CronJobResponse,
     DeleteCronJobResponse,
     ListCronJobsResponse,
@@ -28,45 +22,24 @@ from backend.api.cron.models import (
 
 
 @router.get("/jobs", response_model=ListCronJobsResponse)
-async def list_cron_jobs(db: AsyncSession = Depends(get_db)) -> ListCronJobsResponse:
+async def list_cron_jobs(
+    cron_service: CronService = Depends(get_cron_service),
+) -> ListCronJobsResponse:
     """
     获取所有 Cron 任务列表
     
     Args:
-        db: 数据库会话
+        cron_service: Cron 服务（带 scheduler）
         
     Returns:
         ListCronJobsResponse: 任务列表
     """
     try:
-        cron_service = CronService(db)
         jobs = await cron_service.list_jobs()
         
         # 转换为响应格式
         jobs_info = [
-            CronJobInfo(
-                id=job.id,
-                name=job.name,
-                schedule=job.schedule,
-                message=job.message,
-                enabled=job.enabled,
-                channel=job.channel,
-                account_id=job.account_id,
-                chat_id=job.chat_id,
-                deliver_response=job.deliver_response,
-                model_provider=job.model_provider,
-                model_name=job.model_name,
-                last_run=_to_shanghai_iso(job.last_run),
-                next_run=_to_shanghai_iso(job.next_run),
-                last_status=job.last_status,
-                last_error=job.last_error,
-                run_count=job.run_count or 0,
-                error_count=job.error_count or 0,
-                created_at=_to_shanghai_iso(job.created_at),
-                max_retries=job.max_retries or 0,
-                retry_delay=job.retry_delay or 60,
-                delete_on_success=job.delete_on_success or False,
-            )
+            build_job_info(job, cron_service.scheduler)
             for job in jobs
         ]
         
@@ -82,20 +55,19 @@ async def list_cron_jobs(db: AsyncSession = Depends(get_db)) -> ListCronJobsResp
 @router.get("/jobs/{job_id}", response_model=CronJobDetailResponse)
 async def get_cron_job_detail(
     job_id: str,
-    db: AsyncSession = Depends(get_db),
+    cron_service: CronService = Depends(get_cron_service),
 ) -> CronJobDetailResponse:
     """
     获取 Cron 任务详细信息（包括完整的响应和错误）
     
     Args:
         job_id: 任务 ID
-        db: 数据库会话
+        cron_service: Cron 服务（带 scheduler）
         
     Returns:
         CronJobDetailResponse: 任务详细信息
     """
     try:
-        cron_service = CronService(db)
         job = await cron_service.get_job(job_id)
         
         if not job:
@@ -105,29 +77,7 @@ async def get_cron_job_detail(
             )
         
         return CronJobDetailResponse(
-            job=CronJobInfo(
-                id=job.id,
-                name=job.name,
-                schedule=job.schedule,
-                message=job.message,
-                enabled=job.enabled,
-                channel=job.channel,
-                account_id=job.account_id,
-                chat_id=job.chat_id,
-                deliver_response=job.deliver_response,
-                model_provider=job.model_provider,
-                model_name=job.model_name,
-                last_run=_to_shanghai_iso(job.last_run),
-                next_run=_to_shanghai_iso(job.next_run),
-                last_status=job.last_status,
-                last_error=job.last_error[:500] if job.last_error else None,  # 列表中显示截断版本
-                run_count=job.run_count or 0,
-                error_count=job.error_count or 0,
-                created_at=_to_shanghai_iso(job.created_at),
-                max_retries=job.max_retries or 0,
-                retry_delay=job.retry_delay or 60,
-                delete_on_success=job.delete_on_success or False,
-            ),
+            job=build_job_info(job, cron_service.scheduler, error_limit=500),
             last_response=job.last_response,  # 完整响应
             last_error=job.last_error,  # 完整错误
         )
@@ -169,34 +119,13 @@ async def create_cron_job(
             max_retries=request.max_retries,
             retry_delay=request.retry_delay,
             delete_on_success=request.delete_on_success,
+            link_context=request.link_context,
             model_provider=request.model_provider,
             model_name=request.model_name,
         )
         
         return CronJobResponse(
-            job=CronJobInfo(
-                id=job.id,
-                name=job.name,
-                schedule=job.schedule,
-                message=job.message,
-                enabled=job.enabled,
-                channel=job.channel,
-                account_id=job.account_id,
-                chat_id=job.chat_id,
-                deliver_response=job.deliver_response,
-                model_provider=job.model_provider,
-                model_name=job.model_name,
-                last_run=_to_shanghai_iso(job.last_run),
-                next_run=_to_shanghai_iso(job.next_run),
-                last_status=job.last_status,
-                last_error=job.last_error,
-                run_count=job.run_count or 0,
-                error_count=job.error_count or 0,
-                created_at=_to_shanghai_iso(job.created_at),
-                max_retries=job.max_retries or 0,
-                retry_delay=job.retry_delay or 60,
-                delete_on_success=job.delete_on_success or False,
-            )
+            job=build_job_info(job, cron_service.scheduler)
         )
         
     except ValueError as e:
@@ -252,6 +181,7 @@ async def update_cron_job(
             max_retries=request.max_retries,
             retry_delay=request.retry_delay,
             delete_on_success=request.delete_on_success,
+            link_context=request.link_context,
             model_provider=request.model_provider,
             model_name=request.model_name,
         )
@@ -263,29 +193,7 @@ async def update_cron_job(
             )
         
         return CronJobResponse(
-            job=CronJobInfo(
-                id=job.id,
-                name=job.name,
-                schedule=job.schedule,
-                message=job.message,
-                enabled=job.enabled,
-                channel=job.channel,
-                account_id=job.account_id,
-                chat_id=job.chat_id,
-                deliver_response=job.deliver_response,
-                model_provider=job.model_provider,
-                model_name=job.model_name,
-                last_run=_to_shanghai_iso(job.last_run),
-                next_run=_to_shanghai_iso(job.next_run),
-                last_status=job.last_status,
-                last_error=job.last_error,
-                run_count=job.run_count or 0,
-                error_count=job.error_count or 0,
-                created_at=_to_shanghai_iso(job.created_at),
-                max_retries=job.max_retries or 0,
-                retry_delay=job.retry_delay or 60,
-                delete_on_success=job.delete_on_success or False,
-            )
+            job=build_job_info(job, cron_service.scheduler)
         )
         
     except HTTPException:

@@ -310,6 +310,29 @@
   background: var(--color-success);
 }
 
+/* 运行状态徽章：运行中/失败/待重试，与启用状态区分开 */
+.run-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.run-badge.running {
+  color: var(--color-primary);
+}
+
+.run-badge.failed {
+  color: var(--color-error);
+}
+
+.run-badge.retrying {
+  color: var(--color-warning);
+}
+
 .job-meta-row {
   display: flex;
   align-items: center;
@@ -385,6 +408,65 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   color: var(--color-text-disabled);
+}
+
+/* 执行状态行：运行中 / 失败原因，始终保持可见 */
+.run-state-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  min-width: 0;
+}
+
+.run-state-row svg {
+  flex-shrink: 0;
+}
+
+.run-state-row.running {
+  color: var(--color-primary);
+}
+
+.run-state-row.error {
+  color: var(--color-error);
+}
+
+.run-state-row.retrying {
+  color: var(--color-warning);
+}
+
+.run-state-label {
+  flex-shrink: 0;
+  font-weight: var(--font-weight-medium);
+}
+
+.run-state-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-tertiary);
+}
+
+.run-state-row.error .run-state-meta {
+  color: var(--color-text-secondary);
+}
+
+.run-state-link {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.run-state-link:hover {
+  color: var(--color-text-primary);
 }
 
 .execution-stats-compact {

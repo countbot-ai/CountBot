@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.prompts import CRON_TASK_EXECUTION_PROMPT, render_prompt
 from backend.modules.agent.session_gate import get_session_gate
+from backend.modules.cron.types import CronDeliveryError
 from backend.modules.session.manager import session_name_matches
 from backend.utils.logger import logger
 
@@ -20,6 +23,13 @@ if TYPE_CHECKING:
 HEARTBEAT_MESSAGE_MARKER = "__heartbeat__"
 PRIMARY_ACCOUNT_ID = "default"
 PRIMARY_GROUP_SHARED_CHANNELS = {"wecom", "feishu", "dingtalk", "qq"}
+
+# 渠道推送的即时重试：单次网络抖动不该直接判定任务失败
+DELIVERY_MAX_ATTEMPTS = 3
+DELIVERY_RETRY_DELAYS = (2, 5)
+
+# 「关联上下文」保留的历史执行记录字符预算，超出时丢弃最旧的对话对
+CONTEXT_HISTORY_MAX_CHARS = 200_000
 
 
 
@@ -48,6 +58,7 @@ class CronExecutor:
         deliver_response: bool = False,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
+        link_context: bool = False,
     ) -> str:
         """执行定时任务"""
         # 识别 heartbeat 特殊任务
@@ -63,19 +74,21 @@ class CronExecutor:
         logger.info(f"Executing job {job_id}: {message[:100]}...")
 
         try:
-            # 如果有 channel 和 chat_id，查找或创建对应的会话
-            if channel and chat_id:
-                session_id = await self._get_or_create_session(channel, account_id, chat_id)
-            else:
+            # 定时任务始终使用独立会话，不读写渠道会话，避免把任务记录混进用户对话。
+            # 开启「关联上下文」时复用任务专属会话 ID，并把历史执行记录作为上下文。
+            if link_context:
                 session_id = f"cron:{job_id}"
+                context_messages = await self._load_context_history(job_id)
+            else:
+                session_id = f"cron:{job_id}:{uuid.uuid4().hex[:12]}"
+                context_messages = []
 
             if self.agent.tools:
                 self.agent.tools.set_session_id(session_id)
                 self.agent.tools.set_channel(channel or "cron")
 
             cron_message = render_prompt(CRON_TASK_EXECUTION_PROMPT, task_message=message)
-            # 定时任务可能落在用户正在对话的会话上，必须与 IM/WS 共用同一道闸门，
-            # 否则两轮处理会并发读写同一份会话历史。
+            # 关联上下文时同一任务会复用会话，仍然走会话闸门避免重试与手动触发并发写同一份记录
             gate = get_session_gate()
             await gate.acquire(session_id)
             try:
@@ -85,6 +98,7 @@ class CronExecutor:
                     channel=channel or "cron",
                     chat_id=chat_id or job_id,
                     account_id=account_id,
+                    context=context_messages,
                     model_override=self._build_model_override_with_level(
                         model_provider,
                         model_name,
@@ -95,17 +109,17 @@ class CronExecutor:
 
             logger.info(f"Job {job_id} completed")
 
-            # 如果有 channel 和 chat_id，保存消息到数据库（与频道消息保持一致）
-            if channel and chat_id and response:
-                await self._save_messages_to_db(session_id, message, response)
+            # 关联上下文：把本轮的任务与回复追加到任务自己的记录里，供下次拼接
+            if link_context and response:
+                await self._append_context_history(job_id, cron_message, response)
 
-            if deliver_response and response and channel and chat_id:
-                await self._deliver_to_channel(
+            if deliver_response:
+                await self._deliver_response_or_raise(
                     channel=channel,
                     account_id=account_id,
                     chat_id=chat_id,
-                    message=response,
-                    job_id=job_id
+                    response=response,
+                    job_id=job_id,
                 )
 
             return response or ""
@@ -113,6 +127,90 @@ class CronExecutor:
         except Exception as e:
             logger.error(f"Cron job {job_id} failed: {e}")
             raise
+
+    async def _load_context_history(self, job_id: str) -> list[dict]:
+        """读取该任务之前的执行记录，作为本轮模型的上下文。"""
+        from sqlalchemy import select
+
+        from backend.database import get_db_session_factory
+        from backend.models.cron_job import CronJob
+
+        try:
+            async with get_db_session_factory()() as db:
+                raw = (
+                    await db.execute(
+                        select(CronJob.context_history).where(CronJob.id == job_id)
+                    )
+                ).scalar_one_or_none()
+        except Exception as e:
+            logger.warning(f"Failed to load context history for {job_id}: {e}")
+            return []
+
+        return self._parse_context_history(raw)
+
+    @staticmethod
+    def _parse_context_history(raw: Optional[str]) -> list[dict]:
+        """解析持久化的历史执行记录，过滤掉不合法条目。"""
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+        if not isinstance(data, list):
+            return []
+
+        messages: list[dict] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = item.get("content")
+            if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+                messages.append({"role": role, "content": content})
+        return messages
+
+    async def _append_context_history(
+        self,
+        job_id: str,
+        user_message: str,
+        response: str,
+    ) -> None:
+        """把本轮执行记录写回任务，供下次「关联上下文」时拼接。"""
+        from sqlalchemy import select
+
+        from backend.database import get_db_session_factory
+        from backend.models.cron_job import CronJob
+
+        try:
+            async with get_db_session_factory()() as db:
+                job = (
+                    await db.execute(select(CronJob).where(CronJob.id == job_id))
+                ).scalar_one_or_none()
+                if job is None:
+                    return
+
+                history = self._parse_context_history(job.context_history)
+                history.append({"role": "user", "content": user_message})
+                history.append({"role": "assistant", "content": response})
+                job.context_history = json.dumps(
+                    self._trim_context_history(history),
+                    ensure_ascii=False,
+                )
+                await db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to save context history for {job_id}: {e}")
+
+    @staticmethod
+    def _trim_context_history(messages: list[dict]) -> list[dict]:
+        """按字符预算丢弃最旧的对话对，避免上下文无限膨胀。"""
+        total = sum(len(item["content"]) for item in messages)
+        while len(messages) > 2 and total > CONTEXT_HISTORY_MAX_CHARS:
+            for _ in range(2):
+                if len(messages) <= 2:
+                    break
+                total -= len(messages.pop(0)["content"])
+        return messages
 
     async def _execute_heartbeat(
         self,
@@ -150,13 +248,12 @@ class CronExecutor:
             if not dispatch:
                 return ""
 
-            await self._deliver_to_channel(
+            await self._deliver_with_retry(
                 channel=channel,
                 account_id=resolved_account_id,
                 chat_id=chat_id,
                 message=dispatch.greeting,
                 job_id=job_id,
-                strict=True,
             )
 
             # 将问候语保存到会话历史中，以便用户回复时 AI 能看到上下文
@@ -226,6 +323,69 @@ class CronExecutor:
         if not provider or not model:
             return None
         return {"provider": provider, "model": model}
+
+    async def _deliver_response_or_raise(
+        self,
+        channel: Optional[str],
+        account_id: Optional[str],
+        chat_id: Optional[str],
+        response: Optional[str],
+        job_id: str,
+    ) -> None:
+        """把 AI 响应推送到渠道；任何一步失败都抛出 CronDeliveryError。
+
+        开启「推送响应到渠道」后，推送就是任务的一部分：静默失败会让用户
+        以为任务成功，所以这里必须显式失败并保留原因。
+        """
+        if not channel or not chat_id:
+            raise CronDeliveryError("推送失败：任务未配置推送渠道或聊天 ID")
+        if not response:
+            raise CronDeliveryError("推送失败：AI 返回内容为空，没有可推送的内容")
+
+        await self._deliver_with_retry(
+            channel=channel,
+            account_id=account_id,
+            chat_id=chat_id,
+            message=response,
+            job_id=job_id,
+        )
+
+    async def _deliver_with_retry(
+        self,
+        channel: str,
+        account_id: Optional[str],
+        chat_id: str,
+        message: str,
+        job_id: str,
+    ) -> None:
+        """带重试的渠道推送；全部尝试失败后抛出 CronDeliveryError。"""
+        last_error: Optional[Exception] = None
+
+        for attempt in range(DELIVERY_MAX_ATTEMPTS):
+            try:
+                await self._deliver_to_channel(
+                    channel=channel,
+                    account_id=account_id,
+                    chat_id=chat_id,
+                    message=message,
+                    job_id=job_id,
+                    strict=True,
+                )
+                return
+            except Exception as e:
+                last_error = e
+                if attempt < DELIVERY_MAX_ATTEMPTS - 1:
+                    delay = DELIVERY_RETRY_DELAYS[attempt]
+                    logger.warning(
+                        f"Job {job_id} push failed "
+                        f"({attempt + 1}/{DELIVERY_MAX_ATTEMPTS}), retry in {delay}s: {e}"
+                    )
+                    await asyncio.sleep(delay)
+
+        logger.error(f"Job {job_id} push failed after {DELIVERY_MAX_ATTEMPTS} attempts: {last_error}")
+        raise CronDeliveryError(
+            f"推送失败（已重试 {DELIVERY_MAX_ATTEMPTS} 次）：{last_error}"
+        ) from last_error
 
     async def _deliver_to_channel(
         self,
@@ -451,33 +611,5 @@ class CronExecutor:
             await db.refresh(session)
             logger.info(f"Created session {session.id} for {session_name}")
             return session.id
-
-    async def _save_messages_to_db(self, session_id: str, user_message: str, ai_response: str):
-        """将定时任务的消息保存到数据库（与频道消息保持一致）"""
-        try:
-            from backend.database import get_db_session_factory
-            from backend.models.message import Message
-            
-            db_factory = get_db_session_factory()
-            async with db_factory() as db:
-                # 保存用户消息（定时任务的提示词）
-                db.add(Message(
-                    session_id=session_id,
-                    role="user",
-                    content=user_message,
-                ))
-                
-                # 保存 AI 响应
-                db.add(Message(
-                    session_id=session_id,
-                    role="assistant",
-                    content=ai_response,
-                ))
-                
-                await db.commit()
-                logger.debug(f"Saved cron messages to session {session_id}")
-                
-        except Exception as e:
-            logger.error(f"Failed to save cron messages to DB: {e}")
 
 

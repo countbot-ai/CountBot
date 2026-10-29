@@ -32,10 +32,16 @@ class CronJob(Base):
     
     # 执行状态
     last_run: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     next_run: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    last_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "ok", "error"
+    # "running", "ok", "error", "retrying", "skipped"
+    last_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Agent 响应
+
+    # 渠道推送状态：推送失败需要与 AI 执行失败区分开，失败原因单独留存
+    last_delivery_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # "ok", "failed", "skipped"
+    last_delivery_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # 统计信息
     run_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -48,6 +54,10 @@ class CronJob(Base):
     
     # 自动删除
     delete_on_success: Mapped[bool] = mapped_column(Boolean, default=False)  # 成功后自动删除
+
+    # 关联上下文：开启后每次执行会把该任务的历史执行记录一起发给模型
+    link_context: Mapped[bool] = mapped_column(Boolean, default=False)
+    context_history: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # 时间戳
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

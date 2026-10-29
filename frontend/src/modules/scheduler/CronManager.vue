@@ -107,6 +107,16 @@
               <span class="status-badge" :class="{ 'enabled': job.enabled }">
                 {{ job.enabled ? $t('cron.enabled') : $t('cron.disabled') }}
               </span>
+              <span v-if="isJobRunning(job)" class="run-badge running">
+                <component :is="LoaderIcon" :size="12" class="spin" />
+                {{ $t('cron.statusRunning') }}
+              </span>
+              <span v-else-if="job.last_status === 'error'" class="run-badge failed">
+                {{ job.last_delivery_status === 'failed' ? $t('cron.pushFailed') : $t('cron.statusError') }}
+              </span>
+              <span v-else-if="job.last_status === 'retrying'" class="run-badge retrying">
+                {{ $t('cron.statusRetrying') }}
+              </span>
             </div>
             <div class="job-meta-row">
               <span class="job-schedule">{{ job.schedule }}</span>
@@ -131,6 +141,28 @@
             <span v-if="job.chat_id" class="chat-id-compact">{{ truncateText(job.chat_id, 20) }}</span>
           </div>
 
+          <!-- 执行状态（持久化：退出页面后重新进入依然可见） -->
+          <div v-if="isJobRunning(job)" class="run-state-row running">
+            <component :is="LoaderIcon" :size="12" class="spin" />
+            <span class="run-state-label">{{ $t('cron.statusRunning') }}</span>
+            <span v-if="job.last_run" class="run-state-meta">{{ formatTime(job.last_run) }}</span>
+          </div>
+          <div v-else-if="job.last_status === 'error'" class="run-state-row error">
+            <component :is="AlertCircleIcon" :size="12" />
+            <span class="run-state-label">
+              {{ job.last_delivery_status === 'failed' ? $t('cron.pushFailed') : $t('cron.statusError') }}
+            </span>
+            <span class="run-state-meta">{{ getFailureHint(job) }}</span>
+            <button class="run-state-link" @click="toggleDetails(job.id)">
+              {{ $t('cron.showDetails') }}
+            </button>
+          </div>
+          <div v-else-if="job.last_status === 'retrying'" class="run-state-row retrying">
+            <component :is="HistoryIcon" :size="12" />
+            <span class="run-state-label">{{ $t('cron.statusRetrying') }}</span>
+            <span v-if="job.next_run" class="run-state-meta">{{ formatTime(job.next_run) }}</span>
+          </div>
+
           <!-- Execution Stats (Compact) -->
           <div v-if="job.run_count > 0" class="execution-stats-compact">
             <div class="stat-badge-compact">
@@ -140,10 +172,6 @@
             <div v-if="job.last_status === 'ok'" class="stat-badge-compact success">
               <component :is="CheckCircleIcon" :size="12" />
               <span>{{ $t('cron.statusOk') }}</span>
-            </div>
-            <div v-if="job.last_status === 'error'" class="stat-badge-compact error">
-              <component :is="XCircleIcon" :size="12" />
-              <span>{{ $t('cron.statusError') }}</span>
             </div>
             <div v-if="job.run_count > 0" class="stat-badge-compact">
               <span>{{ calculateSuccessRate(job) }}%</span>
@@ -169,12 +197,18 @@
           <div class="primary-actions">
             <button
               class="action-btn-compact primary"
-              :disabled="!job.enabled || executingJobs.has(job.id)"
+              :disabled="!job.enabled || isJobRunning(job) || executingJobs.has(job.id)"
               @click="handleExecuteJob(job.id)"
               :title="$t('cron.executeNow')"
             >
-              <component :is="executingJobs.has(job.id) ? LoaderIcon : PlayIcon" :size="14" :class="{ 'spin': executingJobs.has(job.id) }" />
-              <span>{{ executingJobs.has(job.id) ? $t('cron.executing') : $t('cron.executeNow') }}</span>
+              <component
+                :is="(isJobRunning(job) || executingJobs.has(job.id)) ? LoaderIcon : PlayIcon"
+                :size="14"
+                :class="{ 'spin': isJobRunning(job) || executingJobs.has(job.id) }"
+              />
+              <span>
+                {{ (isJobRunning(job) || executingJobs.has(job.id)) ? $t('cron.executing') : $t('cron.executeNow') }}
+              </span>
             </button>
             
             <!-- 🎯 明显的详情入口 -->
@@ -233,7 +267,7 @@
           <!-- Detail Content -->
           <template v-else>
             <div
-              v-if="getJobDetail(job.id)?.last_error"
+              v-if="getJobDetail(job.id)?.last_error && getJobDetail(job.id)?.last_error !== getJobDetail(job.id)?.last_delivery_error"
               class="detail-section error"
             >
               <div class="detail-header">
@@ -248,6 +282,34 @@
                 </button>
               </div>
               <pre class="detail-text">{{ getJobDetail(job.id)?.last_error }}</pre>
+            </div>
+
+            <!-- 渠道推送结果：推送失败与 AI 失败分开呈现 -->
+            <div
+              v-if="getJobDetail(job.id)?.last_delivery_status === 'failed'"
+              class="detail-section error"
+            >
+              <div class="detail-header">
+                <component :is="SendIcon" :size="14" />
+                <span class="detail-title">{{ $t('cron.pushStatusFailed') }}</span>
+                <button
+                  class="detail-copy-btn"
+                  :title="$t('common.copy')"
+                  @click="handleCopyDetail(getJobDetail(job.id)?.last_delivery_error)"
+                >
+                  <component :is="CopyIcon" :size="13" />
+                </button>
+              </div>
+              <pre class="detail-text">{{ getJobDetail(job.id)?.last_delivery_error }}</pre>
+            </div>
+            <div
+              v-else-if="getJobDetail(job.id)?.last_delivery_status === 'ok'"
+              class="detail-section success"
+            >
+              <div class="detail-header">
+                <component :is="SendIcon" :size="14" />
+                <span class="detail-title">{{ $t('cron.pushStatusOk') }}</span>
+              </div>
             </div>
             
             <div
@@ -270,7 +332,7 @@
             
             <!-- No Details Available -->
             <div
-              v-if="!getJobDetail(job.id)?.last_error && !getJobDetail(job.id)?.last_response"
+              v-if="!getJobDetail(job.id)?.last_error && !getJobDetail(job.id)?.last_response && !getJobDetail(job.id)?.last_delivery_status"
               class="detail-empty"
             >
               <component :is="AlertCircleIcon" :size="16" />
@@ -315,7 +377,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   RefreshCw as RefreshIcon,
@@ -335,7 +397,6 @@ import {
   Trash as TrashIcon,
   Send as SendIcon,
   BarChart as BarChartIcon,
-  XCircle as XCircleIcon,
   FileText as FileTextIcon,
   Copy as CopyIcon
 } from 'lucide-vue-next'
@@ -385,6 +446,17 @@ const toggleDetails = async (jobId: string) => {
 // Helper to get job detail
 const getJobDetail = (jobId: string) => {
   return cronStore.jobDetails.get(jobId)
+}
+
+const isJobRunning = (job: CronJob): boolean => {
+  return job.is_running === true || job.last_status === 'running'
+}
+
+const getFailureHint = (job: CronJob): string => {
+  const reason = job.last_delivery_status === 'failed'
+    ? (job.last_delivery_error || job.last_error)
+    : job.last_error
+  return reason ? truncateText(reason, 80) : ''
 }
 
 const handleCopyDetail = async (text?: string | null) => {
@@ -565,20 +637,17 @@ const handleSaveJob = async (data: any) => {
 }
 
 const handleExecuteJob = async (id: string) => {
-  if (executingJobs.value.has(id)) return // 防抖：正在执行中则忽略
-  
+  if (executingJobs.value.has(id)) return // 防抖：请求还没返回时忽略重复点击
+
   executingJobs.value.add(id)
-  toast.success(t('cron.executeSubmitted'))
-  
+
   try {
     await cronStore.executeJob(id)
+    toast.success(t('cron.executeSubmitted'))
   } catch (err: any) {
     toast.error(t('cron.executeError'))
   } finally {
-    // 延迟移除执行状态，给后台任务一些时间
-    setTimeout(() => {
-      executingJobs.value.delete(id)
-    }, 3000)
+    executingJobs.value.delete(id)
   }
 }
 
@@ -614,9 +683,54 @@ const handleDeleteJob = async (id: string, name: string) => {
 }
 
 // Lifecycle
+// 执行状态持久化在服务端：面板打开期间轮询保持实时，退出页面再回来也能直接看到状态
+const POLL_INTERVAL_MS = 5000
+let pollTimer: number | null = null
+
+const refreshExpandedDetails = async () => {
+  for (const jobId of Array.from(expandedJobs.value)) {
+    if (cronStore.jobDetails.has(jobId) || loadingDetails.value.has(jobId)) continue
+    loadingDetails.value.add(jobId)
+    try {
+      await cronStore.getJobDetail(jobId)
+    } catch (_) {
+      // 静默失败，下一轮轮询继续尝试
+    } finally {
+      loadingDetails.value.delete(jobId)
+    }
+  }
+}
+
+const pollJobs = async () => {
+  // 页面不可见时跳过，避免无意义的请求
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  try {
+    await cronStore.loadJobs({ silent: true })
+    await refreshExpandedDetails()
+  } catch (_) {
+    // 网络波动时忽略，下一轮继续
+  }
+}
+
+const startPolling = () => {
+  stopPolling()
+  pollTimer = window.setInterval(pollJobs, POLL_INTERVAL_MS)
+}
+
+const stopPolling = () => {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
 onMounted(() => {
   handleRefresh()
+  startPolling()
 })
+
+onUnmounted(stopPolling)
+
 </script>
 <style scoped>
 @import './styles/CronManager.css';

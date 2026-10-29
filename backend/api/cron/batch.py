@@ -2,15 +2,12 @@
 
 from fastapi import Depends, HTTPException, status
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
 from backend.modules.cron.service import CronService
 
 from backend.api.cron._common import (
     BUILTIN_PREFIX,
-    _now_beijing,
-    _to_shanghai_iso,
+    build_job_info,
     get_cron_service,
     router,
 )
@@ -19,7 +16,6 @@ from backend.api.cron.models import (
     BatchCreateCronJobsResponse,
     BatchDeleteCronJobsRequest,
     BatchDeleteCronJobsResponse,
-    CronJobInfo,
 )
 
 
@@ -56,6 +52,7 @@ async def batch_create_cron_jobs(
                     max_retries=job_req.max_retries,
                     retry_delay=job_req.retry_delay,
                     delete_on_success=job_req.delete_on_success,
+                    link_context=job_req.link_context,
                     model_provider=job_req.model_provider,
                     model_name=job_req.model_name,
                 )
@@ -70,29 +67,7 @@ async def batch_create_cron_jobs(
         
         # 转换为响应格式
         jobs_info = [
-            CronJobInfo(
-                id=job.id,
-                name=job.name,
-                schedule=job.schedule,
-                message=job.message,
-                enabled=job.enabled,
-                channel=job.channel,
-                account_id=job.account_id,
-                chat_id=job.chat_id,
-                deliver_response=job.deliver_response,
-                model_provider=job.model_provider,
-                model_name=job.model_name,
-                last_run=_to_shanghai_iso(job.last_run),
-                next_run=_to_shanghai_iso(job.next_run),
-                last_status=job.last_status,
-                last_error=job.last_error,
-                run_count=job.run_count or 0,
-                error_count=job.error_count or 0,
-                created_at=_to_shanghai_iso(job.created_at),
-                max_retries=job.max_retries or 0,
-                retry_delay=job.retry_delay or 60,
-                delete_on_success=job.delete_on_success or False,
-            )
+            build_job_info(job, cron_service.scheduler)
             for job in success_jobs
         ]
         

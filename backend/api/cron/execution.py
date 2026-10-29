@@ -1,8 +1,8 @@
 """Cron 任务的立即执行与表达式校验路由。"""
 
 import asyncio
-from typing import Optional
-from fastapi import Depends, HTTPException, Request, status
+
+from fastapi import Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,12 +10,9 @@ from backend.database import get_db
 from backend.modules.cron.service import CronService
 
 from backend.api.cron._common import (
-    _now_beijing,
     _to_shanghai_iso,
-    get_cron_service,
     router,
 )
-from backend.api.cron.helpers import _find_cron_session, _get_cron_job_or_404
 from backend.api.cron.models import (
     ExecuteCronJobResponse,
     ValidateCronRequest,
@@ -40,106 +37,46 @@ async def trigger_cron_job(
     """
     try:
         from backend.app import app
-        import asyncio
-        
-        # 获取执行器
-        executor = getattr(app.state, 'cron_executor', None)
-        if not executor:
+
+        scheduler = getattr(app.state, 'cron_scheduler', None)
+        if not scheduler:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Cron executor not available"
+                detail="Cron scheduler not available"
             )
-        
-        # 获取任务
-        cron_service = CronService(db)
+
+        cron_service = CronService(db, scheduler=scheduler)
         job = await cron_service.get_job(job_id)
-        
+
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Cron job '{job_id}' not found"
             )
-        
-        # 占用执行权：检查与占用合并为一次同步调用，避免并发请求同时通过检查
-        scheduler = getattr(app.state, 'cron_scheduler', None)
-        if scheduler:
-            if not scheduler.try_acquire_job(job_id):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Job '{job.name}' is already running"
-                )
-        else:
-            # 无调度器时退化为原检查，仍可阻止顺序重复提交
-            pass
-        
-        logger.info(f"Manually triggering cron job: {job.name} ({job_id})")
-        
-        # 捕获需要的字段，避免在后台任务中使用已关闭的 db session
-        job_name = job.name
-        job_message = job.message
-        job_channel = job.channel
-        job_account_id = job.account_id
-        job_chat_id = job.chat_id
-        job_deliver_response = job.deliver_response
-        job_model_provider = job.model_provider
-        job_model_name = job.model_name
-        job_schedule = job.schedule
-        job_enabled = job.enabled
-        
-        # 后台异步执行
-        async def _run_in_background():
-            from backend.database import get_db_session_factory
-            try:
-                response = await executor.execute(
-                    job_id=job_id,
-                    message=job_message,
-                    channel=job_channel,
-                    account_id=job_account_id,
-                    chat_id=job_chat_id,
-                    deliver_response=job_deliver_response,
-                    model_provider=job_model_provider,
-                    model_name=job_model_name,
-                )
-                # 用独立 session 更新状态
-                async with get_db_session_factory()() as bg_db:
-                    bg_service = CronService(bg_db)
-                    bg_job = await bg_service.get_job(job_id)
-                    if bg_job:
-                        bg_job.last_run = _now_beijing()
-                        bg_job.last_status = "ok"
-                        bg_job.last_response = response[:1000] if response else None
-                        bg_job.last_error = None
-                        bg_job.run_count = (bg_job.run_count or 0) + 1
-                        if bg_job.enabled:
-                            bg_job.next_run = bg_service.calculate_next_run(bg_job.schedule)
-                        await bg_db.commit()
-                logger.info(f"Manual job completed: {job_name}")
-            except Exception as e:
-                logger.error(f"Manual job failed: {job_name} - {e}")
-                try:
-                    async with get_db_session_factory()() as bg_db:
-                        bg_service = CronService(bg_db)
-                        bg_job = await bg_service.get_job(job_id)
-                        if bg_job:
-                            bg_job.last_run = _now_beijing()
-                            bg_job.last_status = "error"
-                            bg_job.last_error = str(e)[:1000]
-                            bg_job.run_count = (bg_job.run_count or 0) + 1
-                            bg_job.error_count = (bg_job.error_count or 0) + 1
-                            if bg_job.enabled:
-                                bg_job.next_run = bg_service.calculate_next_run(bg_job.schedule)
-                            await bg_db.commit()
-                except Exception as db_err:
-                    logger.error(f"Failed to update error status: {db_err}")
-            finally:
-                if scheduler:
-                    scheduler.release_job(job_id)
 
-        asyncio.create_task(_run_in_background())
-        
+        # 占用执行权：检查与占用合并为一次同步调用，避免并发请求同时通过检查
+        if not scheduler.try_acquire_job(job_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Job '{job.name}' is already running"
+            )
+
+        job_name = job.name
+
+        try:
+            # 先落库「运行中」：接口返回后前端刷新、或退出页面再回来，
+            # 都能看到任务当前处于执行中，而不是一片空白。
+            await cron_service.mark_job_running(job_id)
+            asyncio.create_task(scheduler.run_job_manually(job_id))
+        except Exception:
+            scheduler.release_job(job_id)
+            raise
+
+        logger.info(f"Manually triggering cron job: {job_name} ({job_id})")
+
         return ExecuteCronJobResponse(
             success=True,
-            message=f"任务 '{job_name}' 已提交执行",
+            message=f"任务 '{job_name}' 已开始执行",
         )
         
     except HTTPException:

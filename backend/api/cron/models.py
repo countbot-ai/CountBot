@@ -20,15 +20,23 @@ class CronJobInfo(BaseModel):
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
     last_run: Optional[str] = Field(None, description="上次运行时间")
+    last_finished_at: Optional[str] = Field(None, description="上次执行结束时间")
     next_run: Optional[str] = Field(None, description="下次运行时间")
-    last_status: Optional[str] = Field(None, description="上次执行状态")
+    last_status: Optional[str] = Field(None, description="上次执行状态：running/ok/error/retrying/skipped")
     last_error: Optional[str] = Field(None, description="上次错误信息")
+    last_delivery_status: Optional[str] = Field(None, description="上次渠道推送状态：ok/failed/skipped")
+    last_delivery_error: Optional[str] = Field(None, description="上次渠道推送失败原因")
     run_count: int = Field(0, description="执行次数")
     error_count: int = Field(0, description="错误次数")
     created_at: str = Field(..., description="创建时间")
     max_retries: int = Field(0, description="最大重试次数")
     retry_delay: int = Field(60, description="重试延迟（秒）")
     delete_on_success: bool = Field(False, description="成功后自动删除")
+    link_context: bool = Field(
+        False,
+        description="关联上下文：开启后每次执行会把该任务的历史执行记录一起发给模型；关闭时每次执行完全独立",
+    )
+    is_running: bool = Field(False, description="当前是否正在执行")
 
 
 class ListCronJobsResponse(BaseModel):
@@ -51,6 +59,10 @@ class CreateCronJobRequest(BaseModel):
     max_retries: int = Field(0, description="最大重试次数（0=不重试）")
     retry_delay: int = Field(60, description="重试延迟（秒）")
     delete_on_success: bool = Field(False, description="成功后自动删除")
+    link_context: bool = Field(
+        False,
+        description="关联上下文：开启后每次执行会把该任务的历史执行记录一起发给模型；关闭时每次执行完全独立",
+    )
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
 
@@ -69,6 +81,7 @@ class UpdateCronJobRequest(BaseModel):
     max_retries: Optional[int] = Field(None, description="最大重试次数")
     retry_delay: Optional[int] = Field(None, description="重试延迟（秒）")
     delete_on_success: Optional[bool] = Field(None, description="成功后自动删除")
+    link_context: Optional[bool] = Field(None, description="关联上下文开关")
     # 传空字符串表示改回跟随全局默认模型；不传该字段则保持原值
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")

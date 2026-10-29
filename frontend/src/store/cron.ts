@@ -35,18 +35,27 @@ export const useCronStore = defineStore('cron', () => {
 
     /**
      * 加载任务列表
+     *
+     * silent=true 用于轮询刷新：不触发整页 loading，避免面板闪烁。
      */
-    async function loadJobs() {
-        loading.value = true
+    async function loadJobs(options: { silent?: boolean } = {}) {
+        const silent = options.silent === true
+        if (!silent) {
+            loading.value = true
+        }
         error.value = null
         try {
             const response = await cronAPI.list()
             jobs.value = response.jobs || []
         } catch (err: any) {
-            error.value = err.message || 'Failed to load cron jobs'
+            if (!silent) {
+                error.value = err.message || 'Failed to load cron jobs'
+            }
             throw err
         } finally {
-            loading.value = false
+            if (!silent) {
+                loading.value = false
+            }
         }
     }
 
@@ -101,28 +110,58 @@ export const useCronStore = defineStore('cron', () => {
     }
 
     /**
-     * 执行任务（异步提交，后台延迟刷新）
+     * 执行任务（异步提交，随后静默刷新获取运行中状态）
      */
     async function executeJob(id: string) {
         try {
             const res = await cronAPI.execute(id)
 
-            // 后端立即返回，延迟几秒后刷新列表以获取执行结果
-            setTimeout(async () => {
-                try {
-                    // 清除该任务的详情缓存，下次展开时重新加载
-                    jobDetails.value.delete(id)
-                    await loadJobs()
-                } catch (_) {
-                    // 静默失败
-                }
-            }, 5000)
+            // 清除该任务的详情缓存，并立即刷新一次，让「运行中」状态马上可见
+            jobDetails.value.delete(id)
+            await loadJobs({ silent: true })
 
             return res
         } catch (err: any) {
             error.value = err.message || 'Failed to execute cron job'
             throw err
         }
+    }
+
+    /**
+     * 应用 WebSocket 推送的任务状态，避免必须等下一次轮询
+     */
+    function applyStatusEvent(event: {
+        job_id: string
+        status: string
+        delivery_status?: string | null
+        error?: string | null
+    }) {
+        const job = jobs.value.find(j => j.id === event.job_id)
+        if (!job) return
+
+        job.last_status = event.status
+        job.is_running = event.status === 'running'
+
+        if (event.status === 'running') {
+            job.last_finished_at = null
+            job.last_error = null
+            job.last_delivery_status = null
+            job.last_delivery_error = null
+        } else {
+            job.last_finished_at = new Date().toISOString()
+            // 执行成功后必须清掉上一次的失败信息，否则卡片会一直显示旧错误
+            if (event.status === 'error' || event.status === 'retrying') {
+                job.last_error = event.error ?? job.last_error
+            } else {
+                job.last_error = null
+            }
+            job.last_delivery_status = event.delivery_status ?? null
+            job.last_delivery_error = event.delivery_status === 'failed'
+                ? (event.error ?? job.last_delivery_error)
+                : null
+        }
+
+        jobDetails.value.delete(event.job_id)
     }
 
     /**
@@ -178,6 +217,7 @@ export const useCronStore = defineStore('cron', () => {
         updateJob,
         deleteJob,
         executeJob,
+        applyStatusEvent,
         toggleJob,
         getJobDetail
     }

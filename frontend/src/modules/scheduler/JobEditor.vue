@@ -253,6 +253,24 @@
           </div>
         </div>
 
+        <!-- 关联上下文：开启后把该任务之前的执行记录一起发给模型 -->
+        <div class="form-group toggle-group">
+          <div class="toggle-wrapper">
+            <div class="toggle-content">
+              <div class="toggle-label-text">
+                <span class="toggle-title">{{ $t('cron.linkContext') }}</span>
+                <p class="toggle-hint">{{ $t('cron.linkContextHint') }}</p>
+              </div>
+            </div>
+            <SwitchToggle
+              v-model="formData.linkContext"
+              :width="44"
+              :height="24"
+              :aria-label="$t('cron.linkContext')"
+            />
+          </div>
+        </div>
+
         <!-- One-time Task (Delete on Success) -->
         <div class="form-group toggle-group">
           <div class="toggle-wrapper">
@@ -443,6 +461,7 @@ const formData = reactive({
   enableRetry: props.job?.max_retries !== undefined ? props.job.max_retries > 0 : true,
   maxRetries: props.job?.max_retries || 1,
   retryDelay: props.job?.retry_delay || 60,
+  linkContext: props.job?.link_context ?? false,
   deleteOnSuccess: props.job?.delete_on_success ?? false
 })
 
@@ -581,6 +600,7 @@ const handleSave = async () => {
       max_retries: formData.enableRetry ? formData.maxRetries : 0,
       retry_delay: formData.retryDelay,
       delete_on_success: formData.deleteOnSuccess,
+      link_context: formData.linkContext,
       // 空字符串表示改回跟随全局默认模型
       model_provider: formData.modelProvider.trim(),
       model_name: formData.modelName.trim(),

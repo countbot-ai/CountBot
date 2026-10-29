@@ -1,7 +1,10 @@
 import type { WebSocketMessage, UseWebSocketOptions } from '@/composables/useWebSocket'
+import { useCronStore } from '@/store/cron'
+import { t } from '@/i18n'
 
 interface ToastLike {
   error(message: string): void
+  success(message: string): void
 }
 
 interface UseChatRealtimeOptions {
@@ -18,6 +21,7 @@ interface UseChatRealtimeOptions {
 }
 
 export function useChatRealtime(options: UseChatRealtimeOptions) {
+  const cronStore = useCronStore()
   const cacheDebounceMs = 250
   const highFrequencyCacheEventTypes = new Set([
     'message_chunk',
@@ -120,6 +124,32 @@ export function useChatRealtime(options: UseChatRealtimeOptions) {
           Promise.resolve(options.refreshSessionMessages(currentSessionId)).catch((error) => {
             console.warn('[ChatWindow] 刷新当前会话消息失败:', error)
           })
+        }
+        return
+      }
+
+      if (message.type === 'cron_job_status') {
+        // 定时任务状态：同步到面板，并在失败时给出告警
+        cronStore.applyStatusEvent({
+          job_id: String(message.job_id || ''),
+          status: String(message.status || ''),
+          delivery_status: message.delivery_status ?? null,
+          error: message.error ?? null,
+        })
+
+        if (message.status === 'error') {
+          const jobName = message.job_name || message.job_id || ''
+          if (message.delivery_status === 'failed') {
+            options.toast.error(
+              t('cron.pushFailedToast', { name: jobName, error: message.error || '-' })
+            )
+          } else {
+            options.toast.error(
+              t('cron.runFailedToast', { name: jobName, error: message.error || '-' })
+            )
+          }
+        } else if (message.status === 'ok' && message.is_manual) {
+          options.toast.success(t('cron.runSuccessToast', { name: message.job_name || '' }))
         }
         return
       }

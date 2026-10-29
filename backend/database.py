@@ -160,6 +160,28 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="model_name",
                 ddl="model_name VARCHAR",
             ),
+            # 持久化运行状态与渠道推送结果，页面重进后仍能看到任务处于运行中/失败原因
+            CompatibilityColumnMigration(
+                name="last_finished_at",
+                ddl="last_finished_at DATETIME",
+            ),
+            CompatibilityColumnMigration(
+                name="last_delivery_status",
+                ddl="last_delivery_status VARCHAR",
+            ),
+            CompatibilityColumnMigration(
+                name="last_delivery_error",
+                ddl="last_delivery_error TEXT",
+            ),
+            # 关联上下文开关与该任务的历史执行记录（JSON）
+            CompatibilityColumnMigration(
+                name="link_context",
+                ddl="link_context BOOLEAN DEFAULT 0",
+            ),
+            CompatibilityColumnMigration(
+                name="context_history",
+                ddl="context_history TEXT",
+            ),
         ),
     ),
     CompatibilityTableMigration(
