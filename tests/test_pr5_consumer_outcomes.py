@@ -487,7 +487,8 @@ async def test_sse_direct_workflow_projects_child_outcome(monkeypatch, tool_resu
     monkeypatch.setattr(chat_impl, "get_agent_loop", get_agent)
     monkeypatch.setattr(chat_impl, "SessionManager", SessionManager)
     monkeypatch.setattr(chat_impl, "ConversationContextService", ContextService)
-    monkeypatch.setattr(chat_impl, "_resolve_active_workspace", lambda: tmp_path)
+    # 按会话解析工作区后签名变成 (session)，补丁也要接受这个实参
+    monkeypatch.setattr(chat_impl, "_resolve_active_workspace", lambda session=None: tmp_path)
     monkeypatch.setattr(chat_impl, "_resolve_explicit_external_tool_request", lambda *args: None)
     monkeypatch.setattr(chat_impl, "_resolve_explicit_team_workflow_request",
                         lambda *args: ("team", "goal"))

@@ -30,12 +30,19 @@ def _fake_job(name: str = "job"):
     job.next_run = datetime(2026, 10, 25, 9, 0)
     job.last_status = None
     job.last_error = None
+    job.last_delivery_status = None
+    job.last_delivery_error = None
     job.run_count = 0
     job.error_count = 0
     job.created_at = datetime(2026, 10, 24, 12, 0)
     job.max_retries = 0
     job.retry_delay = 60
     job.delete_on_success = False
+    # 这些字段必须给出具体值：裸 MagicMock 过不了 Pydantic 的 str/bool 校验
+    job.model_provider = None
+    job.model_name = None
+    job.link_context = False
+    job.is_running = False
     return job
 
 

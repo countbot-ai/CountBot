@@ -174,51 +174,36 @@ def test_file_search_root_permission_is_not_false_success(tmp_path: Path):
     assert (outcome.state, outcome.error_category) == (ExecutionState.FAILED, ErrorCategory.PERMISSION)
 
 
-class FakeMemory:
-    def __init__(self):
-        self.entries = []
+def test_memory_tools_are_action_aware_and_legacy_subclasses_are_migrated(tmp_path: Path):
+    from backend.modules.memory import MemoryService
 
-    def append_entry(self, *, source, content):
-        self.entries.append((source, content))
-        return len(self.entries)
-
-    def get_line_count(self):
-        return len(self.entries)
-
-    def get_stats(self):
-        return {"total": len(self.entries)}
-
-    def search(self, keywords, **kwargs):
-        return "search-result"
-
-    def get_recent(self, count):
-        return "recent"
-
-    def read_lines(self, start, end):
-        return "lines"
-
-
-def test_memory_tools_are_action_aware_and_legacy_subclasses_are_migrated():
-    memory = FakeMemory()
-    write = outcome_for(MemoryTool(memory), {"action": "write", "content": "remember"})
-    search = outcome_for(MemoryTool(memory), {"action": "search", "keywords": "remember"})
-    read = outcome_for(MemoryTool(memory), {"action": "read"})
-    invalid = outcome_for(MemoryTool(memory), {"action": "write"})
+    memory = MemoryService(tmp_path / "memory")
+    write = outcome_for(MemoryTool(memory), {"action": "remember", "value": "remember"})
+    search = outcome_for(MemoryTool(memory), {"action": "recall", "query": "remember"})
+    read = outcome_for(MemoryTool(memory), {"action": "list"})
+    invalid = outcome_for(MemoryTool(memory), {"action": "write", "value": "x"})
+    assert write.state is ExecutionState.SUCCEEDED
     assert (write.retry_safety, write.side_effect_state) == (RetrySafety.UNSAFE, SideEffectState.COMMITTED)
     assert (search.retry_safety, search.side_effect_state) == (RetrySafety.SAFE, SideEffectState.NOT_APPLICABLE)
     assert (read.retry_safety, read.side_effect_state) == (RetrySafety.SAFE, SideEffectState.NOT_APPLICABLE)
+    assert invalid.state is ExecutionState.FAILED
     assert invalid.error_category is ErrorCategory.VALIDATION
     assert outcome_for(MemoryWriteTool(memory), {"content": "legacy"}).state is ExecutionState.SUCCEEDED
     assert outcome_for(MemorySearchTool(memory), {"keywords": "legacy"}).state is ExecutionState.SUCCEEDED
     assert outcome_for(MemoryReadTool(memory), {}).state is ExecutionState.SUCCEEDED
 
 
-def test_memory_write_failure_after_boundary_is_unknown_outcome():
-    class FailingMemory(FakeMemory):
-        def append_entry(self, *, source, content):
-            raise OSError("memory persistence uncertain")
+def test_memory_write_failure_after_boundary_is_unknown_outcome(tmp_path: Path):
+    from backend.modules.memory import MemoryService
 
-    outcome = outcome_for(MemoryTool(FailingMemory()), {"action": "write", "content": "remember"})
+    memory = MemoryService(tmp_path / "memory")
+
+    def _boom(*args, **kwargs):
+        raise OSError("memory persistence uncertain")
+
+    # 写入恰好发生在持久化边界之后：可能已落地，不能声称未尝试
+    memory.remember = _boom
+    outcome = outcome_for(MemoryTool(memory), {"action": "remember", "value": "remember"})
     assert (outcome.state, outcome.error_category, outcome.side_effect_state) == (
         ExecutionState.UNKNOWN_OUTCOME,
         ErrorCategory.EXECUTION,
