@@ -539,12 +539,7 @@ class SubagentManager:
             elif task.outcome is None or task.outcome.state in (
                 ExecutionState.FAILED, ExecutionState.SUCCEEDED
             ):
-                task.outcome = (
-                    ToolResult.unknown_outcome(
-                        ErrorCategory.CANCELLATION,
-                        "Child task was cancelled after Tool execution may have started.",
-                    ) if possible_effect else ToolResult.cancelled("Child task was cancelled.")
-                )
+                task.outcome = self._cancelled_outcome(task)
             task.status = (
                 TaskStatus.CANCELLED if task.outcome.state is ExecutionState.CANCELLED
                 else TaskStatus.FAILED
@@ -1167,16 +1162,36 @@ You are an execution subagent created by the main agent. You only handle the tas
 
         return False
 
+    @staticmethod
+    def _cancelled_outcome(task: "SubagentTask") -> ToolResult:
+        """构造取消终态结果：文档里「已执行过的工具」不能再声称未尝试。"""
+        possible_effect = task.active_tool_call or any(
+            item.side_effect_state is not SideEffectState.NOT_ATTEMPTED
+            for item in task.tool_outcomes
+        )
+        if possible_effect:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.CANCELLATION,
+                "Child task was cancelled after Tool execution may have started.",
+            )
+        return ToolResult.cancelled("Child task was cancelled.")
+
     def _settle_cancelled_task(self, task: "SubagentTask") -> None:
         """将取消中的任务幂等收敛到终态并释放等待方。
 
         排队阶段被取消的任务可能尚未启动 runner，_run_task 的 try/finally
         不会执行；缺少本收敛时任务会滞留 running，且 done_event 无人释放。
+
+        终态必须自洽：done_event 置位即代表结果可读，所以这里连同 outcome
+        一起收敛。runner 的 CancelledError 分支要到下一个调度点才跑，只置
+        done_event 会让先被唤醒的消费方读到 outcome=None。
         """
         if task.status in (TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.RUNNING):
             task.status = TaskStatus.CANCELLED
             task.error = task.error or "任务已被取消"
             task.completed_at = task.completed_at or datetime.now()
+        if task.outcome is None:
+            task.outcome = self._cancelled_outcome(task)
         self.running_tasks.pop(task.task_id, None)
         if not task.done_event.is_set():
             task.done_event.set()
