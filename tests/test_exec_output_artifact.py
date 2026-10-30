@@ -7,6 +7,7 @@
 因此测试里需要读取 tool.workspace 来定位产出文件，而不是使用传入的临时目录。
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,13 @@ from backend.modules.tools.shell import ExecTool
 
 
 def _make_tool(tmp_path: Path, max_output_length: int = 100) -> ExecTool:
-    return ExecTool(workspace=tmp_path, max_output_length=max_output_length)
+    # 真正执行命令的用例要用工作区外的解释器，因此关掉路径限制；
+    # 路径守卫本身有独立用例覆盖。
+    return ExecTool(
+        workspace=tmp_path,
+        max_output_length=max_output_length,
+        restrict_to_workspace=False,
+    )
 
 
 def _artifacts(tool: ExecTool):
@@ -87,13 +94,14 @@ async def test_exec_records_artifact_for_long_output(tmp_path):
     tool = _make_tool(tmp_path, max_output_length=200)
     _clear_artifacts(tool)
 
-    # 安全策略禁止内联解释器代码，改为写入脚本文件后执行
+    # 安全策略禁止内联解释器代码，改为写入脚本文件后执行；
+    # 解释器路径用 sys.executable，Windows 上没有 python3 命令
     script = tool.workspace / "emit_long_output.py"
     script.write_text("print('line' * 500)\n", encoding="utf-8")
 
     try:
         outcome = await tool.execute_outcome(
-            command=f"python3 {script.name}",
+            command=f'"{sys.executable}" "{script}"',
             timeout=30,
         )
         display = getattr(outcome, "display_text", str(outcome))

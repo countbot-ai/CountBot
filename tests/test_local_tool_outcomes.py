@@ -490,9 +490,18 @@ def test_shell_has_no_hidden_retry_and_nonzero_is_not_success(tmp_path: Path, mo
 
 
 def test_shell_success_and_nonzero_have_explicit_outcomes(tmp_path: Path):
-    tool = ExecTool(tmp_path)
-    success = outcome_for(tool, {"command": "printf canonical"})
-    nonzero = outcome_for(tool, {"command": "exit 7"})
+    # 解释器在临时工作区之外，需要关掉路径限制才能执行；本用例考的是
+    # 成功/非零退出的结果映射，路径守卫另有独立用例覆盖。
+    tool = ExecTool(tmp_path, restrict_to_workspace=False)
+    # 用脚本文件而不是 printf / exit：后者只在 POSIX shell 里成立，Windows 的
+    # cmd.exe 会让命令直接 9009；ExecTool 的安全策略也禁止内联解释器代码。
+    ok_script = tmp_path / "emit.py"
+    ok_script.write_text("import sys; sys.stdout.write('canonical')", encoding="utf-8")
+    fail_script = tmp_path / "fail.py"
+    fail_script.write_text("import sys; sys.exit(7)", encoding="utf-8")
+
+    success = outcome_for(tool, {"command": f'"{sys.executable}" "{ok_script}"'})
+    nonzero = outcome_for(tool, {"command": f'"{sys.executable}" "{fail_script}"'})
     assert (success.state, success.side_effect_state) == (ExecutionState.SUCCEEDED, SideEffectState.COMMITTED)
     assert success.display_text == "canonical"
     assert (nonzero.state, nonzero.side_effect_state) == (ExecutionState.UNKNOWN_OUTCOME, SideEffectState.UNKNOWN)

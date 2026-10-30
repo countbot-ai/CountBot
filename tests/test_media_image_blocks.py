@@ -58,7 +58,8 @@ def test_build_image_blocks_reads_supported_images_only(tmp_path):
     assert block["data"] == base64.b64encode(PNG_1X1).decode("ascii")
     assert result.attached_paths == {"uploads/chat/a.png"}
     assert "uploads/chat/b.bmp" in result.skipped_paths
-    assert str(outside) in result.skipped_paths
+    # build_image_blocks 统一把路径归一化成 POSIX 形式，Windows 上 str(path) 带反斜杠
+    assert outside.as_posix() in result.skipped_paths
 
 
 def test_build_image_blocks_skips_oversized_image(tmp_path):
