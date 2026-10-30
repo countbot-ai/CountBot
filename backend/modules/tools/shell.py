@@ -719,13 +719,18 @@ class ExecTool(Tool):
         """
         if process is None or process.returncode is not None:
             return
+        if os.name != "posix":
+            # Windows 没有进程组语义：start_new_session 是 POSIX 专有参数，
+            # terminate()/kill() 只能结束 cmd.exe 本身。sleep、npm 这类子进程会
+            # 存活下来并继续持有继承的 stdout/stderr 管道，等待输出的一方永远
+            # 读不到 EOF，表现为取消后调用一直挂到超时。
+            self._kill_process_tree_windows(process)
+            return
+
         try:
-            if os.name == "posix":
-                # start_new_session=True 使子进程自成进程组，pgid 等于其 pid
-                pgid = os.getpgid(process.pid)
-                os.killpg(pgid, signal.SIGTERM)
-            else:
-                process.terminate()
+            # start_new_session=True 使子进程自成进程组，pgid 等于其 pid
+            pgid = os.getpgid(process.pid)
+            os.killpg(pgid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             return
         except Exception as exc:
@@ -733,10 +738,32 @@ class ExecTool(Tool):
             return
 
         try:
-            if os.name == "posix":
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            else:
-                process.kill()
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        except Exception as exc:
+            logger.debug(f"Force kill process failed: {exc}")
+
+    @staticmethod
+    def _kill_process_tree_windows(process) -> None:
+        """用 taskkill /T 递归终止 cmd.exe 下的整棵进程树。
+
+        Windows 上找不到「进程组」，只能按 pid 让系统自己遍历子进程；
+        失败（taskkill 不可用等）再退回单进程 kill。
+        """
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except Exception as exc:
+            logger.debug(f"taskkill process tree failed: {exc}")
+
+        try:
+            process.kill()
         except (ProcessLookupError, PermissionError):
             pass
         except Exception as exc:
