@@ -1,6 +1,7 @@
 /** 模型目录：按身份提供可选的供应商/模型及连通性测试 */
 
 import { computed } from 'vue'
+import { t } from '@/i18n'
 import { meAPI, settingsAPI } from '@/api'
 import type {
   MeModelsResponse,
@@ -70,7 +71,7 @@ export function useModelCatalog() {
       (item) => item.provider === payload.provider && item.model === payload.model,
     )
     if (!target) {
-      return { success: false, message: '该模型不在你的可用清单中' }
+      return { success: false, message: t('settings.models.notInCatalog') }
     }
     const result = await meAPI.testModel({
       source: target.source,

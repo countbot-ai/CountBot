@@ -1,4 +1,5 @@
 import type { SpawnTaskState } from '@/api/endpoints'
+import { t } from '@/i18n'
 import type { Message as ChatHistoryMessage } from '@/store/chat'
 import type { ChatMessage, ChatToolCall, WorkflowAgentState } from '@/types/chat'
 
@@ -61,13 +62,13 @@ export function reconstructWorkflowAgents(
       const secondRoundId = `${memberId}:R2`
       result[firstRoundId] = {
         id: firstRoundId,
-        label: `${perspective} - 第1轮`,
+        label: `${perspective} - ${t('chat.council.round1')}`,
         status: 'complete',
         toolCalls: [],
       }
       result[secondRoundId] = {
         id: secondRoundId,
-        label: `${perspective} - 交叉评审`,
+        label: `${perspective} - ${t('chat.council.crossReview')}`,
         status: 'complete',
         toolCalls: [],
       }

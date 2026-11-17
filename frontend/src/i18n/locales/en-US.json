@@ -403,6 +403,14 @@
       "agentTitle": "Agent mode: use tools, run skills, write code and do research",
       "chatTitle": "Chat mode: no tools or skills, just conversation and brainstorming, fewer tokens",
       "saveFailed": "Failed to switch chat mode"
+    },
+    "errors": {
+      "generic": "Something went wrong",
+      "toolFailed": "Tool execution failed"
+    },
+    "council": {
+      "round1": "Round 1",
+      "crossReview": "Cross review"
     }
   },
   "sessions": {
@@ -2110,7 +2118,8 @@
       "providerId": "Provider ID",
       "modelId": "Model ID",
       "displayName": "Display name",
-      "keyServerOnly": "Stored on the server only"
+      "keyServerOnly": "Stored on the server only",
+      "notInCatalog": "This model is not in your available list"
     },
     "changeLanguage": "Language",
     "toggleTheme": "Toggle Theme",

@@ -403,6 +403,14 @@
       "agentTitle": "Agent 模式：可调用工具、执行技能、写代码、做研究",
       "chatTitle": "对话模式：不注入工具与技能，仅对话与头脑风暴，更省 token",
       "saveFailed": "切换对话模式失败"
+    },
+    "errors": {
+      "generic": "发生错误",
+      "toolFailed": "工具执行失败"
+    },
+    "council": {
+      "round1": "第1轮",
+      "crossReview": "交叉评审"
     }
   },
   "sessions": {
@@ -2203,7 +2211,8 @@
       "providerId": "供应商 ID",
       "modelId": "模型 ID",
       "displayName": "显示名称",
-      "keyServerOnly": "仅保存在服务端"
+      "keyServerOnly": "仅保存在服务端",
+      "notInCatalog": "该模型不在你的可用清单中"
     },
     "configTransfer": {
       "exportSubtitle": "选择要打包的配置块，并决定是否附带敏感信息",
