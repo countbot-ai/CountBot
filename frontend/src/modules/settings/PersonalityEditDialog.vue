@@ -69,7 +69,7 @@
           <textarea
             v-model="localPersonality.speaking_style"
             class="textarea"
-            :placeholder="$t('settings.persona.speakingStylePlaceholder')"
+            :placeholder="t('settings.persona.speakingStylePlaceholder')"
             rows="6"
           />
         </div>
@@ -88,6 +88,7 @@
             </button>
           </div>
         </div>
+
       </div>
 
       <div class="dialog-footer">
@@ -137,8 +138,8 @@ const emit = defineEmits<Emits>()
 const { t } = useI18n()
 
 const localPersonality = ref<Personality>({ ...props.personality })
-const newTrait = ref('')
 
+const newTrait = ref('')
 const availableIcons = [
   'CloudLightning',
   'Frown',
@@ -192,6 +193,7 @@ const removeTrait = (index: number) => {
   localPersonality.value.traits.splice(index, 1)
 }
 
+/** 证据按行输入，空行自动丢掉 */
 const save = () => {
   if (isValid.value) {
     emit('save', localPersonality.value)

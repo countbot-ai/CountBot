@@ -2,15 +2,17 @@
   <div class="personality-editor">
     <div class="editor-header">
       <h3>{{ $t('settings.persona.personalityEditor') }}</h3>
-      <Button
-        variant="primary"
-        size="md"
-        :icon="PlusIcon"
-        class="header-create-button"
-        @click="showCreateDialog"
-      >
-        {{ $t('settings.persona.createPersonality') }}
-      </Button>
+      <div class="header-actions">
+        <Button
+          variant="primary"
+          size="md"
+          :icon="PlusIcon"
+          class="header-create-button"
+          @click="showCreateDialog"
+        >
+          {{ $t('settings.persona.createPersonality') }}
+        </Button>
+      </div>
     </div>
 
     <!-- 加载状态 -->
@@ -150,6 +152,7 @@
       @save="savePersonality"
       @cancel="closeDialog"
     />
+
   </div>
 </template>
 
@@ -264,7 +267,7 @@ const duplicatePersonality = async (personality: Personality) => {
   if (!newId) return
 
   try {
-    await personalitiesApi.duplicate(personality.id, newId, `${personality.name} (副本)`)
+    await personalitiesApi.duplicate(personality.id, newId, `${personality.name}${t('settings.persona.copySuffix')}`)
     toast.success(t('settings.persona.duplicateSuccess'))
     await loadPersonalities()
   } catch (error: any) {
@@ -308,7 +311,6 @@ const deletePersonality = async (personality: Personality) => {
   })
 }
 
-// 保存性格
 const savePersonality = async (personality: Personality) => {
   try {
     if (isCreating.value) {
