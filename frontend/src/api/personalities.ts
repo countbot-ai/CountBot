@@ -2,8 +2,6 @@
 
 import i18n from '@/i18n'
 
-const t = (key: string) => i18n.global.t(key)
-
 export interface Personality {
     id: string
     name: string
@@ -70,14 +68,6 @@ function extractErrorMessage(payload: any, fallback: string): string {
         }
     }
     return fallback
-}
-
-async function readError(response: Response, fallback: string): Promise<string> {
-    try {
-        return extractErrorMessage(await response.json(), fallback)
-    } catch {
-        return fallback
-    }
 }
 
 export const personalitiesApi = {
