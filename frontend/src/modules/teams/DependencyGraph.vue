@@ -1,12 +1,12 @@
 <template>
   <div class="dependency-graph">
     <div class="graph-header">
-      <h3>依赖关系图</h3>
+      <h3>{{ $t('teams.dependency.title') }}</h3>
       <div class="graph-controls">
-        <button class="control-btn" @click="resetZoom" title="重置视图">
+        <button class="control-btn" @click="resetZoom" :title="$t('teams.dependency.resetView')">
           <component :is="MaximizeIcon" :size="16" />
         </button>
-        <button class="control-btn" @click="autoLayout" title="自动布局">
+        <button class="control-btn" @click="autoLayout" :title="$t('teams.dependency.autoLayout')">
           <component :is="LayoutIcon" :size="16" />
         </button>
       </div>
@@ -89,7 +89,7 @@
               :y="nodeHeight / 2 - 8"
               font-size="10"
             >
-              ⚡ 条件执行
+              {{ $t('teams.dependency.conditional') }}
             </text>
           </g>
         </g>
@@ -105,7 +105,7 @@
           <strong>{{ getNodeById(hoverNode)?.label }}</strong>
           <p v-if="getNodeById(hoverNode)?.task">{{ getNodeById(hoverNode)?.task }}</p>
           <div v-if="getNodeById(hoverNode)?.depends_on?.length" class="tooltip-deps">
-            <span class="tooltip-label">依赖:</span>
+            <span class="tooltip-label">{{ $t('teams.dependency.depends') }}</span>
             {{ getNodeById(hoverNode)?.depends_on.join(', ') }}
           </div>
         </div>
@@ -116,7 +116,7 @@
     <div v-if="cycles.length > 0" class="cycle-warning">
       <component :is="AlertTriangleIcon" :size="16" />
       <div>
-        <strong>检测到循环依赖！</strong>
+        <strong>{{ $t('teams.dependency.cycleDetected') }}</strong>
         <p v-for="(cycle, index) in cycles" :key="index">
           {{ cycle.join(' → ') }} → {{ cycle[0] }}
         </p>

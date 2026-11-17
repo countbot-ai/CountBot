@@ -2,33 +2,32 @@
   <div class="shared-skills">
     <header class="head">
       <div>
-        <h3 class="title">共享技能</h3>
+        <h3 class="title">{{ $t('skills.shared.title') }}</h3>
         <p class="desc" v-if="isAdmin">
-          共享只由管理员发起：选择技能发布为不可变快照，分发给全站或指定用户。
-          之后修改原技能不会影响已分发的版本。
+          {{ $t('skills.shared.adminDesc') }}
         </p>
         <p class="desc" v-else>
-          这里显示管理员共享给你的技能。停用只影响你自己的对话，不改变其他用户的可见性。
+          {{ $t('skills.shared.userDesc') }}
         </p>
       </div>
-      <button class="btn" :disabled="loading" @click="refresh">刷新</button>
+      <button class="btn" :disabled="loading" @click="refresh">{{ $t('common.refresh') }}</button>
     </header>
 
     <div v-if="isAdmin" class="publish-box">
       <div class="publish-row">
         <select v-model="selectedName" class="input">
-          <option value="">选择要共享的技能</option>
+          <option value="">{{ $t('skills.shared.selectPlaceholder') }}</option>
           <option v-for="name in publishableSkills" :key="name" :value="name">
             {{ name }}
           </option>
         </select>
         <button class="btn primary" :disabled="!selectedName || publishing" @click="publishSkill">
-          {{ publishing ? '处理中…' : '设为共享' }}
+          {{ publishing ? $t('skills.shared.processing') : $t('skills.shared.publish') }}
         </button>
       </div>
-      <p class="hint">发布时会把技能目录整体复制为只读快照，普通用户随后可在技能库看到并自行启停；取消共享后立即不可见。</p>
+      <p class="hint">{{ $t('skills.shared.publishHint') }}</p>
       <p v-if="!loading && !publishableSkills.length" class="hint">
-        当前没有可共享的技能。可在技能库新建技能后再共享。
+        {{ $t('skills.shared.emptyPublishable') }}
       </p>
     </div>
 
@@ -42,13 +41,13 @@
             <span class="badge" :class="`is-${item.status}`">{{ statusText(item.status) }}</span>
           </div>
           <p class="sub">{{ item.description || '—' }}</p>
-          <p v-if="item.reject_reason" class="sub reject">原因：{{ item.reject_reason }}</p>
+          <p v-if="item.reject_reason" class="sub reject">{{ $t('skills.shared.rejectReason', { reason: item.reject_reason }) }}</p>
         </div>
 
         <div class="skill-meta">
           <span class="meta-text">v{{ item.version }}</span>
           <span v-if="isAdmin" class="meta-text">
-            {{ item.audience && item.audience.length ? `${item.audience.length} 个用户` : '全站' }}
+            {{ item.audience && item.audience.length ? $t('skills.shared.audienceUsers', { n: item.audience.length }) : $t('skills.shared.audienceAll') }}
           </span>
         </div>
 
@@ -59,11 +58,11 @@
               class="btn danger"
               @click="revoke(item)"
             >
-              撤回共享
+              {{ $t('skills.shared.revoke') }}
             </button>
             <template v-else>
-              <button class="btn" @click="review(item, true)">通过</button>
-              <button class="btn danger" @click="review(item, false)">驳回</button>
+              <button class="btn" @click="review(item, true)">{{ $t('skills.shared.approve') }}</button>
+              <button class="btn danger" @click="review(item, false)">{{ $t('skills.shared.reject') }}</button>
             </template>
           </template>
           <button
@@ -72,7 +71,7 @@
             :disabled="busyId === item.id"
             @click="toggleState(item)"
           >
-            {{ item.enabled ? '停用' : '启用' }}
+            {{ item.enabled ? $t('skills.shared.disable') : $t('skills.shared.enable') }}
           </button>
           <span v-else class="sub">—</span>
         </div>
@@ -80,16 +79,18 @@
     </div>
 
     <p v-else-if="!loading" class="hint">
-      {{ isAdmin ? '暂无共享技能记录。' : '管理员还没有共享技能给你。' }}
+      {{ isAdmin ? $t('skills.shared.emptyAdmin') : $t('skills.shared.emptyUser') }}
     </p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { sharedSkillsAPI, type SharedSkillItem } from '@/api'
 import { useUserStore } from '@/store/user'
 
+const { t } = useI18n()
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.isAdmin)
 
@@ -111,11 +112,11 @@ function notify(text: string, isError = false) {
 function statusText(status: SharedSkillItem['status']): string {
   return (
     {
-      draft: '草稿',
-      pending: '待审核',
-      approved: '已通过',
-      rejected: '已驳回',
-      revoked: '已撤回',
+      draft: t('skills.shared.statusDraft'),
+      pending: t('skills.shared.statusPending'),
+      approved: t('skills.shared.statusApproved'),
+      rejected: t('skills.shared.statusRejected'),
+      revoked: t('skills.shared.statusRevoked'),
     }[status] || status
   )
 }
@@ -125,7 +126,7 @@ async function refresh() {
   try {
     items.value = await sharedSkillsAPI.list()
   } catch (err: any) {
-    notify(err?.message || '加载失败', true)
+    notify(err?.message || t('skills.shared.loadFailed'), true)
   } finally {
     loading.value = false
   }
@@ -146,11 +147,11 @@ async function publishSkill() {
   publishing.value = true
   try {
     await sharedSkillsAPI.publish({ name, audience: null })
-    notify(`「${name}」已设为共享`)
+    notify(t('skills.shared.publishSuccess', { name }))
     selectedName.value = ''
     await refresh()
   } catch (err: any) {
-    notify(err?.message || '设为共享失败', true)
+    notify(err?.message || t('skills.shared.publishFailed'), true)
   } finally {
     publishing.value = false
   }
@@ -160,10 +161,10 @@ async function toggleState(item: SharedSkillItem) {
   busyId.value = item.id
   try {
     await sharedSkillsAPI.setState(item.id, !item.enabled)
-    notify(item.enabled ? '已停用' : '已启用')
+    notify(item.enabled ? t('skills.shared.stateOff') : t('skills.shared.stateOn'))
     await refresh()
   } catch (err: any) {
-    notify(err?.message || '操作失败', true)
+    notify(err?.message || t('skills.shared.actionFailed'), true)
   } finally {
     busyId.value = ''
   }
@@ -172,26 +173,26 @@ async function toggleState(item: SharedSkillItem) {
 async function review(item: SharedSkillItem, approved: boolean) {
   let reason = ''
   if (!approved) {
-    reason = window.prompt('驳回原因：') || ''
+    reason = window.prompt(t('skills.shared.rejectPrompt')) || ''
     if (!reason.trim()) return
   }
   try {
     await sharedSkillsAPI.review(item.id, approved, reason)
-    notify(approved ? '已通过审核' : '已驳回')
+    notify(approved ? t('skills.shared.approved') : t('skills.shared.rejected'))
     await refresh()
   } catch (err: any) {
-    notify(err?.message || '操作失败', true)
+    notify(err?.message || t('skills.shared.actionFailed'), true)
   }
 }
 
 async function revoke(item: SharedSkillItem) {
-  const reason = window.prompt('撤回原因（可选）：') ?? ''
+  const reason = window.prompt(t('skills.shared.revokePrompt')) ?? ''
   try {
     await sharedSkillsAPI.revoke(item.id, reason)
-    notify('已撤回')
+    notify(t('skills.shared.revoked'))
     await refresh()
   } catch (err: any) {
-    notify(err?.message || '撤回失败', true)
+    notify(err?.message || t('skills.shared.revokeFailed'), true)
   }
 }
 

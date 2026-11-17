@@ -2,33 +2,33 @@
   <div class="mcp-panel">
     <div class="mcp-header">
       <div class="header-left">
-        <h3 class="panel-title">我的 MCP</h3>
+        <h3 class="panel-title">{{ $t('settings.mcp.user.title') }}</h3>
         <span class="panel-desc">
-          配置仅自己可用的 MCP 服务器；远程地址必须是 HTTPS，stdio 需管理员开放白名单。
+          {{ $t('settings.mcp.user.description') }}
         </span>
       </div>
       <div class="header-right">
-        <span class="user-mcp-limit">最多 {{ state.max_servers }} 个</span>
+        <span class="user-mcp-limit">{{ $t('settings.mcp.user.limit', { n: state.max_servers }) }}</span>
       </div>
     </div>
 
     <div v-if="!state.enabled" class="mcp-disabled-hint">
-      <p>管理员已关闭「用户自建 MCP」。</p>
+      <p>{{ $t('settings.mcp.user.disabledHint') }}</p>
     </div>
 
     <template v-else>
       <div class="mcp-stats">
         <div class="stat-card">
           <span class="stat-value">{{ servers.length }}</span>
-          <span class="stat-label">已配置</span>
+          <span class="stat-label">{{ $t('settings.mcp.user.configured') }}</span>
         </div>
         <div class="stat-card">
           <span class="stat-value">{{ runningCount }}</span>
-          <span class="stat-label">运行中</span>
+          <span class="stat-label">{{ $t('settings.mcp.user.running') }}</span>
         </div>
         <div class="stat-card">
           <span class="stat-value">{{ state.tool_count }}</span>
-          <span class="stat-label">工具数</span>
+          <span class="stat-label">{{ $t('settings.mcp.user.toolCount') }}</span>
         </div>
       </div>
 
@@ -40,21 +40,21 @@
             @click="handleAdd"
           >
             <span class="mcp-btn-icon">+</span>
-            <span class="mcp-btn-label">添加服务器</span>
+            <span class="mcp-btn-label">{{ $t('settings.mcp.user.addServer') }}</span>
           </button>
           <button class="mcp-btn" :disabled="loading" @click="refresh">
             <span class="mcp-btn-icon">↻</span>
-            <span class="mcp-btn-label">刷新</span>
+            <span class="mcp-btn-label">{{ $t('settings.mcp.user.refresh') }}</span>
           </button>
         </div>
         <span v-if="state.stdio_allowlist.length === 0" class="user-mcp-hint">
-          未开放 stdio，仅支持 HTTP/SSE
+          {{ $t('settings.mcp.user.stdioClosed') }}
         </span>
       </div>
 
       <div class="mcp-list">
         <div v-if="servers.length === 0 && !editingId" class="empty-hint">
-          还没有自建 MCP 服务器
+          {{ $t('settings.mcp.user.empty') }}
         </div>
 
         <div
@@ -76,7 +76,7 @@
                     class="mcp-badge"
                     :class="server.running ? 'mcp-badge--success' : 'mcp-badge--error'"
                   >
-                    {{ server.running ? '已连接' : '未连接' }}
+                    {{ server.running ? $t('settings.mcp.user.connected') : $t('settings.mcp.user.disconnected') }}
                   </span>
                   <span class="meta-tools">{{ server.tool_count || 0 }} tools</span>
                 </div>
@@ -89,10 +89,10 @@
                   :checked="server.enabled"
                   @change="toggleEnabled(index, ($event.target as HTMLInputElement).checked)"
                 />
-                <span>启用</span>
+                <span>{{ $t('settings.mcp.user.enableLabel') }}</span>
               </label>
               <button class="mcp-btn mcp-btn-sm mcp-btn-danger" @click="handleDelete(index)">
-                删除
+                {{ $t('common.delete') }}
               </button>
             </div>
           </div>

@@ -19,14 +19,14 @@
           target="_blank"
           rel="noopener noreferrer"
           class="co-btn co-btn--secondary"
-          title="打开渠道配置教程"
+          :title="$t('settings.channels.guideTooltip')"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 3h7v7"></path>
             <path d="M10 14L21 3"></path>
             <path d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"></path>
           </svg>
-          <span>配置教程</span>
+          <span>{{ $t('settings.channels.guideTitle') }}</span>
         </a>
         <button
           class="co-btn co-btn--secondary icon-action"

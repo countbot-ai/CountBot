@@ -176,8 +176,8 @@
                 class="icon-btn icon-btn--sm share-toggle-btn"
                 :class="{ 'is-shared': isSkillShared(skill.name) }"
                 :disabled="sharing"
-                :title="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享，所有普通用户可见'"
-                :aria-label="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享'"
+                :title="isSkillShared(skill.name) ? $t('skills.share.unshare') : $t('skills.share.hint')"
+                :aria-label="isSkillShared(skill.name) ? $t('skills.share.unshare') : $t('skills.share.share')"
                 @click.stop="handleShareSkill(skill)"
               >
                 <component :is="isSkillShared(skill.name) ? GlobeIcon : ShareIcon" :size="15" />
@@ -237,8 +237,8 @@
               class="icon-btn icon-btn--sm share-toggle-btn"
               :class="{ 'is-shared': isSkillShared(skill.name) }"
               :disabled="sharing"
-              :title="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享，所有普通用户可见'"
-              :aria-label="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享'"
+              :title="isSkillShared(skill.name) ? $t('skills.share.unshare') : $t('skills.share.hint')"
+              :aria-label="isSkillShared(skill.name) ? $t('skills.share.unshare') : $t('skills.share.share')"
               @click.stop="handleShareSkill(skill)"
             >
               <component :is="isSkillShared(skill.name) ? GlobeIcon : ShareIcon" :size="15" />
@@ -364,7 +364,7 @@
             @click="handleShareSkill(selectedSkill)"
           >
             <component :is="isSkillShared(selectedSkill.name) ? GlobeIcon : ShareIcon" :size="15" />
-            {{ sharing ? '处理中…' : (isSkillShared(selectedSkill.name) ? '取消全局共享' : '设为全局共享') }}
+            {{ sharing ? $t('skills.share.processing') : (isSkillShared(selectedSkill.name) ? $t('skills.share.unshare') : $t('skills.share.share')) }}
           </button>
           <button
             v-if="selectedSkill.source === 'workspace'"

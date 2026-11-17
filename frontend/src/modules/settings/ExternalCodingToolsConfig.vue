@@ -376,9 +376,7 @@
       <section class="help-section">
         <h4>{{ t('settings.externalTools.helpCommandsTitle') }}</h4>
         <p>{{ t('settings.externalTools.helpCommandsBody') }}</p>
-        <pre class="help-code">用 claude 帮我写一个 python 爬虫
-用 codex 修复这个报错
-用 opencode 重构这个模块</pre>
+        <pre class="help-code">{{ $t('settings.externalTools.examplePrompts') }}</pre>
       </section>
 
       <section class="help-section">
