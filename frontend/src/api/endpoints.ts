@@ -745,11 +745,6 @@ export interface SystemInfo {
     uptime_start: string
 }
 
-/** Health Check API */
-export const healthAPI = {
-    check: (): Promise<{ status: string }> =>
-        apiClient.get('/health'),
-}
 
 /** Auth API */
 export const authAPI = {
@@ -768,9 +763,6 @@ export const authAPI = {
     setup: (data: { username: string; password: string }): Promise<{ success: boolean; token: string }> =>
         apiClient.post('/auth/setup', data),
 
-    login: (data: { username: string; password: string }): Promise<{ success: boolean; token: string }> =>
-        apiClient.post('/auth/login', data),
-
     register: (data: { username: string; password: string; display_name?: string }): Promise<{
         success: boolean
         status?: string
@@ -781,8 +773,6 @@ export const authAPI = {
     logout: (): Promise<{ success: boolean }> =>
         apiClient.post('/auth/logout'),
 
-    changePassword: (data: { old_password: string; new_password: string }): Promise<{ success: boolean }> =>
-        apiClient.post('/auth/change-password', data),
 }
 
 /** Current user API (/api/me) */
@@ -860,17 +850,6 @@ export const meAPI = {
 
     getReasoningLevels: (model: string): Promise<{ model: string; levels: string[]; known_levels: string[] }> =>
         apiClient.get('/me/reasoning-levels', { params: { model } }),
-
-    addModel: (data: {
-        provider: string
-        model: string
-        display_name?: string
-        api_key?: string
-        api_base?: string
-    }): Promise<MeModelsResponse> => apiClient.post('/me/models', data),
-
-    deleteModel: (provider: string, model: string): Promise<MeModelsResponse> =>
-        apiClient.delete('/me/models', { params: { provider, model } }),
 
     selectModel: (data: { source: string; provider: string; model: string }): Promise<MeModelsResponse> =>
         apiClient.put('/me/model-selection', data),
@@ -986,12 +965,6 @@ export const adminAPI = {
     getSharedModels: (params?: { include_usage?: boolean }): Promise<SharedModelsResponse> =>
         apiClient.get('/admin/shared-models', { params }),
 
-    listAuditLogs: (params?: { action?: string; page?: number; page_size?: number }): Promise<{
-        items: Array<Record<string, unknown>>
-        total: number
-        page: number
-        page_size: number
-    }> => apiClient.get('/admin/audit-logs', { params }),
 }
 
 /** System Info API */
@@ -1002,9 +975,6 @@ export const systemAPI = {
 
 /** Chat API */
 export const chatAPI = {
-    sendMessage: (data: SendMessageRequest): Promise<SendMessageResponse> =>
-        apiClient.post('/chat/send', data),
-
     uploadAttachment: (sessionId: string, file: File): Promise<AttachmentItem> =>
         apiClient.post(`/chat/sessions/${sessionId}/attachments`, file, {
             headers: {
@@ -1071,21 +1041,6 @@ export const chatAPI = {
     }): Promise<SessionSearchResponse> =>
         apiClient.post('/session-search', data),
 
-    updateSessionSummary: (sessionId: string, summary: string): Promise<{
-        success: boolean
-        session_id: string
-        summary: string
-        updated_at: string
-    }> =>
-        apiClient.put(`/chat/sessions/${sessionId}/summary`, { summary }),
-
-    deleteSessionSummary: (sessionId: string): Promise<{
-        success: boolean
-        session_id: string
-    }> =>
-        apiClient.delete(`/chat/sessions/${sessionId}/summary`),
-
-    // 自动总结会话并保存到记忆
     summarizeSessionToMemory: (sessionId: string): Promise<{
         success: boolean
         summary: string
@@ -1345,16 +1300,6 @@ export const toolsAPI = {
     }> =>
         apiClient.get('/tools/conversations', { params }),
 
-    getConversationStats: (): Promise<{
-        total: number
-        by_tool: Record<string, number>
-        by_session: Record<string, number>
-        success_rate: number
-    }> =>
-        apiClient.get('/tools/conversations/stats'),
-
-    clearConversations: (): Promise<{ success: boolean; message: string }> =>
-        apiClient.delete('/tools/conversations'),
 }
 
 /** Memory API（简化版）：只保留长期记忆功能 */
@@ -1371,14 +1316,6 @@ export const memoryAPI = {
     updateSelfImproving: (data: UpdateSelfImprovingMemoryRequest): Promise<UpdateMemoryResponse> =>
         apiClient.put('/memory/self-improving', data),
 
-    getStats: (): Promise<{ total: number; sources: Record<string, number>; date_range: string }> =>
-        apiClient.get('/memory/stats'),
-
-    getRecent: (count: number = 10): Promise<MemoryContent> =>
-        apiClient.get(`/memory/recent?count=${count}`),
-
-    search: (data: { keywords: string; max_results?: number }): Promise<{ results: string; total: number }> =>
-        apiClient.post('/memory/search', data),
 }
 
 /** Skills API */
@@ -1448,16 +1385,9 @@ export const skillsAPI = {
     updateConfig: (name: string, data: UpdateSkillConfigRequest): Promise<SkillConfigResponse> =>
         apiClient.put(`/skills/${name}/config`, data),
 
-    getConfigStatus: (name: string): Promise<SkillConfigStatusResponse> =>
-        apiClient.get(`/skills/${name}/config/status`),
-
     fixConfig: (name: string): Promise<FixSkillConfigResponse> =>
         apiClient.post(`/skills/${name}/config/fix`),
 
-    getConfigHelp: (name: string): Promise<SkillConfigHelpResponse> =>
-        apiClient.get(`/skills/${name}/config/help`),
-
-    // 重载技能
     reload: (): Promise<{ success: boolean; message: string; total: number }> =>
         apiClient.post('/skills/reload'),
 }
@@ -1483,36 +1413,12 @@ export const cronAPI = {
         apiClient.post(`/cron/jobs/${id}/run`),
 }
 
-/** Tasks API */
-export const tasksAPI = {
-    list: (): Promise<{ tasks: Task[] }> =>
-        apiClient.get('/tasks'),
-
-    get: (taskId: string): Promise<SubagentTaskDetail> =>
-        apiClient.get(`/tasks/${taskId}`),
-
-    create: (data: CreateTaskRequest): Promise<CreateTaskResponse> =>
-        apiClient.post('/tasks', data),
-
-    delete: (id: string): Promise<{ success: boolean }> =>
-        apiClient.delete(`/tasks/${id}`),
-}
 
 /** Queue & Task API - 队列和任务管理 */
 export const queueAPI = {
-    getStats: (): Promise<{
-        inbound_size: number
-        outbound_size: number
-        active_tasks: number
-        rate_limiter: { active_users: number; rate: number; per: number } | null
-    }> =>
-        apiClient.get('/queue/stats'),
-
     cancelTask: (sessionId: string): Promise<{ success: boolean; message: string }> =>
         apiClient.post('/queue/cancel', { session_id: sessionId }),
 
-    getActiveTasks: (): Promise<{ active_tasks: string[]; count: number }> =>
-        apiClient.get('/queue/active-tasks'),
 }
 
 /** @deprecated Use queueAPI.cancelTask instead */
@@ -1520,8 +1426,6 @@ export const stopAPI = {
     stopTask: (sessionId: string): Promise<{ success: boolean; message: string }> =>
         queueAPI.cancelTask(sessionId),
 
-    getActiveTasks: (): Promise<{ active_tasks: string[]; count: number }> =>
-        queueAPI.getActiveTasks(),
 }
 
 /** Settings Export/Import API - 配置导出导入 */

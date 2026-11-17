@@ -65,7 +65,7 @@ class Session(Base):
     # 会话级工作空间；为空表示跟随全局配置
     workspace_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # 多用户归属；为空表示管理员 / 历史数据
+    # 多用户归属：NULL 表示管理员数据
     owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     messages: Mapped[List["Message"]] = relationship(

@@ -24,7 +24,7 @@ class Task(Base):
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tool_call_records: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON 序列化
     outcome_projection: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # v1 task/attempt 投影 JSON；旧任务为 NULL
-    # 多用户归属；为空表示管理员 / 历史数据
+    # 多用户归属：NULL 表示管理员数据
     owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

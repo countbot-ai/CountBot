@@ -92,7 +92,7 @@ async def _load(owner_id: str):
 
 
 def _is_valid_provider(value: Any) -> bool:
-    """配置能否解析为 ProviderConfig；用于区分「无效历史数据」与「已删除」。"""
+    """判断配置项能否反序列化为 ProviderConfig。"""
     if not isinstance(value, dict):
         return False
     try:
@@ -103,7 +103,7 @@ def _is_valid_provider(value: Any) -> bool:
 
 
 async def _persist(owner_id: str, raw: Dict[str, Any], configs: Dict[str, ProviderConfig]):
-    # 无法解析的历史配置原样保留：只跳过展示，不在保存时静默丢弃
+    # 反序列化失败的配置项原样保留，避免保存时丢失；展示层已跳过这些项
     merged = {
         provider_id: value
         for provider_id, value in (raw.get("providers") or {}).items()

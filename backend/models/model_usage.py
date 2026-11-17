@@ -27,7 +27,7 @@ class ModelUsage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    # 多用户归属；为空表示管理员 / 历史数据
+    # 多用户归属：NULL 表示管理员数据
     owner_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # 模型来源："shared"（管理员共享）/ "own"（用户自有）/ NULL（全局默认）
     model_ref_source: Mapped[str | None] = mapped_column(String, nullable=True)

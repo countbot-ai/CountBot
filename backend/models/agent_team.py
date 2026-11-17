@@ -37,7 +37,7 @@ class AgentTeam(Base):
     team_model_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     use_custom_model: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # 多用户归属；为空表示管理员 / 历史数据
+    # 多用户归属：NULL 表示管理员数据
     owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

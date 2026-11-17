@@ -99,8 +99,8 @@ export const personalitiesApi = {
             body: JSON.stringify(data),
         })
         if (!response.ok) {
-            const error = await response.json()
-            throw new Error(error.detail || 'Failed to create personality')
+            const error = await response.json().catch(() => ({}))
+            throw new Error(extractErrorMessage(error, 'Failed to create personality'))
         }
         return response.json()
     },
@@ -115,8 +115,8 @@ export const personalitiesApi = {
             body: JSON.stringify(data),
         })
         if (!response.ok) {
-            const error = await response.json()
-            throw new Error(error.detail || 'Failed to update personality')
+            const error = await response.json().catch(() => ({}))
+            throw new Error(extractErrorMessage(error, 'Failed to update personality'))
         }
         return response.json()
     },
@@ -127,8 +127,8 @@ export const personalitiesApi = {
             method: 'DELETE',
         })
         if (!response.ok) {
-            const error = await response.json()
-            throw new Error(error.detail || 'Failed to delete personality')
+            const error = await response.json().catch(() => ({}))
+            throw new Error(extractErrorMessage(error, 'Failed to delete personality'))
         }
     },
 
@@ -145,8 +145,8 @@ export const personalitiesApi = {
             }),
         })
         if (!response.ok) {
-            const error = await response.json()
-            throw new Error(error.detail || 'Failed to duplicate personality')
+            const error = await response.json().catch(() => ({}))
+            throw new Error(extractErrorMessage(error, 'Failed to duplicate personality'))
         }
         return response.json()
     },

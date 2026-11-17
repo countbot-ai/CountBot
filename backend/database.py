@@ -125,7 +125,7 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="workspace_path",
                 ddl="workspace_path TEXT",
             ),
-            # 多用户归属：NULL = 管理员 / 历史数据
+            # 多用户归属：NULL 表示管理员数据
             CompatibilityColumnMigration(
                 name="owner_id",
                 ddl="owner_id VARCHAR",
@@ -201,7 +201,7 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="context_history",
                 ddl="context_history TEXT",
             ),
-            # 多用户归属：NULL = 管理员 / 历史数据
+            # 多用户归属：NULL 表示管理员数据
             CompatibilityColumnMigration(
                 name="owner_id",
                 ddl="owner_id VARCHAR",
@@ -223,7 +223,7 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
         # 与 ToolConversation 一样只加 nullable 列，保持旧任务记录可读。
         columns=(
             CompatibilityColumnMigration("outcome_projection", "outcome_projection TEXT"),
-            # 多用户归属：NULL = 管理员 / 历史数据
+            # 多用户归属：NULL 表示管理员数据
             CompatibilityColumnMigration("owner_id", "owner_id VARCHAR"),
         ),
     ),

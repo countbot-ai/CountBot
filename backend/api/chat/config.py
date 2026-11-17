@@ -121,7 +121,7 @@ async def get_session_config(
         )
         runtime_config.model_response["chat_mode"] = runtime_config.chat_mode
         
-        # 仅统计生效的自定义配置，解析层已丢弃的历史模型绑定不计入
+        # 仅统计生效的自定义配置，已移除的模型绑定不计入
         has_effective_custom_config = bool(
             runtime_config.has_custom_model_config or runtime_config.has_custom_persona_config
         )
@@ -249,7 +249,7 @@ async def update_session_config(
                 raw_model.pop("api_base", None)
             normalized_model = _normalize_session_model_overrides(raw_model)
             if normalized_model:
-                # 仅带来源标记的绑定视为用户显式设置，历史绑定回落全局默认模型
+                # 仅带来源标记的绑定视为用户显式设置，其余使用全局默认模型
                 normalized_model["source"] = SESSION_MODEL_SOURCE_SESSION_PANEL
                 from backend.modules.multiuser.identity import resolve_chat_mode_for_user
 

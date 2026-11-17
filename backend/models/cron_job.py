@@ -59,7 +59,7 @@ class CronJob(Base):
     link_context: Mapped[bool] = mapped_column(Boolean, default=False)
     context_history: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # 多用户归属；为空表示管理员 / 历史数据
+    # 多用户归属：NULL 表示管理员数据
     owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # 用户通知渠道（M7 纯出站推送）；管理员任务仍用 channel/account_id/chat_id

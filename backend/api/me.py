@@ -182,7 +182,7 @@ async def add_own_model(
             }
         )
 
-    # 结构校验：脏值不落库
+    # 结构校验：非法配置不写入
     try:
         ProviderConfig.model_validate(provider_data)
     except Exception as exc:
