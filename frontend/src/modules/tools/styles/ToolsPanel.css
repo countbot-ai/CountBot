@@ -1,0 +1,212 @@
+
+.tools-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+}
+
+.tools-nav {
+  display: flex;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.nav-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.nav-btn.active {
+  background: var(--bg-secondary);
+  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.tools-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.tools-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+  padding: var(--spacing-xl);
+  overflow-y: auto;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-xl);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  border-color: var(--color-border-strong);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 状态 */
+.loading-state,
+.error-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-3xl);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.error-state {
+  color: var(--color-error);
+}
+
+.retry-btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.retry-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* 工具网格 */
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.tool-card {
+  padding: var(--spacing-lg);
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
+}
+
+.tool-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.tool-name {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.tool-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-sm) 0;
+  line-height: 1.5;
+}
+
+.tool-params {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.param-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+/* 动画 */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 深色模式 */
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,349 @@
+/**
+ * 渠道管理 Store
+ * 
+ * Channels Management Store
+ */
+
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import type { Ref } from 'vue'
+
+export interface ChannelConfig {
+  name: string
+  description: string
+  icon: string
+  enabled: boolean
+  configured: boolean
+  config: Record<string, any>
+}
+
+export interface ChannelStatus {
+  enabled: boolean
+  running: boolean
+  display_name: string
+  instances?: Record<string, ChannelInstanceStatus>
+}
+
+/** 推送目标：已配置渠道 + 账号 + 历史渠道会话中反查出的 chat */
+export interface DeliveryTargetAccount {
+  account_id: string
+  display_name: string
+  enabled: boolean
+  running: boolean
+}
+
+export interface DeliveryTargetChat {
+  chat_id: string
+  account_id: string
+  is_group: boolean
+  session_id: string
+  session_name: string
+  last_used: string | null
+}
+
+export interface DeliveryTarget {
+  channel: string
+  name: string
+  icon: string
+  enabled: boolean
+  configured: boolean
+  running: boolean
+  accounts: DeliveryTargetAccount[]
+  chats: DeliveryTargetChat[]
+}
+
+export interface ChannelInstanceStatus {
+  enabled: boolean
+  running: boolean
+  display_name: string
+  instance_key: string
+  runtime_status?: Record<string, any>
+}
+
+export const useChannelsStore = defineStore('channels', () => {
+  // 状态
+  const channels: Ref<Record<string, ChannelConfig>> = ref({})
+  const status: Ref<Record<string, ChannelStatus>> = ref({})
+  const deliveryTargets: Ref<DeliveryTarget[]> = ref([])
+  const loading = ref(false)
+  const error: Ref<string | null> = ref(null)
+  
+  // 待保存的配置变更
+  const pendingChanges: Ref<Record<string, Record<string, any>>> = ref({})
+
+  // 计算属性
+  const enabledChannels = computed(() => {
+    return Object.entries(channels.value)
+      .filter(([_, channel]) => channel.enabled)
+      .map(([id, channel]) => ({ id, ...channel }))
+  })
+
+  const configuredChannels = computed(() => {
+    return Object.entries(channels.value)
+      .filter(([_, channel]) => channel.configured)
+      .map(([id, channel]) => ({ id, ...channel }))
+  })
+
+  const runningChannels = computed(() => {
+    return Object.entries(status.value)
+      .filter(([_, s]) => s.running)
+      .map(([id, s]) => ({ id, ...s }))
+  })
+
+  // 方法
+  async function fetchChannels() {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch('/api/channels/list')
+      const data = await response.json()
+
+      if (data.success) {
+        channels.value = data.channels
+        
+        // 为每个渠道获取完整配置（替换截断的数据）
+        const channelIds = Object.keys(data.channels)
+        await Promise.all(
+          channelIds.map(async (channelId) => {
+            try {
+              const configResponse = await fetch(`/api/channels/${channelId}/config`)
+              const configData = await configResponse.json()
+              
+              if (configData.success && configData.config) {
+                // 用完整配置替换截断的配置
+                channels.value[channelId].config = configData.config
+              }
+            } catch (e) {
+              console.error(`Failed to fetch full config for ${channelId}:`, e)
+              // 保留截断的配置，不影响其他渠道
+            }
+          })
+        )
+      } else {
+        error.value = data.error || 'Failed to fetch channels'
+      }
+    } catch (e: any) {
+      error.value = e.message || 'Network error'
+      console.error('Error fetching channels:', e)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchStatus() {
+    try {
+      const response = await fetch('/api/channels/status')
+      const data = await response.json()
+
+      if (data.success) {
+        status.value = data.status
+      }
+    } catch (e: any) {
+      console.error('Error fetching channel status:', e)
+    }
+  }
+
+  async function testChannel(
+    channelId: string,
+    config?: Record<string, any>,
+    accountId?: string
+  ): Promise<{ success: boolean; message: string; data?: any }> {
+    error.value = null
+
+    try {
+      const response = await fetch('/api/channels/test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          channel: channelId,
+          config,
+          account_id: accountId
+        })
+      })
+
+      const data = await response.json()
+      return data
+    } catch (e: any) {
+      error.value = e.message || 'Test failed'
+      return {
+        success: false,
+        message: e.message || 'Network error'
+      }
+    }
+  }
+
+  async function updateChannelConfig(channelId: string, config: Record<string, any>): Promise<boolean> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch('/api/channels/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          channel: channelId,
+          config
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // 渠道启用/停用会改变可推送目标，缓存必须失效，否则定时任务页读到的还是旧列表
+        deliveryTargets.value = []
+        // 重新获取渠道列表
+        await fetchChannels()
+        return true
+      } else {
+        error.value = data.message || 'Update failed'
+        return false
+      }
+    } catch (e: any) {
+      error.value = e.message || 'Network error'
+      console.error('Error updating channel config:', e)
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  // 更新本地渠道配置（不立即保存到后端）
+  function updateLocalChannelConfig(channelId: string, config: Record<string, any>) {
+    const nextConfig = JSON.parse(JSON.stringify(config))
+    if (channels.value[channelId]) {
+      channels.value[channelId].config = nextConfig
+      pendingChanges.value[channelId] = nextConfig
+    }
+  }
+  
+  // 批量保存所有渠道配置
+  async function saveAllChannels(): Promise<boolean> {
+    if (Object.keys(pendingChanges.value).length === 0) {
+      return true
+    }
+
+    loading.value = true
+    error.value = null
+
+    try {
+      // 批量保存所有变更的渠道配置
+      const promises = Object.entries(pendingChanges.value).map(([channelId, config]) => 
+        fetch('/api/channels/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: channelId, config })
+        })
+      )
+
+      const results = await Promise.all(promises)
+      const allSuccess = results.every(r => r.ok)
+
+      if (allSuccess) {
+        pendingChanges.value = {}
+        deliveryTargets.value = []
+        await fetchChannels() // 重新加载
+        return true
+      } else {
+        error.value = 'Some channel configurations failed to save'
+        return false
+      }
+    } catch (e: any) {
+      error.value = e.message || 'Network error'
+      console.error('Error saving channels:', e)
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+  
+  // 检查是否有未保存的变更
+  function hasUnsavedChanges(): boolean {
+    return Object.keys(pendingChanges.value).length > 0
+  }
+  
+  // 清除待保存的变更
+  function clearPendingChanges() {
+    pendingChanges.value = {}
+  }
+
+  /**
+   * 拉取可直接用于推送的渠道目标（已配置渠道 + 账号 + 历史会话 chat_id）。
+   * 定时任务等场景复用这里的数据，避免重复手工填写推送目标。
+   */
+  async function fetchDeliveryTargets(force = false): Promise<DeliveryTarget[]> {
+    if (deliveryTargets.value.length && !force) {
+      return deliveryTargets.value
+    }
+
+    try {
+      const response = await fetch('/api/channels/delivery-targets')
+      const data = await response.json()
+
+      if (data.success && Array.isArray(data.targets)) {
+        deliveryTargets.value = data.targets as DeliveryTarget[]
+      } else {
+        deliveryTargets.value = []
+      }
+    } catch (e: any) {
+      console.error('Error fetching delivery targets:', e)
+      deliveryTargets.value = []
+    }
+
+    return deliveryTargets.value
+  }
+
+  async function getChannelConfig(channelId: string): Promise<Record<string, any> | null> {
+    try {
+      const response = await fetch(`/api/channels/${channelId}/config`)
+      const data = await response.json()
+
+      if (data.success) {
+        return data.config
+      }
+      return null
+    } catch (e: any) {
+      console.error('Error getting channel config:', e)
+      return null
+    }
+  }
+
+  // 初始化：只拉一次数据。
+  // 状态轮询由具体页面组件负责（挂载时启动、卸载时清理），
+  // 否则每次进入设置页都会新增一个永不停止的 interval，请求会越积越多。
+  function init() {
+    fetchChannels()
+    fetchStatus()
+  }
+
+  return {
+    // 状态
+    channels,
+    status,
+    deliveryTargets,
+    loading,
+    error,
+
+    // 计算属性
+    enabledChannels,
+    configuredChannels,
+    runningChannels,
+
+    // 方法
+    fetchChannels,
+    fetchStatus,
+    fetchDeliveryTargets,
+    testChannel,
+    updateChannelConfig,
+    updateLocalChannelConfig,
+    saveAllChannels,
+    hasUnsavedChanges,
+    clearPendingChanges,
+    getChannelConfig,
+    init
+  }
+})

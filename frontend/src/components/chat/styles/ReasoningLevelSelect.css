@@ -1,0 +1,96 @@
+/* ReasoningLevelSelect - 输入框里的「思考强度」下拉，紧跟模型选择器 */
+
+.reasoning-select {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+}
+
+.reasoning-select-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 160px;
+    padding: 1px 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    line-height: 1.6;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.reasoning-select-trigger:hover {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+}
+
+.reasoning-select-icon {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.reasoning-select-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+}
+
+.reasoning-select-caret {
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+/* ---------- 弹层 ---------- */
+
+.reasoning-select-popover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    min-width: 140px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+    box-shadow: var(--shadow-md);
+    text-align: left;
+}
+
+.reasoning-select-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.reasoning-select-option:hover {
+    background: var(--color-bg-secondary);
+}
+
+.reasoning-select-option.is-active {
+    background: var(--color-accent-alpha);
+}
+
+.reasoning-select-option-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.reasoning-select-check {
+    flex-shrink: 0;
+    color: var(--color-accent);
+}

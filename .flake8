@@ -1,0 +1,29 @@
+[flake8]
+# 最大行长度
+max-line-length = 100
+
+# 忽略的错误代码：E203/W503 与 black、PEP 8 更新冲突；E501 由 max-line-length 控制
+ignore =
+    E203,
+    W503,
+    E501
+
+# 排除的目录
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    ENV,
+    env,
+    build,
+    dist,
+    *.egg-info,
+    .eggs,
+    frontend,
+    website,
+    data,
+    .github
+
+# 每个文件的最大复杂度
+max-complexity = 10

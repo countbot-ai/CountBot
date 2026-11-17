@@ -1,0 +1,243 @@
+/* ============================================================
+ * WelcomeGuide - 首屏引导
+ * ============================================================ */
+
+.welcome-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 40px 20px;
+  background: var(--bg-primary);
+}
+
+.welcome-hero {
+  text-align: center;
+  margin-bottom: 48px;
+  animation: fadeInUp 0.6s var(--ease-snappy);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.welcome-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 24px;
+  border-radius: 22px;
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.welcome-icon svg,
+.welcome-icon-custom svg {
+  width: 54px;
+  height: 54px;
+}
+
+.welcome-icon-custom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+.welcome-title {
+  font-size: 28px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+  text-wrap: balance; /* 规则 8 */
+}
+
+.welcome-subtitle {
+  font-size: var(--font-size-lg);
+  color: var(--text-secondary);
+  margin: 0;
+  text-wrap: pretty; /* 规则 8 */
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-width: 600px;
+  width: 100%;
+  margin-bottom: 40px;
+  animation: fadeInUp 0.6s var(--ease-snappy) 0.2s both;
+}
+
+.action-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base) var(--ease-snappy),
+    background-color var(--transition-base) var(--ease-snappy),
+    box-shadow var(--transition-base) var(--ease-snappy),
+    transform var(--transition-base) var(--ease-snappy);
+  text-align: left;
+}
+
+.action-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.action-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--text-secondary);
+  transition:
+    background var(--transition-base) var(--ease-snappy),
+    color var(--transition-base) var(--ease-snappy),
+    transform var(--transition-base) var(--ease-snappy);
+}
+
+.action-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.action-card:hover .action-icon {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  transform: scale(1.04);
+}
+
+.action-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.action-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 2px;
+}
+
+.action-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+  text-wrap: pretty; /* 规则 8 */
+}
+
+.action-arrow {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: all var(--transition-base) var(--ease-snappy);
+}
+
+.action-arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.action-card:hover .action-arrow {
+  color: var(--text-secondary);
+  transform: translateX(2px);
+}
+
+.welcome-footer {
+  text-align: center;
+  animation: fadeInUp 0.6s var(--ease-snappy) 0.4s both;
+}
+
+.footer-text {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .welcome-guide {
+    padding: 24px 16px;
+  }
+
+  .welcome-hero {
+    margin-bottom: 28px;
+  }
+
+  .welcome-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 20px;
+  }
+
+  .welcome-icon svg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .welcome-title {
+    font-size: 24px;
+  }
+
+  .welcome-subtitle {
+    font-size: var(--font-size-base);
+  }
+
+  .quick-actions {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
+
+  .action-card {
+    padding: 12px;
+  }
+
+  .action-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .action-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .action-title {
+    font-size: var(--font-size-sm);
+  }
+
+  .action-desc {
+    font-size: 11px;
+  }
+
+  .action-arrow svg {
+    width: 14px;
+    height: 14px;
+  }
+}

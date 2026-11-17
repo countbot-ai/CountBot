@@ -1,0 +1,163 @@
+/**
+ * CSS 变量定义 - 暖中性 + 单一强调色
+ *
+ * 设计理念：
+ * - 去边框：分层完全靠 1%-3% 微明度背景阶梯，边框仅作结构存在感（近不可见）
+ * - 浅色 #fcfcfb / #f5f5f3，暗色 #0b0b0a / #151515 / #1a1a19 / #20201e
+ * - 两种主色：暖中性（骨架）+ terracotta 强调（focus / 选中 / 链接）
+ * - 禁纯黑 #000
+ */
+
+:root {
+    /* ========== 强调色（唯一彩色主色） ========== */
+    --color-accent: #bf6b4a;
+    --color-accent-hover: #a85c3e;
+    --color-accent-active: #8f4e34;
+    --color-accent-light: #f7ece7;
+    --color-accent-alpha: rgba(191, 107, 74, 0.12);
+
+    /* ========== 主色 = 近黑（浅色模式）/ 近白（暗色模式由 themes/dark.css 覆盖） ========== */
+    --color-primary: #23231f;
+    --color-primary-hover: #35342e;
+    --color-primary-active: #45443c;
+    --color-primary-light: #efefea;
+    --color-primary-alpha: rgba(35, 35, 31, 0.06);
+
+    /* 辅助色 */
+    --color-secondary: #6f6d64;
+    --color-secondary-hover: #56544c;
+    --color-secondary-light: #efefea;
+
+    /* 成功色 - 降饱和绿 */
+    --color-success: #3e9c78;
+    --color-success-hover: #358765;
+    --color-success-light: #e6f2ed;
+
+    /* 警告色 - 降饱和琥珀 */
+    --color-warning: #b98a2e;
+    --color-warning-hover: #a1772a;
+    --color-warning-light: #f7efdd;
+
+    /* 错误色 - 降饱和红 */
+    --color-error: #c5544d;
+    --color-error-hover: #ab4841;
+    --color-error-light: #f8e9e7;
+
+    /* 信息色 - 降饱和蓝 */
+    --color-info: #5d8fb8;
+    --color-info-hover: #4f7da4;
+    --color-info-light: #e8f0f6;
+
+    /* ========== 文本色 - 暖灰阶 ========== */
+    --color-text-primary: #1c1c19;
+    --color-text-secondary: #57554e;
+    --color-text-tertiary: #8d8a80;
+    --color-text-disabled: #b9b6ac;
+    --color-text-inverse: #fcfcfb;
+
+    /* ========== 背景色 - 微明度四阶梯 ========== */
+    --color-bg-primary: #fcfcfb;      /* 页面 / 聊天区 */
+    --color-bg-secondary: #f5f5f3;    /* 侧栏 / 沉底 */
+    --color-bg-tertiary: #eeeeea;     /* hover / 内嵌 */
+    --color-bg-elevated: #ffffff;     /* 浮层 / 弹窗 */
+    --color-bg-overlay: rgba(28, 28, 25, 0.32);
+
+    /* ========== 边框 - 1%-3% 微明度（去边框，仅存结构） ========== */
+    --color-border-primary: rgba(28, 28, 25, 0.07);
+    --color-border-secondary: rgba(28, 28, 25, 0.12);
+    --color-border-strong: rgba(28, 28, 25, 0.18);
+    --color-border-focus: var(--color-border-strong);
+
+    /* ========== 阴影色 ========== */
+    --color-shadow: rgba(28, 28, 25, 0.06);
+    --color-shadow-hover: rgba(28, 28, 25, 0.1);
+    --color-overlay: rgba(28, 28, 25, 0.32);
+
+    /* ========== 代码高亮 ========== */
+    --code-bg: #f5f5f2;
+    --code-text: #2b2b26;
+    --code-comment: #9b988c;
+    --code-keyword: #a85c3e;
+    --code-string: #4a8a6c;
+    --code-number: #b98a2e;
+    --code-function: #5d7ea8;
+
+    /* ========== 滚动条 ========== */
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(28, 28, 25, 0.14);
+    --scrollbar-thumb-hover: rgba(28, 28, 25, 0.24);
+
+    /* ========== 特殊组件 ========== */
+    --sidebar-bg: var(--color-bg-secondary);
+    --sidebar-border: var(--color-border-primary);
+    --sidebar-item-hover: var(--color-bg-tertiary);
+    --sidebar-item-active: var(--color-bg-tertiary);
+
+    --header-bg: var(--color-bg-primary);
+    --header-border: var(--color-border-primary);
+
+    --card-bg: var(--color-bg-primary);
+    --card-border: var(--color-border-primary);
+    --card-shadow: none;
+
+    --input-bg: var(--color-bg-primary);
+    --input-border: var(--color-border-secondary);
+    --input-border-focus: var(--color-border-strong);
+    --input-placeholder: var(--color-text-tertiary);
+
+    --button-primary-bg: var(--color-primary);
+    --button-primary-text: var(--color-text-inverse);
+    --button-primary-hover: var(--color-primary-hover);
+
+    --button-secondary-bg: var(--color-bg-primary);
+    --button-secondary-text: var(--color-text-primary);
+    --button-secondary-hover: var(--color-bg-tertiary);
+
+    --modal-bg: var(--color-bg-elevated);
+    --modal-overlay: var(--color-bg-overlay);
+
+    --tooltip-bg: #23231f;
+    --tooltip-text: #fcfcfb;
+
+    /* 消息气泡 */
+    --message-user-bg: var(--color-primary);
+    --message-user-text: var(--color-text-inverse);
+    --message-assistant-bg: var(--color-bg-primary);
+    --message-assistant-text: var(--color-text-primary);
+
+    /* ========== 通用别名 ========== */
+    --text-primary: var(--color-text-primary);
+    --text-secondary: var(--color-text-secondary);
+    --text-tertiary: var(--color-text-tertiary);
+    --text-disabled: var(--color-text-disabled);
+    --bg-primary: var(--color-bg-primary);
+    --bg-secondary: var(--color-bg-secondary);
+    --bg-tertiary: var(--color-bg-tertiary);
+    --bg-elevated: var(--color-bg-elevated);
+    --bg-hover: var(--color-bg-tertiary);
+    --bg-active: var(--color-bg-tertiary);
+    --border-color: var(--color-border-primary);
+    --border-primary: var(--color-border-primary);
+    --border-secondary: var(--color-border-secondary);
+    --border-focus: var(--color-border-strong);
+    --hover-bg: var(--color-bg-tertiary);
+    --overlay: var(--color-bg-overlay);
+    --color-primary-dark: var(--color-primary-active);
+
+    /* 历史别名（旧组件引用，统一映射到新令牌） */
+    --primary-color: var(--color-primary);
+    --primary-hover: var(--color-primary-hover);
+    --accent-color: var(--color-accent);
+    --success-color: var(--color-success);
+    --danger-color: var(--color-error);
+    --font-family-base: var(--font-sans);
+    --font-family-mono: var(--font-mono);
+    --color-shadow-light: var(--shadow-sm);
+    --color-shadow-medium: var(--shadow-md);
+    --color-success-alpha: color-mix(in srgb, var(--color-success) 12%, transparent);
+    --color-error-alpha: color-mix(in srgb, var(--color-error) 12%, transparent);
+    --color-success-dark: var(--color-success-hover);
+    --color-error-dark: var(--color-error-hover);
+    --color-success-lighter: var(--color-success-light);
+    --color-error-lighter: var(--color-error-light);
+}

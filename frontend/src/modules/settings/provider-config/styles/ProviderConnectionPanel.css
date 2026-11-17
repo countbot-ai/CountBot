@@ -1,0 +1,103 @@
+/* 供应商连接表单：名称 / Base URL / 协议 / 密钥 */
+
+.provider-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.form-group-wide {
+  grid-column: 1 / -1;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.label-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.required-hint {
+  color: var(--color-error);
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.api-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.api-key-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.api-key-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.api-key-remove:hover {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.api-key-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.api-key-hint {
+  min-width: 0;
+}
+
+.provider-capability-note {
+  margin: 0;
+}
+
+@container (max-width: 680px) {
+  .provider-form {
+    grid-template-columns: 1fr;
+  }
+
+  .api-key-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}

@@ -1,0 +1,608 @@
+name: Build and Release Desktop App
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to publish, for example v0.1.0"
+        required: true
+        default: "v0.5.0"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-desktop:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: Linux
+            artifact-name: CountBot-Linux-x64
+          - os: windows-latest
+            platform: Windows
+            artifact-name: CountBot-Windows-x64
+          - os: macos-latest
+            platform: macOS
+            artifact-name: CountBot-macOS-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify frontend build
+        shell: bash
+        run: |
+          if [ -d "frontend/dist" ] && [ -f "frontend/dist/index.html" ]; then
+            echo "frontend/dist is ready"
+            ls -la frontend/dist/
+          else
+            echo "frontend/dist is missing"
+            exit 1
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Prune unused lark_oapi API modules
+        run: python scripts/prune_lark_oapi.py
+
+      - name: Resolve icon path
+        id: icon
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "path=resources/countbot.icns" >> "$GITHUB_OUTPUT"
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            echo "path=resources/countbot.ico" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=resources/countbot.png" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build desktop app on Linux and macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          WEBVIEW_IMPORTS="--hidden-import=webview"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            WEBVIEW_IMPORTS="$WEBVIEW_IMPORTS --hidden-import=webview.platforms.cocoa"
+          else
+            WEBVIEW_IMPORTS="$WEBVIEW_IMPORTS --hidden-import=webview.platforms.gtk"
+          fi
+
+          pyinstaller --clean --noconfirm \
+            --name=CountBot \
+            --onedir \
+            --windowed \
+            --icon="${{ steps.icon.outputs.path }}" \
+            --add-data="frontend/dist:frontend/dist" \
+            --add-data="workspace/skills:workspace/skills" \
+            --add-data="workspace/AI_QUICK_REFERENCE.md:workspace" \
+            --add-data="memory:memory" \
+            --add-data="resources:resources" \
+            --hidden-import=greenlet \
+            --hidden-import=greenlet._greenlet \
+            --hidden-import=backend \
+            --hidden-import=backend.app \
+            --hidden-import=backend.database \
+            --hidden-import=backend.utils.paths \
+            --hidden-import=backend.utils.logger \
+            --hidden-import=backend.api.auth \
+            --hidden-import=backend.api.chat \
+            --hidden-import=backend.api.channels \
+            --hidden-import=backend.api.settings \
+            --hidden-import=backend.api.tools \
+            --hidden-import=backend.api.skills \
+            --hidden-import=backend.api.memory \
+            --hidden-import=backend.api.tasks \
+            --hidden-import=backend.api.system \
+            --hidden-import=backend.api.audio \
+            --hidden-import=backend.api.queue \
+            --hidden-import=backend.api.cron \
+            --hidden-import=backend.api.personalities \
+            --hidden-import=backend.api.wiki \
+            --hidden-import=backend.api.mcp \
+            --hidden-import=backend.api.agent_teams \
+            --hidden-import=backend.models.message \
+            --hidden-import=backend.models.session \
+            --hidden-import=backend.models.setting \
+            --hidden-import=backend.models.task \
+            --hidden-import=backend.models.cron_job \
+            --hidden-import=backend.models.tool_conversation \
+            --hidden-import=backend.models.personality \
+            --hidden-import=backend.models.agent_team \
+            --hidden-import=backend.modules.wiki \
+            --hidden-import=backend.modules.wiki.index \
+            --hidden-import=backend.modules.wiki.service \
+            --hidden-import=backend.modules.wiki.tool \
+            --hidden-import=backend.modules.mcp \
+            --hidden-import=backend.modules.mcp.client \
+            --hidden-import=backend.modules.mcp.service \
+            --hidden-import=backend.modules.mcp.error_handlers \
+            --hidden-import=backend.modules.mcp.exceptions \
+            --hidden-import=backend.modules.mcp.validators \
+            --hidden-import=backend.modules.auth \
+            --hidden-import=backend.modules.auth.middleware \
+            --hidden-import=backend.modules.auth.router \
+            --hidden-import=backend.modules.auth.utils \
+            --hidden-import=backend.modules.channels \
+            --hidden-import=backend.modules.channels.manager \
+            --hidden-import=backend.modules.channels.handler \
+            --hidden-import=backend.modules.channels.base \
+            --hidden-import=backend.modules.channels.qq \
+            --hidden-import=backend.modules.channels.dingtalk \
+            --hidden-import=backend.modules.channels.feishu \
+            --hidden-import=backend.modules.channels.feishu_websocket_worker \
+            --hidden-import=backend.modules.channels.telegram \
+            --hidden-import=backend.modules.channels.wechat \
+            --hidden-import=backend.modules.channels.wecom \
+            --hidden-import=backend.modules.channels.weibo \
+            --hidden-import=backend.modules.channels.xiaozhi \
+            --hidden-import=backend.modules.channels.serverchan \
+            --hidden-import=backend.modules.channels.media_utils \
+            --hidden-import=backend.modules.config \
+            --hidden-import=backend.modules.config.loader \
+            --hidden-import=backend.modules.config.schema \
+            --hidden-import=backend.modules.providers \
+            --hidden-import=backend.modules.providers.base \
+            --hidden-import=backend.modules.providers.factory \
+            --hidden-import=backend.modules.providers.registry \
+            --hidden-import=backend.modules.providers.runtime \
+            --hidden-import=backend.modules.providers.openai_provider \
+            --hidden-import=backend.modules.providers.anthropic_provider \
+            --hidden-import=backend.modules.providers.tool_parser \
+            --hidden-import=backend.modules.providers.thinking_profiles \
+            --hidden-import=backend.modules.agent \
+            --hidden-import=backend.modules.agent.loop \
+            --hidden-import=backend.modules.agent.context \
+            --hidden-import=backend.modules.agent.memory \
+            --hidden-import=backend.modules.agent.skills \
+            --hidden-import=backend.modules.agent.skills_config \
+            --hidden-import=backend.modules.agent.skills_schema \
+            --hidden-import=backend.modules.agent.subagent \
+            --hidden-import=backend.modules.agent.prompts \
+            --hidden-import=backend.modules.agent.personalities \
+            --hidden-import=backend.modules.agent.analyzer \
+            --hidden-import=backend.modules.agent.compactor \
+            --hidden-import=backend.modules.agent.heartbeat \
+            --hidden-import=backend.modules.agent.task_manager \
+            --hidden-import=backend.modules.agent.team_commands \
+            --hidden-import=backend.modules.agent.workflow \
+            --hidden-import=backend.modules.tools \
+            --hidden-import=backend.modules.tools.base \
+            --hidden-import=backend.modules.tools.registry \
+            --hidden-import=backend.modules.tools.setup \
+            --hidden-import=backend.modules.tools.shell \
+            --hidden-import=backend.modules.tools.filesystem \
+            --hidden-import=backend.modules.tools.web \
+            --hidden-import=backend.modules.tools.memory_tool \
+            --hidden-import=backend.modules.tools.conversation_history \
+            --hidden-import=backend.modules.tools.file_search \
+            --hidden-import=backend.modules.tools.file_audit_logger \
+            --hidden-import=backend.modules.tools.execution_context \
+            --hidden-import=backend.modules.tools.monitoring \
+            --hidden-import=backend.modules.tools.screenshot \
+            --hidden-import=backend.modules.tools.send_media \
+            --hidden-import=backend.modules.tools.spawn \
+            --hidden-import=backend.modules.tools.workflow_tool \
+            --hidden-import=backend.modules.tools.xiaozhi_message \
+            --hidden-import=backend.modules.tools.external_coding_agent \
+            --hidden-import=backend.modules.cron \
+            --hidden-import=backend.modules.cron.executor \
+            --hidden-import=backend.modules.cron.scheduler \
+            --hidden-import=backend.modules.cron.service \
+            --hidden-import=backend.modules.cron.types \
+            --hidden-import=backend.modules.session \
+            --hidden-import=backend.modules.session.manager \
+            --hidden-import=backend.modules.session.context_service \
+            --hidden-import=backend.modules.session.message_context \
+            --hidden-import=backend.modules.session.runtime_config \
+            --hidden-import=backend.modules.workspace \
+            --hidden-import=backend.modules.workspace.manager \
+            --hidden-import=backend.modules.workspace.seeding \
+            --hidden-import=backend.modules.messaging \
+            --hidden-import=backend.modules.messaging.rate_limiter \
+            --hidden-import=backend.modules.messaging.enterprise_queue \
+            --hidden-import=backend.modules.websocket \
+            --hidden-import=backend.modules.websocket.broadcast \
+            --hidden-import=backend.modules.system \
+            --hidden-import=backend.modules.system.tray \
+            --hidden-import=backend.modules.external_agents \
+            --hidden-import=backend.modules.external_agents.base \
+            --hidden-import=backend.modules.external_agents.conversation \
+            --hidden-import=backend.modules.external_agents.registry \
+            --hidden-import=backend.modules.external_agents.routing \
+            --hidden-import=backend.modules.external_agents.adapters \
+            --hidden-import=backend.modules.external_agents.adapters.cli \
+            --hidden-import=frontmatter \
+            --hidden-import=python_multipart \
+            --hidden-import=yaml \
+            --hidden-import=bs4 \
+            --hidden-import=croniter \
+            --hidden-import=httpx \
+            --hidden-import=anthropic \
+            --hidden-import=openai \
+            --hidden-import=loguru \
+            --hidden-import=pydantic \
+            --hidden-import=pydantic.deprecated \
+            --hidden-import=pydantic.deprecated.decorator \
+            --hidden-import=sqlalchemy \
+            --hidden-import=sqlalchemy.ext \
+            --hidden-import=sqlalchemy.ext.asyncio \
+            --hidden-import=aiosqlite \
+            --hidden-import=websockets \
+            --hidden-import=uvicorn \
+            --hidden-import=uvicorn.logging \
+            --hidden-import=uvicorn.loops \
+            --hidden-import=uvicorn.loops.auto \
+            --hidden-import=uvicorn.protocols \
+            --hidden-import=uvicorn.protocols.http \
+            --hidden-import=uvicorn.protocols.http.auto \
+            --hidden-import=uvicorn.protocols.websockets \
+            --hidden-import=uvicorn.protocols.websockets.auto \
+            --hidden-import=uvicorn.lifespan \
+            --hidden-import=uvicorn.lifespan.on \
+            --hidden-import=fastapi \
+            --hidden-import=sqlalchemy.ext.asyncio \
+            --hidden-import=aiosqlite \
+            $WEBVIEW_IMPORTS \
+            --exclude-module=playwright \
+            --exclude-module=pandas \
+            --exclude-module=numpy \
+            --exclude-module=PyQt5 \
+            --exclude-module=PyQt6 \
+            --exclude-module=PySide2 \
+            --exclude-module=PySide6 \
+            --exclude-module=tkinter \
+            --exclude-module=matplotlib \
+            --exclude-module=scipy \
+            --exclude-module=PIL.ImageQt \
+            --exclude-module=transformers \
+            --exclude-module=torch \
+            --exclude-module=tensorflow \
+            --exclude-module=psycopg2 \
+            --exclude-module=asyncpg \
+            --exclude-module=litellm \
+            --exclude-module=boto3 \
+            --exclude-module=botocore \
+            --exclude-module=s3transfer \
+            --exclude-module=jmespath \
+            --exclude-module=trafilatura \
+            --exclude-module=pygments \
+            --exclude-module=sqlalchemy.dialects.mssql \
+            --exclude-module=sqlalchemy.dialects.mysql \
+            --exclude-module=sqlalchemy.dialects.oracle \
+            --exclude-module=sqlalchemy.dialects.postgresql \
+            --exclude-module=PyObjCTest \
+            --exclude-module=pip \
+            --exclude-module=setuptools \
+            --exclude-module=pkg_resources \
+            start_desktop.py
+
+      - name: Build desktop app on Windows
+        if: runner.os == 'Windows'
+        run: |
+          python scripts/prune_lark_oapi.py
+          pyinstaller --clean --noconfirm `
+            --name=CountBot `
+            --onedir `
+            --windowed `
+            --icon="${{ steps.icon.outputs.path }}" `
+            --add-data="frontend/dist;frontend/dist" `
+            --add-data="workspace/skills;workspace/skills" `
+            --add-data="workspace/AI_QUICK_REFERENCE.md;workspace" `
+            --add-data="memory;memory" `
+            --add-data="resources;resources" `
+            --hidden-import=greenlet `
+            --hidden-import=greenlet._greenlet `
+            --hidden-import=backend `
+            --hidden-import=backend.app `
+            --hidden-import=backend.database `
+            --hidden-import=backend.utils.paths `
+            --hidden-import=backend.utils.logger `
+            --hidden-import=backend.api.auth `
+            --hidden-import=backend.api.chat `
+            --hidden-import=backend.api.channels `
+            --hidden-import=backend.api.settings `
+            --hidden-import=backend.api.tools `
+            --hidden-import=backend.api.skills `
+            --hidden-import=backend.api.memory `
+            --hidden-import=backend.api.tasks `
+            --hidden-import=backend.api.system `
+            --hidden-import=backend.api.audio `
+            --hidden-import=backend.api.queue `
+            --hidden-import=backend.api.cron `
+            --hidden-import=backend.api.personalities `
+            --hidden-import=backend.api.wiki `
+            --hidden-import=backend.api.mcp `
+            --hidden-import=backend.api.agent_teams `
+            --hidden-import=backend.models.message `
+            --hidden-import=backend.models.session `
+            --hidden-import=backend.models.setting `
+            --hidden-import=backend.models.task `
+            --hidden-import=backend.models.cron_job `
+            --hidden-import=backend.models.tool_conversation `
+            --hidden-import=backend.models.personality `
+            --hidden-import=backend.models.agent_team `
+            --hidden-import=backend.modules.wiki `
+            --hidden-import=backend.modules.wiki.index `
+            --hidden-import=backend.modules.wiki.service `
+            --hidden-import=backend.modules.wiki.tool `
+            --hidden-import=backend.modules.mcp `
+            --hidden-import=backend.modules.mcp.client `
+            --hidden-import=backend.modules.mcp.service `
+            --hidden-import=backend.modules.mcp.error_handlers `
+            --hidden-import=backend.modules.mcp.exceptions `
+            --hidden-import=backend.modules.mcp.validators `
+            --hidden-import=backend.modules.auth `
+            --hidden-import=backend.modules.auth.middleware `
+            --hidden-import=backend.modules.auth.router `
+            --hidden-import=backend.modules.auth.utils `
+            --hidden-import=backend.modules.channels `
+            --hidden-import=backend.modules.channels.manager `
+            --hidden-import=backend.modules.channels.handler `
+            --hidden-import=backend.modules.channels.base `
+            --hidden-import=backend.modules.channels.qq `
+            --hidden-import=backend.modules.channels.dingtalk `
+            --hidden-import=backend.modules.channels.feishu `
+            --hidden-import=backend.modules.channels.feishu_websocket_worker `
+            --hidden-import=backend.modules.channels.telegram `
+            --hidden-import=backend.modules.channels.wechat `
+            --hidden-import=backend.modules.channels.wecom `
+            --hidden-import=backend.modules.channels.weibo `
+            --hidden-import=backend.modules.channels.xiaozhi `
+            --hidden-import=backend.modules.channels.serverchan `
+            --hidden-import=backend.modules.channels.media_utils `
+            --hidden-import=backend.modules.config `
+            --hidden-import=backend.modules.config.loader `
+            --hidden-import=backend.modules.config.schema `
+            --hidden-import=backend.modules.providers `
+            --hidden-import=backend.modules.providers.base `
+            --hidden-import=backend.modules.providers.factory `
+            --hidden-import=backend.modules.providers.registry `
+            --hidden-import=backend.modules.providers.runtime `
+            --hidden-import=backend.modules.providers.openai_provider `
+            --hidden-import=backend.modules.providers.anthropic_provider `
+            --hidden-import=backend.modules.providers.tool_parser `
+            --hidden-import=backend.modules.providers.thinking_profiles `
+            --hidden-import=backend.modules.agent `
+            --hidden-import=backend.modules.agent.loop `
+            --hidden-import=backend.modules.agent.context `
+            --hidden-import=backend.modules.agent.memory `
+            --hidden-import=backend.modules.agent.skills `
+            --hidden-import=backend.modules.agent.skills_config `
+            --hidden-import=backend.modules.agent.skills_schema `
+            --hidden-import=backend.modules.agent.subagent `
+            --hidden-import=backend.modules.agent.prompts `
+            --hidden-import=backend.modules.agent.personalities `
+            --hidden-import=backend.modules.agent.analyzer `
+            --hidden-import=backend.modules.agent.compactor `
+            --hidden-import=backend.modules.agent.heartbeat `
+            --hidden-import=backend.modules.agent.task_manager `
+            --hidden-import=backend.modules.agent.team_commands `
+            --hidden-import=backend.modules.agent.workflow `
+            --hidden-import=backend.modules.tools `
+            --hidden-import=backend.modules.tools.base `
+            --hidden-import=backend.modules.tools.registry `
+            --hidden-import=backend.modules.tools.setup `
+            --hidden-import=backend.modules.tools.shell `
+            --hidden-import=backend.modules.tools.filesystem `
+            --hidden-import=backend.modules.tools.web `
+            --hidden-import=backend.modules.tools.memory_tool `
+            --hidden-import=backend.modules.tools.conversation_history `
+            --hidden-import=backend.modules.tools.file_search `
+            --hidden-import=backend.modules.tools.file_audit_logger `
+            --hidden-import=backend.modules.tools.execution_context `
+            --hidden-import=backend.modules.tools.monitoring `
+            --hidden-import=backend.modules.tools.screenshot `
+            --hidden-import=backend.modules.tools.send_media `
+            --hidden-import=backend.modules.tools.spawn `
+            --hidden-import=backend.modules.tools.workflow_tool `
+            --hidden-import=backend.modules.tools.xiaozhi_message `
+            --hidden-import=backend.modules.tools.external_coding_agent `
+            --hidden-import=backend.modules.cron `
+            --hidden-import=backend.modules.cron.executor `
+            --hidden-import=backend.modules.cron.scheduler `
+            --hidden-import=backend.modules.cron.service `
+            --hidden-import=backend.modules.cron.types `
+            --hidden-import=backend.modules.session `
+            --hidden-import=backend.modules.session.manager `
+            --hidden-import=backend.modules.session.context_service `
+            --hidden-import=backend.modules.session.message_context `
+            --hidden-import=backend.modules.session.runtime_config `
+            --hidden-import=backend.modules.workspace `
+            --hidden-import=backend.modules.workspace.manager `
+            --hidden-import=backend.modules.workspace.seeding `
+            --hidden-import=backend.modules.messaging `
+            --hidden-import=backend.modules.messaging.rate_limiter `
+            --hidden-import=backend.modules.messaging.enterprise_queue `
+            --hidden-import=backend.modules.websocket `
+            --hidden-import=backend.modules.websocket.broadcast `
+            --hidden-import=backend.modules.system `
+            --hidden-import=backend.modules.system.tray `
+            --hidden-import=backend.modules.external_agents `
+            --hidden-import=backend.modules.external_agents.base `
+            --hidden-import=backend.modules.external_agents.conversation `
+            --hidden-import=backend.modules.external_agents.registry `
+            --hidden-import=backend.modules.external_agents.routing `
+            --hidden-import=backend.modules.external_agents.adapters `
+            --hidden-import=backend.modules.external_agents.adapters.cli `
+            --hidden-import=frontmatter `
+            --hidden-import=python_multipart `
+            --hidden-import=yaml `
+            --hidden-import=bs4 `
+            --hidden-import=croniter `
+            --hidden-import=httpx `
+            --hidden-import=anthropic `
+            --hidden-import=openai `
+            --hidden-import=loguru `
+            --hidden-import=pydantic `
+            --hidden-import=pydantic.deprecated `
+            --hidden-import=pydantic.deprecated.decorator `
+            --hidden-import=sqlalchemy `
+            --hidden-import=sqlalchemy.ext `
+            --hidden-import=sqlalchemy.ext.asyncio `
+            --hidden-import=aiosqlite `
+            --hidden-import=websockets `
+            --hidden-import=uvicorn `
+            --hidden-import=uvicorn.logging `
+            --hidden-import=uvicorn.loops `
+            --hidden-import=uvicorn.loops.auto `
+            --hidden-import=uvicorn.protocols `
+            --hidden-import=uvicorn.protocols.http `
+            --hidden-import=uvicorn.protocols.http.auto `
+            --hidden-import=uvicorn.protocols.websockets `
+            --hidden-import=uvicorn.protocols.websockets.auto `
+            --hidden-import=uvicorn.lifespan `
+            --hidden-import=uvicorn.lifespan.on `
+            --hidden-import=fastapi `
+            --hidden-import=sqlalchemy.ext.asyncio `
+            --hidden-import=aiosqlite `
+            --hidden-import=webview `
+            --hidden-import=webview.platforms.edgechromium `
+            --hidden-import=webview.platforms.winforms `
+            --exclude-module=playwright `
+            --exclude-module=pandas `
+            --exclude-module=numpy `
+            --exclude-module=PyQt5 `
+            --exclude-module=PyQt6 `
+            --exclude-module=PySide2 `
+            --exclude-module=PySide6 `
+            --exclude-module=tkinter `
+            --exclude-module=matplotlib `
+            --exclude-module=scipy `
+            --exclude-module=PIL.ImageQt `
+            --exclude-module=transformers `
+            --exclude-module=torch `
+            --exclude-module=tensorflow `
+            --exclude-module=psycopg2 `
+            --exclude-module=asyncpg `
+            --exclude-module=litellm `
+            --exclude-module=boto3 `
+            --exclude-module=botocore `
+            --exclude-module=s3transfer `
+            --exclude-module=jmespath `
+            --exclude-module=trafilatura `
+            --exclude-module=pygments `
+            --exclude-module=sqlalchemy.dialects.mssql `
+            --exclude-module=sqlalchemy.dialects.mysql `
+            --exclude-module=sqlalchemy.dialects.oracle `
+            --exclude-module=sqlalchemy.dialects.postgresql `
+            --exclude-module=PyObjCTest `
+            --exclude-module=pip `
+            --exclude-module=setuptools `
+            --exclude-module=pkg_resources `
+            start_desktop.py
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "${{ matrix.artifact-name }}.tar.gz" CountBot.app/
+          ls -lh *.tar.gz
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "${{ matrix.artifact-name }}.tar.gz" CountBot/
+          ls -lh *.tar.gz
+
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          Compress-Archive -Path CountBot -DestinationPath "${{ matrix.artifact-name }}.zip"
+          Get-ChildItem *.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Show artifacts
+        shell: bash
+        run: |
+          find artifacts -type f -print
+          echo ""
+          find artifacts -type f -exec ls -lh {} \;
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: CountBot ${{ steps.version.outputs.version }}
+          files: |
+            artifacts/*/*.tar.gz
+            artifacts/*/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            ## CountBot ${{ steps.version.outputs.version }} 发布说明
+
+            ### 构建产物
+            - 已提供 Windows、macOS、Linux 桌面版打包文件。
+            - 桌面版默认将运行时数据写入程序所在目录，便于携带、迁移和排查问题。
+
+            ### 使用提示
+            - 桌面版仍建议优先在常规目录下解压运行，避免放在系统保护目录。
+            - 如桌面版启动失败，优先切换为 Python 源码运行方式排查。
+            - Skills 调用依赖 `python` 或 `python3` 命令，请确保已加入系统环境变量。
+
+            ### 已包含内容
+            - 内置前端静态资源
+            - 内置 skills 初始资源
+            
+            ### 目录说明
+            - `workspace/`、`data/`、`config/` 默认位于程序运行目录
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

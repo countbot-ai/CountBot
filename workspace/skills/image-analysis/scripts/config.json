@@ -1,0 +1,14 @@
+{
+  "default_model": "qwen",
+  "zhipu": {
+    "api_key": "",
+    "model": "glm-4.6v-flash",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+  },
+  "qwen": {
+    "api_key": "",
+    "model": "qwen3-omni-flash-2025-12-01",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "region": "beijing"
+  }
+}

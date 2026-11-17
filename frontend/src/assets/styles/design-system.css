@@ -1,0 +1,250 @@
+/**
+ * Design System - 间距 / 圆角 / 聊天窗口布局调整
+ * 颜色全部交给 tokens + themes，本文件不再定义任何色值。
+ */
+
+/* ==================== 精细化间距系统 ==================== */
+:root {
+  --space-unit: 4px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* 圆角系统 */
+  --radius-xs: 2px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* 过渡 - 拖拽/开合用过阻尼咬死，确认反馈用微弹 */
+  --transition-fast: 140ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-base: 220ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-slow: 320ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ==================== 聊天窗口布局调整 ==================== */
+
+.chat-window .header {
+  height: 60px;
+  padding: 0 var(--space-6);
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.chat-window .title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.chat-window .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat-window .icon-btn:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.chat-window .icon-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* 消息区域 */
+.message-list-container {
+  padding: var(--space-6);
+}
+
+/* 输入区域 */
+.chat-window .input-area {
+  padding: var(--space-4) var(--space-6) var(--space-5);
+  background: var(--color-bg-primary);
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.chat-window .input-wrapper {
+  max-width: 860px;
+  margin: 0 auto;
+  gap: var(--space-3);
+}
+
+/* 规则 2 - 输入框双环咬合 */
+.chat-window .input {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  box-shadow: none;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.chat-window .input:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 5px var(--color-border-primary);
+}
+
+.chat-window .input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* 发送按钮 */
+.chat-window .send-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  box-shadow: none;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.chat-window .send-btn:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-strong);
+}
+
+.chat-window .send-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-inverse);
+}
+
+.chat-window .send-btn.active:hover {
+  background: var(--color-primary-hover);
+}
+
+.chat-window .send-btn.active:active {
+  transform: scale(0.94);
+}
+
+/* ==================== 文本 ==================== */
+
+.title,
+.panel-title,
+.section-title,
+.op-title,
+.executor-title,
+.history-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.description,
+.op-desc,
+.executor-desc,
+.text-secondary,
+.skill-description,
+.tool-description {
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.text-tertiary,
+.form-hint {
+  color: var(--color-text-tertiary);
+}
+
+.stat-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ==================== 折叠 - 规则 7：Grid 0fr→1fr，免 JS 算高 ==================== */
+
+.collapse-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--transition-base);
+}
+
+.collapse-grid > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.collapse-grid.is-open {
+  grid-template-rows: 1fr;
+}
+
+/* ==================== 响应式 ==================== */
+
+@media (max-width: 768px) {
+  .chat-window .header {
+    height: 54px;
+    padding: 0 var(--space-4);
+  }
+
+  .chat-window .input-area {
+    padding: var(--space-4);
+  }
+
+  .message-list-container {
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-window .header {
+    height: 50px;
+  }
+
+  .chat-window .title {
+    font-size: var(--font-size-base);
+  }
+}
+
+/* 减少动态偏好 */
+@media (prefers-reduced-motion: reduce) {
+
+  .collapse-grid,
+  .chat-window .input,
+  .chat-window .send-btn,
+  .chat-window .icon-btn {
+    transition: none;
+  }
+}

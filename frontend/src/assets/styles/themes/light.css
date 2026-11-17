@@ -1,0 +1,94 @@
+/**
+ * 浅色主题 - 暖中性微明度分层
+ * 与 variables.css 默认值保持一致；显式声明确保主题切换后状态确定。
+ */
+
+[data-theme='light'] {
+    --color-accent: #bf6b4a;
+    --color-accent-hover: #a85c3e;
+    --color-accent-active: #8f4e34;
+    --color-accent-light: #f7ece7;
+    --color-accent-alpha: rgba(191, 107, 74, 0.12);
+
+    --color-primary: #23231f;
+    --color-primary-hover: #35342e;
+    --color-primary-active: #45443c;
+    --color-primary-light: #efefea;
+    --color-primary-alpha: rgba(35, 35, 31, 0.06);
+
+    --color-secondary: #6f6d64;
+    --color-secondary-hover: #56544c;
+    --color-secondary-light: #efefea;
+
+    --color-success: #3e9c78;
+    --color-success-hover: #358765;
+    --color-success-light: #e6f2ed;
+
+    --color-warning: #b98a2e;
+    --color-warning-hover: #a1772a;
+    --color-warning-light: #f7efdd;
+
+    --color-error: #c5544d;
+    --color-error-hover: #ab4841;
+    --color-error-light: #f8e9e7;
+
+    --color-info: #5d8fb8;
+    --color-info-hover: #4f7da4;
+    --color-info-light: #e8f0f6;
+
+    --color-text-primary: #1c1c19;
+    --color-text-secondary: #57554e;
+    --color-text-tertiary: #8d8a80;
+    --color-text-disabled: #b9b6ac;
+    --color-text-inverse: #fcfcfb;
+
+    --color-bg-primary: #fcfcfb;
+    --color-bg-secondary: #f5f5f3;
+    --color-bg-tertiary: #eeeeea;
+    --color-bg-elevated: #ffffff;
+    --color-bg-overlay: rgba(28, 28, 25, 0.32);
+
+    --color-border-primary: rgba(28, 28, 25, 0.07);
+    --color-border-secondary: rgba(28, 28, 25, 0.12);
+    --color-border-strong: rgba(28, 28, 25, 0.18);
+    --color-border-focus: var(--color-border-strong);
+
+    --color-shadow: rgba(28, 28, 25, 0.06);
+    --color-shadow-hover: rgba(28, 28, 25, 0.1);
+    --color-overlay: rgba(28, 28, 25, 0.32);
+
+    --code-bg: #f5f5f2;
+    --code-text: #2b2b26;
+    --code-comment: #9b988c;
+    --code-keyword: #a85c3e;
+    --code-string: #4a8a6c;
+    --code-number: #b98a2e;
+    --code-function: #5d7ea8;
+
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(28, 28, 25, 0.14);
+    --scrollbar-thumb-hover: rgba(28, 28, 25, 0.24);
+
+    --sidebar-bg: var(--color-bg-secondary);
+    --header-bg: var(--color-bg-primary);
+    --card-bg: var(--color-bg-primary);
+
+    --input-bg: var(--color-bg-primary);
+    --input-border: var(--color-border-secondary);
+    --input-placeholder: var(--color-text-tertiary);
+
+    --button-primary-bg: var(--color-primary);
+    --button-primary-text: var(--color-text-inverse);
+
+    --tooltip-bg: #23231f;
+    --tooltip-text: #fcfcfb;
+
+    --message-user-bg: var(--color-primary);
+    --message-user-text: var(--color-text-inverse);
+    --message-assistant-bg: var(--color-bg-primary);
+    --message-assistant-text: var(--color-text-primary);
+
+    --color-success-bg: #e6f2ed;
+    --color-error-bg: #f8e9e7;
+    --color-warning-bg: #f7efdd;
+}

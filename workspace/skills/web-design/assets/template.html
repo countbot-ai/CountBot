@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>页面标题</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #FFFFFF;
+        }
+
+        .card {
+            background-color: white;
+            border: 1px solid #E5E7EB;
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .card:hover {
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .highlight-gradient-blue {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0), rgba(59, 130, 246, 0.05));
+        }
+
+        .highlight-gradient-green {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0), rgba(16, 185, 129, 0.05));
+        }
+
+        .highlight-gradient-purple {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0), rgba(139, 92, 246, 0.05));
+        }
+
+        .highlight-gradient-orange {
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0), rgba(249, 115, 22, 0.05));
+        }
+
+        .highlight-gradient-red {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0), rgba(239, 68, 68, 0.05));
+        }
+
+        .highlight-gradient-teal {
+            background: linear-gradient(135deg, rgba(20, 184, 166, 0), rgba(20, 184, 166, 0.05));
+        }
+    </style>
+</head>
+
+<body class="bg-white">
+    <div class="max-w-7xl mx-auto p-4 md:p-8">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+
+            <!-- 标题卡片：横跨 4 列 -->
+            <div class="card md:col-span-4 p-8 flex flex-col justify-center items-center text-center">
+                <div class="absolute top-0 left-0 w-full h-full highlight-gradient-blue"></div>
+                <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-4 z-10">主标题</h1>
+                <h2 class="text-3xl md:text-4xl font-bold text-blue-600 mb-6 z-10">副标题</h2>
+                <div class="flex items-center space-x-4 text-gray-500 z-10">
+                    <span><i class="fa-solid fa-tag mr-2"></i>标签一</span>
+                    <span><i class="fa-solid fa-chart-line mr-2"></i>标签二</span>
+                </div>
+            </div>
+
+            <!-- 大卡片：横跨 2 列 2 行 -->
+            <div class="card md:col-span-2 md:row-span-2 p-8 flex flex-col justify-between">
+                <div class="absolute top-0 left-0 w-full h-full highlight-gradient-green"></div>
+                <div class="z-10">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">内容区标题</h3>
+                    <p class="text-gray-600 mb-6">描述文字，介绍核心内容。</p>
+                    <div class="space-y-4">
+                        <div class="flex items-start space-x-3">
+                            <i class="fa-solid fa-server text-green-500 mt-1"></i>
+                            <div>
+                                <h4 class="font-semibold text-gray-700">特性一</h4>
+                                <p class="text-sm text-gray-500">特性描述</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start space-x-3">
+                            <i class="fa-solid fa-puzzle-piece text-green-500 mt-1"></i>
+                            <div>
+                                <h4 class="font-semibold text-gray-700">特性二</h4>
+                                <p class="text-sm text-gray-500">特性描述</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-6xl font-bold text-green-500/20 text-right z-10">
+                    <i class="fa-solid fa-layer-group"></i>
+                </div>
+            </div>
+
+            <!-- 小卡片：1 列 -->
+            <div class="card p-6 flex flex-col justify-center items-center text-center">
+                <div class="absolute top-0 left-0 w-full h-full highlight-gradient-purple"></div>
+                <div class="text-4xl text-purple-500 mb-3 z-10"><i class="fa-solid fa-shield-halved"></i></div>
+                <h4 class="text-lg font-bold text-gray-800 mb-2 z-10">指标卡片</h4>
+                <p class="text-sm text-gray-500 z-10">简短说明</p>
+            </div>
+
+            <div class="card p-6 flex flex-col justify-center items-center text-center">
+                <div class="absolute top-0 left-0 w-full h-full highlight-gradient-purple"></div>
+                <div class="text-4xl text-purple-500 mb-3 z-10"><i class="fa-solid fa-cubes"></i></div>
+                <h4 class="text-lg font-bold text-gray-800 mb-2 z-10">指标卡片</h4>
+                <p class="text-sm text-gray-500 z-10">简短说明</p>
+            </div>
+
+            <!-- 数据对比卡片：横跨 2 列，带数字指标 -->
+            <div class="card md:col-span-2 p-8">
+                <div class="absolute top-0 left-0 w-full h-full highlight-gradient-blue"></div>
+                <div class="flex items-center space-x-4 mb-4 z-10 relative">
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fa-solid fa-headset text-blue-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-xl font-bold text-gray-800">场景卡片</h4>
+                        <p class="text-sm text-gray-500">场景描述</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 mb-4 z-10 relative">详细说明文字。</p>
+                <div class="flex items-center space-x-6 z-10 relative">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-blue-600">200+</div>
+                        <div class="text-xs text-gray-500">指标一</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-blue-600">85%</div>
+                        <div class="text-xs text-gray-500">指标二</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 图表卡片：横跨 4 列 -->
+            <div class="card md:col-span-4 p-8">
+                <div class="absolute top-0 left-0 w-full h-full highlight-gradient-orange"></div>
+                <h3 class="text-2xl font-bold text-gray-800 mb-6 z-10 relative">图表区域</h3>
+                <div class="h-80 z-10 relative">
+                    <canvas id="demoChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // 示例图表
+        const ctx = document.getElementById('demoChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['类别A', '类别B', '类别C', '类别D', '类别E'],
+                datasets: [{
+                    label: '数据 (%)',
+                    data: [35, 25, 20, 12, 8],
+                    backgroundColor: [
+                        'rgba(16, 185, 129, 0.7)',
+                        'rgba(59, 130, 246, 0.7)',
+                        'rgba(139, 92, 246, 0.7)',
+                        'rgba(249, 115, 22, 0.7)',
+                        'rgba(239, 68, 68, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgb(16, 185, 129)',
+                        'rgb(59, 130, 246)',
+                        'rgb(139, 92, 246)',
+                        'rgb(249, 115, 22)',
+                        'rgb(239, 68, 68)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { callback: v => v + '%' }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

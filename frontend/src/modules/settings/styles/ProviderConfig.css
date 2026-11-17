@@ -1,0 +1,272 @@
+/**
+ * 模型供应商设置（编排层）。
+ * 左导航 + 右详情的双栏壳；导航/连接表单/模型清单的内部样式分别在
+ * provider-config/styles/ 下的对应文件里，这里只保留壳与共享卡片。
+ */
+
+.provider-config {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- 已保存 / 草稿对照卡 ---------- */
+
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 12px;
+}
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-2xl);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
+}
+
+.state-card.is-dirty {
+  border-color: var(--color-border-strong);
+}
+
+.state-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.state-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.state-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.state-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.state-provider {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-model {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 双栏工作区 ---------- */
+
+.provider-workspace {
+  display: grid;
+  /* 窄容器收成图标条，宽容器展开为列表 */
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-2xl);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
+}
+
+@container (min-width: 760px) {
+  .provider-workspace {
+    grid-template-columns: 224px minmax(0, 1fr);
+  }
+}
+
+.provider-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+}
+
+.provider-detail.is-empty {
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.provider-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.provider-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.provider-detail-title h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.provider-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ---------- 状态徽标 / 测试结果 ---------- */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.status-pill.ready {
+  color: var(--color-success);
+  background: var(--color-success-light);
+}
+
+.status-pill.warning {
+  color: var(--color-warning);
+  background: var(--color-warning-light);
+}
+
+.status-pill.neutral {
+  color: var(--text-secondary);
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.test-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-xl);
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.test-result.success {
+  color: var(--color-success);
+  background: var(--color-success-light);
+}
+
+.test-result.error {
+  color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+/* ---------- 窄容器：收紧详情内边距 ---------- */
+
+@container (max-width: 759px) {
+  .provider-detail {
+    padding: 12px 12px 14px;
+    gap: 14px;
+  }
+
+  .provider-detail-header {
+    align-items: flex-start;
+  }
+}
+
+@container (max-width: 560px) {
+  .state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pill {
+    transition: none !important;
+  }
+}

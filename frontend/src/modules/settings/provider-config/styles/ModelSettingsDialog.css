@@ -1,0 +1,139 @@
+/**
+ * 模型设置弹窗。
+ * 字段自上而下：显示名称 / 上下文长度 / 图片输入 / 思考档位。
+ * 思考档位用 chips 呈现：选中即入列，点 X 或再点一次即移出。
+ */
+
+.model-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+/* ---------- 思考档位 ---------- */
+
+.reasoning-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.reasoning-restore {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.reasoning-restore:hover {
+  text-decoration: underline;
+}
+
+.reasoning-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reasoning-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 999px;
+  background: var(--color-bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.reasoning-chip:hover {
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-tertiary);
+}
+
+.reasoning-chip.is-checked {
+  border-color: var(--color-accent);
+  background: var(--color-accent-alpha);
+  color: var(--color-accent);
+}
+
+.reasoning-chip.is-default {
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.reasoning-chip-mark {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.reasoning-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.reasoning-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reasoning-add-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.reasoning-add-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.reasoning-add-input:focus {
+  border-color: var(--color-border-strong);
+}
+
+.reasoning-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-error);
+}

@@ -1,0 +1,116 @@
+# ============================================
+# CountBot .gitignore
+# ============================================
+
+# ── Python ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ── 虚拟环境 ────────────────────────────────
+venv/
+ENV/
+env/
+.venv/
+
+# ── IDE ─────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── 日志 ────────────────────────────────────
+*.log
+data/logs/
+data/audit_logs/
+
+# ── 数据库 ──────────────────────────────────
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.db_*
+
+# ── 测试和脚本 ──────────────────────────────
+backend/tests/
+backend/scripts/
+
+# ── 运行时 ──────────────────────────────────
+*.pid
+data/.*.pid
+
+# ── 运行时数据（本地生成，不入库）──────────
+/data/
+workspace/uploads/
+workspace/memory/*.jsonl
+workspace/memory/*.lock
+workspace/memory/*.legacy
+workspace/skills/.skills_store_lock.json
+.backup-split/
+
+# ── Node ────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── 前端源代码（已开源）──────
+# frontend/src/
+# frontend/public/
+# frontend/index.html
+# frontend/package.json
+# frontend/package-lock.json
+# frontend/tsconfig.json
+# frontend/tsconfig.node.json
+# frontend/vite.config.ts
+frontend/.vite/
+frontend/dist/test_*.html
+
+# ── 临时文件 ────────────────────────────────
+data/temp/
+data/workspace/
+temp/
+*.tmp
+*.txt
+# 依赖清单是源码，不受上面的 *.txt 影响
+!requirements*.txt
+*.xlsx
+*.xls
+
+# ── 构建产物 ────────────────────────────────
+dist/
+!frontend/dist/
+*.spec
+
+# ── Git 提交辅助文件 ──────────────────────
+COMMIT_COMMANDS.md
+GIT_COMMIT_GUIDE.md
+commit_v0.3.0.sh
+FILE_REVIEW.md
+DEPENDENCIES_ANALYSIS.md
+FALLBACK_MECHANISM_ANALYSIS.md
+FILE_CLEANUP_REPORT.md
+INSTALLATION_GUIDE.md

@@ -1,0 +1,201 @@
+/**
+ * ReasoningBlock - 思考过程
+ *
+ * 收起态只有一行：图标 + 状态词 + 流式末行。
+ * 没有徽章、没有统计药丸、没有轨道装饰——思考是过程信息，不该抢正文的位置。
+ */
+
+.reasoning {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---------- 触发器 ---------- */
+.reasoning-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.reasoning-trigger:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.reasoning-trigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+
+.reasoning-glyph {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+}
+
+.reasoning-trigger:hover .reasoning-glyph {
+  color: var(--color-text-secondary);
+}
+
+.reasoning-state {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+/* 流式中的扫光：用背景剪裁做文字渐变，只有状态词在动，不牵动整块重排 */
+.reasoning-state.is-live {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-text-tertiary) 0%,
+    var(--color-text-primary) 42%,
+    var(--color-text-tertiary) 82%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: reasoning-sweep 2.2s linear infinite;
+}
+
+@keyframes reasoning-sweep {
+  from {
+    background-position: 130% center;
+  }
+  to {
+    background-position: -130% center;
+  }
+}
+
+.reasoning-separator {
+  flex: 0 0 auto;
+  color: var(--color-text-disabled);
+}
+
+.reasoning-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* 右缘淡出，长句不会硬切在半个字上 */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+}
+
+.reasoning-count {
+  flex: 0 0 auto;
+  color: var(--color-text-disabled);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reasoning-chevron {
+  flex: 0 0 auto;
+  color: var(--color-text-disabled);
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity var(--transition-fast), transform var(--transition-base) var(--ease-snappy);
+}
+
+.reasoning-trigger:hover .reasoning-chevron,
+.reasoning-trigger:focus-visible .reasoning-chevron {
+  opacity: 1;
+}
+
+.reasoning-chevron.is-open {
+  transform: rotate(90deg);
+  opacity: 1;
+}
+
+/* ---------- 展开体 ---------- */
+.reasoning-body {
+  position: relative;
+  padding: 2px 8px 10px 30px;
+}
+
+.reasoning-text {
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.78;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overscroll-behavior: contain;
+}
+
+.reasoning-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.reasoning-text::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--scrollbar-thumb);
+}
+
+.reasoning-copy {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-tertiary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.reasoning-body:hover .reasoning-copy,
+.reasoning-copy:focus-visible {
+  opacity: 1;
+}
+
+.reasoning-copy:hover {
+  color: var(--color-text-primary);
+}
+
+/* ---------- 展开动画 ---------- */
+.reasoning-expand-enter-active,
+.reasoning-expand-leave-active {
+  transition: opacity var(--transition-fast) ease, transform var(--transition-fast) ease;
+}
+
+.reasoning-expand-enter-from,
+.reasoning-expand-leave-to {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+@media (max-width: 640px) {
+  .reasoning-body {
+    padding-left: 10px;
+  }
+
+  .reasoning-preview {
+    display: none;
+  }
+}

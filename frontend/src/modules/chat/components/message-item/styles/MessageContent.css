@@ -1,0 +1,107 @@
+.message-content-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-content {
+  line-height: 1.6;
+  word-break: break-word;
+  text-wrap: pretty;
+}
+
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.thinking-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.dot:nth-child(1) { animation-delay: -0.32s; }
+.dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+.assistant-response-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.typewriter-active {
+  opacity: 0.9;
+}
+
+/* 用户消息：主色气泡；AI 消息：透明无气泡 */
+.message-content.markdown-content {
+  background: transparent;
+  border: none;
+}
+
+.message-content:not(.markdown-content) {
+  background: var(--color-primary);
+  border: none;
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-lg);
+  white-space: pre-wrap;
+}
+
+.thinking-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  animation: thinking-bounce 1.4s ease-in-out infinite;
+}
+
+.thinking-dots .dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.thinking-dots .dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.typewriter-active :deep(*:last-child)::after {
+  content: '|';
+  animation: blink-cursor 0.7s step-end infinite;
+  color: var(--color-accent);
+  font-weight: 100;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

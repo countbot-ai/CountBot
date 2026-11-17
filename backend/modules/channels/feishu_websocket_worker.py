@@ -1,0 +1,277 @@
+"""飞书 WebSocket 独立进程
+
+在完全独立的进程中运行飞书 WebSocket 连接，避免事件循环冲突。
+使用 multiprocessing.Queue 进行进程间通信。
+"""
+
+import importlib.util
+import json
+import os
+import signal
+import sys
+from typing import Any
+
+from loguru import logger
+
+# Worker 进程独立的日志配置
+logger.remove()
+logger.add(
+    "data/logs/feishu_worker_{time}.log",
+    rotation="1 day",
+    retention="7 days",
+    level="INFO",
+)
+logger.add(sys.stderr, level="INFO")
+
+# 延迟加载：父进程导入本模块时不应触发 lark_oapi 导入。
+FEISHU_SDK_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
+
+
+def _load_lark():
+    """在真正建立 WebSocket 连接时再导入飞书 SDK。"""
+    if not FEISHU_SDK_AVAILABLE:
+        return None
+    import lark_oapi as lark_module
+
+    return lark_module
+
+
+_IGNORED_EVENT_REGISTRATIONS = (
+    "register_p2_im_chat_access_event_bot_p2p_chat_entered_v1",
+    "register_p2_im_message_reaction_created_v1",
+    "register_p2_im_message_reaction_deleted_v1",
+)
+
+
+def _build_event_handler(on_message, on_ignored_event, builder=None):
+    """构建飞书事件分发器，并为无害事件注册空处理器。"""
+    if builder is None:
+        lark = _load_lark()
+        if lark is None:
+            raise RuntimeError("lark-oapi not installed")
+        builder = lark.EventDispatcherHandler.builder("", "")
+
+    builder = builder.register_p2_im_message_receive_v1(on_message)
+
+    for register_name in _IGNORED_EVENT_REGISTRATIONS:
+        register = getattr(builder, register_name, None)
+        if register is None:
+            logger.debug(f"Feishu SDK missing optional register method: {register_name}")
+            continue
+        builder = register(on_ignored_event)
+
+    return builder.build()
+
+
+class FeishuWebSocketWorker:
+    """飞书 WebSocket Worker
+
+    在独立进程中运行 WebSocket 连接，接收消息后通过 Queue 传递给主进程。
+    """
+
+    def __init__(self, app_id: str, app_secret: str, message_queue):
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.message_queue = message_queue
+        self.ws_client = None
+        self._running = False
+        logger.info(f"Worker initialized (PID: {os.getpid()})")
+
+    # ------------------------------------------------------------------
+    # 消息处理
+    # ------------------------------------------------------------------
+
+    def on_message(self, data: Any) -> None:
+        """消息处理器 - 将消息放入队列供主进程读取。"""
+        try:
+            event = data.event
+            message = event.message
+            sender = event.sender
+
+            # 提取消息内容
+            content = message.content
+            msg_type = message.message_type
+            
+            # 对于文本消息，尝试解析并清理 @ 提及
+            if msg_type == "text" and content:
+                try:
+                    import json
+                    content_json = json.loads(content)
+                    text = content_json.get("text", "")
+                    
+                    # 清理 @ 提及标记（飞书格式：@_user_数字）
+                    import re
+                    text = re.sub(r'@_user_\d+\s*', '', text).strip()
+                    
+                    # 重新打包为 JSON
+                    content_json["text"] = text
+                    content = json.dumps(content_json, ensure_ascii=False)
+                except Exception as e:
+                    logger.debug(f"Failed to clean mentions: {e}")
+
+            msg_data = {
+                "type": "message",
+                "message_id": message.message_id,
+                "sender_id": sender.sender_id.open_id if sender.sender_id else "unknown",
+                "sender_name": (
+                    getattr(getattr(sender, "sender_id", None), "open_id", None)
+                    or "unknown"
+                ),
+                "chat_id": message.chat_id,
+                "chat_type": message.chat_type,
+                "create_time": getattr(message, "create_time", None),
+                "msg_type": msg_type,
+                "content": content,
+                # 话题群需要 thread_id 才能把同一话题的消息归到独立会话。
+                "thread_id": getattr(message, "thread_id", None),
+                "root_id": getattr(message, "root_id", None),
+                "parent_id": getattr(message, "parent_id", None),
+                "mentions": self._serialize_mentions(message),
+            }
+
+            try:
+                self.message_queue.put_nowait(msg_data)
+                logger.info(f"Message queued: {msg_data['message_id']}")
+            except Exception as e:
+                logger.warning(f"Queue full, message dropped: {e}")
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            try:
+                self.message_queue.put_nowait({"type": "error", "error": str(e)})
+            except Exception:
+                pass
+
+    @staticmethod
+    def _serialize_mentions(message: Any) -> list[dict]:
+        """把飞书 @ 提及对象转换为可跨进程传输的普通字典。"""
+        mentions = getattr(message, "mentions", None) or []
+        serialized: list[dict] = []
+        for mention in mentions:
+            mention_id = getattr(mention, "id", None)
+            id_payload = {}
+            for field_name in ("open_id", "union_id", "user_id"):
+                value = getattr(mention_id, field_name, None) if mention_id else None
+                if value:
+                    id_payload[field_name] = str(value)
+            serialized.append(
+                {
+                    "key": str(getattr(mention, "key", "") or ""),
+                    "name": str(getattr(mention, "name", "") or ""),
+                    "id": id_payload,
+                }
+            )
+        return serialized
+
+    def on_ignored_event(self, data: Any) -> None:
+        """忽略不影响业务的飞书事件，避免 SDK 输出 processor not found。"""
+        header = getattr(data, "header", None)
+        event_type = getattr(header, "event_type", type(data).__name__)
+        logger.debug(f"Ignored Feishu event: {event_type}")
+
+    # ------------------------------------------------------------------
+    # 生命周期
+    # ------------------------------------------------------------------
+
+    def start(self) -> None:
+        """启动 WebSocket 连接。"""
+        lark = _load_lark()
+        if lark is None:
+            raise RuntimeError("lark-oapi not installed")
+
+        logger.info(f"Starting Feishu WebSocket worker (app: {self.app_id[:12]}...)")
+
+        try:
+            self.message_queue.put_nowait({"type": "status", "message": "Worker started"})
+        except Exception:
+            pass
+
+        event_handler = _build_event_handler(self.on_message, self.on_ignored_event)
+
+        self.ws_client = lark.ws.Client(
+            self.app_id,
+            self.app_secret,
+            event_handler=event_handler,
+            log_level=lark.LogLevel.INFO,
+        )
+
+        self._running = True
+        logger.info("WebSocket connecting...")
+
+        try:
+            self.message_queue.put_nowait({"type": "status", "message": "WebSocket connecting..."})
+        except Exception:
+            pass
+
+        try:
+            self.ws_client.start()
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal")
+            self.stop()
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+            try:
+                self.message_queue.put_nowait({"type": "error", "error": f"WebSocket error: {e}"})
+            except Exception:
+                pass
+            self.stop()
+            raise
+
+    def stop(self) -> None:
+        """停止 WebSocket 连接。"""
+        if self._running:
+            logger.info("Stopping WebSocket worker...")
+            self._running = False
+            if self.ws_client:
+                stop_method = getattr(self.ws_client, "stop", None)
+                if callable(stop_method):
+                    try:
+                        stop_method()
+                    except Exception as e:
+                        logger.error(f"Error stopping WebSocket: {e}")
+                else:
+                    logger.debug("Feishu WebSocket client has no stop() method; relying on process exit")
+            logger.info("WebSocket worker stopped")
+
+
+# ------------------------------------------------------------------
+# 进程入口
+# ------------------------------------------------------------------
+
+
+def run_worker(app_id: str, app_secret: str, message_queue) -> None:
+    """Worker 进程入口函数。"""
+    logger.info(f"Worker process starting (PID: {os.getpid()}, app: {app_id[:12]}...)")
+
+    worker = FeishuWebSocketWorker(app_id, app_secret, message_queue)
+
+    def _signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}")
+        worker.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+
+    try:
+        worker.start()
+    except Exception as e:
+        logger.error(f"Worker error: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
+        sys.exit(1)
+
+
+# 兼容命令行调用（用于测试）
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: python feishu_websocket_worker.py <app_id> <app_secret>")
+        sys.exit(1)
+
+    from multiprocessing import get_context
+
+    ctx = get_context("spawn")
+    test_queue = ctx.Queue(maxsize=1000)
+    logger.info("Running in standalone test mode")
+    run_worker(sys.argv[1], sys.argv[2], test_queue)

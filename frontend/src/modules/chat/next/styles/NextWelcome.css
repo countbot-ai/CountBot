@@ -1,0 +1,113 @@
+/**
+ * 空会话欢迎页：居中的低调问候 + 悬浮输入卡 + 快捷入口。
+ * 内容收在页面中部偏上，四周留白改为呼吸感而非空洞。
+ */
+.nc-welcome {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 24px 48px;
+  background: var(--nc-surface);
+  overflow-y: auto;
+}
+
+.nc-welcome-inner {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.nc-welcome-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  opacity: 0.14;
+  filter: grayscale(1);
+  margin-bottom: 16px;
+  user-select: none;
+}
+
+.nc-welcome-greeting {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--nc-text);
+}
+
+.nc-welcome-composer {
+  width: 100%;
+  margin-top: 24px;
+}
+
+.nc-welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.nc-welcome-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--nc-border);
+  border-radius: var(--radius-full);
+  background: var(--nc-surface);
+  color: var(--nc-text-2);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.nc-welcome-chip:hover {
+  border-color: var(--nc-border-strong);
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-welcome-chip:active {
+  transform: scale(0.98);
+}
+
+.nc-welcome-chip-icon {
+  color: var(--nc-text-3);
+}
+
+.nc-welcome-chip:hover .nc-welcome-chip-icon {
+  color: var(--nc-text-2);
+}
+
+@media (max-width: 860px) {
+  .nc-welcome {
+    padding: 16px 20px 32px;
+  }
+
+  .nc-welcome-mark {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 16px;
+  }
+
+  .nc-welcome-greeting {
+    font-size: 20px;
+  }
+
+  .nc-welcome-composer {
+    margin-top: 24px;
+  }
+}

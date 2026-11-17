@@ -1,0 +1,20 @@
+{
+  "default_mailbox": "qq",
+  "qq_email": {
+    "email": "example@qq.com",
+    "auth_code": "xxx",
+    "imap_server": "imap.qq.com",
+    "imap_port": 993,
+    "smtp_server": "smtp.qq.com",
+    "smtp_port": 465
+  },
+  "163_email": {
+    "email": "example@163.com",
+    "auth_password": "xxx",
+    "pop_server": "pop.163.com",
+    "pop_port": 995,
+    "smtp_server": "smtp.163.com",
+    "smtp_port": 465
+  },
+  "last_check_time": "2026-02-18T23:45:31.834934"
+}

@@ -1,0 +1,92 @@
+/**
+ * Syntax highlighting styles for code blocks
+ * 令牌驱动（--code-* 随主题自动翻转），替代原 GitHub 双主题硬编码
+ */
+
+.hljs {
+    color: var(--code-text);
+    background: var(--code-bg);
+}
+
+.hljs-comment,
+.hljs-quote {
+    color: var(--code-comment);
+    font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+    color: var(--code-keyword);
+    font-weight: var(--font-weight-semibold);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag .hljs-attr {
+    color: var(--code-number);
+}
+
+.hljs-string,
+.hljs-doctag {
+    color: var(--code-string);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-selector-id {
+    color: var(--code-function);
+    font-weight: var(--font-weight-semibold);
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+    color: var(--code-function);
+    font-weight: var(--font-weight-semibold);
+}
+
+.hljs-tag,
+.hljs-name,
+.hljs-attribute {
+    color: var(--code-string);
+    font-weight: normal;
+}
+
+.hljs-regexp,
+.hljs-link {
+    color: var(--code-string);
+}
+
+.hljs-symbol,
+.hljs-bullet {
+    color: var(--code-number);
+}
+
+.hljs-built_in,
+.hljs-builtin-name {
+    color: var(--code-function);
+}
+
+.hljs-meta {
+    color: var(--code-comment);
+}
+
+.hljs-deletion {
+    background: var(--color-error-light);
+    color: var(--color-error);
+}
+
+.hljs-addition {
+    background: var(--color-success-light);
+    color: var(--color-success);
+}
+
+.hljs-emphasis {
+    font-style: italic;
+}
+
+.hljs-strong {
+    font-weight: var(--font-weight-semibold);
+}

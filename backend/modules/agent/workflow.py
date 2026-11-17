@@ -1,0 +1,719 @@
+"""WorkflowEngine：CountBot 的多智能体编排引擎，支持 pipeline / graph / council 三种执行模式。"""
+
+import asyncio
+import inspect
+import json as _json
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from loguru import logger
+
+from backend.modules.tools.execution import (
+    ErrorCategory,
+    ExecutionState,
+    SideEffectState,
+    ToolExecutionOutcome,
+    ToolExecutionRejected,
+    ToolResult,
+)
+
+
+class ChildOutcomeError(RuntimeError):
+    """A child completed with a structured non-success outcome."""
+
+    def __init__(self, result: ToolResult):
+        super().__init__(result.display_text)
+        self.result = result
+
+
+class WorkflowMode(Enum):
+    PIPELINE = "pipeline"
+    GRAPH = "graph"
+    COUNCIL = "council"
+
+
+class SlotPhase(Enum):
+    WAITING = "waiting"
+    ACTIVE = "active"
+    DONE = "done"
+    FAILED = "failed"
+
+
+@dataclass
+class AgentSlot:
+    """智能体在工作流图中的节点"""
+
+    slot_id: str
+    label: str
+    prompt_template: str
+    depends_on: List[str] = field(default_factory=list)
+    condition: Optional[dict] = None
+    phase: SlotPhase = SlotPhase.WAITING
+    output: Optional[str] = None
+    error: Optional[str] = None
+    skipped: bool = False  # 是否因条件不满足而跳过
+
+
+class WorkflowEngine:
+    """多智能体工作流引擎 — 编排 Pipeline / Graph / Council 三种执行模式。"""
+
+    def __init__(
+        self,
+        subagent_manager,
+        session_id: Optional[str] = None,
+        cancel_token=None,
+        skills=None,
+        team_model_config: Optional[Dict[str, Any]] = None,
+        event_callback=None,
+    ) -> None:
+        self._mgr = subagent_manager
+        self._session_id = session_id
+        self._cancel_token = cancel_token
+        self._skills = skills
+        self._team_model_config = team_model_config
+        self._event_callback = event_callback
+        self._execution_data: Dict[str, dict] = {}
+        self._child_failures: List[ToolResult] = []
+        # 本工作流登记的子任务 ID：取消时按归属精确取消，不波及其他工作流/会话
+        self._child_task_ids: set = set()
+
+    @staticmethod
+    def _with_display(result: ToolResult, display_text: str) -> ToolResult:
+        return ToolResult(
+            state=result.state,
+            display_text=display_text,
+            output=result.output,
+            error_category=result.error_category,
+            retryable=result.retryable,
+            retry_safety=result.retry_safety,
+            side_effect_state=result.side_effect_state,
+        )
+
+    async def run_outcome(self, mode: str, goal: str, agents: List[dict], *,
+                          cross_review: bool = True, enable_skills: bool = False) -> ToolResult:
+        """Bridge a workflow's structured child state to its parent Tool."""
+        try:
+            if mode == "pipeline":
+                text = await self.run_pipeline(goal, agents, enable_skills=enable_skills)
+            elif mode == "graph":
+                text = await self.run_graph(goal, agents, enable_skills=enable_skills)
+            else:
+                text = await self.run_council(
+                    goal, agents, cross_review=cross_review, enable_skills=enable_skills
+                )
+        except ChildOutcomeError as exc:
+            return exc.result
+        if self._child_failures:
+            # Uncertainty has priority over a known failure in concurrent graph slots.
+            priority = {ExecutionState.UNKNOWN_OUTCOME: 0,
+                        ExecutionState.CANCELLED: 1, ExecutionState.FAILED: 2}
+            result = min(self._child_failures, key=lambda item: priority[item.state])
+            return self._with_display(result, text)
+        return ToolResult.success(text)
+
+    # ------------------------------------------------------------------
+    # 内部方法
+    # ------------------------------------------------------------------
+
+    async def _emit_ws(self, event_type: str, **data: Any) -> None:
+        """推送工作流事件到前端"""
+        if self._event_callback:
+            try:
+                maybe_result = self._event_callback(event_type, data)
+                if inspect.isawaitable(maybe_result):
+                    await maybe_result
+            except Exception as exc:
+                logger.warning(f"[Workflow] External event callback failed ({event_type}): {exc}")
+
+        if not self._session_id:
+            return
+        try:
+            from backend.ws.connection import send_dict_to_session
+            n = await send_dict_to_session(self._session_id, {"type": event_type, **data})
+            if n == 0:
+                logger.warning(f"[Workflow] WS 事件未送达（{event_type}），session={self._session_id}")
+            else:
+                logger.debug(f"[Workflow] WS 事件已推送: {event_type} → {n} 个连接")
+        except Exception as exc:
+            logger.warning(f"[Workflow] WS emit '{event_type}' 失败: {exc}")
+
+    def _is_cancelled(self) -> bool:
+        """检查是否已取消"""
+        is_cancelled = bool(self._cancel_token and self._cancel_token.is_cancelled)
+        if is_cancelled:
+            asyncio.create_task(self._cancel_all_subagents())
+        return is_cancelled
+
+    async def _cancel_all_subagents(self) -> None:
+        """取消本工作流派发的所有子任务（按归属过滤，不波及其他工作流）"""
+        try:
+            cancelled = await self._mgr.cancel_tasks(set(self._child_task_ids))
+            if cancelled > 0:
+                logger.info(f"[Workflow] Cancelled {cancelled} running subagent tasks")
+        except Exception as e:
+            logger.warning(f"[Workflow] Failed to cancel subagent tasks: {e}")
+
+    async def _invoke_agent(
+        self,
+        prompt: str,
+        label: str = "",
+        system_prompt: Optional[str] = None,
+        agent_id: str = "",
+        enable_skills: bool = False,
+    ) -> str:
+        """执行单个子Agent并返回输出"""
+        if self._is_cancelled():
+            logger.info(f"[Workflow] Workflow cancelled, stopping agent '{agent_id or label}'")
+            raise asyncio.CancelledError("Workflow cancelled before agent start")
+
+        short_label = label or (prompt[:40] + ("..." if len(prompt) > 40 else ""))
+        aid = agent_id or short_label
+
+        self._execution_data[aid] = {
+            "label": label or aid,
+            "toolCalls": [],
+            "result": "",
+        }
+
+        await self._emit_ws(
+            "workflow_agent_start",
+            agent_id=aid,
+            agent_label=label or aid,
+        )
+
+        async def _tool_event(event: str, tool_name: str, data: Any) -> None:
+            if event == "tool_call":
+                self._execution_data[aid]["toolCalls"].append({
+                    "tool": tool_name,
+                    "arguments": data if isinstance(data, dict) else {},
+                    "status": "running",
+                })
+                await self._emit_ws(
+                    "workflow_agent_tool_call",
+                    agent_id=aid,
+                    agent_label=label or aid,
+                    tool=tool_name,
+                    arguments=data if isinstance(data, dict) else {},
+                )
+            elif event == "tool_rejected":
+                if not isinstance(data, ToolExecutionRejected):
+                    raise TypeError("Workflow rejection requires operation-level result")
+                calls = self._execution_data[aid]["toolCalls"]
+                for call in reversed(calls):
+                    if call["tool"] == tool_name and call["status"] == "running":
+                        call.update({"status": "rejected", "reason": data.reason,
+                                     "operation_id": data.operation_id})
+                        break
+            elif event == "tool_result":
+                if not isinstance(data, ToolExecutionOutcome):
+                    raise TypeError("Workflow tool result requires structured child outcome")
+                result_preview = data.display_text[:2000]
+                result_status = "success" if data.succeeded else data.state.value.lower()
+                calls = self._execution_data[aid]["toolCalls"]
+                for i in range(len(calls) - 1, -1, -1):
+                    if calls[i]["tool"] == tool_name and calls[i]["status"] == "running":
+                        calls[i]["status"] = result_status
+                        calls[i]["state"] = data.state.value
+                        calls[i]["operation_id"] = data.operation_id
+                        calls[i]["attempt_id"] = data.attempt_id
+                        calls[i]["result"] = result_preview
+                        break
+                await self._emit_ws(
+                    "workflow_agent_tool_result",
+                    agent_id=aid,
+                    agent_label=label or aid,
+                    tool=tool_name,
+                    result=result_preview,
+                    status=result_status,
+                    state=data.state.value,
+                    operation_id=data.operation_id,
+                    attempt_id=data.attempt_id,
+                    error_category=data.error_category.value if data.error_category else None,
+                    side_effect_state=data.side_effect_state.value,
+                )
+            elif event == "chunk":
+                await self._emit_ws(
+                    "workflow_agent_chunk",
+                    agent_id=aid,
+                    agent_label=label or aid,
+                    chunk=str(data),
+                )
+
+        task_id = self._mgr.create_task(
+            label=short_label,
+            message=prompt,
+            system_prompt=system_prompt,
+            event_callback=_tool_event,
+            enable_skills=enable_skills,
+            model_override=self._team_model_config,
+            cancel_token=self._cancel_token,
+        )
+        self._child_task_ids.add(task_id)  # 登记归属，供按归属取消
+        await self._mgr.execute_task(task_id)
+        bg = self._mgr.running_tasks.get(task_id)
+        if bg:
+            await bg
+        record = self._mgr.get_task(task_id)
+        if record is None:
+            raise RuntimeError(f"Sub-agent task {task_id} disappeared unexpectedly")
+        child_outcome = record.outcome
+        if child_outcome is None:
+            child_outcome = ToolResult.unknown_outcome(
+                ErrorCategory.RESULT_CONTRACT,
+                "Sub-agent finished without a structured result.",
+            )
+        if child_outcome.state is not ExecutionState.SUCCEEDED:
+            self._child_failures.append(child_outcome)
+            self._execution_data[aid]["status"] = child_outcome.state.value.lower()
+            await self._emit_ws(
+                "workflow_agent_failed",
+                agent_id=aid,
+                agent_label=label or aid,
+                result=child_outcome.display_text,
+                status=child_outcome.state.value.lower(),
+                state=child_outcome.state.value,
+                side_effect_state=child_outcome.side_effect_state.value,
+            )
+            raise ChildOutcomeError(child_outcome)
+        result = record.result or ""
+
+        self._execution_data[aid]["result"] = result
+        self._execution_data[aid]["status"] = "success"
+
+        await self._emit_ws(
+            "workflow_agent_complete",
+            agent_id=aid,
+            agent_label=label or aid,
+            result=result,
+            status="success",
+            state=ExecutionState.SUCCEEDED.value,
+        )
+        return result
+
+    def _detect_cycle(self, dep_map: Dict[str, List[str]]) -> bool:
+        """检测依赖图环路"""
+        visited: Set[str] = set()
+        in_stack: Set[str] = set()
+
+        def _dfs(node: str) -> bool:
+            visited.add(node)
+            in_stack.add(node)
+            for parent in dep_map.get(node, []):
+                if parent not in visited:
+                    if _dfs(parent):
+                        return True
+                elif parent in in_stack:
+                    return True
+            in_stack.discard(node)
+            return False
+
+        return any(_dfs(n) for n in dep_map if n not in visited)
+
+    def _evaluate_condition(self, condition: dict, slot_map: Dict[str, AgentSlot]) -> bool:
+        """评估节点执行条件，通过检查依赖节点的LLM输出文本决定是否执行"""
+        if not condition:
+            return True
+        
+        cond_type = condition.get("type")
+        node_id = condition.get("node")
+        text = condition.get("text", "")
+        
+        if not node_id or node_id not in slot_map:
+            return False
+        
+        output = slot_map[node_id].output or ""
+        
+        if cond_type == "output_contains":
+            return text in output
+        elif cond_type == "output_not_contains":
+            return text not in output
+        
+        return True
+
+    def _build_exec_metadata(self) -> str:
+        """序列化执行数据为HTML注释"""
+        if not self._execution_data:
+            return ""
+        try:
+            payload = _json.dumps(self._execution_data, ensure_ascii=False)
+            return f"\n\n<!--WORKFLOW_EXEC:{payload}:WORKFLOW_EXEC-->"
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _looks_like_embedded_system_prompt(text: str) -> bool:
+        """Detect legacy teams that stored persona-like prompt blocks in task."""
+        normalized = (text or "").strip()
+        if len(normalized) < 80:
+            return False
+
+        prompt_markers = (
+            normalized.startswith("你是"),
+            normalized.startswith("# 角色"),
+            "输出要求" in normalized,
+            "工作流程" in normalized,
+            "记住：" in normalized,
+            "记住:" in normalized,
+            normalized.count("\n") >= 3,
+        )
+        return any(prompt_markers)
+
+    # ------------------------------------------------------------------
+    # Pipeline 模式
+    # ------------------------------------------------------------------
+
+    async def run_pipeline(self, goal: str, stages: List[Dict[str, Any]], enable_skills: bool = False) -> str:
+        """顺序流水线，每个阶段继承前序输出"""
+        if not stages:
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "No pipeline stages defined.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
+
+        accumulated: str = ""
+        stage_outputs: List[dict] = []
+
+        for idx, stage in enumerate(stages):
+            if self._is_cancelled():
+                logger.info("[Workflow/Pipeline] 用户取消，终止流水线")
+                raise asyncio.CancelledError("Workflow cancelled")
+            role = stage.get("role", f"Stage-{idx + 1}")
+            task_desc = stage.get("task", "")
+            custom_sp = stage.get("system_prompt") or None
+            effective_task_desc = task_desc
+            if not custom_sp and self._looks_like_embedded_system_prompt(task_desc):
+                custom_sp = task_desc
+                effective_task_desc = (
+                    f"围绕工作流目标完成“{role}”阶段，"
+                    "给出清晰、可执行、便于下游继续处理的结果。"
+                )
+
+            prior_ctx = (
+                f"\n\n## Outputs from previous stages:\n{accumulated}"
+                if accumulated
+                else ""
+            )
+            prompt = (
+                f"# Workflow Goal\n{goal}\n\n"
+                f"# Your Task\n{effective_task_desc}"
+                f"{prior_ctx}\n\n"
+                "Complete your task thoroughly and provide a clear, detailed output."
+            )
+            system_prompt = custom_sp or (
+                f"You are {role}. "
+                f"You are participating in a multi-agent pipeline workflow. "
+                f"Your responsibility: {task_desc}. "
+                "Focus exclusively on your assigned task and deliver a complete, precise result."
+            )
+
+            logger.info(f"[Workflow/Pipeline] Stage {idx + 1}/{len(stages)}: {role}")
+            output = await self._invoke_agent(
+                prompt, label=role, system_prompt=system_prompt,
+                agent_id=stage.get("id", role),
+                enable_skills=enable_skills,
+            )
+
+            stage_outputs.append({"role": role, "output": output})
+            accumulated += f"\n### {role}:\n{output}"
+
+        lines = [f"# Pipeline Workflow Results\n\n**Goal:** {goal}\n"]
+        for entry in stage_outputs:
+            lines.append(f"## {entry['role']}\n\n{entry['output']}")
+        return "\n\n---\n\n".join(lines) + self._build_exec_metadata()
+
+    # ------------------------------------------------------------------
+    # Graph 模式
+    # ------------------------------------------------------------------
+
+    async def run_graph(self, goal: str, slots: List[Dict[str, Any]], enable_skills: bool = False) -> str:
+        """依赖DAG，自动并行调度"""
+        if not slots:
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "No graph slots defined.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
+
+        slot_system_prompts: Optional[Dict[str, str]] = {}
+        slot_map: Dict[str, AgentSlot] = {}
+        dep_map: Dict[str, List[str]] = {}
+
+        for s in slots:
+            sid = s.get("id", "")
+            if not sid:
+                raise ChildOutcomeError(ToolResult.failure(
+                    ErrorCategory.VALIDATION, "Every slot must have a non-empty 'id' field.",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                ))
+            deps = s.get("depends_on", s.get("depends", []))
+            role = s.get("role", sid)
+            task_desc = s.get("task", "")
+            custom_sp = s.get("system_prompt") or None
+            condition = s.get("condition")
+            prompt_template = task_desc
+
+            if not custom_sp and self._looks_like_embedded_system_prompt(task_desc):
+                custom_sp = task_desc
+                prompt_template = (
+                    f"围绕工作流目标完成“{role}”节点，"
+                    "输出清晰、准确、便于依赖节点继续使用的结果。"
+                )
+            
+            slot_system_prompts[sid] = custom_sp or (
+                f"You are {role}. "
+                "You are a specialist agent inside a dependency-graph workflow. "
+                f"Your responsibility: {task_desc}. "
+                "Deliver a complete, precise result focused exclusively on your task."
+            )
+            slot_map[sid] = AgentSlot(
+                slot_id=sid,
+                label=role,
+                prompt_template=prompt_template,
+                depends_on=list(deps),
+                condition=condition,
+            )
+            dep_map[sid] = list(deps)
+
+        for sid, slot in slot_map.items():
+            for dep in slot.depends_on:
+                if dep not in slot_map:
+                    raise ChildOutcomeError(ToolResult.failure(
+                        ErrorCategory.VALIDATION,
+                        f"Slot '{sid}' depends on unknown slot '{dep}'.",
+                        side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                    ))
+
+        if self._detect_cycle(dep_map):
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "The dependency graph contains a cycle.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
+
+        while any(s.phase == SlotPhase.WAITING for s in slot_map.values()):
+            if self._is_cancelled():
+                logger.info("[Workflow/Graph] 用户取消，终止依赖图调度")
+                raise asyncio.CancelledError("Workflow cancelled")
+            ready = [
+                s for s in slot_map.values()
+                if s.phase == SlotPhase.WAITING
+                and all(slot_map[d].phase == SlotPhase.DONE or slot_map[d].skipped for d in s.depends_on)
+            ]
+            if not ready:
+                for s in slot_map.values():
+                    if s.phase == SlotPhase.WAITING and any(
+                        slot_map[d].phase == SlotPhase.FAILED for d in s.depends_on
+                    ):
+                        s.phase = SlotPhase.FAILED
+                        s.error = "Blocked by upstream failure"
+                break
+
+            to_execute = []
+            for s in ready:
+                if self._evaluate_condition(s.condition, slot_map):
+                    to_execute.append(s)
+                else:
+                    s.phase = SlotPhase.DONE
+                    s.skipped = True
+                    s.output = f"[Skipped: condition not met]"
+                    logger.info(f"[Workflow/Graph] Slot '{s.slot_id}' skipped (condition not met)")
+            
+            if not to_execute:
+                continue
+            
+            for s in to_execute:
+                s.phase = SlotPhase.ACTIVE
+            logger.info(
+                f"[Workflow/Graph] Dispatching {len(to_execute)} slot(s) in parallel: "
+                f"{[s.slot_id for s in to_execute]}"
+            )
+
+            async def _run_slot(slot: AgentSlot) -> None:  # noqa: E306
+                dep_ctx = ""
+                if slot.depends_on:
+                    dep_parts = [
+                        f"### {slot_map[d].label}:\n{slot_map[d].output}"
+                        for d in slot.depends_on
+                        if slot_map[d].output and not slot_map[d].skipped
+                    ]
+                    if dep_parts:
+                        dep_ctx = "\n\n## Outputs from upstream agents:\n" + "\n\n".join(dep_parts)
+                prompt = (
+                    f"# Workflow Goal\n{goal}\n\n"
+                    f"# Your Task\n{slot.prompt_template}"
+                    f"{dep_ctx}\n\n"
+                    "Complete your task thoroughly and provide a clear, detailed output."
+                )
+                try:
+                    slot.output = await self._invoke_agent(
+                        prompt,
+                        label=slot.label,
+                        system_prompt=slot_system_prompts.get(slot.slot_id),
+                        agent_id=slot.slot_id,
+                        enable_skills=enable_skills,
+                    )
+                    slot.phase = SlotPhase.DONE
+                except Exception as exc:
+                    slot.phase = SlotPhase.FAILED
+                    slot.error = str(exc)
+                    if not isinstance(exc, ChildOutcomeError):
+                        self._child_failures.append(ToolResult.unknown_outcome(
+                            ErrorCategory.INTERNAL,
+                            f"Workflow slot '{slot.slot_id}' failed: {exc}",
+                        ))
+                    logger.error(f"[Workflow/Graph] Slot '{slot.slot_id}' failed: {exc}")
+
+            await asyncio.gather(*[_run_slot(s) for s in to_execute])
+
+        lines = [f"# Graph Workflow Results\n\n**Goal:** {goal}\n"]
+        for slot in slot_map.values():
+            if slot.skipped:
+                icon = "⏭️"
+                status_text = "Skipped"
+            elif slot.phase == SlotPhase.DONE:
+                icon = "✅"
+                status_text = "Done"
+            else:
+                icon = "❌"
+                status_text = "Failed"
+            
+            lines.append(f"## {icon} {slot.label} ({status_text})")
+            if slot.output:
+                lines.append(slot.output)
+            elif slot.error:
+                lines.append(f"*Error: {slot.error}*")
+        return "\n\n---\n\n".join(lines) + self._build_exec_metadata()
+
+    # ------------------------------------------------------------------
+    # Council 模式
+    # ------------------------------------------------------------------
+
+    async def run_council(self, question: str, members: List[Dict[str, Any]], cross_review: bool = True, enable_skills: bool = False) -> str:
+        """多视角评审：立场陈述 → [可选]交叉评审 → 综合输出"""
+        if not members:
+            raise ChildOutcomeError(ToolResult.failure(
+                ErrorCategory.VALIDATION, "No council members defined.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            ))
+
+        member_map: Dict[str, str] = {
+            m["id"]: m.get("perspective", "neutral analyst") for m in members
+        }
+        member_system_prompts: Dict[str, str] = {}
+        for m in members:
+            mid = m["id"]
+            perspective = member_map[mid]
+            custom_sp = m.get("system_prompt") or None
+            member_system_prompts[mid] = custom_sp or (
+                f"You are a council member representing the perspective of: {perspective}. "
+                "You analyse questions rigorously from that viewpoint, defend your position "
+                "with evidence, and engage constructively with other members' arguments."
+            )
+
+        async def _finish_round(calls) -> Dict[str, str]:
+            # Wait for every started child before reporting a terminal workflow
+            # result; otherwise a sibling may still be executing a Tool.
+            results = await asyncio.gather(*calls, return_exceptions=True)
+            errors = [item for item in results if isinstance(item, BaseException)]
+            if errors:
+                if self._child_failures:
+                    priority = {ExecutionState.UNKNOWN_OUTCOME: 0,
+                                ExecutionState.CANCELLED: 1, ExecutionState.FAILED: 2}
+                    raise ChildOutcomeError(min(
+                        self._child_failures, key=lambda item: priority[item.state]
+                    ))
+                raise errors[0]
+            return dict(results)
+
+        async def _initial(member: dict) -> Tuple[str, str]:
+            mid = member["id"]
+            perspective = member_map[mid]
+            prompt = (
+                f"# Council Question\n{question}\n\n"
+                f"# Your Perspective\n{perspective}\n\n"
+                "Analyze this question thoroughly from your specific perspective. "
+                "Provide a well-reasoned, detailed response."
+            )
+            logger.info(f"[Workflow/Council] Round-1: {mid}")
+            result = await self._invoke_agent(
+                prompt,
+                label=f"{perspective} — 第1轮",
+                system_prompt=member_system_prompts[mid],
+                agent_id=f"{mid}:R1",
+                enable_skills=enable_skills,
+            )
+            return mid, result
+
+        round1: Dict[str, str] = await _finish_round([_initial(m) for m in members])
+
+        if self._is_cancelled():
+            logger.info("[Workflow/Council] 用户取消，终止于第1轮完成后")
+            raise asyncio.CancelledError("Workflow cancelled after round 1")
+
+        if not cross_review:
+            logger.info("[Workflow/Council] 独立模式，跳过交叉评审")
+            blocks = []
+            for m in members:
+                mid = m["id"]
+                persp = member_map[mid]
+                blocks.append(f"### {persp}\n\n{round1.get(mid, '')}")
+            
+            body = "\n\n---\n\n".join(blocks)
+            return (
+                f"# 多视角分析结果（独立模式）\n\n"
+                f"**议题：** {question}\n\n"
+                f"## 各成员独立分析\n\n"
+                f"{body}\n\n"
+                f"---\n\n"
+                f"*分析完成 — 共 {len(members)} 位成员独立分析，无交叉评审。*"
+            ) + self._build_exec_metadata()
+
+        async def _cross_review(member: dict) -> Tuple[str, str]:
+            mid = member["id"]
+            perspective = member_map[mid]
+            others = "\n\n".join(
+                f"**{member_map[oid]} ({oid}):**\n{pos}"
+                for oid, pos in round1.items()
+                if oid != mid
+            )
+            prompt = (
+                f"# Council Question\n{question}\n\n"
+                f"# Your Perspective\n{perspective}\n\n"
+                f"# Your Initial Position\n{round1[mid]}\n\n"
+                f"# Other Members' Positions\n{others}\n\n"
+                "Review the other positions carefully. "
+                "Do you agree or disagree with their analyses? "
+                "What did they miss or get right? "
+                "Refine or defend your position in light of their input."
+            )
+            logger.info(f"[Workflow/Council] Round-2 cross-review: {mid}")
+            result = await self._invoke_agent(
+                prompt,
+                label=f"{perspective} — 交叉评审",
+                system_prompt=member_system_prompts[mid],
+                agent_id=f"{mid}:R2",
+                enable_skills=enable_skills,
+            )
+            return mid, result
+
+        round2: Dict[str, str] = await _finish_round([_cross_review(m) for m in members])
+
+        blocks = []
+        for m in members:
+            mid = m["id"]
+            persp = member_map[mid]
+            blocks.append(
+                f"### {persp}\n\n"
+                f"**第1轮立场：**\n\n{round1.get(mid, '')}\n\n"
+                f"**交叉评审：**\n\n{round2.get(mid, '')}"
+            )
+
+        body = "\n\n---\n\n".join(blocks)
+        return (
+            f"# 多视角评审结果（交叉模式）\n\n"
+            f"**议题：** {question}\n\n"
+            f"## 成员立场与评审\n\n"
+            f"{body}\n\n"
+            f"---\n\n"
+            f"*评审完成 — 共 {len(members)} 位成员，2 轮交叉讨论。*\n\n"
+            f"请将以上每位成员的完整分析内容如实呈现给用户，不要省略或替换为简短摘要。"
+        ) + self._build_exec_metadata()

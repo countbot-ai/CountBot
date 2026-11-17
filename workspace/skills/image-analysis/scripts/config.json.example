@@ -1,0 +1,14 @@
+{
+  "default_model": "zhipu",
+  "zhipu": {
+    "api_key": "your-zhipu-api-key-here",
+    "model": "glm-4.6v-flash",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+  },
+  "qwen": {
+    "api_key": "your-qwen-api-key-here",
+    "model": "qwen3-vl-plus",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "region": "beijing"
+  }
+}

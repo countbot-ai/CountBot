@@ -1,0 +1,600 @@
+#!/usr/bin/env python3
+"""定时任务管理工具
+
+通过 REST API 管理 CountBot 定时任务的完整 CRUD 操作。
+支持创建、查看、修改、删除、启用/禁用、手动触发、验证表达式。
+"""
+
+from typing import Optional, Union
+import argparse
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+import urllib.parse
+
+# API 基础地址
+API_BASE = "http://127.0.0.1:8000/api/cron"
+
+# 内置任务前缀
+BUILTIN_PREFIX = "builtin:"
+
+
+def _env(name: str) -> Optional[str]:
+    value = str(os.environ.get(name) or "").strip()
+    return value or None
+
+
+def _current_channel_context() -> dict:
+    """读取当前会话上下文，供渠道型定时任务自动补全参数。"""
+    return {
+        "channel": _env("COUNTBOT_CHANNEL"),
+        "chat_id": _env("COUNTBOT_CHAT_ID"),
+        "account_id": (
+            _env("COUNTBOT_ACCOUNT_ID")
+            or _env("COUNTBOT_REPLY_ACCOUNT_ID")
+            or _env("COUNTBOT_CONTEXT_OWNER_ACCOUNT_ID")
+        ),
+    }
+
+
+def _api_request(method: str, path: str, data: Optional[dict] = None) -> dict:
+    """发送 API 请求"""
+    url = f"{API_BASE}{path}"
+    headers = {"Content-Type": "application/json"}
+
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        try:
+            detail = json.loads(body).get("detail", body)
+        except (json.JSONDecodeError, AttributeError):
+            detail = body
+        print(f"错误 ({e.code}): {detail}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"连接失败: {e.reason}", file=sys.stderr)
+        print("请确认 CountBot 后端服务正在运行", file=sys.stderr)
+        sys.exit(1)
+
+
+def _find_job_id(partial_id: str) -> str:
+    """通过前缀匹配找到完整的 job_id（排除内置任务）"""
+    result = _api_request("GET", "/jobs")
+    jobs = result.get("jobs", [])
+
+    # 排除内置任务
+    user_jobs = [j for j in jobs if not j["id"].startswith(BUILTIN_PREFIX)]
+    matches = [j for j in user_jobs if j["id"].startswith(partial_id)]
+
+    if len(matches) == 0:
+        # 检查是否匹配到了内置任务
+        builtin_match = [j for j in jobs if j["id"].startswith(partial_id) and j["id"].startswith(BUILTIN_PREFIX)]
+        if builtin_match:
+            print(f"错误: [{builtin_match[0]['name']}] 是内置系统任务，不可操作", file=sys.stderr)
+            sys.exit(1)
+        print(f"错误: 未找到匹配 '{partial_id}' 的任务", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"错误: '{partial_id}' 匹配到多个任务:", file=sys.stderr)
+        for m in matches:
+            print(f"  {m['id'][:8]}  {m['name']}", file=sys.stderr)
+        print("请提供更长的 ID 前缀", file=sys.stderr)
+        sys.exit(1)
+    return matches[0]["id"]
+
+
+def _resolve_job_id_arg(args) -> str:
+    """获取位置参数 job_id。"""
+    job_id = str(getattr(args, "job_id", None) or "").strip()
+    if not job_id:
+        print("错误: 缺少任务ID", file=sys.stderr)
+        sys.exit(1)
+    return job_id
+
+
+def _format_job(job: dict, verbose: bool = False) -> str:
+    """格式化任务信息"""
+    lines = []
+    status = "启用" if job["enabled"] else "禁用"
+
+    lines.append(f"任务: {job['name']}")
+    lines.append(f"ID: {job['id']}")
+    lines.append(f"Cron: {job['schedule']}")
+    lines.append(f"状态: {status}")
+
+    if verbose:
+        lines.append(f"消息: {job['message']}")
+    else:
+        msg = job["message"]
+        lines.append(f"消息: {msg[:80]}{'...' if len(msg) > 80 else ''}")
+
+    if job.get("channel"):
+        deliver = "是" if job.get("deliver_response") else "否"
+        account_id = str(job.get("account_id") or "").strip()
+        if account_id:
+            lines.append(f"渠道: {job['channel']}:{account_id}:{job.get('chat_id', '')}")
+        else:
+            lines.append(f"渠道: {job['channel']}:{job.get('chat_id', '')}")
+        lines.append(f"投递结果: {deliver}")
+
+    if job.get("next_run"):
+        lines.append(f"下次运行: {job['next_run']}")
+    if job.get("last_run"):
+        lines.append(f"上次运行: {job['last_run']}")
+    if job.get("last_status"):
+        lines.append(f"上次状态: {job['last_status']}")
+    if job.get("run_count"):
+        lines.append(f"执行次数: {job['run_count']} (失败: {job.get('error_count', 0)})")
+
+    return "\n".join(lines)
+
+
+def cmd_list(args):
+    """列出所有定时任务（不显示内置系统任务）"""
+    result = _api_request("GET", "/jobs")
+    jobs = result.get("jobs", [])
+
+    # 完全过滤掉内置任务
+    user_jobs = [j for j in jobs if not j["id"].startswith(BUILTIN_PREFIX)]
+
+    if not user_jobs:
+        print("暂无定时任务")
+        return
+
+    print(f"共 {len(user_jobs)} 个定时任务:\n")
+    for i, job in enumerate(user_jobs, 1):
+        status = "启用" if job["enabled"] else "禁用"
+        channel = job.get("channel") or "-"
+        account_id = str(job.get("account_id") or "").strip()
+        if channel != "-" and account_id:
+            channel = f"{channel}:{account_id}"
+        next_run = (job.get("next_run") or "-")[:19]
+        msg = job["message"][:40] + ("..." if len(job["message"]) > 40 else "")
+        print(f"  {i}. [{job['id'][:8]}] {job['name']}")
+        print(f"     Cron: {job['schedule']}  状态: {status}  渠道: {channel}")
+        print(f"     消息: {msg}")
+        print(f"     下次运行: {next_run}")
+        print()
+
+
+def cmd_info(args):
+    """查看任务详情"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("GET", f"/jobs/{job_id}")
+    job = result.get("job", result)
+    print(_format_job(job, verbose=True))
+
+    # 显示完整响应和错误
+    last_resp = result.get("last_response")
+    last_err = result.get("last_error")
+    if last_resp:
+        print(f"\n上次响应:\n{last_resp[:500]}")
+    if last_err:
+        print(f"\n上次错误:\n{last_err[:500]}")
+
+
+def cmd_create(args):
+    """创建定时任务"""
+    if not args.name:
+        print("错误: --name 是必需的", file=sys.stderr)
+        sys.exit(1)
+    if not args.schedule:
+        print("错误: --schedule 是必需的", file=sys.stderr)
+        sys.exit(1)
+    if not args.message:
+        print("错误: --message 是必需的", file=sys.stderr)
+        sys.exit(1)
+
+    # 先验证表达式
+    validate_result = _api_request("POST", "/validate", {"schedule": args.schedule})
+    if not validate_result.get("valid"):
+        print(f"错误: 无效的 Cron 表达式 '{args.schedule}'", file=sys.stderr)
+        sys.exit(1)
+
+    session_context = _current_channel_context()
+    resolved_channel = args.channel
+    resolved_chat_id = args.chat_id
+    resolved_account_id = args.account_id
+
+    if args.deliver:
+        resolved_channel = resolved_channel or session_context["channel"]
+        resolved_chat_id = resolved_chat_id or session_context["chat_id"]
+        if resolved_channel and resolved_channel != "web":
+            resolved_account_id = resolved_account_id or session_context["account_id"] or "default"
+
+    payload = {
+        "name": args.name,
+        "schedule": args.schedule,
+        "message": args.message,
+        "enabled": True,
+        "max_retries": args.max_retries,
+        "retry_delay": args.retry_delay,
+        "delete_on_success": args.delete_on_success,
+    }
+
+    if resolved_channel:
+        payload["channel"] = resolved_channel
+    if resolved_account_id is not None:
+        payload["account_id"] = resolved_account_id
+    if resolved_chat_id:
+        payload["chat_id"] = resolved_chat_id
+    if args.deliver:
+        if not resolved_channel or not resolved_chat_id:
+            print(
+                "错误: --deliver 需要渠道上下文。请显式指定 --channel/--chat-id，"
+                "或在带渠道上下文的会话里执行。",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        payload["deliver_response"] = True
+
+    result = _api_request("POST", "/jobs", payload)
+    job = result.get("job", result)
+
+    print(f"任务创建成功")
+    print(f"ID: {job['id']}")
+    print(f"名称: {job['name']}")
+    print(f"Cron: {job['schedule']}")
+    if args.max_retries > 0:
+        print(f"重试: 最多 {args.max_retries} 次，间隔 {args.retry_delay} 秒")
+    if args.delete_on_success:
+        print(f"自动删除: 成功后自动删除")
+    if job.get("next_run"):
+        print(f"下次运行: {job['next_run']}")
+    if job.get("channel"):
+        account_id = str(job.get("account_id") or "").strip()
+        if account_id:
+            print(f"投递渠道: {job['channel']}:{account_id}:{job.get('chat_id', '')}")
+        else:
+            print(f"投递渠道: {job['channel']}:{job.get('chat_id', '')}")
+
+
+def cmd_update(args):
+    """修改任务"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+
+    payload = {}
+    if args.name is not None:
+        payload["name"] = args.name
+    if args.schedule is not None:
+        # 先验证
+        validate_result = _api_request("POST", "/validate", {"schedule": args.schedule})
+        if not validate_result.get("valid"):
+            print(f"错误: 无效的 Cron 表达式 '{args.schedule}'", file=sys.stderr)
+            sys.exit(1)
+        payload["schedule"] = args.schedule
+    if args.message is not None:
+        payload["message"] = args.message
+    if args.channel is not None:
+        payload["channel"] = args.channel
+    if args.account_id is not None:
+        payload["account_id"] = args.account_id
+    if args.chat_id is not None:
+        payload["chat_id"] = args.chat_id
+    if args.deliver is not None:
+        payload["deliver_response"] = args.deliver
+    if args.enabled is not None:
+        payload["enabled"] = args.enabled
+
+    if not payload:
+        print("错误: 至少需要指定一个要修改的字段", file=sys.stderr)
+        sys.exit(1)
+
+    result = _api_request("PUT", f"/jobs/{job_id}", payload)
+    job = result.get("job", result)
+    print(f"任务已更新: {job['name']}")
+    print(f"Cron: {job['schedule']}")
+    if job.get("next_run"):
+        print(f"下次运行: {job['next_run']}")
+
+
+def cmd_delete(args):
+    """删除任务"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+
+    # 先获取任务名称
+    info = _api_request("GET", f"/jobs/{job_id}")
+    job = info.get("job", info)
+    job_name = job.get("name", job_id)
+
+    _api_request("DELETE", f"/jobs/{job_id}")
+    print(f"已删除任务: {job_name} ({job_id[:8]})")
+
+
+def cmd_enable(args):
+    """启用任务"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("PUT", f"/jobs/{job_id}", {"enabled": True})
+    job = result.get("job", result)
+    print(f"已启用任务: {job['name']}")
+    if job.get("next_run"):
+        print(f"下次运行: {job['next_run']}")
+
+
+def cmd_disable(args):
+    """禁用任务"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("PUT", f"/jobs/{job_id}", {"enabled": False})
+    job = result.get("job", result)
+    print(f"已禁用任务: {job['name']}")
+
+
+def cmd_run(args):
+    """手动触发执行"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("POST", f"/jobs/{job_id}/run")
+    print(result.get("message", "已提交执行"))
+
+
+def cmd_validate(args):
+    """验证 Cron 表达式"""
+    result = _api_request("POST", "/validate", {"schedule": args.expression})
+    if result.get("valid"):
+        print(f"表达式有效: {args.expression}")
+        if result.get("description"):
+            print(f"含义: {result['description']}")
+        if result.get("next_run"):
+            print(f"下次运行: {result['next_run']}")
+    else:
+        print(f"表达式无效: {args.expression}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_batch_create(args):
+    """批量创建定时任务"""
+    import json
+    
+    # 从文件读取任务列表
+    try:
+        with open(args.file, 'r', encoding='utf-8') as f:
+            jobs_data = json.load(f)
+    except FileNotFoundError:
+        print(f"错误: 文件不存在: {args.file}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"错误: JSON 格式错误: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not isinstance(jobs_data, list):
+        print("错误: JSON 文件应包含任务数组", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"准备批量创建 {len(jobs_data)} 个任务...")
+    
+    result = _api_request("POST", "/jobs/batch", {"jobs": jobs_data})
+    
+    print(f"\n批量创建完成:")
+    print(f"成功: {result['success_count']} 个")
+    print(f"失败: {result['failed_count']} 个")
+    
+    if result['jobs']:
+        print(f"\n成功创建的任务:")
+        for job in result['jobs']:
+            print(f"  - [{job['id'][:8]}] {job['name']}")
+    
+    if result['errors']:
+        print(f"\n失败的任务:")
+        for err in result['errors']:
+            print(f"  - 第 {err['index']} 个 ({err['name']}): {err['error']}")
+
+
+def cmd_batch_delete(args):
+    """批量删除定时任务"""
+    job_ids = args.job_ids
+    
+    if not job_ids:
+        print("错误: 至少需要指定一个任务 ID", file=sys.stderr)
+        sys.exit(1)
+    
+    # 展开前缀匹配
+    expanded_ids = []
+    for partial_id in job_ids:
+        try:
+            full_id = _find_job_id(partial_id)
+            expanded_ids.append(full_id)
+        except SystemExit:
+            print(f"警告: 跳过无效的 ID: {partial_id}", file=sys.stderr)
+    
+    if not expanded_ids:
+        print("错误: 没有找到有效的任务 ID", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"准备批量删除 {len(expanded_ids)} 个任务...")
+    
+    result = _api_request("POST", "/jobs/batch-delete", {"job_ids": expanded_ids})
+    
+    print(f"\n批量删除完成:")
+    print(f"成功: {result['success_count']} 个")
+    print(f"失败: {result['failed_count']} 个")
+    
+    if result['deleted_ids']:
+        print(f"\n成功删除的任务:")
+        for job_id in result['deleted_ids']:
+            print(f"  - {job_id[:8]}")
+    
+    if result['errors']:
+        print(f"\n失败的任务:")
+        for err in result['errors']:
+            print(f"  - {err['job_id'][:8]}: {err['error']}")
+
+
+def cmd_messages(args):
+    """查看指定任务会话的最近消息"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("GET", f"/jobs/{job_id}/messages?limit={args.limit}")
+    session_id = result.get("session_id")
+    messages = result.get("messages", [])
+
+    if not session_id:
+        print("无关联会话（任务可能尚未执行过）")
+        return
+
+    if not messages:
+        print("会话中无消息")
+        return
+
+    print(f"任务 [{result.get('job_name', job_id)}] 最近 {len(messages)} 条消息:\n")
+    for msg in messages:
+        role = "用户" if msg["role"] == "user" else "AI"
+        content = msg["content"][:200]
+        if len(msg["content"]) > 200:
+            content += "..."
+        print(f"[{msg['created_at']}] {role}: {content}")
+        print()
+
+
+def cmd_clean(args):
+    """清理指定任务会话的历史消息"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("POST", f"/jobs/{job_id}/session/cleanup", {"keep": args.keep})
+
+    if not result.get("session_id"):
+        print("无关联会话，无需清理")
+        return
+
+    deleted = int(result.get("deleted_count") or 0)
+    kept = int(result.get("kept_count") or 0)
+
+    if deleted == 0 and kept == 0:
+        print("会话中无消息，无需清理")
+        return
+
+    if deleted == 0:
+        print(f"当前消息数未超过保留数 {kept}，无需清理")
+        return
+
+    print(f"已清理任务 [{result.get('job_name', job_id)}] 的 {deleted} 条消息，保留 {kept} 条")
+
+
+def cmd_reset(args):
+    """重置任务会话（删除会话及所有消息）"""
+    job_id = _find_job_id(_resolve_job_id_arg(args))
+    result = _api_request("POST", f"/jobs/{job_id}/session/reset")
+
+    if not result.get("session_id"):
+        print("无关联会话，无需重置")
+        return
+
+    msg_deleted = int(result.get("deleted_message_count") or 0)
+    print(f"已重置任务 [{result.get('job_name', job_id)}] 的会话，删除 {msg_deleted} 条消息")
+    print("下次任务执行时将自动创建新会话")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="CountBot 定时任务管理",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="command", help="子命令")
+
+    # list
+    sub.add_parser("list", help="列出所有定时任务")
+
+    # info
+    p_info = sub.add_parser("info", help="查看任务详情")
+    p_info.add_argument("job_id", help="任务ID（支持前缀匹配）")
+
+    # create
+    p_create = sub.add_parser("create", help="创建定时任务")
+    p_create.add_argument("--name", required=True, help="任务名称")
+    p_create.add_argument("--schedule", required=True, help="Cron 表达式")
+    p_create.add_argument("--message", required=True, help="执行时发送给 AI 的消息")
+    p_create.add_argument("--channel", help="投递渠道 (feishu/telegram/dingtalk/wechat/qq)")
+    p_create.add_argument("--account-id", help="机器人账号 ID（多机器人渠道）")
+    p_create.add_argument("--chat-id", help="投递目标 ID")
+    p_create.add_argument("--deliver", action="store_true", help="是否投递结果到渠道")
+    p_create.add_argument("--max-retries", type=int, default=1, help="最大重试次数（默认1）")
+    p_create.add_argument("--retry-delay", type=int, default=60, help="重试延迟秒数（默认60）")
+    p_create.add_argument("--delete-on-success", action="store_true", help="成功后自动删除")
+
+    # update
+    p_update = sub.add_parser("update", help="修改任务")
+    p_update.add_argument("job_id", help="任务ID")
+    p_update.add_argument("--name", help="新名称")
+    p_update.add_argument("--schedule", help="新 Cron 表达式")
+    p_update.add_argument("--message", help="新执行消息")
+    p_update.add_argument("--channel", help="新投递渠道")
+    p_update.add_argument("--account-id", help="新机器人账号 ID（多机器人渠道）")
+    p_update.add_argument("--chat-id", help="新投递目标 ID")
+    p_update.add_argument("--deliver", type=lambda x: x.lower() in ("true", "1", "yes"),
+                          default=None, help="是否投递结果 (true/false)")
+    p_update.add_argument("--enabled", type=lambda x: x.lower() in ("true", "1", "yes"),
+                          default=None, help="是否启用 (true/false)")
+
+    # delete
+    p_delete = sub.add_parser("delete", help="删除任务")
+    p_delete.add_argument("job_id", help="任务ID")
+
+    # enable
+    p_enable = sub.add_parser("enable", help="启用任务")
+    p_enable.add_argument("job_id", help="任务ID")
+
+    # disable
+    p_disable = sub.add_parser("disable", help="禁用任务")
+    p_disable.add_argument("job_id", help="任务ID")
+
+    # run
+    p_run = sub.add_parser("run", help="手动触发执行")
+    p_run.add_argument("job_id", help="任务ID")
+
+    # validate
+    p_validate = sub.add_parser("validate", help="验证 Cron 表达式")
+    p_validate.add_argument("expression", help="Cron 表达式")
+    
+    # batch-create
+    p_batch_create = sub.add_parser("batch-create", help="批量创建定时任务")
+    p_batch_create.add_argument("--file", required=True, help="包含任务列表的 JSON 文件")
+    
+    # batch-delete
+    p_batch_delete = sub.add_parser("batch-delete", help="批量删除定时任务")
+    p_batch_delete.add_argument("job_ids", nargs="+", help="任务 ID 列表（支持前缀匹配）")
+
+    # messages (会话管理)
+    p_msg = sub.add_parser("messages", help="查看任务会话消息")
+    p_msg.add_argument("job_id", help="任务ID")
+    p_msg.add_argument("--limit", type=int, default=20, help="显示条数（默认20）")
+
+    # clean (会话管理)
+    p_clean = sub.add_parser("clean", help="清理任务会话消息")
+    p_clean.add_argument("job_id", help="任务ID")
+    p_clean.add_argument("--keep", type=int, default=10, help="保留最近N条（默认10）")
+
+    # reset (会话管理)
+    p_reset = sub.add_parser("reset", help="重置任务会话")
+    p_reset.add_argument("job_id", help="任务ID")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    commands = {
+        "list": cmd_list,
+        "info": cmd_info,
+        "create": cmd_create,
+        "update": cmd_update,
+        "delete": cmd_delete,
+        "enable": cmd_enable,
+        "disable": cmd_disable,
+        "run": cmd_run,
+        "validate": cmd_validate,
+        "batch-create": cmd_batch_create,
+        "batch-delete": cmd_batch_delete,
+        "messages": cmd_messages,
+        "clean": cmd_clean,
+        "reset": cmd_reset,
+    }
+
+    commands[args.command](args)
+
+
+if __name__ == "__main__":
+    main()

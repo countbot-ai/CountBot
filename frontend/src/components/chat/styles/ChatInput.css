@@ -1,0 +1,412 @@
+/**
+ * 聊天输入区
+ * 去玻璃拟态：无渐变、无 inset 高光；分层靠背景阶梯；
+ * 规则 2 - 聚焦双环咬合：内环 1px 贴边 + 外环 4px 微明度。
+ */
+
+.input-area {
+  padding: 10px 24px 14px;
+  background: transparent;
+  z-index: 10;
+  position: relative;
+}
+
+/* 与消息流共用同一条中线，避免输入框比正文更宽产生的错位感 */
+.input-shell {
+  max-width: var(--chat-column-width, 760px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- 附件条 ---------- */
+
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.input-shell.focused .attachment-strip {
+  border-color: var(--color-border-secondary);
+}
+
+.attachment-chip {
+  min-width: 0;
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.attachment-chip.status-uploading {
+  border-color: var(--color-border-strong);
+}
+
+.attachment-chip.status-error {
+  border-color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+.attachment-chip-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.attachment-chip.kind-image .attachment-chip-icon {
+  color: var(--color-info);
+  background: var(--color-info-light);
+}
+
+.attachment-chip.kind-audio .attachment-chip-icon {
+  color: var(--color-success);
+  background: var(--color-success-light);
+}
+
+.attachment-chip.kind-video .attachment-chip-icon {
+  color: var(--color-accent);
+  background: var(--color-bg-tertiary);
+}
+
+.attachment-chip-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-chip-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.attachment-chip-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.attachment-chip-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.attachment-spinner {
+  color: var(--color-accent);
+  animation: spin 0.9s linear infinite;
+}
+
+.attachment-error-icon {
+  color: var(--color-error);
+}
+
+.attachment-remove-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.attachment-remove-btn:hover {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+/* ---------- 输入主体 ---------- */
+
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 7px 7px 7px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 18px;
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast);
+}
+
+/* 聚焦只加深一档描边 + 一层极浅外环，不做发光 */
+.input-shell.focused .composer-row {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-elevated);
+  box-shadow: 0 0 0 3px var(--color-border-primary);
+}
+
+.input-shell.busy .composer-row {
+  border-color: var(--color-border-strong);
+}
+
+.file-input {
+  display: none;
+}
+
+.attach-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.attach-btn:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.attach-btn:active {
+  transform: scale(0.94);
+}
+
+.attach-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 4px var(--color-border-primary);
+}
+
+.composer-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 34px;
+  padding: 0;
+}
+
+/* 输入框底栏：模型选择器贴底左对齐，与输入区共享同一层边框 */
+.composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 1px;
+  min-height: 0;
+}
+
+.chat-input {
+  width: 100%;
+  flex: 1;
+  min-height: 24px;
+  max-height: 160px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
+}
+
+.chat-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.chat-input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.input-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  align-self: center;
+}
+
+/* 发送按钮 - 主色近黑，ready 才有存在感 */
+.send-message-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.send-message-btn.ready {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+}
+
+.send-message-btn.ready:hover {
+  background: var(--color-primary-hover);
+}
+
+.send-message-btn.ready:active {
+  transform: scale(0.92);
+}
+
+/* 规则 9 - 对勾/确认类反馈用欠阻尼微弹 */
+.send-message-btn.ready:active svg {
+  animation: spring-pop 380ms var(--ease-spring);
+}
+
+.stop-generation-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-error);
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.stop-generation-btn:hover {
+  background: var(--color-error-light);
+  transform: scale(1.04);
+}
+
+.stop-square {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.input-hint {
+  max-width: 100%;
+  margin: 6px auto 0;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--color-text-disabled);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 规则 9 - 欠阻尼弹簧微弹（点赞 / 对勾 / 确认） */
+@keyframes spring-pop {
+  0% {
+    transform: scale(0.6);
+  }
+
+  55% {
+    transform: scale(1.22);
+  }
+
+  75% {
+    transform: scale(0.94);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 768px) {
+  .input-area {
+    padding: 10px 12px 12px;
+  }
+
+  .input-shell {
+    gap: 8px;
+  }
+
+  .attachment-strip {
+    padding: 8px;
+  }
+
+  .attachment-chip {
+    flex-basis: 100%;
+  }
+
+  .composer-row {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .attach-btn,
+  .send-message-btn,
+  .stop-generation-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .composer-main {
+    min-height: 38px;
+  }
+}

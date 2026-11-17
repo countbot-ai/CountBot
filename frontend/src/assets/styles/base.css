@@ -1,0 +1,128 @@
+/**
+ * 基础样式重置 + 全局基线规则
+ */
+
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-primary);
+    /* 规则 6 - 数字防抖：全局等宽数字，计时/统计不跳宽 */
+    font-variant-numeric: tabular-nums;
+    /* 规则 8 - 防孤字：正文排版收口更干净 */
+    text-wrap: pretty;
+}
+
+/* 移除按钮默认样式 */
+button {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+/* 移除输入框默认样式 */
+input,
+textarea,
+select {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+    /* 输入内的数字同样锁等宽 */
+    font-variant-numeric: tabular-nums;
+}
+
+/* 规则 2 - 输入框聚焦：去掉浏览器 outline，改双环咬合（全局兜底；
+   组件级 composer 在 ChatInput.css 有更强的双环定义） */
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+}
+
+/* 移除链接默认样式 */
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* 移除列表默认样式 */
+ul,
+ol {
+    list-style: none;
+}
+
+/* 图片响应式 */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* 表格样式 */
+table {
+    border-collapse: collapse;
+    border-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 选中文本样式 - 用强调色微明度，不用刺眼高亮 */
+::selection {
+    background: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+/* 规则 5 - 行内图标垂直居中对齐：对 flex/grid 子图标无副作用，
+   仅作用于文本流中的 inline svg */
+svg {
+    vertical-align: -0.125em;
+}
+
+/* Focus 样式 - 键盘可见性保留，中性双环（不用彩色） */
+:focus-visible {
+    outline: none;
+    box-shadow:
+        0 0 0 1px var(--color-border-strong),
+        0 0 0 3px var(--color-border-primary);
+    border-radius: var(--radius-sm);
+}
+
+/* 规则 8 - 防孤字：多行文本容器统一 pretty 收口 */
+p,
+li,
+.message-content,
+.markdown-content,
+.description,
+.hint,
+.input-hint {
+    text-wrap: pretty;
+}
+
+/* 代码与预格式文本不参与 pretty（等宽排版另有一套） */
+pre,
+code,
+kbd,
+samp {
+    text-wrap: nowrap;
+}

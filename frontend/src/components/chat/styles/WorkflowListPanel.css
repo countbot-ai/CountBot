@@ -1,0 +1,191 @@
+/* ============================================================
+ * WorkflowListPanel - 多智能体成员列表
+ *
+ * 成员是一行（状态点 + 名字 + 步骤数），步骤在下面逐行展开。
+ * 全部去掉卡片嵌套与「工具调用 N」这一层中转。
+ * ============================================================ */
+
+.team-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.team-member {
+  min-width: 0;
+}
+
+/* ---------- 成员行 ---------- */
+.team-member-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px 4px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.team-member-head:hover {
+  background: var(--color-bg-tertiary);
+}
+
+/* 机器人头像：给每个成员一个可识别的身份，状态用右下角小点表达 */
+.team-member-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.team-member.is-running .team-member-avatar {
+  background: var(--color-accent-alpha);
+  color: var(--color-accent);
+}
+
+.team-member-status-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 2px var(--color-bg-primary);
+}
+
+.team-member.is-running .team-member-status-dot {
+  background: var(--color-accent);
+  animation: member-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes member-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+.team-member-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.team-member-meta {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.team-member-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--color-text-disabled);
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity var(--transition-fast), transform var(--transition-base) var(--ease-snappy);
+}
+
+.team-member-head:hover .team-member-chevron,
+.team-member-head:focus-visible .team-member-chevron {
+  opacity: 1;
+}
+
+.team-member-chevron.is-open {
+  transform: rotate(90deg);
+  opacity: 1;
+}
+
+/* ---------- 成员展开体 ---------- */
+.team-member-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 8px 6px 30px;
+  min-width: 0;
+}
+
+.team-member-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  margin-left: -6px;
+}
+
+.team-member-result {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
+  word-break: break-word;
+  text-wrap: pretty;
+}
+
+.team-member-thinking {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.team-members-empty {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+/* ---------- 展开动画 ---------- */
+.slide-enter-active,
+.slide-leave-active {
+  transition: opacity 0.15s var(--ease-snappy), transform 0.15s var(--ease-snappy);
+  overflow: hidden;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+/* ---------- 并排对比视图（同一套成员语义） ---------- */
+.team-compare {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+@media (max-width: 640px) {
+  .team-member-body {
+    padding-left: 10px;
+  }
+}

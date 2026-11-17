@@ -1,0 +1,214 @@
+"""Spawn Tool - 生成子 Agent 工具"""
+
+import asyncio
+import contextvars
+import time
+from typing import Any, Dict, Optional
+
+from loguru import logger
+
+from backend.database import SessionLocal
+from backend.models.session import Session
+from backend.modules.config.loader import config_loader
+from backend.modules.session.runtime_config import (
+    build_session_model_override,
+    resolve_session_runtime_config,
+)
+from backend.modules.tools.base import Tool
+from backend.modules.tools.execution import ErrorCategory, ExecutionState, ToolResult
+
+
+class SpawnTool(Tool):
+    """生成子 Agent，等待其完成并将真实结果返回给主代理。"""
+
+    def __init__(self, manager, config_loader=None):
+        self._manager = manager
+        self._config_loader = config_loader
+        # 会话 ID 与取消令牌用 contextvars 存储，保证并发会话隔离：
+        # 该工具实例在渠道 handler 中被所有并发消息共享，若用实例属性会互相覆盖
+        # （A 会话的文件被发到 B、取消 A 却打断 B）。见 external_coding_agent.py 同款做法。
+        self._session_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+            "spawn_tool_session_id", default=None
+        )
+        self._cancel_token_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
+            "spawn_tool_cancel_token", default=None
+        )
+
+    @property
+    def _session_id(self) -> Optional[str]:
+        return self._session_id_ctx.get()
+
+    @property
+    def _cancel_token(self) -> Any:
+        return self._cancel_token_ctx.get()
+
+    def set_context(self, session_id: str) -> None:
+        self._session_id_ctx.set(session_id)
+
+    def set_session_id(self, session_id: Optional[str]) -> None:
+        """兼容 ToolRegistry 的会话注入接口。"""
+        self._session_id_ctx.set(session_id)
+
+    def set_cancel_token(self, cancel_token) -> None:
+        """设置取消令牌"""
+        self._cancel_token_ctx.set(cancel_token)
+
+    @property
+    def name(self) -> str:
+        return "spawn"
+
+    @property
+    def description(self) -> str:
+        return "Run a sub-agent and return its final result."
+
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Sub-agent task.",
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Optional label.",
+                },
+            },
+            "required": ["task"],
+        }
+
+    def _get_timeout(self) -> int:
+        """获取子代理超时时间（秒）"""
+        if self._config_loader:
+            try:
+                config = getattr(self._config_loader, "config", None)
+                if config is not None:
+                    return config.security.subagent_timeout
+            except Exception:
+                pass
+        try:
+            config = getattr(config_loader, "config", None)
+            if config is not None:
+                return config.security.subagent_timeout
+        except Exception:
+            pass
+        # 默认 1200 秒（20 分钟）
+        return 1200
+
+    def _load_session_model_override(self) -> Optional[Dict[str, Any]]:
+        """为当前会话加载模型覆盖，用于让子代理继承会话级自定义模型。"""
+        if not self._session_id:
+            return None
+
+        try:
+            with SessionLocal() as session:
+                db_session = session.get(Session, self._session_id)
+                if not db_session or not db_session.use_custom_config:
+                    return None
+
+                runtime_config = resolve_session_runtime_config(config_loader.config, db_session)
+                model_override = build_session_model_override(runtime_config)
+                if model_override:
+                    logger.info(
+                        "Spawn tool inherited session model config: {}/{} (session={})",
+                        runtime_config.provider_name,
+                        runtime_config.model_name,
+                        self._session_id,
+                    )
+                return model_override
+        except Exception as exc:
+            logger.warning(
+                f"Failed to load session model override for spawn tool: {exc}"
+            )
+            return None
+
+    async def execute(self, task: str, label: Optional[str] = None, **kwargs: Any) -> str:
+        return (await self.execute_outcome(task=task, label=label, **kwargs)).display_text
+
+    async def execute_outcome(
+        self, task: str, label: Optional[str] = None, **kwargs: Any
+    ) -> ToolResult:
+        display_label = label or task[:30] + ("..." if len(task) > 30 else "")
+        model_override = self._load_session_model_override()
+
+        task_id = self._manager.create_task(
+            label=display_label,
+            message=task,
+            session_id=self._session_id,
+            model_override=model_override,
+            cancel_token=self._cancel_token,
+        )
+
+        try:
+            from backend.ws.task_notifications import task_notification_manager
+
+            handler = task_notification_manager.create_handler(
+                task_id, display_label, session_id=self._session_id
+            )
+            self._manager.tasks[task_id].notification_handler = handler
+            await handler.notify_created()
+        except Exception:
+            pass
+
+        # Start task in background so WebSocket updates can flow while we wait
+        await self._manager.execute_task(task_id)
+
+        sub_task = self._manager.tasks[task_id]
+        timeout = self._get_timeout()
+        deadline = time.monotonic() + timeout
+        try:
+            # 轮询等待子任务结束：done_event 不感知取消令牌，
+            # 单次长等待会让「父回合被取消」迟迟不生效，子任务也留成孤儿
+            while True:
+                if self._cancel_token is not None and self._cancel_token.is_cancelled:
+                    # 父回合已被取消：连带取消子任务，避免其继续占用并发额度
+                    await self._manager.cancel_task(task_id)
+                    return ToolResult.cancelled(
+                        f"子 Agent [{display_label}] 随父任务取消 (ID: {task_id})。"
+                    )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                await asyncio.wait_for(
+                    sub_task.done_event.wait(), timeout=min(0.5, remaining)
+                )
+                break
+        except asyncio.TimeoutError:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.TIMEOUT,
+                f"子 Agent [{display_label}] 超时 (ID: {task_id})，任务仍在后台运行。",
+            )
+
+        # 等待期间父回合被取消：同样要收敛子任务
+        if self._cancel_token is not None and self._cancel_token.is_cancelled:
+            await self._manager.cancel_task(task_id)
+            return ToolResult.cancelled(
+                f"子 Agent [{display_label}] 随父任务取消 (ID: {task_id})。"
+            )
+
+        child_outcome = sub_task.outcome
+        if child_outcome is None:
+            return ToolResult.unknown_outcome(
+                ErrorCategory.RESULT_CONTRACT,
+                f"子 Agent [{display_label}] 已结束 (ID: {task_id})，但没有结构化结果。",
+            )
+
+        if child_outcome.state is ExecutionState.SUCCEEDED:
+            return ToolResult.success(
+                child_outcome.output or "",
+                display_text=(
+                    f"子 Agent [{display_label}] 已完成 (ID: {task_id})。\n\n"
+                    f"{sub_task.result or ''}"
+                ),
+            )
+
+        prefix = "已取消" if child_outcome.state is ExecutionState.CANCELLED else "失败"
+        return ToolResult(
+            state=child_outcome.state,
+            display_text=f"子 Agent [{display_label}] {prefix} (ID: {task_id}): {child_outcome.display_text}",
+            error_category=child_outcome.error_category,
+            retryable=child_outcome.retryable,
+            retry_safety=child_outcome.retry_safety,
+            side_effect_state=child_outcome.side_effect_state,
+        )

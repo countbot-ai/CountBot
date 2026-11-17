@@ -1,0 +1,299 @@
+
+.shell-executor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+}
+
+.executor-header {
+  padding: var(--spacing-xl);
+  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.executor-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.executor-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.executor-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-xl);
+}
+
+.form-group {
+  margin-bottom: var(--spacing-lg);
+}
+
+.form-label {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.required {
+  color: var(--color-error);
+  margin-left: 2px;
+}
+
+.command-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  transition: border-color var(--transition-base);
+  box-shadow: var(--shadow-sm);
+}
+
+.command-input-wrapper:focus-within {
+  border-color: var(--color-border-strong);
+  box-shadow: none;
+}
+
+.command-prompt {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.command-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.form-input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  transition: border-color var(--transition-base);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+}
+
+.form-hint {
+  display: block;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.executor-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+}
+
+.execute-btn,
+.clear-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.execute-btn {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: 1px solid var(--color-primary, var(--color-border-strong));
+  box-shadow: none;
+}
+
+.execute-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+.execute-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clear-btn {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  box-shadow: var(--shadow-sm);
+}
+
+.clear-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-section {
+  margin-top: var(--spacing-xl);
+}
+
+.history-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.history-item {
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color, var(--color-border-primary));
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
+}
+
+.history-item:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.history-command {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+}
+
+.command-text {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.history-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.history-status {
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.history-status.success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.history-status.error {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.history-cwd {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.history-output {
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.history-output pre {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-3xl);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 深色模式 */
+
+
+
+
+
+
+

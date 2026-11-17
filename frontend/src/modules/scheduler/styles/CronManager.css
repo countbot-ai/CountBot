@@ -1,0 +1,781 @@
+/* ============================================================
+ * CronManager - 定时任务面板
+ *
+ * 与 Wiki / 消息流同一套语言：去阴影、去彩底、去边框噪音；
+ * 强调色只留给「新建 / 立即执行」这类主操作和真正的异常状态。
+ * ============================================================ */
+
+.cron-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg-primary);
+}
+
+/* ---------- 头部 ---------- */
+.cron-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 14px var(--spacing-xl);
+  border-bottom: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
+}
+
+.header-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 2px 0;
+}
+
+.description {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.create-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.create-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+/* ---------- 统计条：一行安静的文字 ---------- */
+.stats-bar-compact {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 8px var(--spacing-xl);
+  border-bottom: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
+  font-size: var(--font-size-xs);
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-item svg {
+  color: var(--color-text-disabled);
+}
+
+.stat-item.success {
+  color: var(--color-success);
+}
+
+.stat-item.success svg {
+  color: var(--color-success);
+}
+
+.stat-item.info {
+  color: var(--color-text-tertiary);
+  flex: 1;
+  overflow: hidden;
+}
+
+.next-run-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border-primary);
+}
+
+/* ---------- 状态 ---------- */
+.loading-state,
+.error-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  flex: 1;
+  padding: var(--spacing-3xl);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.error-state {
+  color: var(--color-error);
+}
+
+.loading-state > svg,
+.error-state > svg,
+.empty-state > svg {
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-disabled);
+}
+
+.empty-state h3 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.empty-state p {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  margin: 0;
+  max-width: 360px;
+  line-height: 1.7;
+}
+
+.retry-btn {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.retry-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.create-btn-large {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.create-btn-large:hover {
+  background: var(--color-primary-hover);
+}
+
+/* ---------- 任务列表 ---------- */
+.jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-xl);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.job-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.job-card:hover {
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-secondary);
+}
+
+.job-card.disabled {
+  opacity: 0.62;
+}
+
+/* ---------- 卡片头 ---------- */
+.card-header-compact {
+  margin-bottom: var(--spacing-sm);
+}
+
+.job-main-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.job-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.job-icon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.job-name {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 状态徽章：只用小圆点 + 文字，不用大色块 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
+}
+
+.status-badge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-text-disabled);
+}
+
+.status-badge.enabled {
+  color: var(--color-success);
+}
+
+.status-badge.enabled::before {
+  background: var(--color-success);
+}
+
+/* 运行状态徽章：运行中/失败/待重试，与启用状态区分开 */
+.run-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.run-badge.running {
+  color: var(--color-primary);
+}
+
+.run-badge.failed {
+  color: var(--color-error);
+}
+
+.run-badge.retrying {
+  color: var(--color-warning);
+}
+
+.job-meta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-left: 24px;
+}
+
+.job-schedule {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.schedule-desc {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- 卡片体 ---------- */
+.card-body-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+}
+
+.job-message-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.job-message-compact svg {
+  flex-shrink: 0;
+  color: var(--color-text-disabled);
+}
+
+.channel-info-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.channel-info-compact svg {
+  flex-shrink: 0;
+  color: var(--color-text-disabled);
+}
+
+.chat-id-compact {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-disabled);
+}
+
+/* 执行状态行：运行中 / 失败原因，始终保持可见 */
+.run-state-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  min-width: 0;
+}
+
+.run-state-row svg {
+  flex-shrink: 0;
+}
+
+.run-state-row.running {
+  color: var(--color-primary);
+}
+
+.run-state-row.error {
+  color: var(--color-error);
+}
+
+.run-state-row.retrying {
+  color: var(--color-warning);
+}
+
+.run-state-label {
+  flex-shrink: 0;
+  font-weight: var(--font-weight-medium);
+}
+
+.run-state-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-tertiary);
+}
+
+.run-state-row.error .run-state-meta {
+  color: var(--color-text-secondary);
+}
+
+.run-state-link {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.run-state-link:hover {
+  color: var(--color-text-primary);
+}
+
+.execution-stats-compact {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.stat-badge-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-badge-compact svg {
+  flex-shrink: 0;
+  color: var(--color-text-disabled);
+}
+
+.stat-badge-compact.success {
+  color: var(--color-success);
+}
+
+.stat-badge-compact.success svg {
+  color: var(--color-success);
+}
+
+.stat-badge-compact.error {
+  color: var(--color-error);
+}
+
+.stat-badge-compact.error svg {
+  color: var(--color-error);
+}
+
+.time-info-compact {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.time-item-compact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.time-item-compact svg {
+  flex-shrink: 0;
+  color: var(--color-text-disabled);
+}
+
+.time-item-compact.next {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ---------- 卡片底部操作 ---------- */
+.card-footer-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border-primary);
+  gap: var(--spacing-sm);
+}
+
+.primary-actions {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.secondary-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.action-btn-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.action-btn-compact:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.action-btn-compact:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-btn-compact.primary {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-medium);
+}
+
+.action-btn-compact.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  color: var(--color-text-inverse);
+}
+
+.action-btn-compact.details {
+  color: var(--color-text-tertiary);
+}
+
+.action-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.action-btn-icon:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.action-btn-icon.toggle.enabled {
+  color: var(--color-success);
+}
+
+.action-btn-icon.toggle.enabled:hover {
+  color: var(--color-success);
+}
+
+.action-btn-icon.danger:hover {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+/* ---------- 详情展开区 ---------- */
+.details-panel {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border-top: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detail-section {
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.detail-section.error {
+  background: var(--color-error-light);
+  border-color: transparent;
+}
+
+.detail-section.success {
+  background: var(--color-bg-primary);
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
+}
+
+.detail-section.error .detail-header {
+  color: var(--color-error);
+}
+
+.detail-section.success .detail-header {
+  color: var(--color-success);
+}
+
+.detail-copy-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.detail-copy-btn:hover {
+  opacity: 1;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+}
+
+.detail-text {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 0;
+  line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.detail-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: var(--spacing-md);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.detail-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: var(--spacing-md);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border-secondary);
+}
+
+/* ---------- 动画 ---------- */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 移动端 ---------- */
+@media (max-width: 640px) {
+  .cron-header,
+  .stats-bar-compact {
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+  }
+
+  .jobs-list {
+    padding: var(--spacing-md);
+  }
+}

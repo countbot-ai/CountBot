@@ -1,0 +1,8 @@
+{
+  "disabled_skills": [
+    "agent-browser",
+    "agent-team-manager",
+    "ima-notes",
+    "ima-knowledge-base"
+  ]
+}
