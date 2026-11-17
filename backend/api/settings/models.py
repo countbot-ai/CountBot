@@ -304,6 +304,7 @@ class InjectionConfigResponse(BaseModel):
     agent_teams: bool = Field(..., description="已激活多智能体团队区块")
     dynamic_context: bool = Field(..., description="首条 user 消息动态上下文（时间/用户资料/会话摘要/渠道）")
     team_reminder: bool = Field(..., description="@团队强制提醒")
+    memory: bool = Field(True, description="记忆区块注入（长期记忆/自我改进记忆）")
     disabled_tools: List[str] = Field(default_factory=list, description="禁用的工具名列表")
     auto_memory_summary: bool = Field(..., description="后台自动记忆维护（溢出总结/整会话沉淀）")
 

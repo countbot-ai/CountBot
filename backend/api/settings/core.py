@@ -53,7 +53,6 @@ from backend.api.settings.validators import (
     _validate_regex_patterns_or_raise,
 )
 
-
 @router.get("/security/dangerous-patterns")
 async def get_dangerous_patterns():
     """
@@ -236,6 +235,7 @@ async def get_settings() -> SettingsResponse:
                 agent_teams=config.injection.agent_teams,
                 dynamic_context=config.injection.dynamic_context,
                 team_reminder=config.injection.team_reminder,
+                memory=config.injection.memory,
                 disabled_tools=list(config.injection.disabled_tools),
                 auto_memory_summary=config.injection.auto_memory_summary,
             ),
@@ -471,22 +471,6 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                     field_name="persona.enable_short_context_summary",
                 )
 
-            if "session_memory" in request.persona:
-                memory_config = request.persona["session_memory"]
-                if isinstance(memory_config, dict):
-                    if "enabled" in memory_config:
-                        config.persona.session_memory.enabled = _coerce_boolean_value(
-                            memory_config["enabled"],
-                            field_name="persona.session_memory.enabled",
-                        )
-                    if "scope" in memory_config:
-                        scope = str(memory_config["scope"] or "").strip()
-                        if scope not in {"session", "persona"}:
-                            raise HTTPException(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="persona.session_memory.scope 只能是 session 或 persona",
-                            )
-                        config.persona.session_memory.scope = scope
             
             if "heartbeat" in request.persona:
                 hb = request.persona["heartbeat"]
@@ -523,6 +507,7 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                 "agent_teams",
                 "dynamic_context",
                 "team_reminder",
+                "memory",
                 "auto_memory_summary",
             )
             for field_name in bool_fields:

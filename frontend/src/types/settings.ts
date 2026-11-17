@@ -25,9 +25,5 @@ export interface PersonaConfig {
     custom_personality: string
     max_history_messages: number
     enable_short_context_summary?: boolean
-    session_memory?: {
-        enabled: boolean
-        scope: 'session' | 'persona'
-    }
     heartbeat?: HeartbeatConfig
 }

@@ -306,7 +306,6 @@ class PersonaUpdate(BaseModel):
     custom_personality: Optional[str] = Field(None, max_length=4000)
     max_history_messages: Optional[int] = Field(None, ge=-1, le=500)
     enable_short_context_summary: Optional[bool] = None
-    session_memory: Optional[Dict[str, Any]] = None
     heartbeat: Optional[Dict[str, Any]] = None
 
 

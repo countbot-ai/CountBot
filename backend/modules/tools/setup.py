@@ -199,8 +199,6 @@ def register_all_tools(
     except Exception as e:
         logger.error(f"Failed to register wiki tool: {e}")
 
-    # 8c. 人格克隆由前端向导驱动固定流程，不注册为工具
-
     # 9. 注册小智AI send_message 工具（仅在小智频道启用且对话模式开启时注册）
     try:
         from backend.modules.config.loader import config_loader as _cl

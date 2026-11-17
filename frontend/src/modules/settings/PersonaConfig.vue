@@ -85,7 +85,7 @@
           >
             <component :is="p.icon" :size="20" class="personality-icon" />
             <div class="personality-content">
-              <!-- 内置性格有翻译；用户自建（含克隆出来）的性格只有库里的文案 -->
+              <!-- 内置性格有翻译；用户自建的性格只有库里的文案 -->
               <div class="personality-name">
                 <span>{{ p.isBuiltin ? $t(`settings.persona.personalities.${p.id}`, p.name) : p.name }}</span>
               </div>
@@ -221,43 +221,6 @@
             </div>
           </div>
         </div>
-      </SettingsRow>
-    </SettingsCard>
-
-    <!-- 克隆人格的对话记忆：摘要按会话注入，避免新会话继承别的会话内容 -->
-    <SettingsCard
-      :title="$t('settings.persona.sessionMemoryTitle')"
-      :description="$t('settings.persona.sessionMemoryHint')"
-    >
-      <SettingsRow
-        :label="$t('settings.persona.sessionMemoryEnabled')"
-        :description="$t('settings.persona.sessionMemoryEnabledHint')"
-      >
-        <SwitchToggle
-          v-model="localPersona.session_memory.enabled"
-          :width="48"
-          :height="28"
-          :aria-label="$t('settings.persona.sessionMemoryEnabled')"
-        />
-      </SettingsRow>
-
-      <SettingsRow
-        :label="$t('settings.persona.sessionMemoryScope')"
-        :description="$t('settings.persona.sessionMemoryScopeHint')"
-      >
-        <select
-          v-model="localPersona.session_memory.scope"
-          class="co-select"
-          :disabled="!localPersona.session_memory.enabled"
-        >
-          <option value="session">{{ $t('settings.persona.sessionMemoryScopeSession') }}</option>
-          <option value="persona">{{ $t('settings.persona.sessionMemoryScopePersona') }}</option>
-        </select>
-        <template #below>
-          <p v-if="!localPersona.session_memory.enabled" class="co-row-desc">
-            {{ $t('settings.persona.sessionMemoryDisabledHint') }}
-          </p>
-        </template>
       </SettingsRow>
     </SettingsCard>
 
@@ -464,11 +427,6 @@ interface HeartbeatConfig {
   max_greets_per_day?: number
 }
 
-interface PersonaSessionMemoryConfig {
-  enabled: boolean
-  scope: 'session' | 'persona'
-}
-
 interface PersonaConfig {
   ai_name: string
   user_name: string
@@ -478,7 +436,6 @@ interface PersonaConfig {
   custom_personality: string
   max_history_messages: number
   enable_short_context_summary: boolean
-  session_memory: PersonaSessionMemoryConfig
   heartbeat: HeartbeatConfig
 }
 
@@ -514,10 +471,6 @@ const createLocalPersonaState = (persona?: PersonaConfigInput): PersonaConfig =>
   custom_personality: persona?.custom_personality ?? '',
   max_history_messages: normalizeHistoryLimit(persona?.max_history_messages),
   enable_short_context_summary: persona?.enable_short_context_summary ?? false,
-  session_memory: {
-    enabled: persona?.session_memory?.enabled ?? true,
-    scope: persona?.session_memory?.scope === 'persona' ? 'persona' : 'session',
-  },
   heartbeat: {
     ...defaultHeartbeat,
     ...(persona?.heartbeat || {}),

@@ -220,11 +220,6 @@ export interface HeartbeatConfig {
     max_greets_per_day?: number
 }
 
-export interface PersonaSessionMemoryConfig {
-    enabled: boolean
-    scope: 'session' | 'persona'
-}
-
 export interface PersonaConfig {
     ai_name: string
     user_name: string
@@ -234,7 +229,6 @@ export interface PersonaConfig {
     custom_personality: string
     max_history_messages: number
     enable_short_context_summary: boolean
-    session_memory?: PersonaSessionMemoryConfig
     heartbeat?: HeartbeatConfig
 }
 
@@ -246,6 +240,7 @@ export interface InjectionConfig {
     agent_teams: boolean
     dynamic_context: boolean
     team_reminder: boolean
+    memory: boolean
     disabled_tools: string[]
     auto_memory_summary: boolean
 }

@@ -34,10 +34,7 @@ _SECTION_SWITCH_MAP = {
 
 # 混合区块里各开关负责的部分说明
 _MIXED_SECTION_NOTES = {
-    "identity": (
-        "名称与性格始终注入；环境信息随 core_rules 开关；"
-        "克隆人格的会话记忆随 persona.session_memory 开关"
-    ),
+    "identity": "名称与性格始终注入；环境信息随 core_rules 开关",
 }
 
 

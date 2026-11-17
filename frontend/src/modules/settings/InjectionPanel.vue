@@ -76,6 +76,16 @@
       />
     </SettingsRow>
 
+    <SettingsRow :label="$t('settings.injection.memory')" :description="$t('settings.injection.memoryDesc')">
+      <SwitchToggle
+        v-model="localConfig.memory"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.memory')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
     <SettingsRow
       :label="$t('settings.injection.autoMemorySummary')"
       :description="$t('settings.injection.autoMemorySummaryDesc')"
@@ -136,6 +146,7 @@ const defaults: InjectionConfig = {
   agent_teams: true,
   dynamic_context: true,
   team_reminder: true,
+  memory: true,
   disabled_tools: [],
   auto_memory_summary: true,
 }
