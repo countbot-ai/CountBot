@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import yaml
 from loguru import logger
@@ -14,17 +14,15 @@ from backend.utils.paths import APPLICATION_ROOT
 # 默认内置技能目录
 BUILTIN_SKILLS_DIR = APPLICATION_ROOT / "workspace" / "skills"
 
-# frontmatter 分隔符。兼容 CRLF（Windows 上编辑过的 SKILL.md 会是 \r\n）与结尾无换行的文件。
+# frontmatter 分隔符，兼容 CRLF 与结尾无换行
 _FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.DOTALL)
 
-# Agent Skills 开放标准：description 上限 1024 字符，name 为 kebab-case。
-# 超限只告警不拒绝——宁可技能可用但有提示，也不要静默消失。
+# Agent Skills 规范：description 上限 1024 字符，name 使用 kebab-case
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_NAME_LENGTH = 64
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
-# 注入预算：摘要与 always 技能都会进入每轮 system prompt，需设上限防止
-# 技能数量或单个体积膨胀后撑爆模型上下文窗口。
+# 摘要与 always 技能进入每轮 system prompt，需设上限控制上下文体积
 MAX_SKILL_SUMMARY_CHARS = 6000
 MAX_SKILL_SUMMARY_DESC_CHARS = 200
 MAX_ALWAYS_SKILL_CHARS = 8000
@@ -32,7 +30,7 @@ SKILLS_DIR_HINT = "workspace/skills/<skill-name>/SKILL.md"
 
 
 def _coerce_bool(value: Any) -> bool:
-    """YAML 里 `always: true` 是真 bool，但手写的 `always: "yes"` 是字符串，两种都要认。"""
+    """YAML 中 always 可能是布尔值或字符串，两种都识别。"""
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
@@ -79,12 +77,7 @@ def build_frontmatter(
     auto_load: bool = False,
     requirements: Optional[List[str]] = None,
 ) -> str:
-    """生成 SKILL.md 的 frontmatter。
-
-    必须用 yaml.safe_dump 而不是 f-string 拼接：描述里只要含 ": "、以 "#" 开头、
-    或者是多行文本，裸拼出来就是非法 YAML，会让整个 frontmatter 解析失败。
-    safe_dump 会按需自动加引号 / 转块标量。
-    """
+    """生成 SKILL.md 的 frontmatter，使用 yaml.safe_dump 保证特殊字符合法。"""
     payload: Dict[str, Any] = {
         "name": name,
         "description": description,
@@ -136,23 +129,11 @@ class Skill:
 
     @property
     def manual_only(self) -> bool:
-        """技能是否仅支持显式调用。
-
-        对应 frontmatter 的 ``disable-model-invocation: true``：技能仍然可用，
-        但不进入提示词清单，模型不会主动选择它，只能由用户通过命令点名。
-        适用于体积大、易误触发的技能——常驻清单会挤占上下文并诱导误用。
-        """
+        """技能是否仅支持显式调用，对应 frontmatter 的 disable-model-invocation。"""
         return bool(self.metadata.get("disable_model_invocation", False))
 
     def _parse_metadata(self) -> Dict[str, Any]:
-        """解析技能文件的 YAML frontmatter。
-
-        用真正的 YAML 解析器。此前是手搓的 `split(":", 1)` 行循环，它读不了块标量
-        （`description: |`）——遇到时会把 description 解析成字面量 "|"，导致技能在
-        系统提示词里没有任何触发语，永远不会被激活，而且不报错。
-
-        解析失败时降级到 legacy 行解析并记录 parse_error，而不是让整个技能失去元数据。
-        """
+        """解析技能文件的 YAML frontmatter，支持块标量等标准语法。"""
         metadata: Dict[str, Any] = {
             "title": self.name,
             "description": "",
@@ -180,7 +161,7 @@ class Skill:
         except yaml.YAMLError as exc:
             detail = " ".join(str(exc).split())
             metadata["parse_error"] = f"YAML 解析失败: {detail[:200]}"
-            # 降级：至少把能捞的 key 捞出来，技能不至于完全没有描述
+            # 降级逐行解析，尽量保留可用的 key
             self._apply_legacy_frontmatter(raw, metadata)
             return metadata
 
@@ -213,8 +194,7 @@ class Skill:
         metadata["tags"] = _coerce_str_list(data.get("tags"))
         metadata["dependencies"] = _coerce_str_list(data.get("dependencies"))
 
-        # allowed-tools（开放标准写法）与 allowed_tools 都认。
-        # 注意：解析出来只是暴露给 API/UI，运行时尚未强制执行（见 S2）。
+        # allowed-tools 与 allowed_tools 都识别，当前仅暴露给 API/UI，尚未强制执行
         allowed = data.get("allowed-tools")
         if allowed is None:
             allowed = data.get("allowed_tools")
@@ -233,8 +213,7 @@ class Skill:
         # 顶层 requires（原生 YAML 写法）
         metadata["requires"] = _coerce_requires(data.get("requires"))
 
-        # metadata: 既可能是 YAML 内联映射（API 写出来的 JSON 恰好是合法 YAML flow map），
-        # 也可能是遗留的 JSON 字符串。两种都要认。
+        # metadata 可能是内联映射或遗留 JSON 字符串，两种都兼容
         nested = data.get("metadata")
         if isinstance(nested, str):
             try:
@@ -274,18 +253,14 @@ class Skill:
             if not _SKILL_NAME_RE.match(declared_name):
                 warnings.append(f"name '{declared_name}' 不是合法的 kebab-case")
             if declared_name != self.name:
-                # 目录名才是技能身份（.skills_config.json / API 路由 / 读文件拦截都以它为键）。
-                # 这里只提示，不改身份——改身份是破坏性变更。
+                # 目录名是技能身份，这里只提示不一致，不修改身份
                 warnings.append(
                     f"frontmatter name '{declared_name}' 与目录名 '{self.name}' 不一致；"
                     f"系统以目录名为准"
                 )
 
     def _apply_legacy_frontmatter(self, raw: str, metadata: Dict[str, Any]) -> None:
-        """YAML 解析失败时的降级路径：老的逐行 split 解析。
-
-        只求尽量捞回 description/title/always，不追求正确性。
-        """
+        """YAML 解析失败时降级为逐行解析，尽量保留 description/title/always。"""
         for line in raw.split("\n"):
             if ":" not in line:
                 continue
@@ -341,37 +316,50 @@ class Skill:
 
 
 class SkillsLoader:
-    """
-    技能加载器
-    
-    管理技能文件的加载、启用/禁用
-    """
+    """技能加载器：管理技能文件的加载、启用/禁用"""
 
     def __init__(
         self,
         skills_dir: Path,
         builtin_skills_dir: Optional[Path] = None,
         external_skills_dirs: Optional[List[Path]] = None,
+        shared_skills_dirs: Optional[List[Path]] = None,
+        extra_disabled_skills: Optional[Iterable[str]] = None,
+        include_builtin: bool = True,
+        excluded_workspace_skills: Optional[Iterable[str]] = None,
+        builtin_only_names: Optional[Iterable[str]] = None,
     ):
-        """
-        初始化 SkillsLoader
-        
-        Args:
-            skills_dir: 工作空间技能文件存储目录
-            builtin_skills_dir: 内置技能目录 (可选)
-            external_skills_dirs: 外部 OpenClaw 技能目录 (可选，主要用于测试)
-        """
+        """初始化 SkillsLoader"""
         self.workspace_skills = skills_dir
         self.workspace_skills.mkdir(parents=True, exist_ok=True)
+        # 只在工作空间层生效：共享快照与内置只读层仍按各自来源加载。
+        self.excluded_workspace_skills = {
+            str(name).strip()
+            for name in (excluded_workspace_skills or ())
+            if str(name).strip()
+        }
         
-        self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
+        if not include_builtin:
+            self.builtin_skills = None
+        else:
+            self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
+        # 只加载这些内置技能（None=全部）；用于把只读内置层收窄到「随应用分发」的技能
+        self.builtin_only_names = {
+            str(name).strip() for name in (builtin_only_names or ()) if str(name).strip()
+        } or None
         self.external_skills_dirs = external_skills_dirs
+        self.shared_skills_dirs = [Path(path) for path in (shared_skills_dirs or [])]
         
         self.skills: Dict[str, Skill] = {}
         
         # 加载禁用配置
         self.config_file = self.workspace_skills.parent / ".skills_config.json"
+        # 传入的停用项不落配置文件，reload 时需重新叠加
+        self.extra_disabled_skills = {
+            str(name).strip() for name in (extra_disabled_skills or ()) if str(name).strip()
+        }
         self.disabled_skills = self._load_disabled_skills()
+        self.disabled_skills.update(self.extra_disabled_skills)
         
         self._load_all_skills()
         
@@ -516,18 +504,27 @@ class SkillsLoader:
         return target_dir / "SKILL.md"
 
     def _load_all_skills(self) -> None:
-        """加载所有技能文件（工作空间 + 内置 + OpenClaw 外部目录）"""
+        """加载所有技能文件（工作空间 + 共享 + 内置 + OpenClaw 外部目录）"""
         try:
             # 1. 加载工作空间技能（优先级最高）
             for name, skill_file in self._iter_skill_files(self.workspace_skills) or []:
+                if name in self.excluded_workspace_skills:
+                    continue
                 self._register_skill(name, skill_file, "workspace")
 
-            # 2. 加载内置技能（优先级次之）
+            # 2. 加载已批准的共享技能快照（只读，优先级次于用户私有技能）
+            for shared_dir in self.shared_skills_dirs:
+                for name, skill_file in self._iter_skill_files(shared_dir) or []:
+                    self._register_skill(name, skill_file, "shared")
+
+            # 3. 加载内置技能
             if self.builtin_skills:
                 for name, skill_file in self._iter_skill_files(self.builtin_skills) or []:
+                    if self.builtin_only_names is not None and name not in self.builtin_only_names:
+                        continue
                     self._register_skill(name, skill_file, "builtin")
 
-            # 3. 加载外部 OpenClaw 技能（最低优先级）
+            # 4. 加载外部 OpenClaw 技能（最低优先级）
             for external_dir in self._discover_openclaw_skill_dirs():
                 for name, skill_file in self._iter_skill_files(external_dir) or []:
                     self._register_skill(name, skill_file, "openclaw")
@@ -538,16 +535,7 @@ class SkillsLoader:
             logger.error(f"Failed to load skills: {e}")
 
     def list_skills(self, enabled_only: bool = False, filter_unavailable: bool = False) -> List[dict]:
-        """
-        列出所有技能
-        
-        Args:
-            enabled_only: 是否只返回已启用的技能
-            filter_unavailable: 是否过滤掉依赖未满足的技能
-            
-        Returns:
-            list: 技能信息列表
-        """
+        """列出所有技能"""
         skills = []
         
         for name, skill in self.skills.items():
@@ -567,27 +555,11 @@ class SkillsLoader:
         return skills
     
     def load_skill(self, name: str) -> str:
-        """
-        加载技能内容
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            str: 技能内容
-        """
+        """加载技能内容"""
         return self.read_skill(name)
     
     def get_skill_summary(self, name: str) -> dict:
-        """
-        获取技能摘要信息
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            dict: 技能摘要
-        """
+        """获取技能摘要信息"""
         skill = self.get_skill(name)
         if not skill:
             return {}
@@ -605,28 +577,14 @@ class SkillsLoader:
         }
     
     def toggle_skill(self, name: str, enabled: bool) -> bool:
-        """
-        切换技能启用状态
-        
-        Args:
-            name: 技能名称
-            enabled: 是否启用
-            
-        Returns:
-            bool: 是否成功
-        """
+        """切换技能启用状态"""
         if enabled:
             return self.enable_skill(name)
         else:
             return self.disable_skill(name)
 
     def get_always_skills(self) -> List[str]:
-        """
-        获取标记为 always=true 且满足依赖的技能
-        
-        Returns:
-            list: always-loaded 技能名称列表
-        """
+        """获取标记为 always=true 且满足依赖的技能"""
         result = []
         for name, skill in self.skills.items():
             if (
@@ -640,15 +598,7 @@ class SkillsLoader:
         return result
 
     def load_skills_for_context(self, skill_names: List[str]) -> str:
-        """
-        加载特定技能用于包含在 agent 上下文中
-        
-        Args:
-            skill_names: 要加载的技能名称列表
-            
-        Returns:
-            str: 格式化的技能内容
-        """
+        """加载特定技能用于包含在 agent 上下文中"""
         parts = []
         for name in skill_names:
             skill = self.get_skill(name)
@@ -664,14 +614,7 @@ class SkillsLoader:
         return "\n\n---\n\n".join(parts) if parts else ""
 
     def build_skills_summary(self) -> str:
-        """
-        构建所有已启用技能的摘要 - 极简版
-        
-        用于渐进式加载 - agent 可以在需要时使用 read_file 读取完整技能内容
-        
-        Returns:
-            str: 简洁的技能列表，每行一个技能
-        """
+        """构建所有已启用技能的摘要（极简版），供渐进式加载；模型需要时再用 read_file 读全文。"""
         if not self.skills:
             return ""
         
@@ -682,7 +625,7 @@ class SkillsLoader:
             if not skill.enabled:
                 continue
 
-            # 仅显式调用的技能不进清单，但要在末尾点名，避免用户以为技能丢了
+            # 仅显式调用的技能不进清单，但会在末尾单独列出
             if skill.manual_only:
                 manual_only_names.append(name)
                 continue
@@ -737,30 +680,11 @@ class SkillsLoader:
         return content
 
     def get_skill(self, name: str) -> Optional[Skill]:
-        """
-        获取指定技能
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            Skill: 技能对象，如果不存在则返回 None
-        """
+        """获取指定技能"""
         return self.skills.get(name)
 
     def read_skill(self, name: str) -> str:
-        """
-        读取技能内容
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            str: 技能内容
-            
-        Raises:
-            ValueError: 技能不存在
-        """
+        """读取技能内容"""
         skill = self.get_skill(name)
         if not skill:
             raise ValueError(f"Skill '{name}' not found")
@@ -768,15 +692,7 @@ class SkillsLoader:
         return skill.content
 
     def enable_skill(self, name: str) -> bool:
-        """
-        启用技能
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            bool: 是否成功
-        """
+        """启用技能"""
         skill = self.get_skill(name)
         if not skill:
             logger.warning(f"Cannot enable skill '{name}': not found")
@@ -800,15 +716,7 @@ class SkillsLoader:
         return True
 
     def disable_skill(self, name: str) -> bool:
-        """
-        禁用技能
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            bool: 是否成功
-        """
+        """禁用技能"""
         skill = self.get_skill(name)
         if not skill:
             logger.warning(f"Cannot disable skill '{name}': not found")
@@ -820,15 +728,7 @@ class SkillsLoader:
         return True
 
     def check_dependencies(self, name: str) -> Tuple[bool, List[str]]:
-        """
-        检查技能依赖
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            tuple: (是否满足所有依赖, 缺失的依赖列表)
-        """
+        """检查技能依赖"""
         skill = self.get_skill(name)
         if not skill:
             return False, [f"Skill '{name}' not found"]
@@ -845,15 +745,7 @@ class SkillsLoader:
         return len(missing) == 0, missing
 
     def get_summary(self, auto_load_only: bool = False) -> str:
-        """
-        获取技能摘要
-        
-        Args:
-            auto_load_only: 是否只包含自动加载的技能
-            
-        Returns:
-            str: 技能摘要文本
-        """
+        """获取技能摘要"""
         summaries = []
         
         for name, skill in sorted(self.skills.items()):
@@ -871,12 +763,7 @@ class SkillsLoader:
         return "\n".join(summaries)
 
     def get_auto_load_skills(self) -> List[str]:
-        """
-        获取所有自动加载的技能
-        
-        Returns:
-            list: 自动加载的技能名称列表
-        """
+        """获取所有自动加载的技能"""
         return [
             name
             for name, skill in self.skills.items()
@@ -884,15 +771,7 @@ class SkillsLoader:
         ]
 
     def get_enabled_content(self, auto_load_only: bool = False) -> str:
-        """
-        获取所有已启用技能的内容
-        
-        Args:
-            auto_load_only: 是否只包含自动加载的技能
-            
-        Returns:
-            str: 合并的技能内容
-        """
+        """获取所有已启用技能的内容"""
         contents = []
         
         for name, skill in sorted(self.skills.items()):
@@ -910,23 +789,14 @@ class SkillsLoader:
         """重新加载所有技能"""
         logger.info("Reloading all skills")
         self.disabled_skills = self._load_disabled_skills()
+        self.disabled_skills.update(self.extra_disabled_skills)
         self.skills.clear()
         self._load_all_skills()
 
     def add_skill(self, name: str, content: str) -> bool:
-        """
-        添加新技能
-        
-        Args:
-            name: 技能名称
-            content: 技能内容（包含 frontmatter）
-            
-        Returns:
-            bool: 是否成功
-        """
+        """添加新技能"""
         try:
-            # name 直接参与路径拼接，必须限定为 skills 目录下的单级目录名，
-            # 否则可借 ".." 或分隔符把文件写到目录之外。
+            # name 参与路径拼接，必须限定为 skills 下的单级目录名
             skill_dir = (self.workspace_skills / name).resolve()
             if (
                 not name
@@ -970,16 +840,7 @@ class SkillsLoader:
             return False
 
     def update_skill(self, name: str, content: str) -> bool:
-        """
-        更新技能
-        
-        Args:
-            name: 技能名称
-            content: 技能内容（包含 frontmatter）
-            
-        Returns:
-            bool: 是否成功
-        """
+        """更新技能"""
         skill = self.get_skill(name)
         if not skill:
             logger.warning(f"Cannot update skill '{name}': not found")
@@ -1007,15 +868,7 @@ class SkillsLoader:
             return False
 
     def delete_skill(self, name: str) -> bool:
-        """
-        删除技能
-        
-        Args:
-            name: 技能名称
-            
-        Returns:
-            bool: 是否成功
-        """
+        """删除技能"""
         skill = self.get_skill(name)
         if not skill:
             logger.warning(f"Cannot delete skill '{name}': not found")
@@ -1042,12 +895,7 @@ class SkillsLoader:
             return False
 
     def get_stats(self) -> Dict[str, int]:
-        """
-        获取技能统计信息
-        
-        Returns:
-            dict: 统计信息
-        """
+        """获取技能统计信息"""
         return {
             "total": len(self.skills),
             "enabled": len([s for s in self.skills.values() if s.enabled]),

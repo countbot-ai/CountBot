@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -12,9 +12,27 @@ from backend.modules.agent.skills import SkillsLoader, build_frontmatter
 from backend.modules.agent.skills_config import SkillConfigManager
 from backend.modules.agent.skills_schema import SkillConfigSchema
 from backend.modules.config.loader import config_loader
-from backend.utils.paths import WORKSPACE_DIR
+from backend.modules.multiuser.permissions import require_active_user
+from backend.utils.paths import APPLICATION_ROOT, WORKSPACE_DIR
 
-router = APIRouter(prefix="/api/skills", tags=["skills"])
+# 必须显式声明身份依赖，否则技能目录会解析到管理员路径
+router = APIRouter(
+    prefix="/api/skills",
+    tags=["skills"],
+    dependencies=[Depends(require_active_user)],
+)
+
+
+def _bundled_skill_names() -> set[str]:
+    """随应用分发的内置技能名，用于区分用户自建技能。"""
+    bundled_dir = APPLICATION_ROOT / "workspace" / "skills"
+    if not bundled_dir.is_dir():
+        return set()
+    return {
+        child.name
+        for child in bundled_dir.iterdir()
+        if child.is_dir() and (child / "SKILL.md").is_file()
+    }
 
 
 # ============================================================================
@@ -32,6 +50,10 @@ class SkillInfo(BaseModel):
     has_config: bool = Field(False, description="是否支持可视化配置", alias="hasConfig")
     requirements: List[str] = Field(default_factory=list, description="依赖要求")
     source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
+    bundled: bool = Field(
+        False,
+        description="是否为随应用分发的内置技能（工作区初始化时播种，非用户自建）",
+    )
     
     class Config:
         populate_by_name = True
@@ -48,6 +70,10 @@ class SkillDetail(BaseModel):
     has_config: bool = Field(False, description="是否支持可视化配置", alias="hasConfig")
     requirements: List[str] = Field(default_factory=list, description="依赖要求")
     source: str = Field(..., description="技能来源: workspace、builtin 或 openclaw")
+    bundled: bool = Field(
+        False,
+        description="是否为随应用分发的内置技能（工作区初始化时播种，非用户自建）",
+    )
     
     class Config:
         populate_by_name = True
@@ -186,11 +212,18 @@ class ReloadSkillsResponse(BaseModel):
 
 
 def get_workspace_skills_dir() -> Path:
-    """解析当前工作空间下的 skills 目录。"""
-    config = config_loader.config
-    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-    workspace = workspace.resolve()
-    skills_dir = workspace / "skills"
+    """解析当前工作空间的 skills 目录，普通用户只能使用自己的目录。"""
+    from backend.modules.multiuser.permissions import get_request_user
+    from backend.modules.workspace import resolve_user_workspace
+
+    current = get_request_user()
+    if current is not None and not getattr(current, "is_admin", False):
+        skills_dir = resolve_user_workspace(current) / "skills"
+    else:
+        config = config_loader.config
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+        skills_dir = workspace.resolve() / "skills"
+
     skills_dir.mkdir(parents=True, exist_ok=True)
     return skills_dir
 
@@ -205,16 +238,26 @@ def get_skill_schema_loader() -> SkillConfigSchema:
     return SkillConfigSchema(get_workspace_skills_dir())
 
 
-def get_skills_loader(request: Request = None) -> SkillsLoader:
-    """
-    获取全局技能加载器实例
-    
-    优先从 app.state 获取全局单例，提升性能
-    """
+async def get_skills_loader(request: Request = None) -> SkillsLoader:
+    """获取技能加载器，按身份返回管理员单例或用户运行时加载器。"""
+    from backend.modules.multiuser.permissions import get_request_user
+
+    current = get_request_user()
+    if current is not None and not getattr(current, "is_admin", False):
+        from backend.modules.multiuser.runtime import (
+            build_user_skills_loader,
+            user_runtime_manager,
+        )
+
+        runtime = user_runtime_manager._runtimes.get(current.owner_id)
+        if runtime is not None:
+            return runtime.skills
+        return await build_user_skills_loader(current, get_workspace_skills_dir().parent)
+
     # 尝试从 app state 获取全局实例
     if request and hasattr(request.app.state, 'shared'):
         return request.app.state.shared["skills"]
-    
+
     # 回退：创建临时实例（向后兼容）
     skills_dir = get_workspace_skills_dir()
     logger.warning("Creating temporary SkillsLoader instance - performance may be impacted")
@@ -237,14 +280,9 @@ def ensure_workspace_skill(skill, action: str) -> None:
 
 @router.get("", response_model=ListSkillsResponse)
 async def list_skills(request: Request) -> ListSkillsResponse:
-    """
-    获取所有技能列表（自动重载技能）
-    
-    Returns:
-        ListSkillsResponse: 技能列表
-    """
+    """获取所有技能列表（自动重载技能）"""
     try:
-        skills_loader = get_skills_loader(request)
+        skills_loader = await get_skills_loader(request)
         schema_loader = get_skill_schema_loader()
         
         # 自动重载技能（确保显示最新的技能列表）
@@ -255,13 +293,16 @@ async def list_skills(request: Request) -> ListSkillsResponse:
             logger.warning(f"Failed to auto-reload skills: {e}")
         
         skills_list = skills_loader.list_skills()
-        
+
+        # 内置技能以随应用分发的目录为基准，工作区副本的 source 不具区分性
+        bundled_names = _bundled_skill_names()
+
         # 转换为响应格式
         skills_info = []
         for skill in skills_list:
             # 获取技能摘要
             summary = skills_loader.get_skill_summary(skill["name"])
-            
+
             skills_info.append(
                 SkillInfo(
                     name=skill["name"],
@@ -271,6 +312,10 @@ async def list_skills(request: Request) -> ListSkillsResponse:
                     has_config=schema_loader.has_schema(skill["name"]),
                     requirements=summary.get("requirements", []),
                     source=skill.get("source", "workspace"),
+                    bundled=(
+                        skill.get("source") != "shared"
+                        and skill["name"] in bundled_names
+                    ),
                 )
             )
         
@@ -286,17 +331,9 @@ async def list_skills(request: Request) -> ListSkillsResponse:
 
 @router.get("/{name}", response_model=SkillDetail)
 async def get_skill(name: str, request: Request) -> SkillDetail:
-    """
-    获取技能详情
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        SkillDetail: 技能详情
-    """
+    """获取技能详情"""
     try:
-        skills_loader = get_skills_loader(request)
+        skills_loader = await get_skills_loader(request)
         schema_loader = get_skill_schema_loader()
         
         # 检查技能是否存在
@@ -336,6 +373,7 @@ async def get_skill(name: str, request: Request) -> SkillDetail:
             has_config=schema_loader.has_schema(name),
             requirements=summary.get("requirements", []),
             source=source,
+            bundled=source != "shared" and name in _bundled_skill_names(),
         )
         
     except HTTPException:
@@ -350,18 +388,9 @@ async def get_skill(name: str, request: Request) -> SkillDetail:
 
 @router.post("/{name}/toggle", response_model=ToggleSkillResponse)
 async def toggle_skill(name: str, request: ToggleSkillRequest, req: Request) -> ToggleSkillResponse:
-    """
-    切换技能启用状态（持久化到配置）
-    
-    Args:
-        name: 技能名称
-        request: 切换技能请求
-        
-    Returns:
-        ToggleSkillResponse: 切换结果
-    """
+    """切换技能启用状态（持久化到配置）"""
     try:
-        skills_loader = get_skills_loader(req)
+        skills_loader = await get_skills_loader(req)
         
         # 检查技能是否存在
         skills_list = skills_loader.list_skills()
@@ -382,11 +411,8 @@ async def toggle_skill(name: str, request: ToggleSkillRequest, req: Request) -> 
                 detail=f"Failed to toggle skill '{name}'"
             )
         
-        # 持久化到配置文件
-        config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-        workspace = workspace.resolve()  # 确保是绝对路径
-        config_file = workspace / ".skills_config.json"
+        # 持久化到配置文件（跟随当前用户/管理员的技能目录，不写全局）
+        config_file = get_workspace_skills_dir().parent / ".skills_config.json"
         
         logger.info(f"Saving skills config to: {config_file}")
         
@@ -435,17 +461,9 @@ async def toggle_skill(name: str, request: ToggleSkillRequest, req: Request) -> 
 
 @router.post("", response_model=SkillDetail, status_code=status.HTTP_201_CREATED)
 async def create_skill(request: CreateSkillRequest, req: Request) -> SkillDetail:
-    """
-    创建新技能
-    
-    Args:
-        request: 创建技能请求
-        
-    Returns:
-        SkillDetail: 创建的技能详情
-    """
+    """创建新技能"""
     try:
-        skills_loader = get_skills_loader(req)
+        skills_loader = await get_skills_loader(req)
         
         # 检查技能是否已存在
         if skills_loader.get_skill(request.name):
@@ -453,6 +471,26 @@ async def create_skill(request: CreateSkillRequest, req: Request) -> SkillDetail
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Skill '{request.name}' already exists"
             )
+
+        # 不得与系统技能或已批准的共享技能同名：同名会遮蔽对方（加载按名去重）
+        from backend.modules.multiuser.permissions import get_request_user
+
+        current = get_request_user()
+        if current is not None and not getattr(current, "is_admin", False):
+            from backend.database import AsyncSessionLocal
+            from backend.modules.multiuser.shared_skills import (
+                SharedSkillError,
+                ensure_name_available,
+            )
+
+            async with AsyncSessionLocal() as db:
+                try:
+                    await ensure_name_available(db, request.name, current)
+                except SharedSkillError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=str(exc),
+                    ) from exc
         
         # 构建技能内容（包含 frontmatter）
         full_content = build_frontmatter(
@@ -486,18 +524,9 @@ async def create_skill(request: CreateSkillRequest, req: Request) -> SkillDetail
 
 @router.put("/{name}", response_model=SkillDetail)
 async def update_skill(name: str, request: UpdateSkillRequest, req: Request) -> SkillDetail:
-    """
-    更新技能
-    
-    Args:
-        name: 技能名称
-        request: 更新技能请求
-        
-    Returns:
-        SkillDetail: 更新后的技能详情
-    """
+    """更新技能"""
     try:
-        skills_loader = get_skills_loader(req)
+        skills_loader = await get_skills_loader(req)
         
         # 检查技能是否存在
         skill = skills_loader.get_skill(name)
@@ -541,17 +570,9 @@ async def update_skill(name: str, request: UpdateSkillRequest, req: Request) -> 
 
 @router.delete("/{name}", response_model=DeleteSkillResponse)
 async def delete_skill(name: str, req: Request) -> DeleteSkillResponse:
-    """
-    删除技能
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        DeleteSkillResponse: 删除结果
-    """
+    """删除技能"""
     try:
-        skills_loader = get_skills_loader(req)
+        skills_loader = await get_skills_loader(req)
         
         # 检查技能是否存在
         skill = skills_loader.get_skill(name)
@@ -594,15 +615,7 @@ async def delete_skill(name: str, req: Request) -> DeleteSkillResponse:
 
 @router.get("/{name}/config/schema", response_model=SkillConfigSchemaResponse)
 async def get_skill_config_schema(name: str) -> SkillConfigSchemaResponse:
-    """
-    获取技能配置Schema
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        SkillConfigSchemaResponse: Schema信息
-    """
+    """获取技能配置Schema"""
     try:
         schema_loader = get_skill_schema_loader()
         schema = schema_loader.load_schema(name)
@@ -628,15 +641,7 @@ async def get_skill_config_schema(name: str) -> SkillConfigSchemaResponse:
 
 @router.get("/{name}/config", response_model=SkillConfigResponse)
 async def get_skill_config(name: str) -> SkillConfigResponse:
-    """
-    获取技能配置
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        SkillConfigResponse: 配置信息
-    """
+    """获取技能配置"""
     try:
         config_manager = get_skill_config_manager()
         
@@ -682,16 +687,7 @@ async def update_skill_config(
     name: str, 
     request: UpdateSkillConfigRequest
 ) -> SkillConfigResponse:
-    """
-    更新技能配置
-    
-    Args:
-        name: 技能名称
-        request: 更新配置请求
-        
-    Returns:
-        SkillConfigResponse: 更新后的配置信息
-    """
+    """更新技能配置"""
     try:
         config_manager = get_skill_config_manager()
         schema_loader = get_skill_schema_loader()
@@ -737,15 +733,7 @@ async def update_skill_config(
 
 @router.get("/{name}/config/status", response_model=SkillConfigStatusResponse)
 async def get_skill_config_status(name: str) -> SkillConfigStatusResponse:
-    """
-    获取技能配置状态
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        SkillConfigStatusResponse: 配置状态
-    """
+    """获取技能配置状态"""
     try:
         config_manager = get_skill_config_manager()
         schema_loader = get_skill_schema_loader()
@@ -791,15 +779,7 @@ async def get_skill_config_status(name: str) -> SkillConfigStatusResponse:
 
 @router.post("/{name}/config/fix", response_model=FixSkillConfigResponse)
 async def fix_skill_config(name: str) -> FixSkillConfigResponse:
-    """
-    自动修复技能配置
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        FixSkillConfigResponse: 修复结果
-    """
+    """自动修复技能配置"""
     try:
         config_manager = get_skill_config_manager()
         schema_loader = get_skill_schema_loader()
@@ -846,15 +826,7 @@ async def fix_skill_config(name: str) -> FixSkillConfigResponse:
 
 @router.get("/{name}/config/help", response_model=SkillConfigHelpResponse)
 async def get_skill_config_help(name: str) -> SkillConfigHelpResponse:
-    """
-    获取技能配置帮助文档
-    
-    Args:
-        name: 技能名称
-        
-    Returns:
-        SkillConfigHelpResponse: 帮助文档
-    """
+    """获取技能配置帮助文档"""
     try:
         config_manager = get_skill_config_manager()
         
@@ -886,20 +858,10 @@ async def get_skill_config_help(name: str) -> SkillConfigHelpResponse:
 
 @router.post("/reload", response_model=ReloadSkillsResponse)
 async def reload_skills(req: Request) -> ReloadSkillsResponse:
-    """
-    重新加载所有技能（热重载，无需重启应用）
-    
-    适用场景：
-    - 手动添加新技能到 skills 目录后
-    - 修改现有技能文件后
-    - 需要刷新技能列表时
-    
-    Returns:
-        ReloadSkillsResponse: 重载结果
-    """
+    """热重载所有技能，无需重启应用（手工新增或修改技能文件后调用）。"""
     try:
         # 获取全局 skills 实例
-        skills_loader = get_skills_loader(req)
+        skills_loader = await get_skills_loader(req)
         
         # 执行重载
         skills_loader.reload()
