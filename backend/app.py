@@ -499,9 +499,7 @@ from backend.api.agent_teams import router as agent_teams_router
 from backend.api.mcp import router as mcp_router
 from backend.api.wiki import router as wiki_router
 from backend.api.admin import router as admin_router
-from backend.api.persona_clone import router as persona_clone_router
 from backend.api.me import router as me_router
-from backend.api.persona_evolution import router as persona_evolution_router
 from backend.api.native_caps import router as native_caps_router
 
 app.include_router(auth_router)
@@ -522,14 +520,12 @@ app.include_router(mcp_router)
 app.include_router(wiki_router)
 # 管理员专属：用户管理与多用户策略，端点内部强制 require_admin
 app.include_router(admin_router)
-app.include_router(persona_clone_router)
 # 普通用户自助接口：/api/me（脱敏视图 + 通知渠道）
 app.include_router(me_router)
 # 普通用户自有供应商配置：/api/me/providers，与管理员 /api/settings/providers 共用清单规则
 from backend.api.me_providers import router as me_providers_router
 
 app.include_router(me_providers_router)
-app.include_router(persona_evolution_router)
 app.include_router(native_caps_router)
 
 

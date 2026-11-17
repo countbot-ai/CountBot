@@ -31,7 +31,6 @@ from backend.api.settings.models import (
     InjectionConfigResponse,
     ModelConfigResponse,
     PersonaConfigResponse,
-    PersonaSessionMemoryResponse,
     ProviderConfigResponse,
     ProviderMetadataResponse,
     SecurityConfigResponse,
@@ -216,10 +215,6 @@ async def get_settings() -> SettingsResponse:
                     config.persona,
                     'enable_short_context_summary',
                     False,
-                ),
-                session_memory=PersonaSessionMemoryResponse(
-                    enabled=getattr(config.persona.session_memory, "enabled", True),
-                    scope=getattr(config.persona.session_memory, "scope", "session"),
                 ),
                 heartbeat=HeartbeatConfigResponse(
                     enabled=config.persona.heartbeat.enabled,

@@ -307,10 +307,6 @@ class ContextBuilder:
         description: str = "",
         traits: Optional[List[str]] = None,
         speaking_style: str = "",
-        mental_models: Optional[List[dict]] = None,
-        heuristics: Optional[List[dict]] = None,
-        honesty_boundaries: Optional[List[str]] = None,
-        combined_doc: str = "",
     ) -> str:
         # 性格由用户维护，保持中文
         lines = [f"性格: {name}"]
@@ -321,120 +317,7 @@ class ContextBuilder:
         if speaking_style:
             lines.append(f"表达: {self._compact_text(speaking_style, 140)}")
 
-        # 克隆人格才有下面这些；普通语气预设留空，输出与旧版完全一致
-        if mental_models:
-            names = [str(item.get("name") or "").strip() for item in mental_models if isinstance(item, dict)]
-            names = [item for item in names if item][:5]
-            if names:
-                lines.append(f"思维框架: {'、'.join(names)}")
-        if heuristics:
-            rules = [str(item.get("rule") or "").strip() for item in heuristics if isinstance(item, dict)]
-            rules = [item for item in rules if item][:3]
-            if rules:
-                lines.append("判断规则: " + "；".join(self._compact_text(item, 50) for item in rules))
-        if honesty_boundaries:
-            lines.append(
-                "诚实边界: " + "；".join(self._compact_text(str(item), 40) for item in honesty_boundaries[:3])
-            )
-
-        # 克隆人格带完整档案时，注入人格段与运行规则，普通预设不会走到这里
-        if combined_doc.strip():
-            from backend.modules.persona.combiner import compact_for_context
-
-            head = "\n".join(lines)
-            prefix = "\n\n人物档案:\n"
-            # 这里只放静态档案；会话摘要属于动态内容，统一走首条 user 消息
-            detail = compact_for_context(
-                combined_doc,
-                limit=1800 - len(head) - len(prefix) - 2,
-            )
-            text = head + (prefix + detail if detail else "")
-            return text if len(text) <= 1800 else text[:1799].rstrip() + "…"
-
         return self._compact_text("\n".join(lines), 600)
-
-    def _session_memory_block(
-        self,
-        personality_id: str,
-        session_id: Optional[str],
-        persona_config=None,
-    ) -> str:
-        """按当前会话取克隆人格的对话记忆；开关关闭或没有摘要时返回空串。"""
-        if not personality_id or not session_id:
-            return ""
-        try:
-            from backend.modules.persona.session_memory import (
-                load_injection_notes,
-                render_notes_block,
-                session_memory_config,
-            )
-
-            config = session_memory_config(persona_config or self.persona_config)
-            notes = load_injection_notes(
-                personality_id=personality_id,
-                session_id=session_id,
-                limit=2,
-                config=config,
-            )
-            return render_notes_block(
-                notes,
-                current_session_id=session_id,
-                compact=True,
-            )
-        except Exception as exc:
-            logger.debug(f"Persona session memory skipped: {exc}")
-            return ""
-
-    def _turn_tone_hint(
-        self,
-        message: str,
-        persona_config,
-        history: List[Dict[str, Any]],
-        chat_id: Optional[str] = None,
-    ) -> str:
-        """读取克隆人格的表达配置，给本轮生成一条轻量提示。"""
-        text = str(message or "").strip()
-        active = persona_config or self.persona_config
-        if not text or active is None:
-            return ""
-
-        personality_id = str(getattr(active, "personality", "") or "").strip()
-        if not personality_id or personality_id == "custom":
-            return ""
-
-        try:
-            from sqlalchemy import select
-
-            from backend.database import SessionLocal
-            from backend.models.personality import Personality
-            from backend.modules.persona.expression import (
-                recall_recent_styles,
-                remember_tone_style,
-                render_tone_hint,
-                suggest_tone,
-            )
-
-            with SessionLocal() as session:
-                row = session.execute(
-                    select(Personality).where(Personality.id == personality_id)
-                ).scalar_one_or_none()
-                if row is None or not isinstance(row.response_profile, dict):
-                    return ""
-                profile = row.response_profile
-
-            memory_key = f"{personality_id}:{chat_id or 'main'}"
-            recent = recall_recent_styles(memory_key)
-            plan = suggest_tone(
-                profile,
-                text,
-                seed=f"{memory_key}:{len(history)}:{text[:40]}",
-                recent=recent,
-            )
-            remember_tone_style(memory_key, plan.primary)
-            return render_tone_hint(plan)
-        except Exception as exc:
-            logger.debug(f"Turn tone hint skipped: {exc}")
-            return ""
 
     def _get_personality_from_db(
         self,
@@ -480,10 +363,6 @@ class ContextBuilder:
                         description=personality.description,
                         traits=personality.traits,
                         speaking_style=personality.speaking_style,
-                        mental_models=personality.mental_models,
-                        heuristics=personality.heuristics,
-                        honesty_boundaries=personality.honesty_boundaries,
-                        combined_doc=personality.combined_doc or "",
                     )
         except Exception as e:
             logger.warning(f"Failed to load personality from database: {e}, falling back to hardcoded")
@@ -498,30 +377,6 @@ class ContextBuilder:
                 600 + CUSTOM_PROMPT_LIMIT,
             )
         return base
-
-    def _cloned_personality_name(self, personality_id: str) -> Optional[str]:
-        """克隆人格返回它自己的名字，普通语气预设返回 None。
-
-        克隆档案里已经带了称呼与语言，用户级身份字段对它不生效。
-        """
-        if not personality_id or personality_id == "custom":
-            return None
-        try:
-            from sqlalchemy import select
-
-            from backend.database import SessionLocal
-            from backend.models.personality import Personality
-
-            with SessionLocal() as session:
-                row = session.execute(
-                    select(Personality).where(Personality.id == personality_id)
-                ).scalar_one_or_none()
-                if row is None or not (row.source_type or row.mental_models):
-                    return None
-                return (row.name or "").strip() or None
-        except Exception as exc:
-            logger.debug(f"Cloned persona lookup skipped: {exc}")
-            return None
 
     def _get_identity(self, persona_config=None, chat_mode: str = "agent") -> str:
         """身份区块：名称与性格始终注入，环境信息受 core_rules 开关控制。"""
@@ -759,11 +614,6 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
             if dynamic_context:
                 user_content = self._append_text_content(user_content, dynamic_context)
 
-        # 克隆人格：每轮给一条表达方式提示，避免连续多轮一个腔调
-        tone_hint = self._turn_tone_hint(current_message, persona_config, history, chat_id)
-        if tone_hint:
-            user_content = self._append_text_content(user_content, tone_hint)
-
         # team_reminder 同样并入 user 消息，保证 system 字段始终一致
         if team_reminder:
             user_content = self._append_text_content(user_content, team_reminder)
@@ -896,37 +746,25 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         output_language = "中文"
         personality_id = ""
         active_persona_config = persona_config or self.persona_config
-        cloned_name = None
         if active_persona_config:
             user_name = active_persona_config.user_name or "用户"
             user_address = getattr(active_persona_config, 'user_address', '') or ""
             output_language = getattr(active_persona_config, 'output_language', None) or "中文"
             personality_id = str(getattr(active_persona_config, "personality", "") or "")
-            # 克隆人格的称呼与语言写在档案里，用户级资料不参与注入
-            cloned_name = self._cloned_personality_name(personality_id)
 
         blocks: List[str] = []
 
-        # 1) 当前时间 + 用户资料（克隆人格只给时间，避免两套称呼冲突）
+        # 1) 当前时间 + 用户资料
         context_lines = [f"- Current time: {now}"]
-        if not cloned_name:
-            context_lines.append(f"- User name: {user_name}")
-            context_lines.append(f"- Output language: {output_language}")
-            if user_address:
-                context_lines.append(f"- User location: {user_address}")
+        context_lines.append(f"- User name: {user_name}")
+        context_lines.append(f"- Output language: {output_language}")
+        if user_address:
+            context_lines.append(f"- User location: {user_address}")
         blocks.append("## Session Context\n" + "\n".join(context_lines))
 
         # 2) 会话摘要（原拼入 system prompt 的动态内容）
         if session_summary:
             blocks.append(f"## Session Summary\n{session_summary}")
-
-        # 3) 克隆人格的对话记忆：随会话走，放在 user 消息里，system prompt 才能保持稳定
-        if cloned_name and session_id:
-            notes = self._session_memory_block(
-                personality_id, session_id, persona_config=active_persona_config
-            )
-            if notes:
-                blocks.append(notes if len(notes) <= 420 else notes[:419].rstrip() + "…")
 
         # 4) 渠道信息（原拼入 system prompt 的动态内容）
         if channel and chat_id:

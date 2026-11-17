@@ -240,24 +240,6 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
         columns=(
             # NULL = 内置 / 管理员
             CompatibilityColumnMigration("owner_id", "owner_id VARCHAR"),
-            # 克隆人格扩展字段；默认 NULL，普通语气预设不受影响
-            CompatibilityColumnMigration("mental_models", "mental_models JSON"),
-            CompatibilityColumnMigration("heuristics", "heuristics JSON"),
-            CompatibilityColumnMigration("expression_dna", "expression_dna JSON"),
-            CompatibilityColumnMigration("core_values", "core_values JSON"),
-            CompatibilityColumnMigration("anti_patterns", "anti_patterns JSON"),
-            CompatibilityColumnMigration("tensions", "tensions JSON"),
-            CompatibilityColumnMigration("honesty_boundaries", "honesty_boundaries JSON"),
-            CompatibilityColumnMigration("memory_anchors", "memory_anchors JSON"),
-            # 需要事实时优先查证的方向
-            CompatibilityColumnMigration("research_dimensions", "research_dimensions JSON"),
-            CompatibilityColumnMigration("response_profile", "response_profile JSON"),
-            CompatibilityColumnMigration("source_type", "source_type VARCHAR(20)"),
-            CompatibilityColumnMigration("source_stats", "source_stats JSON"),
-            # 克隆产物文档：记忆、人格、拼接档案
-            CompatibilityColumnMigration("memory_doc", "memory_doc TEXT"),
-            CompatibilityColumnMigration("persona_doc", "persona_doc TEXT"),
-            CompatibilityColumnMigration("combined_doc", "combined_doc TEXT"),
         ),
     ),
 )
@@ -370,8 +352,6 @@ async def init_db() -> None:
         Message,
         ModelUsage,
         Personality,
-        PersonalityVersion,
-        PersonaSessionNote,
         Session,
         Setting,
         SkillRegistry,

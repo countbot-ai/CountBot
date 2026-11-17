@@ -600,23 +600,6 @@ class ConversationContextService:
 
         return "".join(parts).strip()
 
-    async def _maybe_summarize_persona_session(
-        self,
-        request: "ContextMaintenanceRequest",
-    ) -> None:
-        """给克隆人格补一条对话摘要；只负责转发，异常一律吞掉"""
-        try:
-            from backend.modules.persona.session_memory import maybe_summarize_session
-
-            await maybe_summarize_session(
-                self.db,
-                session_id=request.session_id,
-                provider=request.provider,
-                model=request.model or "",
-            )
-        except Exception as exc:
-            logger.debug(f"Persona session summary hook skipped: {exc}")
-
     async def _clear_short_summary_cache(
         self,
         session: Session,
@@ -716,7 +699,6 @@ def schedule_context_maintenance(
                             f"自动记忆维护已关闭（injection.auto_memory_summary=false），"
                             f"跳过后台记忆总结 | 会话={current_request.session_id}"
                         )
-                    await service._maybe_summarize_persona_session(current_request)
                 logger.info(
                     f"后台会话上下文维护完成 | 会话={current_request.session_id}"
                 )

@@ -48,23 +48,6 @@ class PersonalityCreate(BaseModel):
     speaking_style: str = Field(..., min_length=1)
     icon: str = Field(default="Smile", max_length=50)
 
-    # 克隆人格的扩展字段；普通语气预设不传即可
-    mental_models: Optional[List[Dict[str, Any]]] = None
-    heuristics: Optional[List[Dict[str, Any]]] = None
-    expression_dna: Optional[Dict[str, Any]] = None
-    values: Optional[List[str]] = None
-    anti_patterns: Optional[List[str]] = None
-    tensions: Optional[List[str]] = None
-    honesty_boundaries: Optional[List[str]] = None
-    memory_anchors: Optional[List[Dict[str, Any]]] = None
-    response_profile: Optional[Dict[str, Any]] = None
-    source_type: Optional[str] = Field(None, description="personal / public / self")
-    source_stats: Optional[Dict[str, Any]] = None
-    research_dimensions: Optional[List[Dict[str, Any]]] = None
-    memory_doc: Optional[str] = None
-    persona_doc: Optional[str] = None
-    combined_doc: Optional[str] = None
-
 
 class PersonalityUpdate(BaseModel):
     """更新性格请求"""
@@ -74,51 +57,6 @@ class PersonalityUpdate(BaseModel):
     speaking_style: Optional[str] = Field(None, min_length=1)
     icon: Optional[str] = Field(None, max_length=50)
     is_active: Optional[bool] = None
-    mental_models: Optional[List[Dict[str, Any]]] = None
-    heuristics: Optional[List[Dict[str, Any]]] = None
-    expression_dna: Optional[Dict[str, Any]] = None
-    values: Optional[List[str]] = None
-    anti_patterns: Optional[List[str]] = None
-    tensions: Optional[List[str]] = None
-    honesty_boundaries: Optional[List[str]] = None
-    memory_anchors: Optional[List[Dict[str, Any]]] = None
-    response_profile: Optional[Dict[str, Any]] = None
-    source_type: Optional[str] = None
-    source_stats: Optional[Dict[str, Any]] = None
-    research_dimensions: Optional[List[Dict[str, Any]]] = None
-    memory_doc: Optional[str] = None
-    persona_doc: Optional[str] = None
-    combined_doc: Optional[str] = None
-
-
-# 克隆人格的可写字段；创建与更新共用同一张映射表，避免两处漏字段
-_CLONE_FIELDS = (
-    "mental_models",
-    "heuristics",
-    "expression_dna",
-    "values",
-    "anti_patterns",
-    "tensions",
-    "honesty_boundaries",
-    "memory_anchors",
-    "research_dimensions",
-    "response_profile",
-    "source_type",
-    "source_stats",
-    "memory_doc",
-    "persona_doc",
-    "combined_doc",
-)
-
-
-def _apply_clone_fields(personality: Personality, data: Any) -> None:
-    """把请求里显式提供的扩展字段写入模型；未提供则保持原值。"""
-    for field in _CLONE_FIELDS:
-        value = getattr(data, field, None)
-        if value is not None:
-            setattr(personality, field, value)
-
-
 @router.get("")
 async def list_personalities(
     active_only: bool = False,
@@ -187,7 +125,6 @@ async def create_personality(
         is_active=True,
         owner_id=scope,
     )
-    _apply_clone_fields(personality, data)
 
     db.add(personality)
     await db.commit()
@@ -223,7 +160,6 @@ async def update_personality(
         personality.icon = data.icon
     if data.is_active is not None:
         personality.is_active = data.is_active
-    _apply_clone_fields(personality, data)
 
     await db.commit()
     await db.refresh(personality)

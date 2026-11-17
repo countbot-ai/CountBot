@@ -274,13 +274,6 @@ class HeartbeatConfigResponse(BaseModel):
     max_greets_per_day: int = Field(..., description="每天最多问候次数")
 
 
-class PersonaSessionMemoryResponse(BaseModel):
-    """克隆人格的对话记忆配置"""
-
-    enabled: bool = Field(..., description="是否记录并注入克隆人格的对话摘要")
-    scope: str = Field(..., description="注入范围：session 仅当前会话，persona 含其他会话")
-
-
 class PersonaConfigResponse(BaseModel):
     """用户信息和AI人设配置响应"""
     
@@ -297,10 +290,6 @@ class PersonaConfigResponse(BaseModel):
     enable_short_context_summary: bool = Field(
         default=False,
         description="是否启用短期上下文摘要缓存，默认关闭",
-    )
-    session_memory: PersonaSessionMemoryResponse = Field(
-        ...,
-        description="克隆人格的对话记忆配置",
     )
     heartbeat: HeartbeatConfigResponse = Field(..., description="主动问候配置")
 
