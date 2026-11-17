@@ -6,7 +6,6 @@ import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import unquote
 
@@ -22,7 +21,6 @@ from backend.modules.agent.team_commands import (
     build_team_goal_usage,
     resolve_explicit_team_command,
 )
-from backend.modules.config.loader import config_loader
 from backend.modules.config.schema import ModelConfig, PersonaConfig
 from backend.modules.external_agents.conversation import (
     build_history_prompt,
@@ -43,22 +41,19 @@ from backend.modules.session.message_context import (
     build_message_context,
 )
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat._router import router
-from backend.api.chat.loop_factory import get_agent_loop
+from backend.api.chat.loop_factory import get_user_agent_loop
 from backend.modules.session.manager import SessionManager
 from backend.utils.datetime_utils import to_utc_iso
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.memory import Confidence
-from backend.utils.paths import WORKSPACE_DIR
 
 
 def _resolve_session_source(session: Any) -> str:
-    """会话记忆的写入来源。
-
-    渠道会话在网页里被「沉淀记忆」时，这条记忆仍然属于原来的渠道；只有没有渠道
-    上下文的会话才记为 web-chat。
-    """
+    """会话记忆的写入来源：渠道会话保留原渠道，否则记为 web-chat。"""
     raw = getattr(session, "channel_context", None)
     if raw:
         try:
@@ -106,27 +101,12 @@ from backend.api.chat.models import (
 async def export_session_context(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    agent_loop: AgentLoop = Depends(get_agent_loop),
+    agent_loop: AgentLoop = Depends(get_user_agent_loop),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
-    """
-    导出会话的完整上下文
-
-    含系统提示词、工具定义、消息与工具调用历史。工具调用历史为全局记录
-    （记录内不含 session_id），无法按会话过滤，故全部导出。
-
-    Args:
-        session_id: 会话 ID
-        db: 数据库会话
-        agent_loop: Agent 循环实例
-
-    Returns:
-        dict: 系统提示词、工具定义、消息与工具历史的完整上下文
-
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """导出会话完整上下文，含系统提示词、工具定义与消息历史。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         
         session = await session_manager.get_session(session_id)
         if session is None:
@@ -191,22 +171,12 @@ async def update_session_summary(
     session_id: str,
     request: UpdateSessionSummaryRequest,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
-    """
-    更新会话总结
-
-    Args:
-        session_id: 会话 ID
-        request: 更新总结请求
-        db: 数据库会话
-
-    Returns:
-        dict: 更新结果
-
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """更新会话总结。"""
     try:
+        await _require_session(db, session_id, owner_scope(user))
+
         context_service = ConversationContextService(db)
         session = await context_service.update_session_summary(
             session_id,
@@ -220,7 +190,7 @@ async def update_session_summary(
             )
         
         logger.info(f"Updated summary for session {session_id}")
-        await _notify_webui_session_updated(session_id)
+        await _notify_webui_session_updated(session_id, owner_scope(user))
         
         return {
             "success": True,
@@ -242,21 +212,13 @@ async def update_session_summary(
 async def delete_session_summary(
     session_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
-    """
-    删除会话总结
-
-    Args:
-        session_id: 会话 ID
-        db: 数据库会话
-
-    Returns:
-        dict: 删除结果
-
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """删除会话总结。"""
     try:
+        # 归属校验：普通用户只能清空自己的会话摘要
+        await _require_session(db, session_id, owner_scope(user))
+
         context_service = ConversationContextService(db)
         session = await context_service.clear_session_summary(session_id)
 
@@ -267,7 +229,7 @@ async def delete_session_summary(
             )
         
         logger.info(f"Deleted summary for session {session_id}")
-        await _notify_webui_session_updated(session_id)
+        await _notify_webui_session_updated(session_id, owner_scope(user))
         
         return {"success": True, "session_id": session_id}
         
@@ -284,21 +246,10 @@ async def delete_session_summary(
 async def summarize_session_to_memory(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    agent_loop: AgentLoop = Depends(get_agent_loop),
+    agent_loop: AgentLoop = Depends(get_user_agent_loop),
+    user: AuthUser = Depends(require_active_user),
 ) -> SummarizeSessionResponse:
-    """
-    总结会话内容并沉淀为长期记忆
-
-    经 ``append_entry`` 写入，key 由内容与来源派生，重复总结不产生重复条目。
-
-    Args:
-        session_id: 会话 ID
-        db: 数据库会话
-        agent_loop: Agent 循环实例
-
-    Returns:
-        SummarizeSessionResponse: 总结结果
-    """
+    """总结会话内容并写入长期记忆，重复总结不产生重复条目。"""
     try:
         from sqlalchemy import select
         from backend.models.session import Session
@@ -308,9 +259,11 @@ async def summarize_session_to_memory(
         
         logger.info(f"Starting memory summarization for session {session_id}")
         
-        result = await db.execute(
-            select(Session).where(Session.id == session_id)
-        )
+        query = select(Session).where(Session.id == session_id)
+        scope = owner_scope(user)
+        if scope:
+            query = query.where(Session.owner_id == scope)
+        result = await db.execute(query)
         session = result.scalar_one_or_none()
         
         if not session:
@@ -319,7 +272,7 @@ async def summarize_session_to_memory(
                 detail=f"Session '{session_id}' not found"
             )
         
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         messages = await session_manager.get_messages(session_id=session_id)
         
         if not messages or len(messages) == 0:
@@ -357,14 +310,16 @@ async def summarize_session_to_memory(
                 message="对话无需记录到长期记忆",
             )
         
-        config = config_loader.config
-        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+        # 记忆必须落在当前用户自己的工作区：普通用户不能写进管理员全局目录，
+        # 也不能把自己的会话摘要混进管理员记忆。
+        from backend.modules.workspace import resolve_user_workspace
+
+        workspace = resolve_user_workspace(user)
         memory_dir = workspace / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory = MemoryStore(memory_dir)
 
-        # 来源取会话自身的渠道：在网页里给 QQ 会话点「沉淀记忆」，这条记忆仍属于 QQ。
-        # 会话没有渠道上下文时才按网页来源记录。
+        # 来源取会话渠道，无渠道上下文时才记为网页来源
         source = _resolve_session_source(session)
         # 摘要由模型对历史复述而来，属于推断内容，只能进冷存档
         line_num = memory.append_entry(

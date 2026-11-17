@@ -1,11 +1,21 @@
 """队列与任务管理 API"""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/queue", tags=["queue"])
+from backend.modules.multiuser.permissions import (
+    AuthUser,
+    ensure_owner_or_admin,
+    require_active_user,
+    require_admin,
+)
+
+router = APIRouter(
+    prefix="/api/queue",
+    tags=["queue"],
+)
 
 
 class QueueStatsResponse(BaseModel):
@@ -13,8 +23,7 @@ class QueueStatsResponse(BaseModel):
     inbound_size: int
     outbound_size: int
     active_tasks: int
-    # 会话闸门统计（忙碌/排队/累计等待），由 handler.get_queue_stats() 返回；
-    # 未在此声明的话 FastAPI 会按模型过滤掉该字段
+    # 会话闸门统计由 handler.get_queue_stats() 返回，须在此声明
     session_gate: Optional[dict] = None
     rate_limiter: Optional[dict]
 
@@ -34,9 +43,23 @@ def _get_handler(request: Request):
     return request.app.state.message_handler
 
 
-@router.get("/stats", response_model=QueueStatsResponse)
+async def _session_owner(session_id: str) -> Optional[str]:
+    """查会话归属；不存在返回 None。"""
+    from backend.database import AsyncSessionLocal
+    from backend.models.session import Session
+
+    async with AsyncSessionLocal() as session:
+        row = await session.get(Session, session_id)
+        return row.owner_id if row is not None else None
+
+
+@router.get(
+    "/stats",
+    response_model=QueueStatsResponse,
+    dependencies=[Depends(require_admin)],
+)
 async def get_queue_stats(request: Request) -> QueueStatsResponse:
-    """获取队列统计信息"""
+    """获取队列统计信息（全局视角，仅管理员）"""
     try:
         handler = _get_handler(request)
         stats = await handler.get_queue_stats()
@@ -52,8 +75,13 @@ async def get_queue_stats(request: Request) -> QueueStatsResponse:
 
 
 @router.post("/cancel")
-async def cancel_task(request: Request, body: CancelTaskRequest) -> dict:
-    """取消正在处理的任务（同时取消 WebSocket 和渠道任务）"""
+async def cancel_task(
+    request: Request,
+    body: CancelTaskRequest,
+    user: AuthUser = Depends(require_active_user),
+) -> dict:
+    """取消正在处理的任务，按会话归属授权，查不到记录统一返回 404。"""
+    ensure_owner_or_admin(user, await _session_owner(body.session_id))
     try:
         # 取消 WebSocket 会话
         from backend.ws.connection import cancel_session
@@ -80,9 +108,9 @@ async def cancel_task(request: Request, body: CancelTaskRequest) -> dict:
         )
 
 
-@router.get("/active-tasks")
+@router.get("/active-tasks", dependencies=[Depends(require_admin)])
 async def list_active_tasks(request: Request) -> dict:
-    """列出所有活跃任务"""
+    """列出所有活跃任务（全局视角，仅管理员）"""
     try:
         handler = _get_handler(request)
         active_tasks = handler.get_active_tasks()

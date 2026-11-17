@@ -1,7 +1,11 @@
-"""
-路由实例。各路由模块从这里取同一个 router，避免互相导入成环。
-"""
+"""聊天域路由实例，各子模块共用同一 router 以避免循环导入。"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-router = APIRouter(prefix="/api/chat", tags=["chat"])
+from backend.modules.multiuser.permissions import require_active_user
+
+router = APIRouter(
+    prefix="/api/chat",
+    tags=["chat"],
+    dependencies=[Depends(require_active_user)],
+)

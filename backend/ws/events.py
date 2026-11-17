@@ -1,12 +1,4 @@
-"""WebSocket 消息事件处理
-
-实现消息事件的处理逻辑，包括：
-- 消息接收和验证
-- Agent 处理集成
-- 流式响应推送
-- 工具调用通知
-- 错误处理
-"""
+"""WebSocket 消息事件处理：消息接收与校验、Agent 处理集成、流式推送、工具调用通知与错误处理。"""
 
 import asyncio
 import json
@@ -53,6 +45,7 @@ from backend.ws.connection import (
     send_error,
     send_message_chunk,
     send_message_complete,
+    send_native_event,
     send_reasoning_chunk,
     send_tool_call,
     send_tool_result,
@@ -123,7 +116,7 @@ def _inject_explicit_external_request_context(
     context: list[dict],
     explicit_external_request: tuple[str, str] | None,
 ) -> list[dict]:
-    """Keep WebSocket web chat on the normal tool-call path for explicit external-agent requests."""
+    """用户显式点名外部编码代理时，仍然走 WebSocket 常规工具调用链路。"""
     if not explicit_external_request:
         return list(context)
 
@@ -156,7 +149,7 @@ def _inject_explicit_external_request_context(
 
 
 # ============================================================================
-# Message Event Handlers
+# 消息事件处理
 # ============================================================================
 
 
@@ -165,12 +158,31 @@ async def _resolve_ws_runtime(
     session_id: str,
     session,
     runtime_config,
+    user=None,
 ) -> Optional[tuple]:
-    """校验 provider 可用性并解析执行参数。
+    """校验 provider 可用性并解析执行参数，不可用时发送分类错误。"""
+    if user is not None and not getattr(user, "is_admin", False):
+        # 用户级 provider/persona 已按用户配置构建，会话配置不能覆盖 provider
+        # 绑定与密钥；但思考档位、输出模式、采样参数等纯生成参数必须生效，
+        # 否则会话面板里的「思考强度 / 输出模式」对普通用户形同虚设。
+        session_override = build_session_model_override(runtime_config, force=False)
+        if session_override:
+            for key in ("provider", "model", "api_key", "api_base"):
+                session_override.pop(key, None)
+        # 会话级自定义人设（自定义系统提示词等）对普通用户同样生效：以用户自身
+        # 人设为基底，只叠加会话里显式改动的字段，绝不继承管理员全局人设。
+        persona_override = None
+        if getattr(runtime_config, "has_custom_persona_config", False):
+            base_persona = getattr(
+                getattr(agent_loop, "context_builder", None), "persona_config", None
+            )
+            if base_persona is not None:
+                persona_override = base_persona.model_copy(deep=True)
+                for field_name, value in (runtime_config.persona_overrides or {}).items():
+                    if value is not None and hasattr(persona_override, field_name):
+                        setattr(persona_override, field_name, value)
+        return session_override or None, persona_override, agent_loop.provider
 
-    不可用时发送 PROVIDER_UNAVAILABLE 分类错误并返回 None；
-    正常返回 (model_override, persona_override, active_provider)。
-    """
     runtime_state = get_provider_runtime_state(
         config_loader.config,
         runtime_config.provider_name,
@@ -205,7 +217,7 @@ async def _resolve_ws_runtime(
             f"{runtime_config.provider_name}/{runtime_config.model_name}"
         )
 
-    active_provider, _, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
+    active_provider, _, _, _, _, _, _, _ = agent_loop._resolve_execution_runtime(
         model_override
     )
     return model_override, persona_override, active_provider
@@ -220,11 +232,7 @@ async def _persist_user_message_and_build_context(
     history_limit: int,
     enable_short_context_summary: bool,
 ) -> Optional[tuple]:
-    """保存用户消息并构建模型上下文。
-
-    保存失败时发送 DATABASE_ERROR 并返回 None；
-    正常返回 (user_message, context, context_payload)。
-    """
+    """保存用户消息并构建模型上下文，失败时发送 DATABASE_ERROR。"""
     user_message = await session_manager.add_message(
         session_id=session_id,
         role="user",
@@ -256,7 +264,12 @@ async def _persist_user_message_and_build_context(
     return user_message, context, context_payload
 
 
-def _inject_ws_tool_context(agent_loop: AgentLoop, session_id: str, cancel_token) -> None:
+def _inject_ws_tool_context(
+    agent_loop: AgentLoop,
+    session_id: str,
+    cancel_token,
+    user=None,
+) -> None:
     """把会话上下文注入工具注册表，并对齐 MCP 工具集与禁用列表。"""
     if not agent_loop.tools:
         return
@@ -265,20 +278,9 @@ def _inject_ws_tool_context(agent_loop: AgentLoop, session_id: str, cancel_token
     agent_loop.tools.set_cancel_token(cancel_token)
     logger.debug(f"Propagated session_id={session_id} to tool registry")
 
-    # 每轮对话开始前，把会话级注册表的 MCP 工具与当前全局 MCP 工具集对齐。
-    # 注册表只在 WS 建立时同步过一次，感知不到中途的 MCP 配置变更，
-    # 因此每条消息前重新对齐（增/删/换）。
+    # 先按最新配置重建工具集，避免随后清掉刚注册的 MCP 工具
     try:
-        from backend.modules.mcp.client import McpClientManager
-        McpClientManager.get_instance().reconcile_registry_sync(agent_loop.tools)
-    except Exception as e:
-        logger.debug(f"MCP reconcile skipped: {e}")
-
-    # 按最新注入配置对齐工具集，避免长连接沿用旧禁用列表
-    try:
-        # 注意：不要在这里重复 import config_loader —— 函数内任何位置的局部 import
-        # 都会让整个函数作用域把 config_loader 视为局部变量，导致调用方在
-        # import 执行前访问时抛 UnboundLocalError。模块顶部已导入。
+        # 不要在此重复 import config_loader，局部 import 会导致 UnboundLocalError
         from backend.modules.tools.setup import sync_disabled_tools
 
         sync_disabled_tools(
@@ -287,6 +289,49 @@ def _inject_ws_tool_context(agent_loop: AgentLoop, session_id: str, cancel_token
         )
     except Exception as e:
         logger.debug(f"Disabled-tools sync skipped: {e}")
+
+    # 每条消息前对齐 MCP 工具集，并保留用户自建的 ``mcp__usr-`` 命名空间
+    try:
+        from backend.modules.multiuser.settings import MODE_SHARED, peek_settings
+        from backend.modules.multiuser.user_mcp import USER_TOOL_PREFIX
+        from backend.modules.mcp.client import McpClientManager
+
+        # 用户私有运行时即使调用方没传 user，也不能获得全局 MCP
+        is_regular_runtime = getattr(agent_loop.tools, "user_mcp_owner", None) is not None
+        is_admin = (
+            not is_regular_runtime
+            and (user is None or bool(getattr(user, "is_admin", True)))
+        )
+        settings = peek_settings()
+        if is_admin or (
+            settings.enabled
+            and settings.mode == MODE_SHARED
+            and settings.shared_skills_wiki_mcp
+        ):
+            McpClientManager.get_instance().reconcile_registry_sync(
+                agent_loop.tools,
+                keep_prefixes=() if is_admin else (USER_TOOL_PREFIX,),
+            )
+
+        # 用户自建 MCP：管理员总开关关闭时立即摘除已注册的工具
+        if not settings.allow_user_mcp:
+            for name in list(agent_loop.tools.list_tools()):
+                if name.startswith(USER_TOOL_PREFIX):
+                    agent_loop.tools.unregister(name)
+            owner_id = getattr(agent_loop.tools, "user_mcp_owner", None)
+            if owner_id:
+                from backend.modules.multiuser.user_mcp import user_mcp_manager
+
+                user_mcp_manager.schedule_disconnect(owner_id)
+        else:
+            user_manager = getattr(agent_loop.tools, "user_mcp_manager", None)
+            if user_manager is not None:
+                user_manager.reconcile_registry_sync(
+                    agent_loop.tools,
+                    prefix=USER_TOOL_PREFIX,
+                )
+    except Exception as e:
+        logger.debug(f"MCP reconcile skipped: {e}")
 
 
 async def _persist_ws_exchange(
@@ -300,6 +345,8 @@ async def _persist_ws_exchange(
     assistant_reasoning: str,
     streaming_handler,
     history_limit: int,
+    model_name: Optional[str] = None,
+    native_events: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """持久化助手回复并触发上下文维护与完成通知。"""
     persisted_content, normalized_reasoning, used_reasoning_fallback = (
@@ -309,7 +356,10 @@ async def _persist_ws_exchange(
         )
     )
     assistant_message_context = (
-        build_message_context(reasoning_content=normalized_reasoning)
+        build_message_context(
+            reasoning_content=normalized_reasoning,
+            native_events=native_events,
+        )
     )
 
     if persisted_content:
@@ -344,7 +394,7 @@ async def _persist_ws_exchange(
             max_history_messages=history_limit,
             enable_short_context_summary=runtime_config.persona_config.enable_short_context_summary,
             provider=active_provider,
-            model=runtime_config.model_name,
+            model=model_name or runtime_config.model_name,
             memory_store=getattr(agent_loop.context_builder, "memory", None),
             auto_summary_source="web-chat",
             enable_auto_memory_summary=config_loader.config.injection.auto_memory_summary,
@@ -364,20 +414,9 @@ async def handle_message_event(
     agent_loop: AgentLoop,
     db: AsyncSession,
     loop_factory=None,
+    user=None,
 ) -> None:
-    """处理客户端消息事件
-
-    Args:
-        connection_id: 连接 ID
-        message: 客户端消息
-        agent_loop: Agent 循环实例
-        db: 数据库会话
-
-    阶段划分：_resolve_ws_runtime（provider/模型参数解析）→
-    _persist_user_message_and_build_context（用户消息落库与上下文构建）→
-    _inject_ws_tool_context（工具上下文注入）→ 流式处理 →
-    _persist_ws_exchange（助手回复持久化与完成通知）。
-    """
+    """处理客户端消息事件"""
     session_id = message.session_id
     turn_gate_acquired = False
     token_registered = False
@@ -395,20 +434,17 @@ async def handle_message_event(
     )
 
     try:
-        # 立即绑定 session — 确保即使 subscribe 事件尚未到达，后续 WS 事件也能路由到此连接
-        await connection_manager.bind_session(connection_id, session_id)
+        from backend.modules.multiuser.permissions import owner_scope
 
-        # 获取取消令牌
-        from backend.ws.connection import get_cancel_token, cleanup_cancel_token
-        cancel_token = get_cancel_token(session_id)
-        token_registered = True
+        owner_id = owner_scope(user) if user is not None else None
+        is_admin_connection = bool(getattr(user, "is_admin", False))
 
-        # 验证会话是否存在
-        session_manager = SessionManager(db)
+        # 先校验归属再绑定，避免他人用 sessionId 劫持流式输出
+        session_manager = SessionManager(db, owner_id=owner_id)
         session = await session_manager.get_session(session_id)
 
         if session is None:
-            logger.error(f"会话不存在: {session_id}")
+            logger.warning(f"会话不存在或无权访问: {session_id}")
             await send_error(
                 session_id,
                 f"Session '{session_id}' not found",
@@ -416,15 +452,31 @@ async def handle_message_event(
             )
             return
 
+        await connection_manager.bind_session(
+            connection_id,
+            session_id,
+            owner_id=getattr(session, "owner_id", None),
+            allow_any_owner=is_admin_connection,
+        )
+
+        # 获取取消令牌
+        from backend.ws.connection import get_cancel_token, cleanup_cancel_token
+        cancel_token = get_cancel_token(session_id)
+        token_registered = True
+
         logger.info(f"会话验证通过: {session_id}")
 
         # 会话指定了自定义工作空间时，切换到该工作空间专属的 AgentLoop
         if loop_factory is not None:
             agent_loop = loop_factory(session)
 
-        from backend.modules.workspace import resolve_session_workspace
+        from backend.modules.workspace import resolve_session_workspace, resolve_user_workspace
 
-        session_workspace = resolve_session_workspace(session)
+        session_workspace = (
+            resolve_session_workspace(session)
+            if user is None or getattr(user, "is_admin", False)
+            else resolve_user_workspace(user)
+        )
 
         try:
             resolved_attachments = _resolve_attachment_inputs(
@@ -439,15 +491,26 @@ async def handle_message_event(
         attachment_paths = [relative_path for relative_path, _ in resolved_attachments]
 
         runtime_config = resolve_session_runtime_config(config_loader.config, session)
-        resolved = await _resolve_ws_runtime(agent_loop, session_id, session, runtime_config)
+        from backend.modules.multiuser.identity import resolve_chat_mode_for_user
+
+        chat_mode = resolve_chat_mode_for_user(
+            user, getattr(runtime_config, "chat_mode", "agent")
+        )
+        runtime_config.chat_mode = chat_mode
+        resolved = await _resolve_ws_runtime(
+            agent_loop, session_id, session, runtime_config, user=user
+        )
         if resolved is None:
             return
         model_override, persona_override, active_provider = resolved
+        is_regular_connection = user is not None and not getattr(user, "is_admin", False)
+        effective_model_name = (
+            getattr(agent_loop, "model", None) or runtime_config.model_name
+            if is_regular_connection
+            else runtime_config.model_name
+        )
 
-        # 同一会话串行处理：先到者执行，后到者按到达顺序等待。
-        # 网页端在流式输出期间再次发送消息时，若不强加顺序，两轮对话会各自读取
-        # 到不完整的历史并互相覆盖，最终回复顺序与用户所见不一致。
-        # 注意：用户消息必须在本轮真正开始处理前才写入，保证历史顺序与处理顺序一致。
+        # 同一会话串行处理，用户消息在本轮开始处理前写入
         turn_gate = get_session_gate()
         await turn_gate.acquire(session_id)
         turn_gate_acquired = True
@@ -462,12 +525,30 @@ async def handle_message_event(
             return
         user_message, context, context_payload = persisted
 
+        # 首条消息后异步补会话标题：不拼接历史/工具，失败保持默认名，不阻塞主对话
+        try:
+            from backend.modules.session.title import (
+                maybe_schedule_session_title_generation,
+            )
+
+            await maybe_schedule_session_title_generation(
+                session=session,
+                session_id=session_id,
+                input_text=content,
+                provider=active_provider or getattr(agent_loop, "provider", None),
+                model=effective_model_name,
+            )
+        except Exception as exc:  # noqa: BLE001 - 标题生成不影响主流程
+            logger.debug(f"会话标题生成调度跳过：{exc}")
+
         logger.info(f"开始AI处理，上下文消息数: {len(context)}")
 
-        _inject_ws_tool_context(agent_loop, session_id, cancel_token)
-        explicit_external_request = _resolve_explicit_external_tool_request(
-            agent_loop,
-            content,
+        _inject_ws_tool_context(agent_loop, session_id, cancel_token, user=user)
+        # 对话模式不提供工具，显式外部代理指令也不注入
+        explicit_external_request = (
+            None
+            if chat_mode == "chat"
+            else _resolve_explicit_external_tool_request(agent_loop, content)
         )
 
         # 处理消息并流式输出
@@ -491,10 +572,17 @@ async def handle_message_event(
                 logger.warning(f"Failed to detect mentioned team for websocket chat: {exc}")
 
         chunk_count = 0
+        native_events_buffer: List[Dict[str, Any]] = []
+
         async def reasoning_event_handler(reasoning_chunk: str) -> None:
             nonlocal assistant_reasoning
             assistant_reasoning += reasoning_chunk or ""
             await send_reasoning_chunk(session_id, reasoning_chunk)
+
+        async def native_event_handler(event: Dict[str, Any]) -> None:
+            native_events_buffer.append(event)
+            if event.get("kind") != "history_blocks":
+                await send_native_event(session_id, event)
 
         if explicit_external_request:
             profile_name, _task = explicit_external_request
@@ -519,7 +607,9 @@ async def handle_message_event(
             model_override=model_override,
             persona_override=persona_override,
             reasoning_event_handler=reasoning_event_handler,
+            native_event_handler=native_event_handler,
             prefer_direct_workflow_result=prefer_direct_workflow_result,
+            chat_mode=chat_mode,
         ):
             # 检查是否被取消
             if cancel_token.is_cancelled:
@@ -548,7 +638,8 @@ async def handle_message_event(
         await _persist_ws_exchange(
             session_manager, db, session_id, agent_loop, runtime_config,
             active_provider, assistant_content, assistant_reasoning,
-            streaming_handler, history_limit,
+            streaming_handler, history_limit, effective_model_name,
+            native_events=native_events_buffer,
         )
 
         logger.info(f"消息处理完成 (会话 {session_id})")
@@ -566,8 +657,7 @@ async def handle_message_event(
             agent_loop.tools.set_cancel_token(None)
         if turn_gate_acquired:
             get_session_gate().release(session_id)
-        # 统一在 finally 清理，覆盖会话不存在、附件非法、provider 不可用等
-        # 提前返回路径，避免令牌字典残留未取消的旧条目。
+        # 统一在 finally 清理，覆盖各类提前返回路径
         if token_registered:
             cleanup_cancel_token(session_id, cancel_token)
 
@@ -577,24 +667,17 @@ async def handle_tool_execution(
     tool_name: str,
     arguments: Dict[str, Any],
     agent_loop: AgentLoop,
+    user=None,
 ) -> None:
-    """处理工具执行事件；由通知封装消费 Registry 结构化结果。
-
-    Args:
-        session_id: 会话 ID
-        tool_name: 工具名称
-        arguments: 工具参数
-        agent_loop: Agent 循环实例
-    """
+    """处理工具执行事件；由通知封装消费 Registry 结构化结果。"""
     from backend.ws.connection import acquire_cancel_token, cleanup_cancel_token
     from backend.ws.tool_notifications import execute_tool_with_notifications
 
-    # 手动触发的工具执行也要登记取消令牌：否则 /stop 与队列取消在这条路径上
-    # 找不到令牌，长命令（exec）无法被中断，只能等命令超时
+    # 手动触发的工具执行也登记取消令牌，使 /stop 能中断长命令
     tool_registry = getattr(agent_loop, "tools", None)
     cancel_token, token_created = acquire_cancel_token(session_id)
     if tool_registry:
-        _inject_ws_tool_context(agent_loop, session_id, cancel_token)
+        _inject_ws_tool_context(agent_loop, session_id, cancel_token, user=user)
 
     try:
         logger.info(f"执行工具 {tool_name} (会话 {session_id})")
@@ -635,11 +718,7 @@ async def handle_tool_execution(
 
 
 async def handle_ping_event(connection_id: str) -> None:
-    """处理心跳事件
-
-    Args:
-        connection_id: 连接 ID
-    """
+    """处理心跳事件"""
     from backend.ws.connection import ServerMessage
 
     await connection_manager.send_message(
@@ -651,14 +730,29 @@ async def handle_ping_event(connection_id: str) -> None:
 async def handle_subscribe_event(
     connection_id: str,
     session_id: str,
+    user=None,
+    db=None,
 ) -> None:
-    """处理订阅事件
+    """处理订阅事件（必须校验会话归属）"""
+    from backend.modules.multiuser.permissions import owner_scope
 
-    Args:
-        connection_id: 连接 ID
-        session_id: 会话 ID
-    """
-    await connection_manager.bind_session(connection_id, session_id)
+    owner_id = None
+    if db is not None:
+        session_manager = SessionManager(db, owner_id=owner_scope(user) if user is not None else None)
+        session = await session_manager.get_session(session_id)
+        if session is None:
+            await send_error(session_id, f"Session '{session_id}' not found", "SESSION_NOT_FOUND")
+            return
+        owner_id = getattr(session, "owner_id", None)
+    elif user is not None:
+        owner_id = owner_scope(user)
+
+    await connection_manager.bind_session(
+        connection_id,
+        session_id,
+        owner_id=owner_id,
+        allow_any_owner=bool(getattr(user, "is_admin", False)),
+    )
     logger.debug(f"连接 {connection_id} 订阅会话 {session_id}")
 
 
@@ -666,19 +760,13 @@ async def handle_unsubscribe_event(
     connection_id: str,
     session_id: str,
 ) -> None:
-    """处理取消订阅事件
-
-    Args:
-        connection_id: 连接 ID
-        session_id: 会话 ID
-    """
-    # 注意：当前 ConnectionManager 不支持取消订阅单个会话
-    # 这里只是记录日志，实际实现需要扩展 ConnectionManager
+    """处理取消订阅事件"""
+    # 当前 ConnectionManager 不支持取消订阅单个会话，此处仅记录日志
     logger.info(f"连接 {connection_id} 取消订阅会话 {session_id}")
 
 
 # ============================================================================
-# Event Router
+# 事件路由
 # ============================================================================
 
 
@@ -689,16 +777,9 @@ async def route_event(
     agent_loop: AgentLoop,
     db: AsyncSession,
     loop_factory=None,
+    user=None,
 ) -> None:
-    """路由事件到对应的处理器
-
-    Args:
-        connection_id: 连接 ID
-        event_type: 事件类型
-        event_data: 事件数据
-        agent_loop: Agent 循环实例
-        db: 数据库会话
-    """
+    """路由事件到对应的处理器"""
     try:
         if event_type == "message":
             # 处理消息事件
@@ -709,6 +790,7 @@ async def route_event(
                 agent_loop,
                 db,
                 loop_factory=loop_factory,
+                user=user,
             )
 
         elif event_type == "tool_execute":
@@ -725,13 +807,21 @@ async def route_event(
                 )
                 return
 
-            # 手动执行工具同样要使用会话级工作空间
-            if loop_factory is not None:
-                session = await SessionManager(db).get_session(session_id)
-                if session is not None:
-                    agent_loop = loop_factory(session)
+            # 手动执行工具同样要使用会话级工作空间；会话必须存在且归属当前用户，
+            # 否则会把手动执行的工具结果写进他人会话。
+            from backend.modules.multiuser.permissions import owner_scope
 
-            await handle_tool_execution(session_id, tool_name, arguments, agent_loop)
+            session = await SessionManager(
+                db,
+                owner_id=owner_scope(user) if user is not None else None,
+            ).get_session(session_id)
+            if session is None:
+                await send_error(session_id, "会话不存在或无权访问", "SESSION_NOT_FOUND")
+                return
+            if loop_factory is not None:
+                agent_loop = loop_factory(session)
+
+            await handle_tool_execution(session_id, tool_name, arguments, agent_loop, user=user)
 
         elif event_type == "ping":
             # 处理心跳事件
@@ -744,7 +834,7 @@ async def route_event(
                 logger.warning("订阅事件缺少 sessionId")
                 return
 
-            await handle_subscribe_event(connection_id, session_id)
+            await handle_subscribe_event(connection_id, session_id, user=user, db=db)
 
         elif event_type == "unsubscribe":
             # 处理取消订阅事件
@@ -773,7 +863,7 @@ async def route_event(
 
 
 # ============================================================================
-# WebSocket Event Loop
+# WebSocket 事件循环
 # ============================================================================
 
 
@@ -782,16 +872,9 @@ async def websocket_event_loop(
     connection_id: str,
     agent_loop: AgentLoop,
     loop_factory=None,
+    user=None,
 ) -> None:
-    """WebSocket 事件循环
-
-    持续监听和处理 WebSocket 事件，直到连接断开。
-
-    Args:
-        websocket: WebSocket 连接
-        connection_id: 连接 ID
-        agent_loop: Agent 循环实例
-    """
+    """WebSocket 事件循环：持续监听和处理 WebSocket 事件，直到连接断开。"""
     from fastapi import WebSocketDisconnect
     from pydantic import ValidationError
 
@@ -837,6 +920,7 @@ async def websocket_event_loop(
                             agent_loop,
                             db,
                             loop_factory=loop_factory,
+                            user=user,
                         )
                     finally:
                         await db.close()

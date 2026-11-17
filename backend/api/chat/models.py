@@ -93,6 +93,9 @@ class MessageResponse(BaseModel):
     content: str
     reasoning_content: Optional[str] = None
     attachment_items: List[AttachmentItemResponse] = Field(default_factory=list)
+    native_events: List[Dict[str, Any]] = Field(
+        default_factory=list, description="供应商原生能力事件（搜索、引用、拒答等）"
+    )
     created_at: str
     tool_call_count: int = 0
     special_tool_call_names: List[str] = Field(default_factory=list)
@@ -129,8 +132,8 @@ class SessionWorkspaceConfig(BaseModel):
     path: Optional[str] = None
     # 实际生效路径
     effective_path: str
-    # 全局默认路径
-    global_path: str
+    # 全局默认路径；普通用户不可见管理员的全局路径，返回 None
+    global_path: Optional[str] = None
 
 
 class SessionWorkspaceRequest(BaseModel):

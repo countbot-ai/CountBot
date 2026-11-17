@@ -3,7 +3,6 @@
 import asyncio
 import inspect
 import json
-import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -11,8 +10,17 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
-from backend.modules.tools.conversation_history import get_conversation_history
-from backend.modules.tools.outcome_projection import project_attempt
+from backend.modules.agent.tool_events import (
+    append_tool_result,
+    emit_tool_event,
+    notify_tool_phase,
+    record_tool_conversation,
+)
+from backend.modules.agent.tool_signature import build_repeat_notice, tool_signature
+from backend.modules.agent.runtime_resolution import (
+    AgentRuntimeBases,
+    resolve_execution_runtime,
+)
 from backend.modules.tools.execution import (
     ExecutionState,
     RetrySafety,
@@ -23,10 +31,14 @@ from backend.modules.tools.execution import (
 )
 from backend.modules.providers.base import AUTH_ERROR_HINTS, RATE_LIMIT_HINTS
 from backend.modules.providers.media_capabilities import resolve_supports_image
+from backend.modules.providers.thinking_profiles import (
+    is_reasoning_off,
+    normalize_reasoning_level,
+)
 from backend.modules.session.usage_recorder import record_usage
 
 
-# max_iterations=0 表示不限制；折算成内部上界，同时兜底防止死循环。
+# max_iterations=0 表示不限制；折算成内部上界，同时防止死循环。
 UNLIMITED_TOOL_BUDGET = 9999
 # 同一调用最多真正执行几次，之后回放上次结果。
 MAX_IDENTICAL_TOOL_CALLS = 2
@@ -48,26 +60,21 @@ def resolve_tool_budget(value: Any) -> int:
 
 
 def _is_key_rotation_eligible_error(error_text: str) -> bool:
-    """判断错误是否适合触发 key 轮换重试。
-
-    分类 hint 统一维护在 providers/base.py（单一来源），此处直接引用。
-    """
+    """判断错误是否适合触发 key 轮换重试，分类 hint 统一取自 providers/base.py。"""
     lower = (error_text or "").lower()
     return any(hint in lower for hint in AUTH_ERROR_HINTS + RATE_LIMIT_HINTS)
 
 
 @dataclass
 class _LoopState:
-    """process_message 主循环内共享的可变状态。
-
-    各阶段方法（_consume_model_stream / _execute_tool_batch /
-    _run_single_tool）通过本容器读写循环状态。
-    """
+    """process_message 主循环内共享的可变状态，各阶段方法通过它读写。"""
 
     messages: List[Dict[str, Any]]
     iteration: int = 0
     iteration_budget: int = 0
     total_tool_calls: int = 0
+    # 本次请求的对话模式：chat 时不向模型暴露任何工具，也不注入工具相关提示
+    chat_mode: str = "agent"
     # 额度不限制时，触顶也不提示「达到最大工具调用次数」
     tool_budget_unlimited: bool = False
     # 连续成功执行同一调用的次数（失败/超时不计，允许重试）
@@ -91,11 +98,9 @@ class _LoopState:
     reasoning_buffer: str = ""
     provider_payload: Any = None
     finish_reason: Optional[str] = None
-    # 控制信号：
-    # abort —— 立即结束整个生成器（用户取消 / 不可恢复错误）
-    # stop_loop —— 结束 while 主循环（工具额度耗尽 / direct workflow 结果）
-    # stop_tool_loop —— 跳过本批次剩余工具（direct workflow 结果命中）
-    # rotation_restart —— key 轮换成功且本轮无内容输出，用新 provider 重发本轮
+    # 供应商服务端工具事件（展示用，同时供持久化回放）
+    native_events: List[Dict[str, Any]] = field(default_factory=list)
+    # 控制信号：abort / stop_loop / stop_tool_loop / rotation_restart
     abort: bool = False
     stop_loop: bool = False
     stop_tool_loop: bool = False
@@ -105,12 +110,10 @@ class _LoopState:
 class AgentLoop:
     """Agent 主循环类 - 处理消息、调用 LLM、执行工具、生成响应"""
 
-    MAX_KEY_ROTATION_RETRIES = 3
+    # 单轮最多轮换 5 次：既避免大量坏 Key 把用户拖住，又比固定 3 次更充分地利用 Key 池
+    MAX_KEY_ROTATION_RETRIES = 5
 
-    # 自管闹钟的长任务工具：内部自带超时等待与超时返回文案
-    # （spawn 等子代理至 subagent_timeout；workflow_run 驱动多子代理；
-    #  external_coding_agent 按 profile timeout 运行），
-    # 主循环外层 wait_for 对其豁免，避免被默认短超时误杀长任务。
+    # 长任务工具自带超时，主循环不对其叠加外层 wait_for
     _SELF_ALARMING_TOOLS = frozenset({"spawn", "workflow_run", "external_coding_agent"})
 
     def __init__(
@@ -129,6 +132,7 @@ class AgentLoop:
         temperature: float = 0.0,
         max_tokens: int = 4096,
         thinking_enabled: bool = True,
+        stream_enabled: bool = True,
         reasoning_level: Optional[str] = None,
     ):
         self.provider = provider
@@ -144,6 +148,7 @@ class AgentLoop:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.thinking_enabled = thinking_enabled
+        self.stream_enabled = stream_enabled
         self.reasoning_level = reasoning_level
         self._key_rotation_count = 0
         
@@ -160,60 +165,8 @@ class AgentLoop:
             parts.append(f"{tool_name}#{tool_id}")
         return ", ".join(parts) if parts else "<none>"
 
-    @staticmethod
-    def _normalize_exec_command(command: str) -> str:
-        """把同一条命令的不同输出版本归一成同一指纹。
-
-        只剥离不改变语义的包装（前导 cd/timeout、head/tail/wc 管道、静默重定向）。
-        """
-        text = command or ""
-        # 前导 cd <dir> &&
-        text = re.sub(r"^\s*(?:cd\s+\S+\s*&&\s*)+", "", text)
-        # 前导 timeout N
-        text = re.sub(r"^\s*timeout\s+\d+\s+", "", text)
-        # 输出切片管道 | head/tail/wc
-        text = re.sub(r"\|\s*(?:head|tail|wc)(?:\s+[^|]*)?", "", text)
-        # 静默重定向 2>/dev/null、2>&1
-        text = re.sub(r"\d*>+\s*/dev/null", "", text)
-        text = re.sub(r"\d*>&\d+", "", text)
-        return " ".join(text.split())
-
-    @classmethod
-    def _tool_signature(cls, tool_name: str, tool_args: Any) -> str:
-        """生成「同名 + 归一化参数」的调用指纹，用于识别重复调用。"""
-        if tool_name == "exec" and isinstance(tool_args, dict):
-            normalized_args = dict(tool_args)
-            command = normalized_args.get("command")
-            if isinstance(command, str):
-                normalized_args["command"] = cls._normalize_exec_command(command)
-            tool_args = normalized_args
-        try:
-            normalized = json.dumps(
-                tool_args, sort_keys=True, ensure_ascii=False, default=str
-            )
-        except Exception:
-            normalized = str(tool_args)
-        return f"{tool_name}:{normalized}"
-
-    @staticmethod
-    def _build_repeat_notice(tool_name: str, attempt: int, cached: Optional[str]) -> str:
-        """重复调用被熔断时返回给模型的说明（含上次结果摘要）。"""
-        lines = [
-            f"[重复调用拦截] 这是本次请求里第 {attempt} 次完全相同的 `{tool_name}` 调用，"
-            "已跳过执行——同样的输入不会得到不同的输出。",
-            "请换参数、换工具，或直接基于下面的上次结果继续，不要再重复这条调用。",
-        ]
-        if cached:
-            lines.append("上次结果（已截断）：\n" + cached)
-        else:
-            lines.append("上次调用没有留下可用结果，请换一种方式重试。")
-        return "\n".join(lines)
-
     def _resolve_call_timeout(self, tool_args: Any) -> int:
-        """单次工具调用的外层超时（秒）。
-
-        取配置默认值与入参 timeout+缓冲的较大者，避免长命令被外层提前掐断。
-        """
+        """单次工具调用的外层超时（秒），取配置默认值与入参超时的较大者。"""
         configured = self._resolve_tool_timeout_seconds()
         requested = tool_args.get("timeout") if isinstance(tool_args, dict) else None
         # timeout 可能是字符串（"180"），需一并识别
@@ -226,10 +179,7 @@ class AgentLoop:
         return configured
 
     def _resolve_tool_timeout_seconds(self) -> int:
-        """解析主循环工具调用超时（秒）。
-
-        来自 config.agent.tool_timeout_seconds，默认 60；解析失败时兜底默认值。
-        """
+        """解析主循环工具调用超时（秒），解析失败时返回 60。"""
         try:
             from backend.modules.config.loader import config_loader
 
@@ -243,108 +193,21 @@ class AgentLoop:
     def _resolve_execution_runtime(
         self,
         model_override: Optional[Dict[str, Any]] = None,
-    ) -> tuple[Any, Optional[str], float, int, int, bool, Optional[str]]:
+    ) -> tuple[Any, Optional[str], float, int, int, bool, bool, Optional[str]]:
         """解析当前消息执行应使用的 provider 和模型参数。"""
-        base_provider = self.provider
-        base_model = self.model
-        base_temperature = self.temperature
-        base_max_tokens = self.max_tokens
-        base_max_iterations = self.max_iterations
-        base_thinking_enabled = self.thinking_enabled
-        base_reasoning_level = self.reasoning_level
-        base_api_mode = getattr(base_provider, "api_mode", "chat_completions")
-
-        if not model_override:
-            return (
-                base_provider,
-                base_model,
-                base_temperature,
-                base_max_tokens,
-                base_max_iterations,
-                base_thinking_enabled,
-                base_reasoning_level,
-            )
-
-        candidate_provider = base_provider
-        candidate_model = model_override.get("model", base_model)
-        candidate_temperature = model_override.get("temperature", base_temperature)
-        candidate_max_tokens = model_override.get("max_tokens", base_max_tokens)
-        candidate_max_iterations = model_override.get(
-            "max_iterations",
-            base_max_iterations,
-        )
-        candidate_api_mode = model_override.get("api_mode", base_api_mode)
-        candidate_thinking_enabled = model_override.get(
-            "thinking_enabled",
-            base_thinking_enabled,
-        )
-        candidate_reasoning_level = model_override.get(
-            "reasoning_level",
-            base_reasoning_level,
-        )
-
-        override_provider = model_override.get("provider")
-        override_api_key = model_override.get("api_key") or None
-        override_api_base = model_override.get("api_base") or None
-
-        if override_provider or override_api_key or override_api_base:
-            try:
-                from backend.modules.providers import create_provider
-                from backend.modules.config.loader import config_loader
-                from backend.modules.providers.runtime import (
-                    build_provider_unavailable_message,
-                    get_provider_runtime_state,
-                )
-
-                provider_id = override_provider or config_loader.config.model.provider
-                runtime_state = get_provider_runtime_state(
-                    config_loader.config,
-                    provider_id,
-                    api_key_override=override_api_key,
-                    api_base_override=override_api_base,
-                )
-                if not runtime_state.selectable:
-                    raise ValueError(
-                        build_provider_unavailable_message(
-                            provider_id,
-                            runtime_state.reason,
-                        )
-                    )
-
-                candidate_provider = create_provider(
-                    api_key=runtime_state.api_key or None,
-                    api_keys=runtime_state.api_keys or None,
-                    api_base=runtime_state.api_base,
-                    default_model=candidate_model,
-                    api_mode=candidate_api_mode,
-                    timeout=getattr(self.provider, "timeout", 120.0),
-                    max_retries=getattr(self.provider, "max_retries", self.max_retries),
-                    provider_id=provider_id,
-                    api_type=runtime_state.api_type,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to create runtime provider override, falling back to base runtime config: "
-                    f"{exc}"
-                )
-                return (
-                    base_provider,
-                    base_model,
-                    base_temperature,
-                    base_max_tokens,
-                    base_max_iterations,
-                    base_thinking_enabled,
-                    base_reasoning_level,
-                )
-
-        return (
-            candidate_provider,
-            candidate_model,
-            candidate_temperature,
-            candidate_max_tokens,
-            candidate_max_iterations,
-            candidate_thinking_enabled,
-            candidate_reasoning_level,
+        return resolve_execution_runtime(
+            AgentRuntimeBases(
+                provider=self.provider,
+                model=self.model,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                max_iterations=self.max_iterations,
+                thinking_enabled=self.thinking_enabled,
+                stream_enabled=self.stream_enabled,
+                reasoning_level=self.reasoning_level,
+                max_retries=self.max_retries,
+            ),
+            model_override,
         )
 
     async def process_message(
@@ -363,21 +226,12 @@ class AgentLoop:
         persona_override=None,
         tool_event_handler=None,
         reasoning_event_handler=None,
+        native_event_handler=None,
         prefer_direct_workflow_result: bool = False,
         pending_message_provider=None,
+        chat_mode: str = "agent",
     ) -> AsyncIterator[str]:
-        """处理用户消息并生成流式响应
-
-        Args:
-            pending_message_provider: 可选的无参可调用对象。每轮工具批次执行完毕后
-                调用一次，返回该会话在等待期间新到、尚未处理的消息文本；返回空值时
-                表示没有插话。用于让用户在 Agent 干活的间隙补充信息，而不是另起一轮
-                并发处理。
-
-        主循环阶段划分：_consume_model_stream（消费模型流）→
-        _execute_tool_batch（工具批次，内部逐工具走 _run_single_tool）→
-        _finalize_limits（限额检查），各阶段通过 _LoopState 共享状态。
-        """
+        """处理用户消息并生成流式响应，各阶段通过 _LoopState 共享状态。"""
         logger.debug(f"Processing message for session {session_id}")
 
         # 设置工具注册表的会话ID（用于审计日志）和渠道信息
@@ -399,6 +253,7 @@ class AgentLoop:
             runtime_max_tokens,
             runtime_max_iterations,
             runtime_thinking_enabled,
+            runtime_stream_enabled,
             runtime_reasoning_level,
         ) = self._resolve_execution_runtime(model_override)
 
@@ -418,18 +273,38 @@ class AgentLoop:
         # max_iterations=0（默认）表示不限制；折算值统一用于循环上界与额度校验。
         tool_budget_unlimited = resolve_tool_budget(runtime_max_iterations) == UNLIMITED_TOOL_BUDGET
         runtime_max_iterations = resolve_tool_budget(runtime_max_iterations)
+        normalized_chat_mode = "chat" if str(chat_mode or "").strip().lower() == "chat" else "agent"
+
+        native_file_blocks: List[Dict[str, Any]] = []
+        if media and self.context_builder:
+            native_file_blocks, handled_paths = await self._prepare_native_documents(
+                media=media,
+                provider=active_provider,
+                model=runtime_model,
+                supports_image=supports_image,
+            )
+            if native_file_blocks:
+                media = [
+                    path
+                    for path in media
+                    if str(path or "").strip().replace("\\", "/") not in handled_paths
+                ]
 
         state = _LoopState(
             messages=self._prepare_messages(
                 message, context, session_summary, media, channel, chat_id,
                 account_id, persona_override, supports_image,
                 tool_budget=None if tool_budget_unlimited else runtime_max_iterations,
+                chat_mode=normalized_chat_mode,
+                native_file_blocks=native_file_blocks,
+                session_id=session_id,
             ),
             iteration=0,
             iteration_budget=runtime_max_iterations,
             tool_budget_unlimited=tool_budget_unlimited,
             active_provider=active_provider,
             request_trace_id=f"{session_id[:8]}-{uuid.uuid4().hex[:8]}",
+            chat_mode=normalized_chat_mode,
         )
         self._key_rotation_count = 0
 
@@ -451,8 +326,9 @@ class AgentLoop:
                 async for piece in self._consume_model_stream(
                     state, session_id,
                     runtime_model, runtime_temperature, runtime_max_tokens,
-                    runtime_thinking_enabled, runtime_reasoning_level,
+                    runtime_thinking_enabled, runtime_stream_enabled, runtime_reasoning_level,
                     cancel_token, yield_intermediate, reasoning_event_handler,
+                    native_event_handler,
                 ):
                     yield piece
                 if state.abort:
@@ -518,6 +394,36 @@ class AgentLoop:
             logger.exception(f"Error in agent loop: {e}")
             raise
 
+    async def _prepare_native_documents(
+        self,
+        *,
+        media: List[str],
+        provider: Any,
+        model: Optional[str],
+        supports_image: bool = True,
+    ) -> tuple[List[Dict[str, Any]], set[str]]:
+        """按模型能力把附件上传为 DeepSeek file_id；失败时回落到原附件链路。"""
+        try:
+            from backend.modules.native_caps.files import build_document_blocks
+            from backend.modules.native_caps.service import capabilities_for_provider
+
+            caps = capabilities_for_provider(provider, model)
+            if caps.document_parsing == "off":
+                return [], set()
+            return await build_document_blocks(
+                media,
+                workspace=self.context_builder.workspace,
+                api_base=getattr(provider, "api_base", None),
+                api_key=getattr(provider, "api_key", None),
+                provider_id=getattr(provider, "provider_id", None),
+                model=model,
+                capabilities=caps,
+                include_images=not supports_image,
+            )
+        except Exception as exc:
+            logger.warning(f"原生文档解析准备失败，继续走原附件链路: {exc}")
+            return [], set()
+
     def _prepare_messages(
         self,
         message: str,
@@ -530,11 +436,11 @@ class AgentLoop:
         persona_override,
         supports_image: bool,
         tool_budget: Optional[int] = None,
+        chat_mode: str = "agent",
+        native_file_blocks: Optional[List[Dict[str, Any]]] = None,
+        session_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """构建发送给模型的 messages 列表（原 process_message 前段）。
-
-        tool_budget 为 None 表示不限制调用次数，不向模型声明额度。
-        """
+        """构建发送给模型的 messages 列表；tool_budget 为 None 表示不限额。"""
         if self.context_builder and context is not None:
             return self.context_builder.build_messages(
                 history=context,
@@ -547,6 +453,9 @@ class AgentLoop:
                 persona_config=persona_override,
                 supports_image=supports_image,
                 tool_budget=tool_budget,
+                chat_mode=chat_mode,
+                native_file_blocks=native_file_blocks,
+                session_id=session_id,
             )
 
         if context is None:
@@ -566,17 +475,14 @@ class AgentLoop:
         runtime_temperature: float,
         runtime_max_tokens: int,
         runtime_thinking_enabled: bool,
+        runtime_stream_enabled: bool,
         runtime_reasoning_level: Optional[str],
         cancel_token,
         yield_intermediate: bool,
         reasoning_event_handler,
+        native_event_handler=None,
     ) -> AsyncIterator[str]:
-        """消费一次模型流，yield 内容 chunk，缓冲写回 state。
-
-        - is_error 且 key rotation 可用：替换 state.active_provider、回退
-          state.iteration，继续消费当前流剩余 chunk（原 continue 语义）；
-        - is_error 且无法 rotation：yield 错误文本并置 state.abort。
-        """
+        """消费一次模型流，yield 内容 chunk，并把结果缓冲写回 state。"""
         state.content_buffer = ""
         state.tool_calls_buffer = []
         state.finish_reason = None
@@ -588,7 +494,19 @@ class AgentLoop:
         if state.active_provider.__class__.__module__.endswith(".openai_provider"):
             provider_trace_kwargs["request_trace_id"] = state.request_trace_id
 
-        tool_definitions = self.tools.get_definitions() if self.tools else []
+        # 显式选择「关闭」思考时，即使上游仍回传 reasoning（部分模型无法真正
+        # 关闭），也不再向前端输出思考块，保证「关闭」的语义一致。
+        explicit_level = normalize_reasoning_level(runtime_reasoning_level)
+        suppress_reasoning = (
+            explicit_level is not None and is_reasoning_off(explicit_level)
+        )
+
+        # 对话模式不向模型暴露任何工具：工具定义通常占总 token 的大头
+        tool_definitions = (
+            []
+            if state.chat_mode == "chat"
+            else (self.tools.get_definitions() if self.tools else [])
+        )
 
         async for chunk in state.active_provider.chat_stream(
             messages=state.messages,
@@ -597,6 +515,7 @@ class AgentLoop:
             temperature=runtime_temperature,
             max_tokens=runtime_max_tokens,
             thinking_enabled=runtime_thinking_enabled,
+            stream_enabled=runtime_stream_enabled,
             reasoning_level=runtime_reasoning_level,
             **provider_trace_kwargs,
         ):
@@ -606,9 +525,16 @@ class AgentLoop:
                     yield chunk.content
 
             if chunk.is_tool_call and chunk.tool_call:
-                state.tool_calls_buffer.append(chunk.tool_call)
+                # 对话模式硬性禁止工具执行：即使模型自行吐出 tool_call 也不收集，
+                # 避免绕过「不提供工具定义」的约定真的跑到工具层。
+                if state.chat_mode != "chat":
+                    state.tool_calls_buffer.append(chunk.tool_call)
 
-            if chunk.is_reasoning and chunk.reasoning_content:
+            if (
+                chunk.is_reasoning
+                and chunk.reasoning_content
+                and not suppress_reasoning
+            ):
                 state.reasoning_buffer += chunk.reasoning_content
                 if reasoning_event_handler:
                     try:
@@ -621,6 +547,21 @@ class AgentLoop:
                         logger.warning(
                             f"Failed to emit reasoning chunk for session {session_id}: {exc}"
                         )
+
+            if chunk.has_native_events and chunk.native_events:
+                for native_event in chunk.native_events:
+                    if not isinstance(native_event, dict):
+                        continue
+                    state.native_events.append(native_event)
+                    if native_event_handler:
+                        try:
+                            maybe_result = native_event_handler(native_event)
+                            if inspect.isawaitable(maybe_result):
+                                await maybe_result
+                        except Exception as exc:
+                            logger.warning(
+                                f"Failed to emit native event for session {session_id}: {exc}"
+                            )
 
             if chunk.has_provider_payload and chunk.provider_payload:
                 state.provider_payload = chunk.provider_payload
@@ -642,20 +583,16 @@ class AgentLoop:
                     self._key_rotation_count += 1
                     await asyncio.sleep(1.0)
                     if not state.content_buffer:
-                        # 本轮尚未输出内容：错误意味着整个响应已无效，
-                        # 用轮换后的 provider 重新发起本轮，避免流结束后
-                        # 走 else 分支 break 导致用户收到空回复
+                        # 本轮尚未输出内容：用轮换后的 provider 重发本轮，避免空回复
                         state.rotation_restart = True
                         return
-                    # 本轮已有内容输出（已实时 yield 给用户）：重发会造成
-                    # 重复，继续消费当前流剩余 chunk
+                    # 本轮已有输出：继续消费当前流，避免重复内容
                     continue
                 yield chunk.error
                 state.abort = True
                 return
 
-        # 每次模型调用结束后记录一次用量：一轮对话可能包含多次调用
-        # （工具结果返回后继续推理），逐次记录才能看清成本分布。
+        # 每次模型调用结束后记录一次用量，一轮对话可能包含多次调用
         if usage_payload:
             await record_usage(
                 session_id=session_id,
@@ -676,11 +613,7 @@ class AgentLoop:
         pending_message_provider,
         prefer_direct_workflow_result: bool,
     ) -> AsyncIterator[str]:
-        """执行一个工具调用批次（原 process_message 工具分支）。
-
-        yield：direct workflow 结果；状态通过 state 传回
-        （stop_loop=结束主循环，abort=立即终止生成器）。
-        """
+        """执行一个工具调用批次，状态通过 state 回传。"""
         deduped_tool_calls = []
         seen_tool_call_ids = set()
         for tc in state.tool_calls_buffer:
@@ -798,16 +731,13 @@ class AgentLoop:
             state.stop_loop = True
             return
 
-        # 工具批次已全部执行完毕：此时历史里 assistant(tool_calls) 与
-        # 对应的 tool 结果已在上下文内配对完成，是插入用户补充消息的
-        # 安全位置。若在此处插入，下一轮模型能看到新信息并继续处理。
+        # 工具批次结束后 tool_calls 已与结果配对，可安全插入用户补充消息
         if pending_message_provider is not None and not state.direct_result_selected:
             injected = await self._take_pending_message(
                 pending_message_provider, session_id, state.request_trace_id
             )
             if injected:
-                # 仅写入上下文，不进入回复流：该内容由用户发出，若作为助手输出
-                # 会被持久化为一轮助手回复
+                # 仅写入上下文，不进入回复流，避免被持久化为助手回复
                 state.messages.append(
                     {
                         "role": "user",
@@ -817,8 +747,7 @@ class AgentLoop:
                         ),
                     }
                 )
-                # 每吸收一条插话即放行一轮（budget 同步 +1），
-                # 使插话在本任务内得到回应，而非被静默丢弃
+                # 每插入一条补充消息即增加一轮额度，使其在本任务内得到回应
                 state.iteration_budget += 1
 
     async def _run_single_tool(
@@ -831,11 +760,7 @@ class AgentLoop:
         tool_event_handler,
         prefer_direct_workflow_result: bool,
     ) -> AsyncIterator[str]:
-        """执行单个工具调用并处理其结果/错误（原逐工具循环体）。
-
-        yield：direct workflow 结果。状态通过 state 传回
-        （stop_tool_loop=跳过本批次剩余工具，abort=立即终止生成器）。
-        """
+        """执行单个工具调用并处理结果与错误，状态通过 state 回传。"""
         tool_name = tool_call.name
         tool_args = tool_call.arguments
         tool_id = tool_call.id
@@ -846,95 +771,151 @@ class AgentLoop:
             f"name={tool_name}, tool_call_id={tool_id}"
         )
 
-        if tool_event_handler:
-            try:
-                maybe_result = tool_event_handler(
-                    "tool_call",
-                    {
-                        "tool_name": tool_name,
-                        "arguments": tool_args,
-                        "session_id": session_id,
-                    },
-                )
-                if inspect.isawaitable(maybe_result):
-                    await maybe_result
-            except Exception as e:
-                logger.warning(f"Tool event handler failed before execution: {e}")
+        await emit_tool_event(
+            tool_event_handler,
+            "tool_call",
+            {
+                "tool_name": tool_name,
+                "arguments": tool_args,
+                "session_id": session_id,
+            },
+            failure_message="Tool event handler failed before execution",
+        )
 
-        try:
-            from backend.ws.tool_notifications import notify_tool_execution
-            await notify_tool_execution(
-                session_id=session_id,
-                tool_name=tool_name,
-                arguments=tool_args,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to send tool notification: {e}")
+        await notify_tool_phase(session_id, tool_name, tool_args)
 
         # 重复调用熔断：同名 + 归一化参数一致且已连续成功足够次数，回放上次结果
-        signature = self._tool_signature(tool_name, tool_args)
+        signature = tool_signature(tool_name, tool_args)
         if state.last_tool_signature != signature:
             state.last_tool_signature = signature
             state.repeat_count = 0
         if state.repeat_count >= MAX_IDENTICAL_TOOL_CALLS:
-            state.consecutive_repeat_skips += 1
-            notice = self._build_repeat_notice(
-                tool_name,
-                state.repeat_count + state.consecutive_repeat_skips,
-                state.tool_result_cache.get(signature),
+            await self._intercept_repeat_call(
+                state,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                tool_id=tool_id,
+                signature=signature,
+                session_id=session_id,
+                tool_event_handler=tool_event_handler,
             )
-            hard_stop = state.consecutive_repeat_skips >= MAX_CONSECUTIVE_REPEAT_SKIPS
-            if hard_stop:
-                # 无限额度下也需要硬停止，避免空转
-                state.repeat_stop = True
-                state.stop_loop = True
-                notice += "\n已连续多次重复同一调用，本轮工具调用到此为止。"
-            logger.warning(
-                "重复工具调用已熔断: "
-                f"trace={state.request_trace_id}, name={tool_name}, "
-                f"consecutive_skips={state.consecutive_repeat_skips}, hard_stop={hard_stop}"
-            )
-            # 没有真正执行，不占工具的调用额度
-            state.total_tool_calls = max(0, state.total_tool_calls - 1)
-            if self.context_builder:
-                state.messages = self.context_builder.add_tool_result(
-                    state.messages, tool_id, tool_name, notice,
-                )
-            else:
-                state.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "name": tool_name,
-                    "content": notice,
-                })
-            if tool_event_handler:
-                try:
-                    maybe_result = tool_event_handler(
-                        "tool_result",
-                        {
-                            "tool_name": tool_name,
-                            "arguments": tool_args,
-                            "result": notice,
-                            "session_id": session_id,
-                            "duration_ms": 0,
-                            "execution_state": "REPEATED_SKIPPED",
-                            "operation_id": "",
-                            "attempt_id": "",
-                        },
-                    )
-                    if inspect.isawaitable(maybe_result):
-                        await maybe_result
-                except Exception as e:
-                    logger.warning(f"Tool event handler failed on repeat skip: {e}")
             return
 
         # 真正进入执行流程，重置连续拦截计数
         state.consecutive_repeat_skips = 0
 
         start_time = time.time()
-        # 一个 LLM Tool call 只创建一个 operation；tool_id 仅用于关联。
-        # Registry 为获准执行的每次物理尝试另建 attempt_id。
+        # 每个 tool call 只创建一个 operation，Registry 为每次尝试另建 attempt_id
         operation_id = str(uuid.uuid4())
+        outcome, last_error, attempt_source = await self._execute_tool_with_retries(
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_id=tool_id,
+            operation_id=operation_id,
+            session_id=session_id,
+            cancel_token=cancel_token,
+            tool_event_handler=tool_event_handler,
+        )
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        if isinstance(outcome, ToolExecutionInProgress):
+            self._record_tool_in_progress(state, tool_call, outcome, operation_id)
+            return
+
+        if isinstance(outcome, ToolExecutionOutcome) and outcome.state is ExecutionState.SUCCEEDED:
+            direct_result = await self._record_tool_success(
+                state=state,
+                tool_call=tool_call,
+                outcome=outcome,
+                session_id=session_id,
+                message=message,
+                tool_event_handler=tool_event_handler,
+                duration_ms=duration_ms,
+                signature=signature,
+                attempt_source=attempt_source,
+                prefer_direct_workflow_result=prefer_direct_workflow_result,
+            )
+            if state.direct_result_selected:
+                if direct_result:
+                    yield direct_result
+                return
+            return
+
+        await self._record_tool_failure(
+            state=state,
+            tool_call=tool_call,
+            outcome=outcome,
+            last_error=last_error,
+            operation_id=operation_id,
+            session_id=session_id,
+            message=message,
+            tool_event_handler=tool_event_handler,
+            duration_ms=duration_ms,
+            attempt_source=attempt_source,
+        )
+
+    async def _intercept_repeat_call(
+        self,
+        state: "_LoopState",
+        *,
+        tool_name: str,
+        tool_args: Any,
+        tool_id: str,
+        signature: str,
+        session_id: str,
+        tool_event_handler,
+    ) -> None:
+        """重复调用熔断：回放上次结果并累计硬停止计数。"""
+        state.consecutive_repeat_skips += 1
+        notice = build_repeat_notice(
+            tool_name,
+            state.repeat_count + state.consecutive_repeat_skips,
+            state.tool_result_cache.get(signature),
+        )
+        hard_stop = state.consecutive_repeat_skips >= MAX_CONSECUTIVE_REPEAT_SKIPS
+        if hard_stop:
+            # 无限额度下也需要硬停止，避免空转
+            state.repeat_stop = True
+            state.stop_loop = True
+            notice += "\n已连续多次重复同一调用，本轮工具调用到此为止。"
+        logger.warning(
+            "重复工具调用已熔断: "
+            f"trace={state.request_trace_id}, name={tool_name}, "
+            f"consecutive_skips={state.consecutive_repeat_skips}, hard_stop={hard_stop}"
+        )
+        # 没有真正执行，不占工具的调用额度
+        state.total_tool_calls = max(0, state.total_tool_calls - 1)
+        state.messages = append_tool_result(
+            self.context_builder, state.messages, tool_id, tool_name, notice,
+        )
+        await emit_tool_event(
+            tool_event_handler,
+            "tool_result",
+            {
+                "tool_name": tool_name,
+                "arguments": tool_args,
+                "result": notice,
+                "session_id": session_id,
+                "duration_ms": 0,
+                "execution_state": "REPEATED_SKIPPED",
+                "operation_id": "",
+                "attempt_id": "",
+            },
+            failure_message="Tool event handler failed on repeat skip",
+        )
+
+    async def _execute_tool_with_retries(
+        self,
+        *,
+        tool_name: str,
+        tool_args: Any,
+        tool_id: str,
+        operation_id: str,
+        session_id: str,
+        cancel_token,
+        tool_event_handler,
+    ) -> tuple[Any, Optional[Exception], str]:
+        """带重试与审计的单次工具执行，返回 (outcome, last_error, attempt_source)。"""
         outcome = None
         last_error = None
         attempt_source = "agent_initial"
@@ -942,9 +923,7 @@ class AgentLoop:
         if self.tools:
             self.tools.set_tool_event_handler(tool_event_handler)
         tool_timeout = self._resolve_call_timeout(tool_args)
-        # 自管闹钟的长任务工具（spawn / workflow_run /
-        # external_coding_agent）内部已有有界等待与超时返回文案，
-        # 主循环不叠加外层 wait_for，避免长任务被默认短超时误杀。
+        # 长任务工具自带超时，主循环不叠加外层 wait_for
         uses_outer_timeout = tool_name not in self._SELF_ALARMING_TOOLS
         try:
             for attempt in range(max(1, self.max_retries)):
@@ -980,8 +959,7 @@ class AgentLoop:
                         and outcome.retry_safety is RetrySafety.SAFE
                         else "agent_retry" if attempt > 0 else "agent_initial"
                     )
-                    # outcome 来自 Registry；每次获准重试返回后分别投影，
-                    # 让同一 operation 下的各 attempt 保持独立审计记录。
+                    # 每次获准重试后分别投影，保持各 attempt 的独立审计记录
                     try:
                         from backend.modules.tools.file_audit_logger import file_audit_logger
                         file_audit_logger.record_outcome(
@@ -994,8 +972,7 @@ class AgentLoop:
                     if outcome.state is ExecutionState.SUCCEEDED:
                         logger.debug(f"Tool {tool_name} succeeded")
                         break
-                    # 仅明确失败、可重试且安全时才申请下一次尝试；
-                    # Registry ledger 仍负责核对前次终态并准入新 attempt。
+                    # 仅在明确失败、可重试且安全时申请下一次尝试
                     if not (
                         outcome.state is ExecutionState.FAILED
                         and outcome.retryable
@@ -1009,8 +986,7 @@ class AgentLoop:
                     )
                     await asyncio.sleep(self.retry_delay)
                 except asyncio.TimeoutError:
-                    # Registry 通常在取消后返回 UNKNOWN_OUTCOME；若未返回，
-                    # 仍保留副作用不确定性，且不再发起下一次尝试。
+                    # 取消后通常返回 UNKNOWN_OUTCOME，否则保留不确定性并停止重试
                     last_error = (
                         f"Tool '{tool_name}' timed out after {tool_timeout}s; "
                         "execution and side effects may have occurred."
@@ -1029,209 +1005,185 @@ class AgentLoop:
             if self.tools:
                 self.tools.set_tool_event_handler(None)
 
-        duration_ms = int((time.time() - start_time) * 1000)
+        return outcome, last_error, attempt_source
 
-        if isinstance(outcome, ToolExecutionInProgress):
-            # IN_PROGRESS 只是 operation 准入结果，不记录为物理尝试终态。
-            state.repeat_count = 0
-            progress_text = outcome.display_text
-            if self.context_builder:
-                state.messages = self.context_builder.add_tool_result(
-                    state.messages, tool_id, tool_name, progress_text,
+    def _record_tool_in_progress(
+        self,
+        state: "_LoopState",
+        tool_call,
+        outcome: ToolExecutionInProgress,
+        operation_id: str,
+    ) -> None:
+        """IN_PROGRESS 只是 operation 准入结果，不记录为物理尝试终态。"""
+        state.repeat_count = 0
+        progress_text = outcome.display_text
+        state.messages = append_tool_result(
+            self.context_builder,
+            state.messages,
+            tool_call.id,
+            tool_call.name,
+            progress_text,
+        )
+        logger.info(
+            f"Tool {tool_call.name} is still in progress: operation={operation_id}"
+        )
+
+    async def _record_tool_success(
+        self,
+        *,
+        state: "_LoopState",
+        tool_call,
+        outcome: ToolExecutionOutcome,
+        session_id: str,
+        message: str,
+        tool_event_handler,
+        duration_ms: int,
+        signature: str,
+        attempt_source: str,
+        prefer_direct_workflow_result: bool,
+    ) -> Optional[str]:
+        """成功路径：留痕、通知、事件回调与上下文回填；返回直接选中的工作流结果。"""
+        tool_name = tool_call.name
+        tool_args = tool_call.arguments
+        tool_id = tool_call.id
+        result = outcome.display_text
+        # 只有成功才计入连续重复
+        state.repeat_count += 1
+        state.tool_result_cache[signature] = (result or "")[:REPEAT_REPLAY_CHARS]
+
+        record_tool_conversation(
+            session_id=session_id,
+            tool_name=tool_name,
+            arguments=tool_args,
+            user_message=message,
+            result=result,
+            duration_ms=duration_ms,
+            outcome=outcome,
+            attempt_source=attempt_source,
+        )
+
+        await notify_tool_phase(
+            session_id, tool_name, tool_args,
+            result=result, phase="success",
+        )
+
+        await emit_tool_event(
+            tool_event_handler,
+            "tool_result",
+            {
+                "tool_name": tool_name,
+                "arguments": tool_args,
+                "result": result,
+                "session_id": session_id,
+                "duration_ms": duration_ms,
+                "execution_state": outcome.state.value,
+                "operation_id": outcome.operation_id,
+                "attempt_id": outcome.attempt_id,
+            },
+            failure_message="Tool event handler failed after execution",
+        )
+
+        if tool_name == "workflow_run" and prefer_direct_workflow_result:
+            state.final_content = result
+            state.direct_result_selected = True
+            state.stop_tool_loop = True
+            return result
+
+        state.messages = append_tool_result(
+            self.context_builder, state.messages, tool_id, tool_name, result,
+        )
+        logger.info(
+            "已追加工具结果: "
+            f"trace={state.request_trace_id}, name={tool_name}, tool_call_id={tool_id}, "
+            f"status=success, duration_ms={duration_ms}"
+        )
+        return None
+
+    async def _record_tool_failure(
+        self,
+        *,
+        state: "_LoopState",
+        tool_call,
+        outcome,
+        last_error,
+        operation_id: str,
+        session_id: str,
+        message: str,
+        tool_event_handler,
+        duration_ms: int,
+        attempt_source: str,
+    ) -> None:
+        """失败/超时/未知终态路径：留痕、错误通知并回填上下文。"""
+        tool_name = tool_call.name
+        tool_args = tool_call.arguments
+        tool_id = tool_call.id
+        # 失败/超时不计入，允许重试
+        state.repeat_count = 0
+        if outcome is not None:
+            error_msg = outcome.display_text
+            if (not isinstance(outcome, ToolExecutionRejected)
+                    and outcome.state is ExecutionState.UNKNOWN_OUTCOME):
+                error_msg = (
+                    "Tool outcome is unknown; side effects may have occurred. "
+                    + error_msg
                 )
-            else:
-                state.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "name": tool_name,
-                    "content": progress_text,
-                })
-            logger.info(
-                f"Tool {tool_name} is still in progress: operation={operation_id}"
-            )
-        elif isinstance(outcome, ToolExecutionOutcome) and outcome.state is ExecutionState.SUCCEEDED:
-            result = outcome.display_text
-            # 只有成功才计入连续重复
-            state.repeat_count += 1
-            state.tool_result_cache[signature] = (result or "")[:REPEAT_REPLAY_CHARS]
-            try:
-                conversation_history = get_conversation_history()
-                conversation_history.add_conversation(
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    arguments=tool_args,
-                    user_message=message,
-                    result=result,
-                    duration_ms=duration_ms,
-                    outcome_projection=project_attempt(
-                        outcome, source=attempt_source,
-                        session_id=session_id,
-                    ),
-                )
-            except Exception as e:
-                logger.warning(f"Failed to record tool conversation: {e}")
-
-            try:
-                from backend.ws.tool_notifications import notify_tool_execution
-                await notify_tool_execution(
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    arguments=tool_args,
-                    result=result,
-                    phase="success",
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send tool result notification: {e}")
-
-            if tool_event_handler:
-                try:
-                    maybe_result = tool_event_handler(
-                        "tool_result",
-                        {
-                            "tool_name": tool_name,
-                            "arguments": tool_args,
-                            "result": result,
-                            "session_id": session_id,
-                            "duration_ms": duration_ms,
-                            "execution_state": outcome.state.value,
-                            "operation_id": outcome.operation_id,
-                            "attempt_id": outcome.attempt_id,
-                        },
-                    )
-                    if inspect.isawaitable(maybe_result):
-                        await maybe_result
-                except Exception as e:
-                    logger.warning(f"Tool event handler failed after execution: {e}")
-
-            if tool_name == "workflow_run" and prefer_direct_workflow_result:
-                state.final_content = result
-                state.direct_result_selected = True
-                state.stop_tool_loop = True
-                if result:
-                    yield result
-                return
-
-            if self.context_builder:
-                state.messages = self.context_builder.add_tool_result(
-                    state.messages,
-                    tool_id,
-                    tool_name,
-                    result,
-                )
-            else:
-                state.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "name": tool_name,
-                    "content": result,
-                })
-            logger.info(
-                "已追加工具结果: "
-                f"trace={state.request_trace_id}, name={tool_name}, tool_call_id={tool_id}, "
-                f"status=success, duration_ms={duration_ms}"
-            )
         else:
-            # 失败/超时不计入，允许重试
-            state.repeat_count = 0
-            if outcome is not None:
-                error_msg = outcome.display_text
-                if (not isinstance(outcome, ToolExecutionRejected)
-                        and outcome.state is ExecutionState.UNKNOWN_OUTCOME):
-                    error_msg = (
-                        "Tool outcome is unknown; side effects may have occurred. "
-                        + error_msg
-                    )
-            else:
-                error_msg = str(last_error or "Tool execution produced no outcome.")
-            logger.error(f"Tool {tool_name} did not succeed: {error_msg}")
+            error_msg = str(last_error or "Tool execution produced no outcome.")
+        logger.error(f"Tool {tool_name} did not succeed: {error_msg}")
 
-            if not isinstance(outcome, ToolExecutionRejected):
-                try:
-                    conversation_history = get_conversation_history()
-                    conversation_history.add_conversation(
-                        session_id=session_id,
-                        tool_name=tool_name,
-                        arguments=tool_args,
-                        user_message=message,
-                        error=error_msg,
-                        duration_ms=duration_ms,
-                        outcome_projection=(
-                            project_attempt(
-                                outcome, source=attempt_source,
-                                session_id=session_id,
-                            ) if isinstance(outcome, ToolExecutionOutcome) else None
-                        ),
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to record tool conversation: {e}")
-
-            try:
-                from backend.ws.tool_notifications import notify_tool_execution
-                await notify_tool_execution(
-                    session_id=session_id,
-                    tool_name=tool_name,
-                    arguments=tool_args,
-                    error=error_msg,
-                    phase="non_success",
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send tool error notification: {e}")
-
-            if tool_event_handler:
-                try:
-                    error_event = {
-                        "tool_name": tool_name,
-                        "arguments": tool_args,
-                        "error": error_msg,
-                        "session_id": session_id,
-                        "duration_ms": duration_ms,
-                        "operation_id": outcome.operation_id if outcome else operation_id,
-                    }
-                    if isinstance(outcome, ToolExecutionOutcome):
-                        error_event["execution_state"] = outcome.state.value
-                        error_event["attempt_id"] = outcome.attempt_id
-                    elif isinstance(outcome, ToolExecutionRejected):
-                        error_event["rejection_reason"] = outcome.reason
-                    else:
-                        error_event["execution_state"] = None
-                        error_event["attempt_id"] = None
-                    maybe_result = tool_event_handler(
-                        "tool_error",
-                        error_event,
-                    )
-                    if inspect.isawaitable(maybe_result):
-                        await maybe_result
-                except Exception as e:
-                    logger.warning(f"Tool event handler failed on error: {e}")
-
-            if self.context_builder:
-                state.messages = self.context_builder.add_tool_result(
-                    state.messages,
-                    tool_id,
-                    tool_name,
-                    error_msg,
-                )
-            else:
-                state.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "name": tool_name,
-                    "content": error_msg,
-                })
-            logger.info(
-                "已追加工具结果: "
-                f"trace={state.request_trace_id}, name={tool_name}, tool_call_id={tool_id}, "
-                f"status=error, duration_ms={duration_ms}"
+        if not isinstance(outcome, ToolExecutionRejected):
+            record_tool_conversation(
+                session_id=session_id,
+                tool_name=tool_name,
+                arguments=tool_args,
+                user_message=message,
+                error=error_msg,
+                duration_ms=duration_ms,
+                outcome=(
+                    outcome if isinstance(outcome, ToolExecutionOutcome) else None
+                ),
+                attempt_source=attempt_source,
             )
+
+        await notify_tool_phase(
+            session_id, tool_name, tool_args,
+            error=error_msg, phase="non_success",
+        )
+
+        error_event = {
+            "tool_name": tool_name,
+            "arguments": tool_args,
+            "error": error_msg,
+            "session_id": session_id,
+            "duration_ms": duration_ms,
+            "operation_id": outcome.operation_id if outcome else operation_id,
+        }
+        if isinstance(outcome, ToolExecutionOutcome):
+            error_event["execution_state"] = outcome.state.value
+            error_event["attempt_id"] = outcome.attempt_id
+        elif isinstance(outcome, ToolExecutionRejected):
+            error_event["rejection_reason"] = outcome.reason
+        else:
+            error_event["execution_state"] = None
+            error_event["attempt_id"] = None
+        await emit_tool_event(
+            tool_event_handler,
+            "tool_error",
+            error_event,
+            failure_message="Tool event handler failed on error",
+        )
+
+        state.messages = append_tool_result(
+            self.context_builder, state.messages, tool_id, tool_name, error_msg,
+        )
+        logger.info(
+            "已追加工具结果: "
+            f"trace={state.request_trace_id}, name={tool_name}, tool_call_id={tool_id}, "
+            f"status=error, duration_ms={duration_ms}"
+        )
 
     def _finalize_limits(self, state: "_LoopState", runtime_max_iterations: int) -> Optional[str]:
-        """检查迭代/工具额度是否耗尽，返回需要 yield 的提示文案（或 None）。
-
-        插话的额度放宽已在吸收插话处完成（_execute_tool_batch），此处只做
-        耗尽判定与提示文案。注意：不做 total_tool_calls 的独立判断——
-        工具额度导致批次中止时 tool_call_limit_reached 已置位；插话放行的
-        纯文本收尾轮（无新工具调用）不应被工具额度误伤而追加警告。
-        """
+        """检查迭代与工具额度是否耗尽，返回需要 yield 的提示文案。"""
         pending_exhausted = state.iteration >= state.iteration_budget
         if state.repeat_stop:
             logger.warning(
@@ -1260,11 +1212,7 @@ class AgentLoop:
         session_id: str,
         request_trace_id: str,
     ) -> Optional[str]:
-        """从排队消息提供者取出待插入的补充消息。
-
-        提供者可以是同步函数，也可以返回 awaitable。任何异常都只记录日志并按
-        「没有补充消息」处理——插话是增强能力，不允许因为取消息失败而打断主循环。
-        """
+        """取出待插入的补充消息；异常按无消息处理并记录日志。"""
         try:
             result = pending_message_provider()
             if inspect.isawaitable(result):
@@ -1290,32 +1238,33 @@ class AgentLoop:
         current_provider: Any,
         error_text: str,
     ) -> Optional[Any]:
-        """尝试通过 key 轮换恢复请求。
-
-        当错误是认证/限流相关时，切换到下一个 API Key 并返回新的 provider。
-        如果无法轮换（只有一个 key 或不适用），返回 None。
-        """
+        """认证或限流错误时切换到下一个 API Key，无法轮换返回 None。"""
         if not _is_key_rotation_eligible_error(error_text):
-            return None
-
-        if self._key_rotation_count >= self.MAX_KEY_ROTATION_RETRIES:
-            logger.warning(
-                f"Key rotation limit reached ({self.MAX_KEY_ROTATION_RETRIES}), "
-                f"stopping rotation attempts"
-            )
             return None
 
         provider_id = getattr(current_provider, "provider_id", None)
         if not provider_id:
             return None
 
-        from backend.modules.providers.runtime import get_key_rotator, KeyRotator
-        from backend.modules.config.loader import config_loader
-        from backend.modules.providers.runtime import get_provider_runtime_state
+        from backend.modules.providers.runtime import get_key_rotator
 
-        config = config_loader.config
-        runtime_state = get_provider_runtime_state(config, provider_id)
-        api_keys = runtime_state.api_keys
+        # 优先使用 provider 实例自带的 Key 列表与地址：
+        # 多用户私有供应商的 Key 不在全局配置里，反查全局会读错甚至串用管理员 Key。
+        api_keys = list(getattr(current_provider, "api_keys", None) or [])
+        api_base = getattr(current_provider, "api_base", None)
+        api_type = getattr(current_provider, "api_type", None)
+        native_capabilities = getattr(current_provider, "native_capabilities", None)
+
+        if not api_keys:
+            from backend.modules.config.loader import config_loader
+            from backend.modules.providers.runtime import get_provider_runtime_state
+
+            runtime_state = get_provider_runtime_state(
+                config_loader.config, provider_id
+            )
+            api_keys = runtime_state.api_keys
+            api_base = api_base or runtime_state.api_base
+            api_type = api_type or runtime_state.api_type
 
         if len(api_keys) <= 1:
             logger.debug(
@@ -1323,9 +1272,29 @@ class AgentLoop:
             )
             return None
 
+        # 实际可轮换次数不会超过「Key 数 - 1」，也不会超过单轮上限
+        max_rotations = min(len(api_keys) - 1, self.MAX_KEY_ROTATION_RETRIES)
+        if self._key_rotation_count >= max_rotations:
+            logger.warning(
+                f"Key rotation limit reached ({max_rotations}) for {provider_id}, "
+                "stopping rotation attempts"
+            )
+            return None
+
         rotator = get_key_rotator(provider_id, api_keys)
         current_key = getattr(current_provider, "api_key", "") or ""
-        next_key = rotator.mark_key_failed(current_key)
+        lowered_error = (error_text or "").lower()
+        if any(hint in lowered_error for hint in AUTH_ERROR_HINTS):
+            # 认证失效通常不会自己恢复，给更长的冷却，避免下一轮立刻再撞上
+            cooldown_seconds = 600.0
+        elif any(hint in lowered_error for hint in RATE_LIMIT_HINTS):
+            cooldown_seconds = 60.0
+        else:
+            cooldown_seconds = 0.0
+        next_key = rotator.mark_key_failed(
+            current_key,
+            cooldown_seconds=cooldown_seconds,
+        )
 
         if not next_key or next_key == current_key:
             logger.warning(
@@ -1345,13 +1314,17 @@ class AgentLoop:
             new_provider = create_provider(
                 api_key=next_key,
                 api_keys=api_keys,
-                api_base=runtime_state.api_base,
+                api_base=api_base,
                 default_model=getattr(current_provider, "default_model", None),
                 api_mode=getattr(current_provider, "api_mode", "chat_completions"),
                 timeout=getattr(current_provider, "timeout", 120.0),
                 max_retries=getattr(current_provider, "max_retries", self.max_retries),
                 provider_id=provider_id,
-                api_type=runtime_state.api_type,
+                api_type=api_type,
+                native_capabilities=native_capabilities,
+                stream_enabled=getattr(current_provider, "stream_enabled", True),
+                # 明确指定本次故障转移要用的 Key，避免工厂再次轮询跳过它
+                key_override=next_key,
             )
             return new_provider
         except Exception as exc:
@@ -1393,21 +1366,7 @@ class AgentLoop:
         context: Optional[List[Dict[str, Any]]] = None,
         model_override: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        直接处理消息（用于 CLI 或 cron 使用）
-        
-        Args:
-            content: 消息内容
-            session_id: 会话标识符
-            channel: 来源渠道（用于上下文）
-            chat_id: 来源聊天 ID（用于上下文）
-            account_id: 当前机器人账号 ID（多机器人渠道）
-            context: 可选的历史消息；为空表示每次执行完全独立
-            model_override: 本次执行的模型覆盖（定时任务指定模型时使用）
-        
-        Returns:
-            Agent 的响应
-        """
+        """直接处理消息（CLI 或 cron 使用），返回响应文本。"""
         response_parts = []
         
         async for chunk in self.process_message(

@@ -1,5 +1,22 @@
 """Agent Prompts：内置提示词模板（统一英文以省 token，用户可见输出按会话语言）。"""
 
+# 会话模式提示词：仅在对话模式（chat）下注入。
+# 模式是会话级设置，用户可随时切换；历史里可能留有 Agent 模式的工具调用记录。
+# 这里明确「当前轮次没有工具」，避免模型把历史能力误当成当前能力，产生
+# 「我之前明明能调工具，为什么现在不能」的困惑或错误承诺。
+CHAT_MODE_PROMPT = """## Current Mode: Chat
+
+This conversation is currently in chat mode. The user can switch between chat mode and Agent mode at any time; only the current mode decides what is available, and switching back to Agent mode makes tools available again on the next turn.
+
+In chat mode:
+- No tools, skills, file access, command execution or external systems are available.
+- Earlier tool calls or tool results in the history came from Agent mode. Treat them as past facts, not as proof that tools are available now.
+- Never claim you ran commands, read files, called tools or accessed external systems for this turn.
+- Answer with the conversation context you already have; do not be defensive about the capability difference.
+- If a request needs tools, say plainly that chat mode cannot perform it, then suggest switching to Agent mode or give the user steps to do it themselves.
+- Mention the mode only when it affects the answer; otherwise continue the conversation naturally.
+- Keep your persona and tone consistent."""
+
 # 对话总结 → 记忆条目提示词
 CONVERSATION_TO_MEMORY_PROMPT = """You summarize conversations into memory entries.
 

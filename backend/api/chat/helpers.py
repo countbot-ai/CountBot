@@ -1,9 +1,4 @@
-"""
-Chat API 的辅助函数。
-
-参数归一化、消息上下文提取、工具调用结果整形。不依赖请求上下文，
-各路由模块共用。
-"""
+"""Chat API 辅助函数：参数归一化、上下文提取与工具结果整形。"""
 
 import json
 import re
@@ -54,12 +49,12 @@ def _extract_attachment_items_from_message_context(raw: Optional[str]) -> List[D
     return extract_attachment_items_from_message_context(raw)
 
 
-def _resolve_active_workspace(session=None) -> Path:
-    """解析当前请求实际使用的工作空间。
+def _resolve_active_workspace(session=None, user=None) -> Path:
+    """解析当前请求使用的工作空间，普通用户强制使用私有工作区。"""
+    from backend.modules.workspace import resolve_session_workspace, resolve_user_workspace
 
-    传入 session 时优先使用会话自定义路径，否则跟随全局配置。
-    """
-    from backend.modules.workspace import resolve_session_workspace
+    if user is not None and not getattr(user, "is_admin", False):
+        return resolve_user_workspace(user)
 
     return resolve_session_workspace(session)
 
@@ -70,6 +65,8 @@ def _normalize_session_model_overrides(raw_model: Dict[str, Any]) -> Dict[str, A
     candidate = dict(raw_model)
     api_key = candidate.pop("api_key", None)
     api_base = candidate.pop("api_base", None)
+    # chat_mode 不属于 ModelConfig，单独校验后再写回，避免被 schema 丢弃
+    chat_mode = candidate.pop("chat_mode", None)
 
     if "api_mode" in candidate:
         candidate["api_mode"] = _normalize_api_mode(candidate.get("api_mode"))
@@ -85,6 +82,11 @@ def _normalize_session_model_overrides(raw_model: Dict[str, Any]) -> Dict[str, A
     normalized_overrides: Dict[str, Any] = {}
     for key in candidate:
         normalized_overrides[key] = validated_dump[key]
+
+    if chat_mode is not None:
+        normalized_overrides["chat_mode"] = (
+            "chat" if str(chat_mode).strip().lower() == "chat" else "agent"
+        )
 
     if "api_key" in raw_model:
         normalized_overrides["api_key"] = "" if api_key is None else str(api_key)
@@ -127,11 +129,15 @@ def _normalize_session_persona_overrides(raw_persona: Dict[str, Any]) -> Dict[st
     }
 
 
-async def _require_session(db: AsyncSession, session_id: str):
+async def _require_session(db: AsyncSession, session_id: str, owner_id: Optional[str] = None):
+    """按 ID 取会话，普通用户只能命中自己的会话，否则返回 404。"""
     from sqlalchemy import select
     from backend.models.session import Session
 
-    result = await db.execute(select(Session).where(Session.id == session_id))
+    query = select(Session).where(Session.id == session_id)
+    if owner_id:
+        query = query.where(Session.owner_id == owner_id)
+    result = await db.execute(query)
     session = result.scalar_one_or_none()
     if session is None:
         raise HTTPException(
@@ -161,8 +167,8 @@ def _resolve_attachment_inputs(attachments: Optional[List[str]], workspace: Path
         ) from exc
 
 
-async def _notify_webui_session_updated(session_id: str) -> None:
-    """通知 WebUI 指定会话和会话列表需要刷新。"""
+async def _notify_webui_session_updated(session_id: str, owner_id: Optional[str] = None) -> None:
+    """通知 WebUI 刷新指定会话或会话列表，只发给对应归属的连接。"""
     try:
         from backend.ws.connection import (
             ServerMessage,
@@ -177,7 +183,10 @@ async def _notify_webui_session_updated(session_id: str) -> None:
                 "sessionId": session_id,
             },
         )
-        await connection_manager.broadcast(ServerMessage(type="sessions_updated"))
+        await connection_manager.broadcast_to_owner(
+            owner_id,
+            ServerMessage(type="sessions_updated"),
+        )
     except Exception as exc:
         logger.debug(f"Failed to notify WebUI for session {session_id}: {exc}")
 

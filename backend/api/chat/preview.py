@@ -43,6 +43,8 @@ from backend.modules.session.message_context import (
     build_message_context,
 )
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat._router import router
 from backend.api.chat.loop_factory import get_agent_loop
 from backend.modules.session.manager import SessionManager
@@ -83,19 +85,26 @@ async def preview_request(
     payload: PreviewRequest,
     req: Request,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ):
-    """预览一次请求实际会发给模型的内容。
-
-    用于排查注入类问题：可以直接看到 system prompt 由哪些区块组成、每块受哪个
-    开关控制、首条用户消息里是否追加了动态上下文，以及当前会带上哪些工具定义。
-
-    本接口不写入数据库、不调用模型，只做构建。
-    """
+    """预览一次请求实际发送给模型的内容，只构建不写入数据库。"""
     from backend.modules.agent.request_preview import build_request_preview
 
-    session = await _require_session(db, payload.session_id)
+    session = await _require_session(db, payload.session_id, owner_scope(user))
     runtime_config = resolve_session_runtime_config(config_loader.config, session)
-    agent_loop = await get_agent_loop(req, db, session_id=payload.session_id)
+    agent_loop = await get_agent_loop(req, db, session_id=payload.session_id, user=user)
+
+    # 普通用户的预览要用「用户自身人设 + 会话显式改动」，而不是管理员全局人设：
+    # 否则预览会暴露管理员的称呼/地址，且与实际请求使用的 persona 不一致。
+    preview_persona = runtime_config.persona_config
+    if not getattr(user, "is_admin", False):
+        from backend.modules.multiuser.effective import resolve_persona_for_user
+
+        preview_persona = await resolve_persona_for_user(user)
+        for key, value in (runtime_config.persona_overrides or {}).items():
+            if value is None or key == "heartbeat" or not hasattr(preview_persona, key):
+                continue
+            setattr(preview_persona, key, value)
 
     context_service = ConversationContextService(db)
     context_payload = await context_service.build_model_context(
@@ -115,8 +124,9 @@ async def preview_request(
         media=payload.attachments or None,
         channel=payload.channel or "web-chat",
         chat_id=payload.session_id,
-        persona_config=runtime_config.persona_config,
+        persona_config=preview_persona,
         tool_registry=agent_loop.tools,
         # 传入实际生效的额度，保持预览与真实请求一致
         tool_budget=runtime_config.max_iterations,
+        session_id=payload.session_id,
     )

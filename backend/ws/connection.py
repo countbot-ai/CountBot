@@ -30,14 +30,7 @@ _pending_cancellations: Dict[str, asyncio.Task] = {}
 
 
 def get_cancel_token(session_id: str) -> CancellationToken:
-    """获取或创建会话的取消令牌
-    
-    Args:
-        session_id: 会话 ID
-        
-    Returns:
-        CancellationToken: 取消令牌
-    """
+    """获取或创建会话的取消令牌"""
     if session_id in _session_cancel_tokens:
         old_token = _session_cancel_tokens[session_id]
         if old_token.is_cancelled:
@@ -61,24 +54,14 @@ def get_cancel_token(session_id: str) -> CancellationToken:
 
 
 def acquire_cancel_token(session_id: str) -> "tuple[CancellationToken, bool]":
-    """获取会话取消令牌，并指出本次调用是否新建。
-
-    复用令牌时调用方不得清理（该令牌归属进行中的回合），仅第二项为 True 时才清理。
-    """
+    """获取会话取消令牌，并返回本次是否新建；复用的令牌由原回合负责清理。"""
     existing = _session_cancel_tokens.get(session_id)
     owns_existing = existing is not None and not existing.is_cancelled
     return get_cancel_token(session_id), not owns_existing
 
 
 def increment_connection_count(session_id: str) -> int:
-    """增加会话的连接计数
-    
-    Args:
-        session_id: 会话 ID
-        
-    Returns:
-        int: 当前连接数
-    """
+    """增加会话的连接计数"""
     if session_id in _session_tasks:
         _session_tasks[session_id].connection_count += 1
         count = _session_tasks[session_id].connection_count
@@ -88,14 +71,7 @@ def increment_connection_count(session_id: str) -> int:
 
 
 def decrement_connection_count(session_id: str) -> int:
-    """减少会话的连接计数
-    
-    Args:
-        session_id: 会话 ID
-        
-    Returns:
-        int: 当前连接数
-    """
+    """减少会话的连接计数"""
     if session_id in _session_tasks:
         _session_tasks[session_id].connection_count = max(0, _session_tasks[session_id].connection_count - 1)
         count = _session_tasks[session_id].connection_count
@@ -105,14 +81,7 @@ def decrement_connection_count(session_id: str) -> int:
 
 
 def cancel_session(session_id: str) -> bool:
-    """取消会话的处理
-    
-    Args:
-        session_id: 会话 ID
-        
-    Returns:
-        bool: 是否成功取消
-    """
+    """取消会话的处理"""
     if session_id in _session_cancel_tokens:
         _session_cancel_tokens[session_id].cancel()
         logger.info(f"Cancelled session: {session_id}")
@@ -121,13 +90,7 @@ def cancel_session(session_id: str) -> bool:
 
 
 def cleanup_cancel_token(session_id: str, token=None):
-    """清理会话的取消令牌
-
-    Args:
-        session_id: 会话 ID
-        token: 可选。给定时仅在登记项仍为该令牌时才删除，避免事件循环让位于
-            同一会话的下一轮后，上一轮结束时误删下一轮正在使用的令牌。
-    """
+    """清理会话的取消令牌"""
     if token is not None and _session_cancel_tokens.get(session_id) is not token:
         return
     if session_id in _session_cancel_tokens:
@@ -137,14 +100,7 @@ def cleanup_cancel_token(session_id: str, token=None):
 
 
 async def schedule_delayed_cancellation(session_id: str, delay_seconds: int = 5):
-    """延迟取消会话任务
-
-    会话无活跃连接时延迟取消，期间出现新连接则取消本次延迟。
-
-    Args:
-        session_id: 会话 ID
-        delay_seconds: 延迟秒数（默认 5 秒）
-    """
+    """延迟取消会话任务：会话无活跃连接时延迟取消，期间出现新连接则取消本次延迟。"""
     current_task = _session_tasks.get(session_id)
     if not current_task:
         logger.debug(f"No task found for session {session_id}, skip scheduling cancellation")
@@ -188,13 +144,7 @@ async def schedule_delayed_cancellation(session_id: str, delay_seconds: int = 5)
 
 
 def cancel_delayed_cancellation(session_id: str):
-    """取消延迟取消任务
-
-    有新连接时调用，取消此前安排的延迟取消。
-
-    Args:
-        session_id: 会话 ID
-    """
+    """取消延迟取消任务：有新连接时调用，取消此前安排的延迟取消。"""
     current_task = _session_tasks.get(session_id)
     if not current_task:
         return
@@ -209,7 +159,7 @@ def cancel_delayed_cancellation(session_id: str):
 
 
 # ============================================================================
-# Message Models
+# 消息模型
 # ============================================================================
 
 
@@ -244,6 +194,13 @@ class ReasoningChunk(ServerMessage):
 
     type: str = Field(default="reasoning_chunk", description="消息类型")
     content: str = Field(..., description="推理内容")
+
+
+class NativeEvent(ServerMessage):
+    """供应商原生能力事件（联网搜索、阅读链接、引用等）。"""
+
+    type: str = Field(default="native_event", description="消息类型")
+    event: Dict[str, Any] = Field(..., description="原生事件负载")
 
 
 class ToolCall(ServerMessage):
@@ -287,12 +244,12 @@ class ErrorMessage(ServerMessage):
 
 
 # ============================================================================
-# Connection Manager
+# 连接管理器
 # ============================================================================
 
 
 class ConnectionManager:
-    """WebSocket 连接管理器：管理活跃连接的注册注销、广播与会话级推送。"""
+    """WebSocket 连接管理器：负责连接注册注销、广播与会话级推送，按 owner_id 隔离。"""
 
     def __init__(self):
         """初始化连接管理器"""
@@ -302,32 +259,32 @@ class ConnectionManager:
 
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket, connection_id: Optional[str] = None) -> str:
-        """注册新连接
+        # 连接 -> 归属（管理员为 None）
+        self._connection_owners: Dict[str, Optional[str]] = {}
 
-        Args:
-            websocket: WebSocket 连接
-            connection_id: 连接 ID（可选，不提供则自动生成）
-
-        Returns:
-            str: 连接 ID
-        """
+    async def connect(
+        self,
+        websocket: WebSocket,
+        connection_id: Optional[str] = None,
+        owner_id: Optional[str] = None,
+    ) -> str:
+        """注册新连接"""
         if connection_id is None:
             connection_id = str(uuid.uuid4())
 
         async with self._lock:
             await websocket.accept()
             self._connections[connection_id] = websocket
-            logger.debug(f"WebSocket 连接已建立: {connection_id}")
+            self._connection_owners[connection_id] = owner_id or None
+            logger.debug(f"WebSocket 连接已建立: {connection_id} (owner={owner_id})")
 
         return connection_id
 
-    async def disconnect(self, connection_id: str):
-        """注销连接
+    def get_owner(self, connection_id: str) -> Optional[str]:
+        return self._connection_owners.get(connection_id)
 
-        Args:
-            connection_id: 连接 ID
-        """
+    async def disconnect(self, connection_id: str):
+        """注销连接"""
         sessions_to_check = []
         
         async with self._lock:
@@ -343,20 +300,30 @@ class ConnectionManager:
 
             if connection_id in self._connections:
                 del self._connections[connection_id]
+                self._connection_owners.pop(connection_id, None)
                 logger.info(f"WebSocket 连接已断开: {connection_id}")
 
         # 锁外处理延迟取消，避免死锁
         for session_id in sessions_to_check:
             await schedule_delayed_cancellation(session_id, delay_seconds=5)
 
-    async def bind_session(self, connection_id: str, session_id: str):
-        """绑定连接到会话
-
-        Args:
-            connection_id: 连接 ID
-            session_id: 会话 ID
-        """
+    async def bind_session(
+        self,
+        connection_id: str,
+        session_id: str,
+        owner_id: Optional[str] = None,
+        allow_any_owner: bool = False,
+    ):
+        """绑定连接到会话"""
         async with self._lock:
+            connection_owner = self._connection_owners.get(connection_id)
+            if not allow_any_owner and (connection_owner or None) != (owner_id or None):
+                logger.warning(
+                    f"拒绝绑定：连接 {connection_id} 归属 {connection_owner} "
+                    f"与会话 {session_id} 归属 {owner_id} 不一致"
+                )
+                raise PermissionError("session does not belong to this connection")
+
             if session_id not in self._session_connections:
                 self._session_connections[session_id] = set()
             
@@ -372,15 +339,7 @@ class ConnectionManager:
             cancel_delayed_cancellation(session_id)
 
     async def send_message(self, connection_id: str, message: ServerMessage) -> bool:
-        """发送消息到指定连接
-
-        Args:
-            connection_id: 连接 ID
-            message: 服务器消息
-
-        Returns:
-            bool: 是否发送成功
-        """
+        """发送消息到指定连接"""
         websocket = self._connections.get(connection_id)
         if websocket is None:
             logger.warning(f"连接不存在: {connection_id}")
@@ -395,15 +354,7 @@ class ConnectionManager:
             return False
 
     async def send_to_session(self, session_id: str, message: ServerMessage) -> int:
-        """发送消息到会话的所有连接
-
-        Args:
-            session_id: 会话 ID
-            message: 服务器消息
-
-        Returns:
-            int: 成功发送的连接数
-        """
+        """发送消息到会话的所有连接"""
         connection_ids = self._session_connections.get(session_id, set()).copy()
         if not connection_ids:
             # 频道会话（QQ/Telegram 等）不走 WebSocket，无连接属正常，故降为 DEBUG
@@ -418,14 +369,7 @@ class ConnectionManager:
         return success_count
 
     async def broadcast(self, message: ServerMessage) -> int:
-        """广播消息到所有连接
-
-        Args:
-            message: 服务器消息
-
-        Returns:
-            int: 成功发送的连接数
-        """
+        """广播消息到所有连接（仅用于管理员级系统通知）。"""
         connection_ids = list(self._connections.keys())
         success_count = 0
 
@@ -435,50 +379,77 @@ class ConnectionManager:
 
         return success_count
 
-    def get_connection_count(self) -> int:
-        """获取活跃连接数
+    async def broadcast_to_owner(self, owner_id: Optional[str], message: ServerMessage) -> int:
+        """按归属推送：``owner_id`` 为空时只发给管理员连接。"""
+        target = owner_id or None
+        connection_ids = [
+            conn_id
+            for conn_id, conn_owner in self._connection_owners.items()
+            if (conn_owner or None) == target
+        ]
+        success_count = 0
+        for connection_id in connection_ids:
+            if await self.send_message(connection_id, message):
+                success_count += 1
+        return success_count
 
-        Returns:
-            int: 连接数
-        """
+    async def disconnect_regular_users(self, reason: str = "配置已更新，请重新连接") -> int:
+        """断开所有普通用户连接，使其重连后加载新权限。"""
+        connection_ids = [
+            conn_id for conn_id, owner in self._connection_owners.items() if owner
+        ]
+        return await self._close_connections(connection_ids, reason)
+
+    async def disconnect_owner(self, owner_id: Optional[str], reason: str = "配置已更新，请重新连接") -> int:
+        """断开某个用户的连接，使其重连后加载新权限。"""
+        if not owner_id:
+            return 0
+        connection_ids = [
+            conn_id
+            for conn_id, conn_owner in self._connection_owners.items()
+            if conn_owner == owner_id
+        ]
+        return await self._close_connections(connection_ids, reason)
+
+    async def _close_connections(self, connection_ids: list[str], reason: str) -> int:
+        for connection_id in connection_ids:
+            websocket = self._connections.get(connection_id)
+            if websocket is not None:
+                try:
+                    await websocket.close(code=4008, reason=reason)
+                except Exception:
+                    pass
+            await self.disconnect(connection_id)
+        return len(connection_ids)
+
+    def get_connection_count(self) -> int:
+        """获取活跃连接数"""
         return len(self._connections)
 
     def get_session_connection_count(self, session_id: str) -> int:
-        """获取会话的连接数
-
-        Args:
-            session_id: 会话 ID
-
-        Returns:
-            int: 连接数
-        """
+        """获取会话的连接数"""
         return len(self._session_connections.get(session_id, set()))
 
 
 # ============================================================================
-# Global Connection Manager Instance
+# 全局连接管理器实例
 # ============================================================================
 
 connection_manager = ConnectionManager()
 
 
 # ============================================================================
-# WebSocket Handler
+# WebSocket 处理器
 # ============================================================================
 
 
-async def handle_websocket(websocket: WebSocket, agent_loop=None, loop_factory=None):
-    """处理 WebSocket 连接：接受连接、处理客户端消息、管理生命周期与错误处理。
-
-    Args:
-        websocket: WebSocket 连接
-        agent_loop: Agent 循环实例（可选，用于事件处理）
-        loop_factory: 按会话返回 AgentLoop 的工厂（可选，用于会话级工作空间）
-    """
+async def handle_websocket(websocket: WebSocket, agent_loop=None, loop_factory=None, user=None):
+    """处理 WebSocket 连接：接受连接、处理客户端消息、管理生命周期与错误处理。"""
     connection_id = None
+    owner_id = getattr(user, "owner_id", None) if user is not None else None
 
     try:
-        connection_id = await connection_manager.connect(websocket)
+        connection_id = await connection_manager.connect(websocket, owner_id=owner_id)
 
         await connection_manager.send_message(
             connection_id,
@@ -492,6 +463,7 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None, loop_factory=N
                 connection_id,
                 agent_loop,
                 loop_factory=loop_factory,
+                user=user,
             )
         else:
             # 无 agent_loop 时的简单消息循环（用于测试）
@@ -512,6 +484,27 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None, loop_factory=N
                             ),
                         )
                         continue
+
+                    # 绑定会话前校验归属：否则普通用户能把连接绑到他人会话上，
+                    # 进而收到别人会话的广播。
+                    if user is not None and not getattr(user, "is_admin", False):
+                        from backend.database import AsyncSessionLocal
+                        from backend.modules.multiuser.permissions import owner_scope
+                        from backend.modules.session.manager import SessionManager
+
+                        async with AsyncSessionLocal() as _db:
+                            owned_session = await SessionManager(
+                                _db, owner_id=owner_scope(user)
+                            ).get_session(client_message.session_id)
+                        if owned_session is None:
+                            await connection_manager.send_message(
+                                connection_id,
+                                ErrorMessage(
+                                    message="会话不存在或无权访问",
+                                    code="SESSION_NOT_FOUND",
+                                ),
+                            )
+                            continue
 
                     await connection_manager.bind_session(
                         connection_id, client_message.session_id
@@ -550,20 +543,12 @@ async def handle_websocket(websocket: WebSocket, agent_loop=None, loop_factory=N
 
 
 # ============================================================================
-# Helper Functions
+# 辅助函数
 # ============================================================================
 
 
 async def send_message_chunk(session_id: str, content: str) -> int:
-    """发送消息块到会话
-
-    Args:
-        session_id: 会话 ID
-        content: 消息内容
-
-    Returns:
-        int: 成功发送的连接数
-    """
+    """发送消息块到会话"""
     return await connection_manager.send_to_session(
         session_id, MessageChunk(content=content)
     )
@@ -576,66 +561,36 @@ async def send_reasoning_chunk(session_id: str, content: str) -> int:
     )
 
 
+async def send_native_event(session_id: str, event: Dict[str, Any]) -> int:
+    """发送供应商原生能力事件到会话。"""
+    return await connection_manager.send_to_session(
+        session_id, NativeEvent(event=event)
+    )
+
+
 async def send_tool_call(session_id: str, tool: str, arguments: Dict[str, Any], message_id: Optional[int] = None) -> int:
-    """发送工具调用通知到会话
-
-    Args:
-        session_id: 会话 ID
-        tool: 工具名称
-        arguments: 工具参数
-        message_id: 关联的消息ID
-
-    Returns:
-        int: 成功发送的连接数
-    """
+    """发送工具调用通知到会话"""
     return await connection_manager.send_to_session(
         session_id, ToolCall(tool=tool, arguments=arguments, message_id=message_id)
     )
 
 
 async def send_tool_result(session_id: str, tool: str, result: str, message_id: Optional[int] = None, duration: Optional[float] = None) -> int:
-    """发送工具执行结果到会话
-
-    Args:
-        session_id: 会话 ID
-        tool: 工具名称
-        result: 执行结果
-        message_id: 关联的消息ID
-        duration: 执行耗时（毫秒）
-
-    Returns:
-        int: 成功发送的连接数
-    """
+    """发送工具执行结果到会话"""
     return await connection_manager.send_to_session(
         session_id, ToolResult(tool=tool, result=result, message_id=message_id, duration=duration)
     )
 
 
 async def send_message_complete(session_id: str, message_id: str) -> int:
-    """发送消息完成通知到会话
-
-    Args:
-        session_id: 会话 ID
-        message_id: 消息 ID
-
-    Returns:
-        int: 成功发送的连接数
-    """
+    """发送消息完成通知到会话"""
     return await connection_manager.send_to_session(
         session_id, MessageComplete(message_id=message_id)
     )
 
 
 async def send_dict_to_session(session_id: str, data: dict) -> int:
-    """将原始字典以 JSON 形式发送到会话的所有连接
-
-    Args:
-        session_id: 会话 ID
-        data: 要发送的字典数据
-
-    Returns:
-        int: 成功发送的连接数
-    """
+    """将原始字典以 JSON 形式发送到会话的所有连接"""
     connection_ids = connection_manager._session_connections.get(session_id, set()).copy()
     if not connection_ids:
         event_type = data.get("type", "unknown")
@@ -658,16 +613,7 @@ async def send_dict_to_session(session_id: str, data: dict) -> int:
 
 
 async def send_error(session_id: str, message: str, code: Optional[str] = None) -> int:
-    """发送错误消息到会话
-
-    Args:
-        session_id: 会话 ID
-        message: 错误描述
-        code: 错误代码（可选）
-
-    Returns:
-        int: 成功发送的连接数
-    """
+    """发送错误消息到会话"""
     return await connection_manager.send_to_session(
         session_id, ErrorMessage(message=message, code=code)
     )

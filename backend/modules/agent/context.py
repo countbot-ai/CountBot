@@ -9,8 +9,12 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from backend.modules.agent.prompts import CHAT_MODE_PROMPT
 from backend.modules.media.image_blocks import build_image_blocks
 from backend.modules.memory.prompts import SYSTEM_MEMORY_RULES
+
+# 自定义系统提示词注入上限：接口允许 4000 字，这里给出足够宽的预算
+CUSTOM_PROMPT_LIMIT = 4000
 
 
 class ContextBuilder:
@@ -23,6 +27,7 @@ class ContextBuilder:
         skills=None,
         persona_config=None,
         injection_config=None,
+        owner_id: Optional[str] = None,
     ):
         self.workspace = workspace
         self.memory = memory
@@ -30,25 +35,17 @@ class ContextBuilder:
         self.persona_config = persona_config
         # 注入开关（InjectionConfig）。None = 全部默认开启，保持历史行为。
         self.injection_config = injection_config
+        # 多用户归属：普通用户只注入自己的团队，管理员只看无归属的团队
+        self.owner_id = owner_id
     
     def update_workspace(self, new_workspace: Path) -> None:
-        """
-        更新工作区路径（由配置更新事件触发）
-        
-        Args:
-            new_workspace: 新的工作区路径
-        """
+        """更新工作区路径（由配置更新事件触发）。"""
         if new_workspace != self.workspace:
             logger.info(f"Workspace path updated: {self.workspace} -> {new_workspace}")
             self.workspace = new_workspace
     
     def update_persona_config(self, new_config) -> None:
-        """
-        更新性格配置（由配置更新事件触发）
-        
-        Args:
-            new_config: 新的性格配置
-        """
+        """更新性格配置（由配置更新事件触发）。"""
         self.persona_config = new_config
 
     def update_injection_config(self, new_config) -> None:
@@ -115,17 +112,17 @@ class ContextBuilder:
         persona_config=None,
         channel: Optional[str] = None,
         tool_budget: Optional[int] = None,
+        chat_mode: str = "agent",
+        session_id: Optional[str] = None,
     ) -> str:
-        """组装 system prompt。
-
-        各区块受 injection 开关控制；涉及具体工具的文案只在对应工具可用时输出，
-        保证提示词与实际工具列表一致。tool_budget 为额度，None 表示不限制。
-        """
+        """组装 system prompt；各区块受 injection 开关控制，chat 模式只保留身份与性格。"""
         sections = self.build_system_prompt_sections(
             skill_names=skill_names,
             persona_config=persona_config,
             channel=channel,
             tool_budget=tool_budget,
+            chat_mode=chat_mode,
+            session_id=session_id,
         )
         # 归一化区块间距，保证重复构建结果一致
         return "\n\n---\n\n".join(section["content"].rstrip() for section in sections)
@@ -136,21 +133,26 @@ class ContextBuilder:
         persona_config=None,
         channel: Optional[str] = None,
         tool_budget: Optional[int] = None,
+        chat_mode: str = "agent",
+        session_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """按区块组装 system prompt，返回每一块的名字与内容。
-
-        分块返回的目的有两个：一是让「本次请求实际注入了什么」可以逐块查看，
-        便于排查注入问题；二是为将来按区块做增量更新留出结构，不必每轮重建整段文本。
-        拼装顺序即为最终提示词中的出现顺序。
-        """
+        """按区块组装 system prompt，返回每块名称与内容，顺序即最终顺序。"""
         sections: List[Dict[str, Any]] = []
 
         sections.append(
             {
                 "name": "identity",
-                "content": self._get_identity(persona_config=persona_config),
+                "content": self._get_identity(
+                    persona_config=persona_config,
+                    chat_mode=chat_mode,
+                ),
             }
         )
+
+        # 对话模式：只保留身份与性格，工具、技能、团队与执行规则一律不注入
+        if chat_mode == "chat":
+            sections.append({"name": "chat_mode", "content": CHAT_MODE_PROMPT})
+            return sections
 
         if self._injection_flag("core_rules"):
             sections.append(
@@ -213,10 +215,7 @@ class ContextBuilder:
         return ""
 
     def _get_active_teams_section(self) -> str:
-        """
-        从数据库加载所有已激活（is_active=True）的多智能体团队，
-        格式化为简洁的系统提示词区块。
-        """
+        """加载所有已激活的智能体团队，格式化为提示词区块。"""
         from backend.database import SessionLocal
         from backend.models.agent_team import AgentTeam
         from sqlalchemy import select
@@ -225,13 +224,13 @@ class ContextBuilder:
 
         try:
             with SessionLocal() as session:
-                # 必须显式排序：DB 不保证返回顺序，顺序变化会让 system prompt
-                # 字节不一致，导致 prompt cache 前缀失效。
-                result = session.execute(
-                    select(AgentTeam)
-                    .where(AgentTeam.is_active == True)  # noqa: E712
-                    .order_by(AgentTeam.name)
-                )
+                # 必须显式排序，顺序变化会导致 prompt cache 前缀失效
+                team_query = select(AgentTeam).where(AgentTeam.is_active == True)  # noqa: E712
+                if getattr(self, "owner_id", None):
+                    team_query = team_query.where(AgentTeam.owner_id == self.owner_id)
+                else:
+                    team_query = team_query.where(AgentTeam.owner_id.is_(None))
+                result = session.execute(team_query.order_by(AgentTeam.name))
                 teams = result.scalars().all()
         except Exception as e:
             logger.warning(f"DB query for active teams failed: {e}")
@@ -308,6 +307,10 @@ class ContextBuilder:
         description: str = "",
         traits: Optional[List[str]] = None,
         speaking_style: str = "",
+        mental_models: Optional[List[dict]] = None,
+        heuristics: Optional[List[dict]] = None,
+        honesty_boundaries: Optional[List[str]] = None,
+        combined_doc: str = "",
     ) -> str:
         # 性格由用户维护，保持中文
         lines = [f"性格: {name}"]
@@ -317,19 +320,143 @@ class ContextBuilder:
             lines.append(f"特征: {', '.join(traits)}")
         if speaking_style:
             lines.append(f"表达: {self._compact_text(speaking_style, 140)}")
-        return "\n".join(lines)
 
-    def _get_personality_from_db(self, personality_id: str, custom_text: str = "") -> str:
-        """从数据库获取性格提示词"""
+        # 克隆人格才有下面这些；普通语气预设留空，输出与旧版完全一致
+        if mental_models:
+            names = [str(item.get("name") or "").strip() for item in mental_models if isinstance(item, dict)]
+            names = [item for item in names if item][:5]
+            if names:
+                lines.append(f"思维框架: {'、'.join(names)}")
+        if heuristics:
+            rules = [str(item.get("rule") or "").strip() for item in heuristics if isinstance(item, dict)]
+            rules = [item for item in rules if item][:3]
+            if rules:
+                lines.append("判断规则: " + "；".join(self._compact_text(item, 50) for item in rules))
+        if honesty_boundaries:
+            lines.append(
+                "诚实边界: " + "；".join(self._compact_text(str(item), 40) for item in honesty_boundaries[:3])
+            )
+
+        # 克隆人格带完整档案时，注入人格段与运行规则，普通预设不会走到这里
+        if combined_doc.strip():
+            from backend.modules.persona.combiner import compact_for_context
+
+            head = "\n".join(lines)
+            prefix = "\n\n人物档案:\n"
+            # 这里只放静态档案；会话摘要属于动态内容，统一走首条 user 消息
+            detail = compact_for_context(
+                combined_doc,
+                limit=1800 - len(head) - len(prefix) - 2,
+            )
+            text = head + (prefix + detail if detail else "")
+            return text if len(text) <= 1800 else text[:1799].rstrip() + "…"
+
+        return self._compact_text("\n".join(lines), 600)
+
+    def _session_memory_block(
+        self,
+        personality_id: str,
+        session_id: Optional[str],
+        persona_config=None,
+    ) -> str:
+        """按当前会话取克隆人格的对话记忆；开关关闭或没有摘要时返回空串。"""
+        if not personality_id or not session_id:
+            return ""
+        try:
+            from backend.modules.persona.session_memory import (
+                load_injection_notes,
+                render_notes_block,
+                session_memory_config,
+            )
+
+            config = session_memory_config(persona_config or self.persona_config)
+            notes = load_injection_notes(
+                personality_id=personality_id,
+                session_id=session_id,
+                limit=2,
+                config=config,
+            )
+            return render_notes_block(
+                notes,
+                current_session_id=session_id,
+                compact=True,
+            )
+        except Exception as exc:
+            logger.debug(f"Persona session memory skipped: {exc}")
+            return ""
+
+    def _turn_tone_hint(
+        self,
+        message: str,
+        persona_config,
+        history: List[Dict[str, Any]],
+        chat_id: Optional[str] = None,
+    ) -> str:
+        """读取克隆人格的表达配置，给本轮生成一条轻量提示。"""
+        text = str(message or "").strip()
+        active = persona_config or self.persona_config
+        if not text or active is None:
+            return ""
+
+        personality_id = str(getattr(active, "personality", "") or "").strip()
+        if not personality_id or personality_id == "custom":
+            return ""
+
+        try:
+            from sqlalchemy import select
+
+            from backend.database import SessionLocal
+            from backend.models.personality import Personality
+            from backend.modules.persona.expression import (
+                recall_recent_styles,
+                remember_tone_style,
+                render_tone_hint,
+                suggest_tone,
+            )
+
+            with SessionLocal() as session:
+                row = session.execute(
+                    select(Personality).where(Personality.id == personality_id)
+                ).scalar_one_or_none()
+                if row is None or not isinstance(row.response_profile, dict):
+                    return ""
+                profile = row.response_profile
+
+            memory_key = f"{personality_id}:{chat_id or 'main'}"
+            recent = recall_recent_styles(memory_key)
+            plan = suggest_tone(
+                profile,
+                text,
+                seed=f"{memory_key}:{len(history)}:{text[:40]}",
+                recent=recent,
+            )
+            remember_tone_style(memory_key, plan.primary)
+            return render_tone_hint(plan)
+        except Exception as exc:
+            logger.debug(f"Turn tone hint skipped: {exc}")
+            return ""
+
+    def _get_personality_from_db(
+        self,
+        personality_id: str,
+        custom_text: str = "",
+    ) -> str:
+        """性格段：预设性格与自定义系统提示词可以同时注入。
+
+        自定义提示词是用户的显式补充约束，不依赖是否选择了预设性格。
+        """
         from backend.database import SessionLocal
         from backend.models.personality import Personality
         from sqlalchemy import select
-        
+
+        custom = (custom_text or "").strip()
+
         if personality_id == "custom":
-            if custom_text.strip():
-                return f"自定义性格: {self._compact_text(custom_text.strip(), 180)}"
+            if custom:
+                return f"自定义性格: {self._compact_text(custom, CUSTOM_PROMPT_LIMIT)}"
             return "默认风格: 专业、友好、简洁。"
-        
+
+        base = ""
         try:
             with SessionLocal() as session:
                 result = session.execute(
@@ -339,32 +466,65 @@ class ContextBuilder:
                     )
                 )
                 personality = result.scalar_one_or_none()
-                
+
                 if not personality:
                     # 降级到硬编码版本
                     from backend.modules.agent.personalities import get_personality_prompt
-                    return self._compact_text(
-                        get_personality_prompt(personality_id, custom_text),
+                    base = self._compact_text(
+                        get_personality_prompt(personality_id, ""),
                         220,
                     )
-
-                return self._format_personality_prompt(
-                    name=personality.name,
-                    description=personality.description,
-                    traits=personality.traits,
-                    speaking_style=personality.speaking_style,
-                )
+                else:
+                    base = self._format_personality_prompt(
+                        name=personality.name,
+                        description=personality.description,
+                        traits=personality.traits,
+                        speaking_style=personality.speaking_style,
+                        mental_models=personality.mental_models,
+                        heuristics=personality.heuristics,
+                        honesty_boundaries=personality.honesty_boundaries,
+                        combined_doc=personality.combined_doc or "",
+                    )
         except Exception as e:
             logger.warning(f"Failed to load personality from database: {e}, falling back to hardcoded")
             # 降级到硬编码版本
             from backend.modules.agent.personalities import get_personality_prompt
-            return self._compact_text(get_personality_prompt(personality_id, custom_text), 220)
+            base = self._compact_text(get_personality_prompt(personality_id, ""), 220)
 
-    def _get_identity(self, persona_config=None) -> str:
-        """身份区块：名称与性格始终注入，环境信息随 injection.core_rules 开关。
+        if custom:
+            return self._compact_text(
+                f"{base}\n\n自定义系统提示词:\n"
+                f"{self._compact_text(custom, CUSTOM_PROMPT_LIMIT)}",
+                600 + CUSTOM_PROMPT_LIMIT,
+            )
+        return base
 
-        规则段见 _get_rules_block()；时间、用户资料等动态信息由 user 消息注入。
+    def _cloned_personality_name(self, personality_id: str) -> Optional[str]:
+        """克隆人格返回它自己的名字，普通语气预设返回 None。
+
+        克隆档案里已经带了称呼与语言，用户级身份字段对它不生效。
         """
+        if not personality_id or personality_id == "custom":
+            return None
+        try:
+            from sqlalchemy import select
+
+            from backend.database import SessionLocal
+            from backend.models.personality import Personality
+
+            with SessionLocal() as session:
+                row = session.execute(
+                    select(Personality).where(Personality.id == personality_id)
+                ).scalar_one_or_none()
+                if row is None or not (row.source_type or row.mental_models):
+                    return None
+                return (row.name or "").strip() or None
+        except Exception as exc:
+            logger.debug(f"Cloned persona lookup skipped: {exc}")
+            return None
+
+    def _get_identity(self, persona_config=None, chat_mode: str = "agent") -> str:
+        """身份区块：名称与性格始终注入，环境信息受 core_rules 开关控制。"""
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
@@ -379,11 +539,19 @@ class ContextBuilder:
             personality = getattr(active_persona_config, 'personality', None) or "professional"
             custom_personality = getattr(active_persona_config, 'custom_personality', None) or ""
         
-        personality_desc = self._get_personality_from_db(personality, custom_personality)
+        personality_desc = self._get_personality_from_db(
+            personality,
+            custom_personality,
+        )
 
-        # 环境信息随 core_rules 关闭，仅保留名称与性格
+        # 克隆人格用档案里的名字自称，配置页的 AI 名称对它不生效
+        cloned_name = self._cloned_personality_name(personality)
+        if cloned_name:
+            ai_name = cloned_name
+
+        # 环境信息随 core_rules 关闭；对话模式没有工具，同样不需要这些路径
         environment_block = ""
-        if self._injection_flag("core_rules"):
+        if self._injection_flag("core_rules") and chat_mode != "chat":
             environment_block = f"""
 ## Environment
 - Runtime: {runtime}
@@ -410,8 +578,7 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         """技能区块的使用说明，按 read_file / exec 可用性生成。"""
         can_read = self._tool_available("read_file")
         can_exec = self._tool_available("exec")
-        # 技能文件位于固定目录下，给出路径模板可省去模型自行探测；
-        # 相对路径基准也需明说，否则技能内引用的脚本容易被解析到错误位置。
+        # 给出技能路径模板与相对路径基准，避免模型解析错位置
         location_hint = (
             " Each skill's file is at `skills/<skill-name>/SKILL.md` under the "
             "workspace; resolve relative paths inside a skill against that skill's "
@@ -432,12 +599,7 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         return "Skills are documents that describe procedures; follow them when relevant."
 
     def _get_rules_block(self, tool_budget: Optional[int] = None) -> str:
-        """规则段：文档检索、工具执行、记忆、安全。
-
-        受 injection.core_rules 控制；外部编码代理指引另有独立开关。
-        每条提及具体工具的规则均以工具可用为前提，避免提示词与工具列表不一致。
-        tool_budget 有值时才声明额度。
-        """
+        """规则段：文档检索、工具执行、记忆与安全，仅声明当前可用的工具。"""
         external_coding_guidance = (
             self._build_external_coding_guidance()
             if self._injection_flag("external_coding_guidance")
@@ -533,6 +695,9 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         persona_config=None,
         supports_image: bool = False,
         tool_budget: Optional[int] = None,
+        chat_mode: str = "agent",
+        native_file_blocks: Optional[List[Dict[str, Any]]] = None,
+        session_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """构建完整的消息列表用于 LLM 调用"""
         messages = []
@@ -545,17 +710,21 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
             persona_config=persona_config,
             channel=channel,
             tool_budget=tool_budget,
+            chat_mode=chat_mode,
+            session_id=session_id,
         )
         
-        # session_summary / channel / chat_id / account_id 属于随会话变化的动态内容，
-        # 不再拼入 system prompt（否则会破坏 prompt cache 前缀稳定性），
-        # 统一由 _build_dynamic_user_context() 注入首条 user 消息。
+        # 会话相关动态内容统一注入首条 user 消息，保持 system prompt 稳定
         messages.append({"role": "system", "content": system_prompt})
         messages.extend(history)
         
-        # 团队提及提醒依赖 workflow_run
+        # 团队提及提醒依赖 workflow_run；对话模式没有该工具，不注入
         team_reminder = None
-        if self._injection_flag("team_reminder") and self._tool_available("workflow_run"):
+        if (
+            chat_mode != "chat"
+            and self._injection_flag("team_reminder")
+            and self._tool_available("workflow_run")
+        ):
             mentioned_team = self._find_mentioned_team(current_message)
             if mentioned_team:
                 context_summary = self._extract_recent_context(history, limit=5)
@@ -569,12 +738,10 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
             current_message,
             media,
             supports_image=supports_image,
+            native_file_blocks=native_file_blocks,
         )
 
-        # 动态信息（当前时间/用户资料/会话摘要/渠道信息）统一注入首条 user 消息，
-        # 保持 system prompt 纯静态，避免前缀变化导致 prompt cache 失效。
-        # 长期记忆独立于 dynamic_context 开关：关掉时间与用户资料注入，不应连带
-        # 屏蔽「不要删除生产库」这类长期约束。位置在用户消息之后、其余动态信息之前。
+        # 动态信息与长期记忆统一注入首条 user 消息，保持 system prompt 静态
         memory_block = self._memory_context_block()
         if memory_block:
             user_content = self._append_text_content(user_content, memory_block)
@@ -587,14 +754,17 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
                 chat_id=chat_id,
                 account_id=account_id,
                 persona_config=persona_config,
+                session_id=session_id,
             )
             if dynamic_context:
                 user_content = self._append_text_content(user_content, dynamic_context)
 
-        # team_reminder 属动态内容，并入首条 user 消息，
-        # 保证含 @ 与不含 @ 的请求 system 字段一致。
-        # system 保持纯静态：其余动态内容（时间/用户资料/会话摘要/渠道信息）
-        # 均不写入 system，team_reminder 是最后一处，同样并入 user 消息。
+        # 克隆人格：每轮给一条表达方式提示，避免连续多轮一个腔调
+        tone_hint = self._turn_tone_hint(current_message, persona_config, history, chat_id)
+        if tone_hint:
+            user_content = self._append_text_content(user_content, tone_hint)
+
+        # team_reminder 同样并入 user 消息，保证 system 字段始终一致
         if team_reminder:
             user_content = self._append_text_content(user_content, team_reminder)
 
@@ -608,15 +778,19 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         media: Optional[List[str]],
         *,
         supports_image: bool = False,
+        native_file_blocks: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
-        """构建用户消息内容。
-
-        支持图片输入的模型收到 image 内容块；无法原生发送的附件继续以工作区
-        路径提示，交给文件工具或图片技能处理。
-        """
+        """构建用户消息内容；无法原生发送的附件以工作区路径提示。"""
         stripped_text = str(text or "").strip()
-        if not media:
+        native_blocks = [
+            block
+            for block in (native_file_blocks or [])
+            if isinstance(block, dict) and block.get("file_id")
+        ]
+        if not media and not native_blocks:
             return stripped_text
+
+        media = media or []
 
         image_result = (
             build_image_blocks(media, workspace=self.workspace)
@@ -635,6 +809,12 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
                 and normalized_path not in attached_paths
             ):
                 missing_paths.append(normalized_path)
+
+        if native_blocks:
+            attachment_lines.append(
+                "Documents in this message are parsed by the provider and attached "
+                "directly; answer from the attached document content."
+            )
 
         if attached_paths:
             attachment_lines.append(
@@ -674,11 +854,13 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
                 f"{text_content}\n\n" if text_content else ""
             ) + "\n".join(attachment_lines)
 
-        if image_result and image_result.blocks:
+        if native_blocks or (image_result and image_result.blocks):
             blocks: List[Dict[str, Any]] = []
             if text_content:
                 blocks.append({"type": "text", "text": text_content})
-            blocks.extend(image_result.blocks)
+            blocks.extend(native_blocks)
+            if image_result and image_result.blocks:
+                blocks.extend(image_result.blocks)
             return blocks
 
         return text_content
@@ -703,42 +885,50 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         chat_id: Optional[str] = None,
         account_id: Optional[str] = None,
         persona_config=None,
+        session_id: Optional[str] = None,
     ) -> str:
-        """构造注入首条 user 消息的动态上下文。
-
-        当前时间、用户称呼/地址/输出语言、会话摘要、渠道信息等均随会话变化；
-        若写入 system prompt（缓存前缀），任何一处变化都会让 prompt cache 整体失效。
-        因此统一作为对话流中的普通上下文，追加到首条 user 消息中。
-        """
+        """构造注入首条 user 消息的动态上下文，避免破坏 prompt cache 前缀。"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
 
         # 用户资料取值规则与 _get_identity 保持一致：无 persona 配置用默认值，有则覆盖
         user_name = "老板"
         user_address = ""
         output_language = "中文"
+        personality_id = ""
         active_persona_config = persona_config or self.persona_config
+        cloned_name = None
         if active_persona_config:
             user_name = active_persona_config.user_name or "用户"
             user_address = getattr(active_persona_config, 'user_address', '') or ""
             output_language = getattr(active_persona_config, 'output_language', None) or "中文"
+            personality_id = str(getattr(active_persona_config, "personality", "") or "")
+            # 克隆人格的称呼与语言写在档案里，用户级资料不参与注入
+            cloned_name = self._cloned_personality_name(personality_id)
 
         blocks: List[str] = []
 
-        # 1) 当前时间 + 用户资料（原 _get_identity 中混入的动态部分）
-        context_lines = [
-            f"- Current time: {now}",
-            f"- User name: {user_name}",
-            f"- Output language: {output_language}",
-        ]
-        if user_address:
-            context_lines.append(f"- User location: {user_address}")
+        # 1) 当前时间 + 用户资料（克隆人格只给时间，避免两套称呼冲突）
+        context_lines = [f"- Current time: {now}"]
+        if not cloned_name:
+            context_lines.append(f"- User name: {user_name}")
+            context_lines.append(f"- Output language: {output_language}")
+            if user_address:
+                context_lines.append(f"- User location: {user_address}")
         blocks.append("## Session Context\n" + "\n".join(context_lines))
 
         # 2) 会话摘要（原拼入 system prompt 的动态内容）
         if session_summary:
             blocks.append(f"## Session Summary\n{session_summary}")
 
-        # 3) 渠道信息（原拼入 system prompt 的动态内容）
+        # 3) 克隆人格的对话记忆：随会话走，放在 user 消息里，system prompt 才能保持稳定
+        if cloned_name and session_id:
+            notes = self._session_memory_block(
+                personality_id, session_id, persona_config=active_persona_config
+            )
+            if notes:
+                blocks.append(notes if len(notes) <= 420 else notes[:419].rstrip() + "…")
+
+        # 4) 渠道信息（原拼入 system prompt 的动态内容）
         if channel and chat_id:
             parts_line = [f"Channel: {channel}", f"Chat ID: {chat_id}"]
             if account_id:
@@ -748,11 +938,7 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         return "\n\n".join(blocks)
 
     def _memory_context_block(self) -> str:
-        """渲染注入用的记忆区块。
-
-        记忆是背景数据而非指令：条目内容由模型在过去的会话里写入，可能夹带用户原话，
-        因此显式声明其数据属性，防止它被当作本轮要求执行。
-        """
+        """渲染记忆区块，并声明其为参考数据而非指令。"""
         if self.memory is None or not self._injection_flag("memory"):
             return ""
         try:
@@ -819,11 +1005,12 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         try:
             with SessionLocal() as session:
                 # 显式排序，保证提示词稳定
-                result = session.execute(
-                    select(AgentTeam.name)
-                    .where(AgentTeam.is_active == True)  # noqa: E712
-                    .order_by(AgentTeam.name)
-                )
+                team_query = select(AgentTeam.name).where(AgentTeam.is_active == True)  # noqa: E712
+                if getattr(self, "owner_id", None):
+                    team_query = team_query.where(AgentTeam.owner_id == self.owner_id)
+                else:
+                    team_query = team_query.where(AgentTeam.owner_id.is_(None))
+                result = session.execute(team_query.order_by(AgentTeam.name))
                 team_names = [row[0] for row in result.fetchall()]
                 return team_names
         except Exception as e:

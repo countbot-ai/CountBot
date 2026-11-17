@@ -34,7 +34,10 @@ _SECTION_SWITCH_MAP = {
 
 # 混合区块里各开关负责的部分说明
 _MIXED_SECTION_NOTES = {
-    "identity": "名称与性格始终注入；环境信息（运行时/工作目录/路径）随 core_rules 开关",
+    "identity": (
+        "名称与性格始终注入；环境信息随 core_rules 开关；"
+        "克隆人格的会话记忆随 persona.session_memory 开关"
+    ),
 }
 
 
@@ -97,6 +100,7 @@ def build_request_preview(
     persona_config=None,
     tool_registry=None,
     tool_budget: Any = _TOOL_BUDGET_UNSET,
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """构建一次请求的预览数据。
 
@@ -133,6 +137,7 @@ def build_request_preview(
             persona_config=persona_config,
             channel=channel,
             tool_budget=resolved_tool_budget,
+            session_id=session_id,
         )
     except Exception as exc:  # 区块构建失败仍要展示原因，不能让预览整体 500
         sections = []
@@ -169,6 +174,7 @@ def build_request_preview(
         account_id=account_id,
         persona_config=persona_config,
         tool_budget=resolved_tool_budget,
+        session_id=session_id,
     )
 
     first_user_message = ""

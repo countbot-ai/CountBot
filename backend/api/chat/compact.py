@@ -9,8 +9,10 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat._router import router as _router
-from backend.api.chat.loop_factory import get_agent_loop
+from backend.api.chat.loop_factory import get_user_agent_loop
 from backend.database import get_db
 from backend.modules.agent.loop import AgentLoop
 from backend.modules.compression import CompressionEngine, CompactionSettings
@@ -60,13 +62,17 @@ async def compact_session_context(
     session_id: str,
     payload: Optional[CompactRequest] = None,
     db: AsyncSession = Depends(get_db),
-    agent_loop: AgentLoop = Depends(get_agent_loop),
+    agent_loop: AgentLoop = Depends(get_user_agent_loop),
+    user: AuthUser = Depends(require_active_user),
 ) -> CompactResponse:
     """手动压缩会话上下文（结果写回会话摘要字段，原文保留、可逆）。"""
     request = payload or CompactRequest()
 
+    from backend.api.chat.helpers import _require_session
+
+    session_row = await _require_session(db, session_id, owner_scope(user))
+
     context_service = ConversationContextService(db)
-    session_row = await context_service.get_session(session_id)
     if session_row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

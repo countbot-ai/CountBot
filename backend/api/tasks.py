@@ -7,8 +7,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+router = APIRouter(
+    prefix="/api/tasks",
+    tags=["tasks"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
 # ============================================================================
@@ -60,7 +66,7 @@ def get_subagent_manager():
 
 
 def require_subagent_manager():
-    """获取 SubagentManager 实例；若未初始化则返回 404（不触发客户端重试）"""
+    """管理员使用的全局 SubagentManager；未初始化返回 404"""
     manager = get_subagent_manager()
     if manager is None:
         raise HTTPException(
@@ -68,6 +74,18 @@ def require_subagent_manager():
             detail="No tasks available. SubagentManager has not been initialized yet."
         )
     return manager
+
+
+async def get_scoped_subagent_manager(
+    user: AuthUser = Depends(require_active_user),
+):
+    """按身份取 SubagentManager，每个用户使用自己的实例。"""
+    if not isinstance(user, AuthUser) or user.is_admin:
+        return require_subagent_manager()
+
+    from backend.modules.multiuser.runtime import user_runtime_manager
+
+    return await user_runtime_manager.get_subagent_manager(user)
 
 
 # ============================================================================
@@ -79,19 +97,11 @@ def require_subagent_manager():
 async def list_tasks(
     status_filter: Optional[str] = None,
     session_id: Optional[str] = None,
+    user: AuthUser = Depends(require_active_user),
 ) -> List[TaskResponse]:
-    """
-    列出所有任务
-    
-    Args:
-        status_filter: 状态过滤（pending, queued, running, completed, failed, cancelled）
-        session_id: 会话 ID 过滤
-        
-    Returns:
-        List[TaskResponse]: 任务列表
-    """
+    """列出任务，可按状态和会话过滤。"""
     try:
-        manager = require_subagent_manager()
+        manager = await get_scoped_subagent_manager(user)
 
         # 解析状态过滤
         from backend.modules.agent.subagent import TaskStatus
@@ -122,15 +132,12 @@ async def list_tasks(
 
 
 @router.get("/stats", response_model=TaskStatsResponse)
-async def get_task_stats() -> TaskStatsResponse:
-    """
-    获取任务统计信息
-    
-    Returns:
-        TaskStatsResponse: 统计信息
-    """
+async def get_task_stats(
+    user: AuthUser = Depends(require_active_user),
+) -> TaskStatsResponse:
+    """获取任务统计信息。"""
     try:
-        manager = require_subagent_manager()
+        manager = await get_scoped_subagent_manager(user)
         stats = manager.get_stats()
         
         return TaskStatsResponse(**stats)
@@ -146,22 +153,14 @@ async def get_task_stats() -> TaskStatsResponse:
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResponse:
-    """
-    获取任务详情
-    
-    Args:
-        task_id: 任务 ID
-        db: 数据库会话
-        
-    Returns:
-        TaskResponse: 任务详情
-        
-    Raises:
-        HTTPException: 任务不存在
-    """
+async def get_task(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
+) -> TaskResponse:
+    """获取任务详情。"""
     try:
-        manager = require_subagent_manager()
+        manager = await get_scoped_subagent_manager(user)
         
         # 先从内存查询
         task = manager.get_task(task_id)
@@ -171,9 +170,11 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResp
             from sqlalchemy import select
             from backend.models.task import Task
             
-            result = await db.execute(
-                select(Task).where(Task.id == task_id)
-            )
+            query = select(Task).where(Task.id == task_id)
+            scope = owner_scope(user)
+            if scope:
+                query = query.where(Task.owner_id == scope)
+            result = await db.execute(query)
             db_task = result.scalar_one_or_none()
             
             if not db_task:
@@ -245,21 +246,13 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db)) -> TaskResp
 
 
 @router.delete("/{task_id}")
-async def cancel_task(task_id: str) -> Dict[str, bool]:
-    """
-    取消任务
-    
-    Args:
-        task_id: 任务 ID
-        
-    Returns:
-        dict: 取消结果
-        
-    Raises:
-        HTTPException: 任务不存在或无法取消
-    """
+async def cancel_task(
+    task_id: str,
+    user: AuthUser = Depends(require_active_user),
+) -> Dict[str, bool]:
+    """取消任务。"""
     try:
-        manager = require_subagent_manager()
+        manager = await get_scoped_subagent_manager(user)
         success = await manager.cancel_task(task_id)
         
         if not success:
@@ -281,21 +274,13 @@ async def cancel_task(task_id: str) -> Dict[str, bool]:
 
 
 @router.post("/{task_id}/delete")
-async def delete_task(task_id: str) -> Dict[str, bool]:
-    """
-    删除任务
-    
-    Args:
-        task_id: 任务 ID
-        
-    Returns:
-        dict: 删除结果
-        
-    Raises:
-        HTTPException: 任务不存在
-    """
+async def delete_task(
+    task_id: str,
+    user: AuthUser = Depends(require_active_user),
+) -> Dict[str, bool]:
+    """删除任务。"""
     try:
-        manager = require_subagent_manager()
+        manager = await get_scoped_subagent_manager(user)
         success = manager.delete_task(task_id)
         
         if not success:

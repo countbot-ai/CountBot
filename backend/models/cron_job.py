@@ -58,7 +58,13 @@ class CronJob(Base):
     # 关联上下文：开启后每次执行会把该任务的历史执行记录一起发给模型
     link_context: Mapped[bool] = mapped_column(Boolean, default=False)
     context_history: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
+    # 多用户归属；为空表示管理员 / 历史数据
+    owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # 用户通知渠道（M7 纯出站推送）；管理员任务仍用 channel/account_id/chat_id
+    notify_channel_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # 时间戳
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -66,4 +72,5 @@ class CronJob(Base):
     __table_args__ = (
         Index("idx_cron_next_run", "next_run", sqlite_where=enabled.is_(True)),
         Index("idx_cron_channel", "channel", "account_id", "chat_id"),
+        Index("idx_cron_owner", "owner_id"),
     )

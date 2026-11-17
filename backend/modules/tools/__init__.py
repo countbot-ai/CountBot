@@ -8,8 +8,9 @@ from backend.modules.tools.filesystem import (
     WorkspaceValidator,
     WriteFileTool,
 )
+from backend.modules.tools.command_guard import is_dangerous_command
 from backend.modules.tools.registry import ToolRegistry
-from backend.modules.tools.shell import ExecTool, ExecToolSafe, is_dangerous_command
+from backend.modules.tools.shell import ExecTool, ExecToolSafe
 from backend.modules.tools.web import WebFetchTool
 from backend.modules.tools.file_search import FileSearchTool
 

@@ -11,8 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models.agent_team import AgentTeam
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import require_active_user
 
-router = APIRouter(prefix="/api/agent-teams", tags=["agent-teams"])
+router = APIRouter(
+    prefix="/api/agent-teams",
+    tags=["agent-teams"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
 def _normalize_api_mode(value: Any) -> str:
@@ -91,6 +97,7 @@ class TeamModelConfigRequest(BaseModel):
     max_tokens: Optional[int] = None
     max_iterations: Optional[int] = None
     thinking_enabled: Optional[bool] = None
+    stream_enabled: Optional[bool] = None
     api_key: Optional[str] = None
     api_base: Optional[str] = None
 
@@ -112,8 +119,19 @@ def _to_response(team: AgentTeam) -> AgentTeamResponse:
     return AgentTeamResponse(**team.to_dict())
 
 
-async def _get_or_404(team_id: str, db: AsyncSession) -> AgentTeam:
-    result = await db.execute(select(AgentTeam).where(AgentTeam.id == team_id))
+def _team_owner_filter(user):
+    """团队归属过滤：普通用户只看自己的，管理员只看 owner_id 为空的历史/全局团队。"""
+    owner_id = getattr(user, "owner_id", None)
+    if owner_id:
+        return AgentTeam.owner_id == owner_id
+    return AgentTeam.owner_id.is_(None)
+
+
+async def _get_or_404(team_id: str, db: AsyncSession, user=None) -> AgentTeam:
+    query = select(AgentTeam).where(AgentTeam.id == team_id)
+    if user is not None:
+        query = query.where(_team_owner_filter(user))
+    result = await db.execute(query)
     team = result.scalar_one_or_none()
     if not team:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
@@ -127,12 +145,14 @@ async def _get_or_404(team_id: str, db: AsyncSession) -> AgentTeam:
 
 
 @router.get("/", response_model=List[AgentTeamResponse])
-async def list_teams(db: AsyncSession = Depends(get_db)) -> List[AgentTeamResponse]:
+async def list_teams(
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
+) -> List[AgentTeamResponse]:
     """Return all agent teams ordered by creation time (newest first)."""
     try:
-        result = await db.execute(
-            select(AgentTeam).order_by(AgentTeam.created_at.desc())
-        )
+        query = select(AgentTeam).where(_team_owner_filter(user))
+        result = await db.execute(query.order_by(AgentTeam.created_at.desc()))
         teams = result.scalars().all()
         return [_to_response(t) for t in teams]
     except Exception as exc:
@@ -141,8 +161,8 @@ async def list_teams(db: AsyncSession = Depends(get_db)) -> List[AgentTeamRespon
 
 
 @router.get("/{team_id}", response_model=AgentTeamResponse)
-async def get_team(team_id: str, db: AsyncSession = Depends(get_db)) -> AgentTeamResponse:
-    team = await _get_or_404(team_id, db)
+async def get_team(team_id: str, db: AsyncSession = Depends(get_db), user: AuthUser = Depends(require_active_user)) -> AgentTeamResponse:
+    team = await _get_or_404(team_id, db, user)
     return _to_response(team)
 
 
@@ -150,12 +170,16 @@ async def get_team(team_id: str, db: AsyncSession = Depends(get_db)) -> AgentTea
 async def create_team(
     payload: AgentTeamCreate,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> AgentTeamResponse:
     """Create a new agent team template."""
     try:
         # 检查是否存在同名团队
         existing = await db.execute(
-            select(AgentTeam).where(AgentTeam.name == payload.name)
+            select(AgentTeam).where(
+                AgentTeam.name == payload.name,
+                _team_owner_filter(user),
+            )
         )
         if existing.scalar_one_or_none() is not None:
             raise HTTPException(
@@ -172,6 +196,7 @@ async def create_team(
             is_active=payload.is_active,
             cross_review=payload.cross_review,
             enable_skills=payload.enable_skills,
+            owner_id=getattr(user, "owner_id", None),
         )
         db.add(team)
         await db.commit()
@@ -190,16 +215,18 @@ async def update_team(
     team_id: str,
     payload: AgentTeamUpdate,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> AgentTeamResponse:
     """Update an existing agent team."""
-    team = await _get_or_404(team_id, db)
+    team = await _get_or_404(team_id, db, user)
     try:
         # 如果要修改名称，检查新名称是否与其他团队重复
         if payload.name is not None and payload.name != team.name:
             existing = await db.execute(
                 select(AgentTeam).where(
                     AgentTeam.name == payload.name,
-                    AgentTeam.id != team_id
+                    AgentTeam.id != team_id,
+                    _team_owner_filter(user),
                 )
             )
             if existing.scalar_one_or_none() is not None:
@@ -233,9 +260,9 @@ async def update_team(
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_team(team_id: str, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_team(team_id: str, db: AsyncSession = Depends(get_db), user: AuthUser = Depends(require_active_user)) -> None:
     """Delete an agent team."""
-    team = await _get_or_404(team_id, db)
+    team = await _get_or_404(team_id, db, user)
     try:
         await db.delete(team)
         await db.commit()
@@ -254,19 +281,48 @@ async def delete_team(team_id: str, db: AsyncSession = Depends(get_db)) -> None:
 async def get_team_config(
     team_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> TeamModelConfigResponse:
-    """获取团队模型配置
-    
-    返回团队的有效配置（如果有自定义配置则返回，否则返回全局默认）
-    """
+    """获取团队的模型配置，无自定义时返回全局默认。"""
     import json
     from backend.modules.config.loader import config_loader
     
-    team = await _get_or_404(team_id, db)
+    team = await _get_or_404(team_id, db, user)
     
     try:
         config = config_loader.config
         global_model = config.model.model_dump()
+        from backend.modules.config.schema import resolve_stream_enabled
+
+        # 全局默认展示的是「当前模型实际生效的输出模式」（模型条目可能覆盖全局）
+        global_model["stream_enabled"] = resolve_stream_enabled(config)
+
+        # 普通用户没有全局模型配置权限：团队沿用其当前生效模型，不允许自定义
+        if not getattr(user, "is_admin", False):
+            from backend.modules.multiuser.effective import (
+                ModelResolutionError,
+                resolve_model_for_user,
+                resolved_stream_enabled,
+            )
+
+            try:
+                resolved = await resolve_model_for_user(user)
+                global_model["provider"] = resolved.provider_id
+                global_model["model"] = resolved.model_id
+                global_model["stream_enabled"] = resolved_stream_enabled(
+                    resolved, fallback=config.model.stream_enabled
+                )
+            except ModelResolutionError:
+                global_model["provider"] = ""
+                global_model["model"] = ""
+            global_model["api_key"] = ""
+            global_model["api_base"] = ""
+            return TeamModelConfigResponse(
+                team_id=team_id,
+                use_custom_model=False,
+                model_settings=dict(global_model),
+                global_defaults=dict(global_model),
+            )
         
         # 解析团队自定义配置
         team_model_config = {}
@@ -310,15 +366,21 @@ async def update_team_config(
     team_id: str,
     request: TeamModelConfigRequest,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
     """更新团队模型配置"""
     import json
     from datetime import datetime, timezone
     
-    team = await _get_or_404(team_id, db)
+    team = await _get_or_404(team_id, db, user)
+    
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="普通用户的团队使用当前对话模型，不支持单独配置团队模型",
+        )
     
     try:
-        # 构建配置字典（只保存非空值）
         config_dict = {}
         if request.provider is not None and request.provider != "":
             config_dict["provider"] = request.provider
@@ -334,6 +396,8 @@ async def update_team_config(
             config_dict["max_iterations"] = request.max_iterations
         if request.thinking_enabled is not None:
             config_dict["thinking_enabled"] = request.thinking_enabled
+        if request.stream_enabled is not None:
+            config_dict["stream_enabled"] = request.stream_enabled
         if request.api_key is not None and request.api_key != "":
             config_dict["api_key"] = request.api_key
         if request.api_base is not None and request.api_base != "":
@@ -368,11 +432,12 @@ async def update_team_config(
 async def reset_team_config(
     team_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
     """重置团队模型配置为全局默认"""
     from datetime import datetime, timezone
     
-    team = await _get_or_404(team_id, db)
+    team = await _get_or_404(team_id, db, user)
     
     try:
         team.team_model_config = None

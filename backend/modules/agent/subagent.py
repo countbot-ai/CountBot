@@ -177,15 +177,16 @@ class SubagentManager:
             sections.append(f"## Response\n\n{normalized_visible}")
         return "\n\n---\n\n".join(sections)
 
-    def _resolve_runtime_model_settings(self) -> Tuple[str, float, int, bool]:
+    def _resolve_runtime_model_settings(self) -> Tuple[str, float, int, bool, bool]:
         """获取当前执行应使用的模型参数，优先读取最新配置。"""
         model = self.model
         temperature = self.temperature
         max_tokens = self.max_tokens
         thinking_enabled = True
+        stream_enabled = True
 
         if not self.config_loader:
-            return model, temperature, max_tokens, thinking_enabled
+            return model, temperature, max_tokens, thinking_enabled, stream_enabled
 
         try:
             runtime_model_config = self.config_loader.config.model
@@ -193,12 +194,13 @@ class SubagentManager:
             temperature = getattr(runtime_model_config, "temperature", temperature)
             max_tokens = getattr(runtime_model_config, "max_tokens", max_tokens)
             thinking_enabled = getattr(runtime_model_config, "thinking_enabled", thinking_enabled)
+            stream_enabled = getattr(runtime_model_config, "stream_enabled", stream_enabled)
         except Exception as e:
             logger.warning(
                 f"Failed to get runtime model settings from config: {e}, using manager defaults"
             )
 
-        return model, temperature, max_tokens, thinking_enabled
+        return model, temperature, max_tokens, thinking_enabled, stream_enabled
 
     def create_task(
         self,
@@ -398,6 +400,7 @@ class SubagentManager:
                 runtime_temperature,
                 runtime_max_tokens,
                 runtime_thinking_enabled,
+                runtime_stream_enabled,
             ) = self._resolve_task_runtime(task)
 
             response_chunks = []
@@ -429,6 +432,7 @@ class SubagentManager:
                     temperature=runtime_temperature,
                     max_tokens=runtime_max_tokens,
                     thinking_enabled=runtime_thinking_enabled,
+                    stream_enabled=runtime_stream_enabled,
                 ):
                     task.last_activity = time.monotonic()
 
@@ -662,6 +666,8 @@ class SubagentManager:
         runtime_temperature = self.temperature
         runtime_max_tokens = self.max_tokens
         runtime_thinking_enabled = True
+        # 未做任务级覆盖时沿用 provider 构造期的输出模式（已含全局/模型条目解析）
+        runtime_stream_enabled = getattr(self.provider, "stream_enabled", True)
 
         if task.model_override:
             override_provider = task.model_override.get("provider")
@@ -671,6 +677,7 @@ class SubagentManager:
             # 如果指定了不同的 provider 或 API 配置，创建新的 provider 实例
             if override_provider or override_api_key or override_api_base:
                 try:
+                    from backend.modules.config.schema import resolve_stream_enabled
                     from backend.modules.providers.factory import create_provider
                     from backend.modules.providers.runtime import (
                         build_provider_unavailable_message,
@@ -702,6 +709,12 @@ class SubagentManager:
                             "api_mode",
                             getattr(self.config_loader.config.model, "api_mode", "chat_completions"),
                         ),
+                        stream_enabled=resolve_stream_enabled(
+                            self.config_loader.config,
+                            provider_name,
+                            task.model_override.get("model") or self.model,
+                            explicit=task.model_override.get("stream_enabled"),
+                        ),
                     )
                     logger.info(
                         f"Created custom provider for team: {provider_name}, "
@@ -718,6 +731,12 @@ class SubagentManager:
                 "thinking_enabled",
                 runtime_thinking_enabled,
             )
+            override_stream_enabled = task.model_override.get(
+                "stream_enabled",
+                runtime_stream_enabled,
+            )
+            if override_stream_enabled is not None:
+                runtime_stream_enabled = bool(override_stream_enabled)
             temp_label = "default" if runtime_temperature <= 0 else runtime_temperature
             max_tokens_label = "auto" if runtime_max_tokens <= 0 else runtime_max_tokens
             logger.info(
@@ -726,9 +745,13 @@ class SubagentManager:
             )
         else:
             # 使用全局配置
-            runtime_model, runtime_temperature, runtime_max_tokens, runtime_thinking_enabled = (
-                self._resolve_runtime_model_settings()
-            )
+            (
+                runtime_model,
+                runtime_temperature,
+                runtime_max_tokens,
+                runtime_thinking_enabled,
+                runtime_stream_enabled,
+            ) = self._resolve_runtime_model_settings()
 
         return (
             active_provider,
@@ -736,6 +759,7 @@ class SubagentManager:
             runtime_temperature,
             runtime_max_tokens,
             runtime_thinking_enabled,
+            runtime_stream_enabled,
         )
 
     async def _run_child_tool_batch(

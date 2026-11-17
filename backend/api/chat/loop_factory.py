@@ -1,9 +1,4 @@
-"""
-AgentLoop 装配。
-
-按会话级配置构造 provider、技能、工具注册表与 AgentLoop。
-全局 SubagentManager 经 state 模块共享，本模块不持有该状态。
-"""
+"""AgentLoop 装配：按会话配置构造 provider、技能、工具与循环实例。"""
 
 from pathlib import Path
 from typing import Optional
@@ -18,12 +13,15 @@ from backend.modules.agent.loop import AgentLoop
 from backend.modules.agent.memory import MemoryStore
 from backend.modules.agent.skills import SkillsLoader
 from backend.modules.config.loader import config_loader
+from backend.modules.config.schema import resolve_stream_enabled
 from backend.modules.providers import create_provider
 from backend.modules.providers.runtime import (
     build_provider_unavailable_message,
     get_provider_runtime_state,
 )
 from backend.modules.session import build_session_model_override, resolve_session_runtime_config
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import require_active_user as _get_active_user
 from backend.modules.workspace import (
     get_global_workspace_path,
     resolve_session_workspace,
@@ -34,17 +32,20 @@ from backend.modules.workspace import (
 async def get_agent_loop(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    user=None,
 ) -> AgentLoop:
-    """获取 AgentLoop 实例（依赖注入）
-    
-    Args:
-        request: FastAPI 请求对象
-        db: 数据库会话
-        session_id: 可选的会话 ID，如果提供则使用会话级配置
-    """
+    """获取 AgentLoop 实例（依赖注入）。"""
     
     try:
+        # 普通用户：使用按用户构建的运行时（独立 Provider / 工作区 / 工具 / 子代理）
+        from backend.modules.multiuser.identity import AuthUser as _AuthUser
+
+        if isinstance(user, _AuthUser) and not user.is_admin:
+            from backend.modules.multiuser.runtime import user_runtime_manager
+
+            return await user_runtime_manager.get_agent_loop(user)
+
         config = config_loader.config
         session = None
 
@@ -90,6 +91,7 @@ async def get_agent_loop(
             max_retries=3,
             provider_id=provider_name,
             api_type=runtime_state.api_type,
+            stream_enabled=runtime_config.stream_enabled,
         )
         
         # 初始化记忆系统和技能加载器
@@ -178,6 +180,7 @@ async def get_agent_loop(
             temperature=runtime_config.temperature,
             max_tokens=runtime_config.max_tokens,
             thinking_enabled=runtime_config.thinking_enabled,
+            stream_enabled=runtime_config.stream_enabled,
             reasoning_level=getattr(runtime_config, "reasoning_level", None),
         )
         
@@ -193,12 +196,17 @@ async def get_agent_loop(
         )
 
 
-def build_workspace_agent_loop(app_state, workspace: Path) -> AgentLoop:
-    """为会话自定义工作空间构建独立 AgentLoop。
+async def get_user_agent_loop(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(_get_active_user),
+) -> AgentLoop:
+    """按当前登录身份返回 AgentLoop，供 ``Depends`` 使用。"""
+    return await get_agent_loop(request, db, None, user)
 
-    WebSocket 连接默认复用全局 AgentLoop；一旦会话指定了自定义目录，
-    必须为它单独装配 memory / skills / subagent / tools，避免和全局实例串台。
-    """
+
+def build_workspace_agent_loop(app_state, workspace: Path) -> AgentLoop:
+    """为使用自定义工作空间的会话构建独立 AgentLoop。"""
     shared = app_state.shared
     config = config_loader.config
     provider = shared["provider"]
@@ -263,5 +271,6 @@ def build_workspace_agent_loop(app_state, workspace: Path) -> AgentLoop:
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        stream_enabled=resolve_stream_enabled(config),
         reasoning_level=config.model.reasoning_level,
     )

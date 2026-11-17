@@ -47,6 +47,8 @@ from backend.api.chat._router import router
 from backend.api.chat.loop_factory import get_agent_loop
 from backend.modules.session.manager import SessionManager
 from backend.utils.datetime_utils import to_utc_iso
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat.helpers import (
     MAX_TOOL_PREVIEW_LIMIT,
     _build_tool_call_response,
@@ -100,20 +102,11 @@ async def list_sessions(
     limit: Optional[int] = None,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> List[SessionResponse]:
-    """
-    获取所有会话列表
-    
-    Args:
-        limit: 返回数量限制（可选）
-        offset: 偏移量
-        db: 数据库会话
-        
-    Returns:
-        List[SessionResponse]: 会话列表
-    """
+    """获取会话列表。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         sessions = await session_manager.list_sessions(limit=limit, offset=offset)
         
         return [_to_session_response(session) for session in sessions]
@@ -129,19 +122,11 @@ async def list_sessions(
 async def create_session(
     name: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> SessionResponse:
-    """
-    创建新会话
-    
-    Args:
-        name: 会话名称
-        db: 数据库会话
-        
-    Returns:
-        SessionResponse: 创建的会话
-    """
+    """创建新会话。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         session = await session_manager.create_session(name=name)
         
         return _to_session_response(session)
@@ -157,22 +142,11 @@ async def create_session(
 async def delete_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> Dict[str, bool]:
-    """
-    删除会话
-    
-    Args:
-        session_id: 会话 ID
-        db: 数据库会话
-        
-    Returns:
-        dict: 删除结果
-        
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """删除会话。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         success = await session_manager.delete_session(session_id)
         
         if not success:
@@ -197,23 +171,11 @@ async def update_session(
     session_id: str,
     request: UpdateSessionRequest,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> SessionResponse:
-    """
-    更新会话信息
-    
-    Args:
-        session_id: 会话 ID
-        request: 更新请求（包含新的会话名称）
-        db: 数据库会话
-        
-    Returns:
-        SessionResponse: 更新后的会话
-        
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """更新会话信息。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         session = await session_manager.update_session(session_id, name=request.name)
         
         if session is None:
@@ -237,23 +199,11 @@ async def update_session(
 async def get_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> SessionResponse:
-    """
-    获取会话详情（包含总结）
-    
-    Args:
-        session_id: 会话 ID
-        db: 数据库会话
-        
-    Returns:
-        SessionResponse: 会话详情
-        
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """获取会话详情，包含总结。"""
     try:
-        context_service = ConversationContextService(db)
-        session = await context_service.get_session(session_id)
+        session = await _require_session(db, session_id, owner_scope(user))
         
         if session is None:
             raise HTTPException(

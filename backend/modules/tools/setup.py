@@ -19,36 +19,14 @@ def register_all_tools(
     subagent_manager=None,
     skills_loader=None,
     session_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
     channel_manager=None,
     session_manager=None,
     memory_store=None,
     config_loader=None,
     disabled_tools: Optional[Iterable[str]] = None,
 ) -> ToolRegistry:
-    """
-    注册所有可用工具
-    
-    Args:
-        workspace: 工作空间路径
-        command_timeout: 命令超时时间（秒）
-        max_output_length: 最大输出长度（字符）
-        allow_dangerous: 是否允许危险命令
-        restrict_to_workspace: 是否限制在工作空间内
-        custom_deny_patterns: 自定义拒绝模式列表
-        custom_allow_patterns: 自定义允许模式列表
-        audit_log_enabled: 是否启用审计日志
-        subagent_manager: SubagentManager 实例（可选）
-        skills_loader: SkillsLoader 实例（可选，用于检查禁用的技能）
-        session_id: 会话 ID（可选，用于审计日志）
-        channel_manager: ChannelManager 实例（可选）
-        session_manager: SessionManager 实例（可选）
-        memory_store: MemoryStore 实例（可选，用于记忆工具）
-        disabled_tools: 禁用的工具名列表（可选，来自 injection.disabled_tools）；
-            命中的工具在注册后卸载，不出现在工具定义里，模型也无法调用
-        
-    Returns:
-        ToolRegistry: 已注册所有工具的注册表
-    """
+    """注册所有可用工具并返回工具注册表。"""
     # 保存构建参数，供 sync_disabled_tools 重建注册表
     build_params = dict(locals())
 
@@ -79,7 +57,7 @@ def register_all_tools(
     # 合并自定义拒绝模式
     deny_patterns = None
     if custom_deny_patterns:
-        from backend.modules.tools.shell import DANGEROUS_PATTERNS
+        from backend.modules.tools.command_guard import DANGEROUS_PATTERNS
         deny_patterns = list(DANGEROUS_PATTERNS) + custom_deny_patterns
     
     tools.register(
@@ -146,7 +124,9 @@ def register_all_tools(
         try:
             from backend.modules.tools.workflow_tool import WorkflowTool
 
-            workflow_tool = WorkflowTool(subagent_manager, skills=skills_loader)
+            workflow_tool = WorkflowTool(
+                subagent_manager, skills=skills_loader, owner_id=owner_id
+            )
             if session_id:
                 workflow_tool.set_session_id(session_id)
             tools.register(workflow_tool)
@@ -210,8 +190,7 @@ def register_all_tools(
     try:
         from backend.modules.wiki.tool import WikiTool
 
-        # 初始化当前工作空间下的 wiki 目录；工具默认跟随工作空间热切换
-        # （WikiTool 不传目录 = 每次调用按当前 workspace 解析 wiki/）。
+        # 初始化当前工作空间的 wiki 目录，WikiTool 每次调用按当前 workspace 解析目录
         wiki_dir = workspace / "wiki"
         wiki_dir.mkdir(parents=True, exist_ok=True)
         wiki_tool = WikiTool()
@@ -219,6 +198,8 @@ def register_all_tools(
         logger.debug("Registered wiki tool (follows current workspace wiki dir)")
     except Exception as e:
         logger.error(f"Failed to register wiki tool: {e}")
+
+    # 8c. 人格克隆由前端向导驱动固定流程，不注册为工具
 
     # 9. 注册小智AI send_message 工具（仅在小智频道启用且对话模式开启时注册）
     try:
@@ -257,15 +238,7 @@ def register_all_tools(
 
 
 def sync_disabled_tools(registry: ToolRegistry, disabled_tools: Optional[Iterable[str]]) -> bool:
-    """按最新注入开关就地重建工具集，返回是否发生变化。
-
-    长连接（WebSocket）的工具注册表只在建连时创建一次；本函数让
-    「设置页改工具开关 → 下一条消息即生效」不需要重连。
-
-    Args:
-        registry: 已注册工具的注册表（来自 register_all_tools）
-        disabled_tools: 最新的禁用工具名列表
-    """
+    """按最新注入开关重建工具集，返回是否发生变化。"""
     build_params = getattr(registry, "build_params", None)
     if not isinstance(build_params, dict):
         return False

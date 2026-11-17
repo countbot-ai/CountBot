@@ -41,8 +41,11 @@ from backend.modules.session import (
 from backend.modules.session.message_context import (
     build_attachment_items_from_workspace,
     build_message_context,
+    extract_native_events_from_message_context,
 )
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat._router import router
 from backend.api.chat.loop_factory import get_agent_loop
 from backend.modules.session.manager import SessionManager
@@ -93,22 +96,9 @@ async def get_session_messages(
         le=MAX_TOOL_PREVIEW_LIMIT,
     ),
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> List[MessageResponse]:
-    """
-    获取会话的消息列表（包含工具调用记录）
-    
-    Args:
-        session_id: 会话 ID
-        limit: 返回数量限制（可选）
-        offset: 偏移量
-        db: 数据库会话
-        
-    Returns:
-        List[MessageResponse]: 消息列表（包含关联的工具调用）
-        
-    Raises:
-        HTTPException: 会话不存在
-    """
+    """获取会话的消息列表，含关联的工具调用记录。"""
     try:
         from sqlalchemy import func, select
         from backend.models.tool_conversation import ToolConversation
@@ -116,7 +106,7 @@ async def get_session_messages(
         # 获取全局 subagent_manager
         subagent_mgr = get_global_subagent_manager()
         
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         
         # 验证会话是否存在
         session = await session_manager.get_session(session_id)
@@ -224,6 +214,9 @@ async def get_session_messages(
                             getattr(msg, "message_context", None)
                         )
                     ],
+                    native_events=extract_native_events_from_message_context(
+                        getattr(msg, "message_context", None)
+                    ),
                     created_at=to_utc_iso(msg.created_at),
                     tool_call_count=tool_call_counts.get(msg.id, 0),
                     special_tool_call_names=special_tool_names_by_message.get(msg.id, []),
@@ -258,6 +251,7 @@ async def get_message_tool_calls(
         le=MAX_TOOL_PREVIEW_LIMIT,
     ),
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> MessageToolCallPageResponse:
     """分页获取单条消息关联的工具调用。"""
     try:
@@ -265,8 +259,10 @@ async def get_message_tool_calls(
         from backend.models.message import Message
         from backend.models.tool_conversation import ToolConversation
 
-        subagent_mgr = get_global_subagent_manager()
-        session_manager = SessionManager(db)
+        from backend.api.chat.state import get_user_subagent_manager
+
+        subagent_mgr = get_user_subagent_manager(getattr(user, 'id', None)) or get_global_subagent_manager()
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
 
         session = await session_manager.get_session(session_id)
         if session is None:
@@ -338,13 +334,13 @@ async def get_message_tool_calls(
 async def get_tool_call_detail(
     tool_call_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> ToolCallResponse:
     """按需获取单条工具调用的完整详情。"""
     try:
         from sqlalchemy import select
         from backend.models.tool_conversation import ToolConversation
 
-        subagent_mgr = get_global_subagent_manager()
         result = await db.execute(
             select(ToolConversation).where(ToolConversation.id == tool_call_id)
         )
@@ -355,6 +351,16 @@ async def get_tool_call_detail(
                 detail=f"Tool call '{tool_call_id}' not found",
             )
 
+        # 工具调用的归属由它所属会话决定：非本人会话按「不存在」处理，避免
+        # 任意登录用户遍历 id 读到他人（含管理员）的工具入参/结果。
+        await _require_session(db, tool_call.session_id, owner_scope(user))
+
+        from backend.api.chat.state import get_user_subagent_manager
+
+        subagent_mgr = (
+            get_user_subagent_manager(getattr(user, "id", None))
+            or get_global_subagent_manager()
+        )
         return await _build_tool_call_response(
             tc=tool_call,
             db=db,
@@ -376,23 +382,11 @@ async def delete_single_message(
     session_id: str,
     message_id: int,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
-    """
-    删除单条消息及其关联的工具调用记录
-    
-    Args:
-        session_id: 会话 ID
-        message_id: 消息 ID
-        db: 数据库会话
-        
-    Returns:
-        dict: 操作结果（包含删除的工具调用记录数量）
-        
-    Raises:
-        HTTPException: 会话或消息不存在
-    """
+    """删除单条消息及其关联的工具调用记录。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         
         # 验证会话是否存在
         session = await session_manager.get_session(session_id)
@@ -449,22 +443,11 @@ async def delete_single_message(
 async def clear_session_messages(
     session_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> dict:
-    """
-    清空会话的所有消息
-    
-    Args:
-        session_id: 会话 ID
-        db: 数据库会话
-        
-    Returns:
-        dict: 操作结果
-        
-    Raises:
-        HTTPException: 会话不存在或清空失败
-    """
+    """清空会话的所有消息。"""
     try:
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         
         # 验证会话是否存在
         session = await session_manager.get_session(session_id)

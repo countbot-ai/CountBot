@@ -45,6 +45,8 @@ from backend.modules.session.message_context import (
     build_message_context,
 )
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat._router import router
 from backend.api.chat.helpers import (
     MAX_CHAT_ATTACHMENT_SIZE,
@@ -83,9 +85,10 @@ async def upload_chat_attachment(
     session_id: str,
     req: Request,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> AttachmentItemResponse:
     """将前端拖拽/粘贴/选择的文件写入当前工作空间附件目录。"""
-    session = await _require_session(db, session_id)
+    session = await _require_session(db, session_id, owner_scope(user))
 
     raw_filename = req.headers.get("x-file-name", "").strip()
     try:
@@ -114,7 +117,7 @@ async def upload_chat_attachment(
                 detail=f"Attachment exceeds max size {MAX_CHAT_ATTACHMENT_SIZE} bytes",
             )
 
-    workspace = _resolve_active_workspace(session)
+    workspace = _resolve_active_workspace(session, user)
     relative_path, destination = build_workspace_attachment_destination(
         session_id=session_id,
         filename=decoded_filename or "attachment",
@@ -165,14 +168,15 @@ async def download_chat_attachment(
     session_id: str,
     attachment_path: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ):
     """获取/下载会话附件文件。"""
     from fastapi.responses import FileResponse
     import mimetypes
 
-    session = await _require_session(db, session_id)
+    session = await _require_session(db, session_id, owner_scope(user))
 
-    workspace = _resolve_active_workspace(session)
+    workspace = _resolve_active_workspace(session, user)
     safe_path = attachment_path.strip().replace("\\", "/")
     resolved_file = (workspace / safe_path).resolve()
 
@@ -209,14 +213,15 @@ async def download_workspace_file(
     session_id: str,
     file_path: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ):
     """获取/下载工作区文件（供 send_media 等工具的参数预览使用）。"""
     from fastapi.responses import FileResponse
     import mimetypes
 
-    session = await _require_session(db, session_id)
+    session = await _require_session(db, session_id, owner_scope(user))
 
-    workspace = _resolve_active_workspace(session)
+    workspace = _resolve_active_workspace(session, user)
     safe_path = file_path.strip().replace("\\", "/")
     resolved_file = (workspace / safe_path).resolve()
 
@@ -250,12 +255,13 @@ async def download_workspace_file(
 @router.get("/workspace/{file_path:path}")
 async def download_workspace_file_public(
     file_path: str,
+    user: AuthUser = Depends(require_active_user),
 ):
-    """获取/下载工作区文件（无需 session 校验，供 send_media 工具预览使用）。"""
+    """获取/下载工作区文件（按登录用户的工作区解析，不暴露他人文件）。"""
     from fastapi.responses import FileResponse
     import mimetypes
 
-    workspace = _resolve_active_workspace()
+    workspace = _resolve_active_workspace(user=user)
     safe_path = file_path.strip().replace("\\", "/")
     resolved_file = (workspace / safe_path).resolve()
 

@@ -114,17 +114,18 @@ class CronJobStatusMessage(ServerMessage):
 class TaskNotificationHandler:
     """任务通知处理器：管理后台任务的状态、进度、日志与完成/失败通知。"""
 
-    def __init__(self, task_id: str, label: str, session_id: Optional[str] = None):
-        """初始化任务通知处理器
-
-        Args:
-            task_id: 任务 ID
-            label: 任务标签
-            session_id: 会话 ID（若提供则只推送给该会话，否则广播）
-        """
+    def __init__(
+        self,
+        task_id: str,
+        label: str,
+        session_id: Optional[str] = None,
+        owner_id: Optional[str] = None,
+    ):
+        """初始化任务通知处理器。"""
         self.task_id = task_id
         self.label = label
         self.session_id = session_id
+        self.owner_id = owner_id
         self.status = "running"
         self.progress = 0
         self.start_time = asyncio.get_event_loop().time()
@@ -134,7 +135,7 @@ class TaskNotificationHandler:
         if self.session_id:
             await connection_manager.send_to_session(self.session_id, message)
         else:
-            await connection_manager.broadcast(message)
+            await connection_manager.broadcast_to_owner(self.owner_id, message)
 
     async def notify_created(self) -> None:
         """通知任务创建"""
@@ -151,13 +152,7 @@ class TaskNotificationHandler:
     async def notify_status(
         self, status: str, progress: Optional[int] = None, message: Optional[str] = None
     ) -> None:
-        """通知任务状态更新
-
-        Args:
-            status: 任务状态 (running, completed, failed)
-            progress: 进度百分比 (0-100)
-            message: 状态消息（可选）
-        """
+        """通知任务状态更新。"""
         self.status = status
         if progress is not None:
             self.progress = max(0, min(100, progress))
@@ -180,14 +175,7 @@ class TaskNotificationHandler:
         total: Optional[int] = None,
         message: Optional[str] = None,
     ) -> None:
-        """通知任务进度更新
-
-        Args:
-            progress: 进度百分比 (0-100)
-            current: 当前进度值（可选）
-            total: 总进度值（可选）
-            message: 进度消息（可选）
-        """
+        """通知任务进度更新。"""
         self.progress = max(0, min(100, progress))
 
         logger.debug(f"任务进度: {self.task_id} - {self.progress}%")
@@ -203,11 +191,7 @@ class TaskNotificationHandler:
         await self._send(notification)
 
     async def notify_complete(self, result: Optional[str] = None) -> None:
-        """通知任务完成
-
-        Args:
-            result: 任务结果（可选）
-        """
+        """通知任务完成。"""
         self.status = "completed"
         self.progress = 100
 
@@ -226,11 +210,7 @@ class TaskNotificationHandler:
         await self._send(message)
 
     async def notify_failed(self, error: str) -> None:
-        """通知任务失败
-
-        Args:
-            error: 错误信息
-        """
+        """通知任务失败。"""
         self.status = "failed"
 
         duration_ms = (asyncio.get_event_loop().time() - self.start_time) * 1000
@@ -248,12 +228,7 @@ class TaskNotificationHandler:
         await self._send(message)
 
     async def log(self, level: str, message: str) -> None:
-        """发送任务日志
-
-        Args:
-            level: 日志级别 (info, warning, error)
-            message: 日志消息
-        """
+        """发送任务日志。"""
         logger.log(level.upper(), f"[Task {self.task_id}] {message}")
 
         notification = TaskLogMessage(
@@ -266,13 +241,7 @@ class TaskNotificationHandler:
         await self._send(notification)
 
     async def notify_tool_call(self, tool_name: str, arguments: dict, tool_call_id: str = "") -> None:
-        """通知子代理工具调用开始
-
-        Args:
-            tool_name: 工具名称
-            arguments: 工具参数
-            tool_call_id: LLM 分配的唯一工具调用 ID
-        """
+        """通知子代理工具调用开始。"""
         notification = TaskToolCallMessage(
             task_id=self.task_id,
             tool_call_id=tool_call_id or tool_name,
@@ -283,14 +252,7 @@ class TaskNotificationHandler:
         await self._send(notification)
 
     async def notify_tool_result(self, tool_name: str, result: str, progress: int, tool_call_id: str = "") -> None:
-        """通知子代理工具调用结果
-
-        Args:
-            tool_name: 工具名称
-            result: 工具执行结果（截断到前 500 字符）
-            progress: 当前整体进度 0-100
-            tool_call_id: LLM 分配的唯一工具调用 ID
-        """
+        """通知子代理工具调用结果。"""
         self.progress = max(0, min(100, progress))
         notification = TaskToolResultMessage(
             task_id=self.task_id,
@@ -303,11 +265,7 @@ class TaskNotificationHandler:
         await self._send(notification)
 
     def get_duration_ms(self) -> float:
-        """获取任务执行时长（毫秒）
-
-        Returns:
-            float: 执行时长
-        """
+        """获取任务执行时长（毫秒）。"""
         return (asyncio.get_event_loop().time() - self.start_time) * 1000
 
 
@@ -323,47 +281,31 @@ class TaskNotificationManager:
         """初始化任务通知管理器"""
         self.handlers: Dict[str, TaskNotificationHandler] = {}
 
-    def create_handler(self, task_id: str, label: str, session_id: Optional[str] = None) -> TaskNotificationHandler:
-        """创建任务通知处理器
-
-        Args:
-            task_id: 任务 ID
-            label: 任务标签
-            session_id: 会话 ID（若提供则定向发送，否则广播）
-
-        Returns:
-            TaskNotificationHandler: 任务通知处理器
-        """
-        handler = TaskNotificationHandler(task_id, label, session_id=session_id)
+    def create_handler(
+        self,
+        task_id: str,
+        label: str,
+        session_id: Optional[str] = None,
+        owner_id: Optional[str] = None,
+    ) -> TaskNotificationHandler:
+        """创建任务通知处理器。"""
+        handler = TaskNotificationHandler(
+            task_id, label, session_id=session_id, owner_id=owner_id
+        )
         self.handlers[task_id] = handler
         return handler
 
     def get_handler(self, task_id: str) -> Optional[TaskNotificationHandler]:
-        """获取任务通知处理器
-
-        Args:
-            task_id: 任务 ID
-
-        Returns:
-            TaskNotificationHandler | None: 任务通知处理器
-        """
+        """获取任务通知处理器。"""
         return self.handlers.get(task_id)
 
     def remove_handler(self, task_id: str) -> None:
-        """移除任务通知处理器
-
-        Args:
-            task_id: 任务 ID
-        """
+        """移除任务通知处理器。"""
         if task_id in self.handlers:
             del self.handlers[task_id]
 
     def get_all_handlers(self) -> List[TaskNotificationHandler]:
-        """获取所有任务通知处理器
-
-        Returns:
-            List[TaskNotificationHandler]: 任务通知处理器列表
-        """
+        """获取所有任务通知处理器。"""
         return list(self.handlers.values())
 
     async def notify_all_tasks_status(self) -> None:
@@ -385,16 +327,7 @@ task_notification_manager = TaskNotificationManager()
 
 
 async def notify_task_created(task_id: str, label: str, session_id: Optional[str] = None) -> TaskNotificationHandler:
-    """通知任务创建（便捷函数）
-
-    Args:
-        task_id: 任务 ID
-        label: 任务标签
-        session_id: 会话 ID（若提供则定向发送，否则广播）
-
-    Returns:
-        TaskNotificationHandler: 任务通知处理器
-    """
+    """通知任务创建（便捷函数）。"""
     handler = task_notification_manager.create_handler(task_id, label, session_id=session_id)
     await handler.notify_created()
     return handler
@@ -406,14 +339,7 @@ async def notify_task_status(
     progress: Optional[int] = None,
     message: Optional[str] = None,
 ) -> None:
-    """通知任务状态更新（便捷函数）
-
-    Args:
-        task_id: 任务 ID
-        status: 任务状态
-        progress: 进度百分比（可选）
-        message: 状态消息（可选）
-    """
+    """通知任务状态更新（便捷函数）。"""
     handler = task_notification_manager.get_handler(task_id)
     if handler:
         await handler.notify_status(status, progress, message)
@@ -426,27 +352,14 @@ async def notify_task_progress(
     total: Optional[int] = None,
     message: Optional[str] = None,
 ) -> None:
-    """通知任务进度更新（便捷函数）
-
-    Args:
-        task_id: 任务 ID
-        progress: 进度百分比
-        current: 当前进度值（可选）
-        total: 总进度值（可选）
-        message: 进度消息（可选）
-    """
+    """通知任务进度更新（便捷函数）。"""
     handler = task_notification_manager.get_handler(task_id)
     if handler:
         await handler.notify_progress(progress, current, total, message)
 
 
 async def notify_task_complete(task_id: str, result: Optional[str] = None) -> None:
-    """通知任务完成（便捷函数）
-
-    Args:
-        task_id: 任务 ID
-        result: 任务结果（可选）
-    """
+    """通知任务完成（便捷函数）。"""
     handler = task_notification_manager.get_handler(task_id)
     if handler:
         await handler.notify_complete(result)
@@ -454,12 +367,7 @@ async def notify_task_complete(task_id: str, result: Optional[str] = None) -> No
 
 
 async def notify_task_failed(task_id: str, error: str) -> None:
-    """通知任务失败（便捷函数）
-
-    Args:
-        task_id: 任务 ID
-        error: 错误信息
-    """
+    """通知任务失败（便捷函数）。"""
     handler = task_notification_manager.get_handler(task_id)
     if handler:
         await handler.notify_failed(error)
@@ -467,13 +375,7 @@ async def notify_task_failed(task_id: str, error: str) -> None:
 
 
 async def log_task_message(task_id: str, level: str, message: str) -> None:
-    """发送任务日志（便捷函数）
-
-    Args:
-        task_id: 任务 ID
-        level: 日志级别
-        message: 日志消息
-    """
+    """发送任务日志（便捷函数）。"""
     handler = task_notification_manager.get_handler(task_id)
     if handler:
         await handler.log(level, message)

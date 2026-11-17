@@ -43,6 +43,8 @@ from backend.modules.session.message_context import (
     build_message_context,
 )
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.chat._router import router
 from backend.api.chat.loop_factory import get_agent_loop
 from backend.modules.session.manager import SessionManager
@@ -96,23 +98,26 @@ async def send_message(
     request: SendMessageRequest,
     req: Request,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> StreamingResponse:
-    """
-    发送消息到 Agent 并获取 SSE 流式响应。
-    
-    客户端监听 'message' 事件接收响应片段。
-    """
+    """发送消息到 Agent，返回 SSE 流式响应。"""
     try:
         normalized_message = _validate_message_or_attachments(request.message, request.attachments)
-        session = await _require_session(db, request.session_id)
+        session = await _require_session(db, request.session_id, owner_scope(user))
         runtime_config = resolve_session_runtime_config(config_loader.config, session)
-        workspace = _resolve_active_workspace(session)
+        from backend.modules.multiuser.identity import resolve_chat_mode_for_user
+
+        chat_mode = resolve_chat_mode_for_user(
+            user, getattr(runtime_config, "chat_mode", "agent")
+        )
+        runtime_config.chat_mode = chat_mode
+        workspace = _resolve_active_workspace(session, user)
         resolved_attachments = _resolve_attachment_inputs(request.attachments, workspace)
         attachment_items = build_attachment_items_from_workspace(resolved_attachments)
         attachment_paths = [relative_path for relative_path, _ in resolved_attachments]
         
         # 保存用户消息到数据库
-        session_manager = SessionManager(db)
+        session_manager = SessionManager(db, owner_id=owner_scope(user))
         user_message = await session_manager.add_message(
             session_id=request.session_id,
             role="user",
@@ -132,14 +137,49 @@ async def send_message(
         )
 
         # 创建会话专属的 AgentLoop（支持会话级配置）
-        agent_loop = await get_agent_loop(req, db, session_id=request.session_id)
-        explicit_external_request = _resolve_explicit_external_tool_request(
-            agent_loop,
-            normalized_message,
+        # 共享模型的每日配额：超限直接 429，不进入生成阶段
+        try:
+            from backend.modules.multiuser.effective import enforce_shared_daily_limit
+
+            await enforce_shared_daily_limit(user)
+        except Exception as quota_exc:
+            from backend.modules.multiuser.effective import ModelResolutionError
+
+            if isinstance(quota_exc, ModelResolutionError):
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=str(quota_exc),
+                )
+            raise
+
+        agent_loop = await get_agent_loop(req, db, session_id=request.session_id, user=user)
+
+        # 首条消息后异步补会话标题：不拼接历史/工具，失败保持默认名，不阻塞主对话
+        try:
+            from backend.modules.session.title import (
+                maybe_schedule_session_title_generation,
+            )
+
+            await maybe_schedule_session_title_generation(
+                session=session,
+                session_id=request.session_id,
+                input_text=normalized_message,
+                provider=agent_loop.provider,
+                model=getattr(agent_loop, "model", None),
+            )
+        except Exception as exc:  # noqa: BLE001 - 标题生成不影响主流程
+            logger.debug(f"会话标题生成调度跳过：{exc}")
+
+        # 对话模式不提供工具，显式外部代理/团队指令也不参与路由
+        explicit_external_request = (
+            None
+            if chat_mode == "chat"
+            else _resolve_explicit_external_tool_request(agent_loop, normalized_message)
         )
-        explicit_team_request = _resolve_explicit_team_workflow_request(
-            agent_loop,
-            normalized_message,
+        explicit_team_request = (
+            None
+            if chat_mode == "chat"
+            else _resolve_explicit_team_workflow_request(agent_loop, normalized_message)
         )
 
         context_service = ConversationContextService(db)
@@ -161,16 +201,21 @@ async def send_message(
             """SSE 事件流生成器"""
             assistant_content = ""
             assistant_reasoning = ""
+            native_events_buffer: List[Dict[str, Any]] = []
             direct_workflow_non_success = False
             turn_gate = get_session_gate()
             turn_acquired = False
-            # 登记到会话取消令牌表：此前令牌仅在 WS 链路登记，
-            # /api/queue/cancel 与 /stop 无法中止 HTTP SSE 这条处理
+            # 并发准入：全局 10、每用户 1，超限直接 429，不排队
+            from backend.modules.multiuser.limits import turn_limit
+
+            turn_owner = owner_scope(user)
+            turn_limit.try_acquire(turn_owner)
+            turn_limit_acquired = True
+            # 登记到会话取消令牌表，使 /api/queue/cancel 与 /stop 能中止 HTTP SSE 请求
             cancel_token, token_created = acquire_cancel_token(request.session_id)
 
             try:
-                # 会话串行准入放在生成器内部：HTTP 响应一旦返回而客户端未真正读取，
-                # 生成器不会执行，也就不会占用会话；放在生成器外会留下无法释放的锁。
+                # 会话串行准入放在生成器内部，避免响应未读取时留下无法释放的锁
                 await turn_gate.acquire(request.session_id)
                 turn_acquired = True
 
@@ -214,8 +259,7 @@ async def send_message(
                             "Routing web chat directly to workflow_run: "
                             f"team={team_name}, session={request.session_id}"
                         )
-                        # 此直连路径绕过 AgentLoop，直接消费 Registry 的结构化结果；
-                        # display_text 只用于 SSE 展示及既有助手消息记录。
+                        # 此直连路径绕过 AgentLoop，直接使用 Registry 的结构化结果
                         workflow_outcome = await agent_loop.tools.execute_outcome(
                             tool_name="workflow_run",
                             arguments={
@@ -270,12 +314,18 @@ async def send_message(
                             logger.warning(f"Failed to detect mentioned team for SSE chat: {exc}")
 
                     pending_reasoning_chunks: List[str] = []
+                    pending_native_events: List[Dict[str, Any]] = []
 
                     async def reasoning_event_handler(reasoning_chunk: str) -> None:
                         nonlocal assistant_reasoning
                         assistant_reasoning += reasoning_chunk or ""
                         if reasoning_chunk:
                             pending_reasoning_chunks.append(reasoning_chunk)
+
+                    async def native_event_handler(event: Dict[str, Any]) -> None:
+                        native_events_buffer.append(event)
+                        if event.get("kind") != "history_blocks":
+                            pending_native_events.append(event)
 
                     async for chunk in agent_loop.process_message(
                         message=normalized_message,
@@ -286,8 +336,16 @@ async def send_message(
                         channel="web-chat",
                         cancel_token=cancel_token,
                         reasoning_event_handler=reasoning_event_handler,
+                        native_event_handler=native_event_handler,
                         prefer_direct_workflow_result=prefer_direct_workflow_result,
+                        chat_mode=chat_mode,
                     ):
+                        while pending_native_events:
+                            native_event = pending_native_events.pop(0)
+                            yield (
+                                "event: native\n"
+                                f"data: {json.dumps(native_event, ensure_ascii=False)}\n\n"
+                            )
                         while pending_reasoning_chunks:
                             reasoning_chunk = pending_reasoning_chunks.pop(0)
                             yield (
@@ -303,6 +361,12 @@ async def send_message(
                         # 确保立即发送
                         await asyncio.sleep(0)
 
+                    while pending_native_events:
+                        native_event = pending_native_events.pop(0)
+                        yield (
+                            "event: native\n"
+                            f"data: {json.dumps(native_event, ensure_ascii=False)}\n\n"
+                        )
                     while pending_reasoning_chunks:
                         reasoning_chunk = pending_reasoning_chunks.pop(0)
                         yield (
@@ -318,7 +382,10 @@ async def send_message(
                     )
                 )
                 assistant_message_context = (
-                    build_message_context(reasoning_content=normalized_reasoning)
+                    build_message_context(
+                        reasoning_content=normalized_reasoning,
+                        native_events=native_events_buffer,
+                    )
                 )
 
                 if persisted_content:
@@ -383,13 +450,13 @@ async def send_message(
                     agent_loop.tools.set_cancel_token(None)
                 if turn_acquired:
                     turn_gate.release(request.session_id)
+                if turn_limit_acquired:
+                    turn_limit.release(turn_owner)
                 # 仅清理自己登记的令牌，避免摘掉同会话其他链路正在使用的那个
                 if token_created:
                     cleanup_cancel_token(request.session_id, cancel_token)
         
-        # 结束本请求已开启的读事务：流式响应可能持续数分钟（慢上游），
-        # 请求级会话会一直活到流结束；若此时挂着未结束的读事务，
-        # 在非 WAL 模式下会一直占着共享锁，把其它写请求全部堵死。
+        # 读取完毕后结束请求级读事务，避免长连接持有共享锁阻塞写入
         if db is not None:
             await db.commit()
 

@@ -26,6 +26,10 @@ class Session(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    # 标题来源：default 默认名 / generated 自动生成 / custom 用户重命名 / channel 渠道会话
+    title_source: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default="default"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
@@ -61,8 +65,14 @@ class Session(Base):
     # 会话级工作空间；为空表示跟随全局配置
     workspace_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # 多用户归属；为空表示管理员 / 历史数据
+    owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     messages: Mapped[List["Message"]] = relationship(
         "Message", back_populates="session", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (Index("idx_sessions_updated", "updated_at"),)
+    __table_args__ = (
+        Index("idx_sessions_updated", "updated_at"),
+        Index("idx_sessions_owner", "owner_id", "updated_at"),
+    )

@@ -10,20 +10,7 @@ from backend.database import Base
 
 
 class AgentTeam(Base):
-    """
-    Stores a user-defined multi-agent workflow template.
-
-    agents column holds a JSON list of agent definitions:
-    [
-        {
-            "id": "researcher",
-            "role": "Research Expert",
-            "task": "Thoroughly research the given topic",
-            "depends_on": []          # used only in graph mode
-        },
-        ...
-    ]
-    """
+    """User-defined multi-agent workflow template; agents stores a JSON list of agent definitions."""
 
     __tablename__ = "agent_teams"
 
@@ -50,6 +37,9 @@ class AgentTeam(Base):
     team_model_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     use_custom_model: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # 多用户归属；为空表示管理员 / 历史数据
+    owner_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -66,6 +56,7 @@ class AgentTeam(Base):
             "cross_review": self.cross_review,
             "enable_skills": self.enable_skills,
             "use_custom_model": self.use_custom_model,
+            "owner_id": self.owner_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

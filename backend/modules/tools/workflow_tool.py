@@ -42,9 +42,11 @@ class WorkflowTool(Tool):
       positions (round 2), with a final compiled synthesis.
     """
 
-    def __init__(self, subagent_manager, skills=None) -> None:
+    def __init__(self, subagent_manager, skills=None, owner_id: Optional[str] = None) -> None:
         self._manager = subagent_manager
         self._skills = skills  # 技能系统实例
+        # 团队归属：普通用户只能调用自己创建的团队，管理员使用 owner_id 为空的历史团队
+        self._owner_id = owner_id
         # 会话 ID 与取消令牌用 contextvars 存储，保证并发会话隔离：
         # 工具实例被渠道 handler 的所有并发消息共享，实例属性会互相覆盖。
         self._session_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
@@ -221,9 +223,12 @@ class WorkflowTool(Tool):
                 from sqlalchemy import select
 
                 with SessionLocal() as session:
-                    result = session.execute(
-                        select(AgentTeam).where(AgentTeam.name == team_name)
-                    )
+                    team_query = select(AgentTeam).where(AgentTeam.name == team_name)
+                    if self._owner_id:
+                        team_query = team_query.where(AgentTeam.owner_id == self._owner_id)
+                    else:
+                        team_query = team_query.where(AgentTeam.owner_id.is_(None))
+                    result = session.execute(team_query)
                     team = result.scalar_one_or_none()
 
                     if team is None:
