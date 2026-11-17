@@ -166,3 +166,144 @@ def test_get_key_rotator_rebuilds_when_keys_change():
     r2 = get_key_rotator("prov-test-change", ["k1", "k2", "k3"])
     assert r1 is not r2
     assert r2.count == 3
+
+
+# --------------------------------------------------------------------------
+# 失败冷却：刚失败的 Key 不应在下一轮立刻被再次选中
+# --------------------------------------------------------------------------
+
+def test_failed_key_is_skipped_during_cooldown(monkeypatch):
+    import backend.modules.providers.runtime as runtime
+
+    fake_now = [1000.0]
+    monkeypatch.setattr(runtime.time, "monotonic", lambda: fake_now[0])
+
+    rotator = KeyRotator(["k1", "k2"])
+    assert rotator.mark_key_failed("k1", cooldown_seconds=60) == "k2"
+    # k1 仍在冷却：下一次轮询应继续选中 k2
+    assert rotator.next_key() == "k2"
+
+    # 冷却结束后 k1 重新可用
+    fake_now[0] += 61
+    assert rotator.next_key() == "k1"
+
+
+def test_all_keys_cooled_falls_back_to_rotation(monkeypatch):
+    import backend.modules.providers.runtime as runtime
+
+    fake_now = [2000.0]
+    monkeypatch.setattr(runtime.time, "monotonic", lambda: fake_now[0])
+
+    rotator = KeyRotator(["k1", "k2"])
+    rotator.mark_key_failed("k1", cooldown_seconds=60)
+    rotator.mark_key_failed("k2", cooldown_seconds=60)
+    # 全部冷却时不能返回 None，仍需给调用方一个 Key 兜底
+    assert rotator.next_key() in {"k1", "k2"}
+
+
+# --------------------------------------------------------------------------
+# 工厂：Key 列表随实例携带，故障转移可指定 Key，探测不推进共享轮换器
+# --------------------------------------------------------------------------
+
+def _create_provider(provider_id: str, **kwargs):
+    from backend.modules.providers.factory import create_provider
+
+    return create_provider(
+        provider_id=provider_id,
+        timeout=5.0,
+        max_retries=0,
+        **kwargs,
+    )
+
+
+def test_factory_attaches_effective_keys_to_provider():
+    provider_id = "prov-factory-keys"
+    get_key_rotator(provider_id, ["k1", "k2"])
+    provider = _create_provider(provider_id, api_keys=["k1", "k2"])
+    assert provider.api_keys == ["k1", "k2"]
+    assert provider.api_type == "openai-chat-completions"
+    assert provider.api_key in {"k1", "k2"}
+
+
+def test_factory_key_override_wins_without_advancing_poll():
+    provider_id = "prov-factory-override"
+    get_key_rotator(provider_id, ["k1", "k2"])
+    provider = _create_provider(
+        provider_id, api_keys=["k1", "k2"], key_override="k2"
+    )
+    assert provider.api_key == "k2"
+    # key_override 不应推进轮询指针：下一次仍从 k1 开始
+    rotator = get_key_rotator(provider_id, ["k1", "k2"])
+    assert rotator.next_key() == "k1"
+
+
+def test_factory_probe_mode_does_not_touch_shared_rotator():
+    provider_id = "prov-factory-probe"
+    rotator = get_key_rotator(provider_id, ["k1", "k2"])
+    assert rotator.next_key() == "k1"
+
+    provider = _create_provider(
+        provider_id,
+        api_key="k2",
+        api_keys=["k1", "k2"],
+        enable_key_rotation=False,
+    )
+    assert provider.api_key == "k2"
+    # 探测没有推进共享轮换器：下一次仍是 k2
+    assert get_key_rotator(provider_id, ["k1", "k2"]).next_key() == "k2"
+
+
+# --------------------------------------------------------------------------
+# 模型清单拉取：鉴权失败时自动换 Key，非鉴权错误不盲目重试
+# --------------------------------------------------------------------------
+
+def test_catalog_failover_switches_to_next_key(monkeypatch):
+    import asyncio
+
+    import backend.api.settings.model_catalog as catalog
+
+    calls = []
+
+    async def fake_fetch(*, api_base, api_key, api_type):
+        calls.append(api_key)
+        if api_key == "k1":
+            raise catalog.ModelCatalogError("bad key", status_code=401)
+        return [("m1", None, None, None)]
+
+    monkeypatch.setattr(catalog, "fetch_provider_models", fake_fetch)
+    models, used_index = asyncio.run(
+        catalog.fetch_provider_models_with_key_failover(
+            api_base="http://example.com",
+            api_keys=["k1", "k2"],
+            api_type="openai-chat-completions",
+        )
+    )
+
+    assert calls == ["k1", "k2"]
+    assert used_index == 1
+    assert models[0][0] == "m1"
+
+
+def test_catalog_failover_stops_on_non_auth_error(monkeypatch):
+    import asyncio
+
+    import pytest as pytest_mod
+
+    import backend.api.settings.model_catalog as catalog
+
+    calls = []
+
+    async def fake_fetch(*, api_base, api_key, api_type):
+        calls.append(api_key)
+        raise catalog.ModelCatalogError("bad base url", status_code=404)
+
+    monkeypatch.setattr(catalog, "fetch_provider_models", fake_fetch)
+    with pytest_mod.raises(catalog.ModelCatalogError):
+        asyncio.run(
+            catalog.fetch_provider_models_with_key_failover(
+                api_base="http://example.com",
+                api_keys=["k1", "k2"],
+                api_type="openai-chat-completions",
+            )
+        )
+    assert calls == ["k1"]

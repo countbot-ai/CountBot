@@ -31,6 +31,8 @@ EXPECTED_METHODS = {
     "_build_primary_group_session_route",
     "_build_session_channel_context",
     "_build_user_message_context",
+    "_cleanup_turn",
+    "_dispatch_command",
     "_get_chat_key",
     "_get_last_session_list_scope",
     "_get_or_create_session",
@@ -51,6 +53,7 @@ EXPECTED_METHODS = {
     "_handle_stop_command",
     "_handle_switch_session_command",
     "_handle_team_command",
+    "for_runtime",
     "_load_recent_sessions",
     "_load_session_message_counts",
     "_maybe_notify_queued",
@@ -58,6 +61,7 @@ EXPECTED_METHODS = {
     "_maybe_stop_channel_typing",
     "_mirror_group_exchange_to_primary_context",
     "_prepare_external_task",
+    "_persist_and_send_response",
     "_process_with_agent",
     "_promote_inbound_media",
     "_rebuild_tool_registry",
@@ -67,6 +71,7 @@ EXPECTED_METHODS = {
     "_resolve_channel_account_config",
     "_resolve_explicit_external_coder",
     "_resolve_runtime_config_for_session",
+    "_run_streaming_turn",
     "_save_message",
     "_send_reply",
     "_should_mirror_to_primary_context",
@@ -181,7 +186,7 @@ def test_session_route_feishu_group():
 # ------------------------------------------------------------------
 
 def test_message_context_encode_decode_roundtrip():
-    from backend.modules.channels.handler import (
+    from backend.modules.channels.inbound_utils import (
         _decode_message_context,
         _encode_message_context,
     )
@@ -217,7 +222,7 @@ def test_format_message_for_model():
 
 
 def test_build_history_message_strips_workflow_meta_and_restores_reasoning():
-    from backend.modules.channels.handler import _build_history_message
+    from backend.modules.channels.inbound_utils import _build_history_message
 
     class FakeMessage:
         role = "assistant"

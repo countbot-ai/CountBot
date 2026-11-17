@@ -348,10 +348,11 @@ def test_apply_onboarding_credentials_enables_primary(monkeypatch, tmp_path):
     monkeypatch.setattr(api_channels.config_loader, "config", config)
     monkeypatch.setattr(api_channels, "_validate_external_coding_route_config", lambda *args, **kwargs: None)
 
-    updated = api_channels._apply_onboarding_credentials(
+    updated, account_id = api_channels._apply_onboarding_credentials(
         "qq", "default", {"app_id": "1024", "secret": "test-placeholder"}
     )
 
+    assert account_id == "default"
     assert updated.enabled is True
     assert updated.app_id == "1024"
     assert updated.secret == "test-placeholder"
@@ -366,13 +367,14 @@ def test_apply_onboarding_credentials_creates_secondary_account(monkeypatch, tmp
     monkeypatch.setattr(api_channels.config_loader, "config", config)
     monkeypatch.setattr(api_channels, "_validate_external_coding_route_config", lambda *args, **kwargs: None)
 
-    updated = api_channels._apply_onboarding_credentials(
+    updated, account_id = api_channels._apply_onboarding_credentials(
         "feishu",
         "bot-2",
         {"app_id": "cli_2", "app_secret": "feishu-secret"},
         display_name="Feishu Bot 2",
     )
 
+    assert account_id == "bot-2"
     account = updated.accounts["bot-2"]
     assert account.enabled is True
     assert account.app_id == "cli_2"

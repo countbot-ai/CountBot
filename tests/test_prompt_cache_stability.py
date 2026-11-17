@@ -38,7 +38,9 @@ PERSONA = SimpleNamespace(
 class NoDBContextBuilder(ContextBuilder):
     """绕过 DB 访问的 ContextBuilder（数据库相关私有方法在单测中打桩）"""
 
-    def _get_personality_from_db(self, personality_id: str, custom_text: str = "") -> str:
+    def _get_personality_from_db(
+        self, personality_id: str, custom_text: str = "", **kwargs
+    ) -> str:
         return f"性格描述:{personality_id}"
 
     def _get_active_teams_section(self) -> str:

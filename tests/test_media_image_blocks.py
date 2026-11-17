@@ -15,6 +15,7 @@ from backend.modules.media.image_blocks import (
 )
 from backend.modules.providers.anthropic_provider import AnthropicProvider
 from backend.modules.providers.media_capabilities import resolve_supports_image
+from backend.modules.providers.openai_compat import strip_multimodal_image_content
 from backend.modules.providers.openai_provider import OpenAIProvider
 
 PNG_1X1 = base64.b64decode(
@@ -153,7 +154,7 @@ def test_openai_provider_adds_placeholder_when_stripping_images():
         ]
     }
 
-    assert OpenAIProvider._strip_multimodal_image_content(request_params) is True
+    assert strip_multimodal_image_content(request_params) is True
     content = request_params["messages"][0]["content"]
     assert "hi" in content
     assert "image(s) omitted" in content

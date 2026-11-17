@@ -177,6 +177,31 @@ def test_test_connection_request_requires_provider():
     assert settings_api.TestConnectionRequest.model_fields["provider"].is_required()
 
 
+def test_test_connection_request_stream_mode_optional():
+    """输出模式可省略：省略时按已保存配置与模型条目解析。"""
+    assert settings_api.TestConnectionRequest.model_fields["stream_enabled"].default is None
+
+
+def test_stream_enabled_precedence():
+    """输出模式优先级：显式入参 > 模型条目 > 全局默认。"""
+    from backend.modules.config.schema import (
+        AppConfig,
+        ModelEntry,
+        ProviderConfig,
+        resolve_stream_enabled,
+    )
+
+    config = AppConfig()
+    config.model.stream_enabled = True
+    config.providers["stream-probe"] = ProviderConfig(models=[ModelEntry(id="m")])
+
+    assert resolve_stream_enabled(config, "stream-probe", "m") is True
+
+    config.providers["stream-probe"].models[0].stream_enabled = False
+    assert resolve_stream_enabled(config, "stream-probe", "m") is False
+    assert resolve_stream_enabled(config, "stream-probe", "m", explicit=True) is True
+
+
 def test_injection_config_response_fields():
     fields = set(settings_api.InjectionConfigResponse.model_fields)
     assert fields == {

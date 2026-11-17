@@ -1,8 +1,4 @@
-"""渠道推送目标接口单元测试。
-
-验证定时任务等推送场景能直接复用「设置 - 渠道」里已配置好的渠道与账号，
-并从历史渠道会话中反查出 chat_id，无需重复手工填写推送目标。
-"""
+"""渠道推送目标接口测试：复用已配置渠道并从历史会话反查 chat_id。"""
 
 import asyncio
 import sys
@@ -26,7 +22,7 @@ def _run(coro):
 def client(monkeypatch):
     """挂载渠道路由，并屏蔽对真实会话表的访问。"""
 
-    async def _fake_collect(channel_ids, per_channel_limit=100):
+    async def _fake_collect(channel_ids, per_channel_limit=100, owner_id=None):
         return {
             "wecom": [
                 {
@@ -46,6 +42,12 @@ def client(monkeypatch):
     )
     app = FastAPI()
     app.include_router(channels_api.router)
+
+    # 渠道接口按当前身份裁剪数据，单测直接以管理员身份调用
+    from backend.modules.multiuser.identity import anonymous_admin
+    from backend.modules.multiuser.permissions import require_active_user
+
+    app.dependency_overrides[require_active_user] = lambda: anonymous_admin()
     return TestClient(app)
 
 

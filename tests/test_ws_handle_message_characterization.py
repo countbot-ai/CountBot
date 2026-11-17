@@ -1,12 +1,4 @@
-"""handle_message_event（WS 消息入口）拆分重构的特征测试
-
-通过 monkeypatch 隔离 WS 基础设施（连接管理、发送函数、DB 会话），
-用真实 AgentLoop + 脚本式 provider 驱动完整的 handle_message_event 链路，
-锁定拆分前后的关键行为：
-- 快乐路径：用户消息落库 → 流式处理 → 助手消息落库 → 完成通知 → 闸门释放
-- 会话不存在 / provider 不可用 / 用户消息保存失败的分类错误
-- 异常路径下闸门必须释放（不得泄漏占用）
-"""
+"""handle_message_event 的特征测试：覆盖快乐路径与各类错误分支。"""
 
 import asyncio
 import sys
@@ -74,7 +66,7 @@ def ws_env(monkeypatch, tmp_path):
     async def fake_send_complete(session_id, payload):
         sent["complete"].append((session_id, payload))
 
-    async def fake_bind_session(connection_id, session_id):
+    async def fake_bind_session(connection_id, session_id, **_kwargs):
         pass
 
     monkeypatch.setattr(events, "send_error", fake_send_error)
@@ -137,10 +129,7 @@ def ws_env(monkeypatch, tmp_path):
 def _patch_session_layer(env, session_exists=True, user_message="DEFAULT",
                          assistant_message=None, history=None,
                          provider_selectable=True):
-    """mock 会话层：SessionManager / runtime config / context service。
-
-    user_message 传 None 表示"保存失败返回 None"（触发 DATABASE_ERROR 分支）。
-    """
+    """mock 会话层：SessionManager、运行时配置与上下文服务。"""
     import backend.ws.events as events
 
     session = (SimpleNamespace(use_custom_config=False, id="ws-session-1")
@@ -164,7 +153,7 @@ def _patch_session_layer(env, session_exists=True, user_message="DEFAULT",
     )
 
     class _FakeSessionManager:
-        def __init__(self, db):
+        def __init__(self, db, owner_id=None):
             pass
 
         async def get_session(self, session_id):

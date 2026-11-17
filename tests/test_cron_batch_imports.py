@@ -1,9 +1,4 @@
-"""cron 批量接口的导入完整性回归
-
-`batch_create_cron_jobs` 在构造响应时使用 CronJobInfo 与 _to_shanghai_iso。
-这两个名字在拆分时曾被漏导入，而函数体内的 NameError 不会在 import 阶段暴露，
-只有真正执行到该分支才报错——补一条测试钉住。
-"""
+"""cron 批量接口导入完整性回归：CronJobInfo 与 _to_shanghai_iso 必须可解析。"""
 
 import asyncio
 from datetime import datetime
@@ -26,7 +21,10 @@ def _fake_job(name: str = "job"):
     job.account_id = "default"
     job.chat_id = None
     job.deliver_response = True
+    job.model_provider = None
+    job.model_name = None
     job.last_run = None
+    job.last_finished_at = None
     job.next_run = datetime(2026, 10, 25, 9, 0)
     job.last_status = None
     job.last_error = None

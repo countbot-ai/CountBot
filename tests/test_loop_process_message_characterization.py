@@ -236,6 +236,48 @@ def test_key_rotation_with_prior_content_keeps_consuming():
     assert chunks == ["开头"]
 
 
+def _rotatable_provider(api_keys):
+    class _Provider(_ScriptedProvider):
+        provider_id = "prov-user-rotation"
+        api_key = api_keys[0]
+        api_base = "https://user.example/v1"
+        api_type = "openai-chat-completions"
+        native_capabilities = {"web_search": True}
+        default_model = "m1"
+        api_mode = "chat_completions"
+        timeout = 10.0
+        max_retries = 0
+
+    provider = _Provider([])
+    provider.api_keys = list(api_keys)
+    return provider
+
+
+def test_key_rotation_uses_provider_owned_keys(monkeypatch):
+    """多用户私有供应商的 Key 不在全局配置里，轮换必须使用 provider 实例自带的列表。"""
+    import backend.modules.providers as providers
+
+    provider = _rotatable_provider(["user-k1", "user-k2"])
+    # 不同测试共用 provider_id 时避免轮换器缓存互相影响
+    provider.provider_id = f"prov-user-rotation-{id(provider)}"
+    loop = _make_loop(provider)
+
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(providers, "create_provider", fake_create)
+    rotated = loop._try_key_rotation(provider, "invalid_api_key")
+
+    assert rotated is not None
+    assert captured["api_keys"] == ["user-k1", "user-k2"]
+    assert captured["api_base"] == "https://user.example/v1"
+    assert captured["key_override"] == "user-k2"
+    assert captured["native_capabilities"] == {"web_search": True}
+
+
 def test_grace_turn_gives_injected_message_a_reply():
     """回归：插话额度放宽曾写在 while 退出之后——循环已结束，+1 不可能
     生效，"额外放行一轮"实际只是抑制警告，插话吸收后得不到任何回复。

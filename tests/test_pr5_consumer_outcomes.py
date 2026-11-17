@@ -70,7 +70,7 @@ class History:
 
 async def run_agent(monkeypatch, tool, *, retries=3, registry=None, provider=None,
                     timeout=5):
-    import backend.modules.agent.loop as loop_module
+    import backend.modules.tools.conversation_history as conversation_history_module
     import backend.ws.tool_notifications as notifications
 
     history = History()
@@ -80,7 +80,9 @@ async def run_agent(monkeypatch, tool, *, retries=3, registry=None, provider=Non
     async def notify(**kwargs):
         notices.append(kwargs)
 
-    monkeypatch.setattr(loop_module, "get_conversation_history", lambda: history)
+    monkeypatch.setattr(
+        conversation_history_module, "get_conversation_history", lambda: history
+    )
     monkeypatch.setattr(notifications, "notify_tool_execution", notify)
     if registry is None:
         registry = ToolRegistry()
@@ -354,7 +356,7 @@ async def test_registry_overlap_admission_preserves_running_attempt():
 
 @pytest.mark.asyncio
 async def test_agent_in_progress_is_not_a_physical_terminal_result(monkeypatch):
-    import backend.modules.agent.loop as loop_module
+    import backend.modules.tools.conversation_history as conversation_history_module
     import backend.ws.tool_notifications as notifications
 
     history = History()
@@ -363,7 +365,9 @@ async def test_agent_in_progress_is_not_a_physical_terminal_result(monkeypatch):
     async def notify(**kwargs):
         notices.append(kwargs)
 
-    monkeypatch.setattr(loop_module, "get_conversation_history", lambda: history)
+    monkeypatch.setattr(
+        conversation_history_module, "get_conversation_history", lambda: history
+    )
     monkeypatch.setattr(notifications, "notify_tool_execution", notify)
     provider = Provider()
     agent = AgentLoop(provider, Path(tempfile.gettempdir()), ToolRegistry(), max_iterations=4)
@@ -458,7 +462,7 @@ async def test_sse_direct_workflow_projects_child_outcome(monkeypatch, tool_resu
     )
 
     class SessionManager:
-        def __init__(self, db):
+        def __init__(self, db, owner_id=None):
             pass
 
         async def add_message(self, **kwargs):
@@ -471,7 +475,7 @@ async def test_sse_direct_workflow_projects_child_outcome(monkeypatch, tool_resu
         async def build_model_context(self, **kwargs):
             return SimpleNamespace(history=[], session_summary=None)
 
-    async def require_session(*args):
+    async def require_session(*args, **kwargs):
         return SimpleNamespace(id="session")
 
     async def get_agent(*args, **kwargs):
@@ -480,8 +484,7 @@ async def test_sse_direct_workflow_projects_child_outcome(monkeypatch, tool_resu
     async def backfill(*args, **kwargs):
         return None
 
-    # 这些符号在拆分后由 backend.api.chat.stream 实际使用，
-    # 补丁必须打在真实使用点，否则不会生效。
+    # 这些符号由 backend.api.chat.stream 使用，补丁必须打在真实使用点
     from backend.api.chat import stream as chat_impl
 
     monkeypatch.setattr(chat_impl, "_require_session", require_session)
@@ -489,7 +492,7 @@ async def test_sse_direct_workflow_projects_child_outcome(monkeypatch, tool_resu
     monkeypatch.setattr(chat_impl, "SessionManager", SessionManager)
     monkeypatch.setattr(chat_impl, "ConversationContextService", ContextService)
     # 按会话解析工作区后签名变成 (session)，补丁也要接受这个实参
-    monkeypatch.setattr(chat_impl, "_resolve_active_workspace", lambda session=None: tmp_path)
+    monkeypatch.setattr(chat_impl, "_resolve_active_workspace", lambda session=None, user=None: tmp_path)
     monkeypatch.setattr(chat_impl, "_resolve_explicit_external_tool_request", lambda *args: None)
     monkeypatch.setattr(chat_impl, "_resolve_explicit_team_workflow_request",
                         lambda *args: ("team", "goal"))
