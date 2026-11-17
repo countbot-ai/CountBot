@@ -214,6 +214,8 @@ def test_injection_config_response_fields():
         "team_reminder",
         "disabled_tools",
         "auto_memory_summary",
+        # memory 字段补齐：schema 一直有该开关，此前响应与保存白名单都漏了
+        "memory",
     }
 
 

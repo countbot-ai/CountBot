@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 from loguru import logger
 
@@ -15,7 +15,6 @@ from backend.modules.agent.skills import SkillsLoader
 from backend.modules.agent.context import ContextBuilder
 from backend.modules.config.loader import config_loader
 from backend.modules.multiuser.effective import (
-    ModelResolutionError,
     build_provider,
     resolve_model_for_user,
     resolve_persona_for_user,

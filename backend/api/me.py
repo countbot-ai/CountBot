@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from backend.database import AsyncSessionLocal
 from backend.modules.config.schema import McpServerConfig, ProviderConfig
 from backend.modules.multiuser.effective import (
     ModelResolutionError,
@@ -23,13 +21,6 @@ from backend.modules.multiuser.identity import (
     AuthUser,
     allowed_chat_modes,
     normalize_chat_mode_policy,
-)
-from backend.modules.multiuser.notifications import (
-    NotificationError,
-    credential_signature,
-    mask_channel_config,
-    send_notification,
-    validate_channel_config,
 )
 from backend.modules.multiuser.permissions import require_active_user
 from backend.modules.multiuser.runtime import user_runtime_manager

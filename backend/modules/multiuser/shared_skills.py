@@ -23,7 +23,6 @@ from backend.models.skill import (
     STATUS_PENDING,
     STATUS_REJECTED,
     STATUS_REVOKED,
-    VISIBILITY_PRIVATE,
     VISIBILITY_SHARED,
     SkillRegistry,
     UserSkillState,

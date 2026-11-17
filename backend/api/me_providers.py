@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -44,7 +44,6 @@ from backend.modules.providers.model_registry import (
     add_models,
     delete_model as delete_model_entry,
     reorder_models,
-    serialize_models,
     update_model,
 )
 from backend.modules.providers.registry import get_all_providers
@@ -92,10 +91,27 @@ async def _load(owner_id: str):
     return raw, configs
 
 
+def _is_valid_provider(value: Any) -> bool:
+    """配置能否解析为 ProviderConfig；用于区分「无效历史数据」与「已删除」。"""
+    if not isinstance(value, dict):
+        return False
+    try:
+        ProviderConfig.model_validate(value)
+    except Exception:
+        return False
+    return True
+
+
 async def _persist(owner_id: str, raw: Dict[str, Any], configs: Dict[str, ProviderConfig]):
-    raw["providers"] = {
-        provider_id: config.model_dump() for provider_id, config in configs.items()
+    # 无法解析的历史配置原样保留：只跳过展示，不在保存时静默丢弃
+    merged = {
+        provider_id: value
+        for provider_id, value in (raw.get("providers") or {}).items()
+        if not _is_valid_provider(value)
     }
+    for provider_id, config in configs.items():
+        merged[provider_id] = config.model_dump()
+    raw["providers"] = merged
     await save_user_config(owner_id, raw)
     user_runtime_manager.invalidate(owner_id)
 
