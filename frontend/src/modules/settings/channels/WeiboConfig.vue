@@ -12,33 +12,32 @@
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
     <template #fields="{ model, handleChange, botKey }">
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.weibo.appIdHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.weibo.appId') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <input
           v-model="model.app_id"
           type="text"
           :placeholder="t('settings.channels.weibo.appIdPlaceholder')"
-          class="config-input"
+          class="co-input"
           autocomplete="username"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.weibo.appIdHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.weibo.appSecretHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.weibo.appSecret') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.app_secret"
             :placeholder="t('settings.channels.weibo.appSecretPlaceholder')"
-            class="config-input"
+            class="co-input"
             autocomplete="current-password"
             @input="handleChange"
           />
@@ -53,18 +52,16 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.weibo.appSecretHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.weibo.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.weibo.allowFrom')" :description="t('settings.channels.weibo.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.weibo.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
@@ -73,8 +70,7 @@
             + {{ t('settings.channels.weibo.addUser') }}
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.weibo.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -83,6 +79,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 
 interface Props {
   channelId: string

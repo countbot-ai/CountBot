@@ -78,7 +78,7 @@
               class="model-picker-item"
               :class="{ 'is-active': isActive(activeProviderId, model.id) }"
               :aria-selected="isActive(activeProviderId, model.id)"
-              @click="selectModel(activeProviderId, model.id)"
+              @click="selectModel(activeProviderId, model)"
             >
               <span class="model-picker-item-icon">
                 <BoxIcon :size="13" />
@@ -94,6 +94,14 @@
               </span>
               <span v-if="model.context_window" class="model-picker-item-pill">
                 {{ formatContextLength(model.context_window) }}
+              </span>
+              <span
+                v-for="(mark, index) in nativeMarks(model)"
+                :key="`${model.id}-native-${index}`"
+                class="model-picker-item-native"
+                :title="mark.label"
+              >
+                <component :is="mark.icon" :size="11" />
               </span>
               <component
                 v-if="isActive(activeProviderId, model.id)"
@@ -116,10 +124,15 @@ import {
   Box as BoxIcon,
   Check as CheckIcon,
   ChevronDown as ChevronDownIcon,
+  FileText as FileTextIcon,
+  Globe2 as GlobeIcon,
+  Mic as MicIcon,
   Search as SearchIcon,
+  Volume2 as VolumeIcon,
 } from 'lucide-vue-next'
 import ProviderIcon from '@/components/ui/ProviderIcon.vue'
 import { formatContextLength } from '@/utils/modelConfig'
+import { normalizeNativeCapabilities } from '@/types/nativeCaps'
 import type { ProviderModelEntry } from '@/api'
 
 export interface ModelPickerGroup {
@@ -147,6 +160,19 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+/** 模型已启用的原生能力，用一组小图标在列表里直接展示。 */
+function nativeMarks(model: ProviderModelEntry): Array<{ icon: unknown; label: string }> {
+  const caps = normalizeNativeCapabilities(model.native_capabilities)
+  const marks: Array<{ icon: unknown; label: string }> = []
+  if (caps.web_search) marks.push({ icon: GlobeIcon, label: t('chat.native.webSearch') })
+  if (caps.document_parsing !== 'off') {
+    marks.push({ icon: FileTextIcon, label: t('settings.providers.models.native.documentParsing') })
+  }
+  if (caps.asr) marks.push({ icon: MicIcon, label: t('settings.providers.models.native.asr') })
+  if (caps.tts) marks.push({ icon: VolumeIcon, label: t('settings.providers.models.native.tts') })
+  return marks
+}
 
 const rootRef = ref<HTMLElement>()
 const searchRef = ref<HTMLInputElement>()
@@ -199,7 +225,7 @@ const triggerLabel = computed(() => {
   return props.modelId || t('chat.modelPicker.placeholder')
 })
 
-const triggerTitle = computed(() => `${props.providerId} / ${props.modelId || '-'}`)
+const triggerTitle = computed(() => triggerLabel.value)
 
 function isActive(providerId: string, modelId: string): boolean {
   return providerId === props.providerId && modelId === props.modelId
@@ -230,8 +256,10 @@ function close(): void {
   open.value = false
 }
 
-function selectModel(providerId: string, modelId: string): void {
-  emit('select', providerId, modelId)
+function selectModel(providerId: string, model: ProviderModelEntry): void {
+  // 共享模型合并为「内置模型」分组后，真实供应商 ID 保存在条目上；回传真实
+  // ID 才能命中后端的模型校验，未携带时维持按分组取值的原有行为。
+  emit('select', model.provider_id || providerId, model.id)
   close()
 }
 

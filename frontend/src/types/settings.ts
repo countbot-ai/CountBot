@@ -1,13 +1,8 @@
-/**
- * Settings 的展示层类型。
- *
- * 与后端对齐的 ProviderConfig / Settings / ProviderMetadata 统一维护在
- * @/api（endpoints.ts），这里不再重复声明，避免两边字段漂移。
- */
+/** Settings 展示层类型；后端对齐类型统一维护在 @/api，此处不重复声明 */
 
 export type { ProviderMetadata } from '@/api'
 
-export type SettingsTab = 'general' | 'provider' | 'model' | 'persona' | 'memory' | 'workspace' | 'security' | 'injection' | 'channels' | 'mcp' | 'externaltools' | 'multiagent' | 'importexport'
+export type SettingsTab = 'general' | 'provider' | 'model' | 'persona' | 'memory' | 'workspace' | 'security' | 'injection' | 'channels' | 'mcp' | 'sharedskills' | 'externaltools' | 'multiagent' | 'importexport' | 'users' | 'notifications'
 
 export interface HeartbeatConfig {
     enabled: boolean
@@ -30,5 +25,9 @@ export interface PersonaConfig {
     custom_personality: string
     max_history_messages: number
     enable_short_context_summary?: boolean
+    session_memory?: {
+        enabled: boolean
+        scope: 'session' | 'persona'
+    }
     heartbeat?: HeartbeatConfig
 }

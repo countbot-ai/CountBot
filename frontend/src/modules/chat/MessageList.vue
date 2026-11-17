@@ -23,9 +23,14 @@
         :ref="el => setMessageRef(message.id, el)"
         :message="message"
         :is-streaming="isStreaming && index === safeMessages.length - 1 && message.role === 'assistant'"
+        :tts-enabled="ttsEnabled"
+        :tts-provider-id="ttsProviderId"
+        :tts-model-id="ttsModelId"
         @regenerate="handleRegenerate"
         @replay-start="handleReplayStart"
         @delete="handleDelete"
+        @resend="handleResend"
+        @quote="handleQuote"
       />
       <div ref="bottomAnchorRef" class="message-list-anchor" aria-hidden="true" />
     </div>
@@ -50,7 +55,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { ChevronDown as ChevronDownIcon } from 'lucide-vue-next'
-import type { ChatMessage } from '@/types/chat'
+import type { ChatMessage, MessageQuote } from '@/types/chat'
 import MessageItem from './MessageItem.vue'
 
 interface Props {
@@ -60,12 +65,18 @@ interface Props {
   isLoadingMore?: boolean
   /** 是否有消息正在实时流式输出（驱动逐字晕开动画） */
   isStreaming?: boolean
+  /** 当前模型是否启用语音朗读 */
+  ttsEnabled?: boolean
+  ttsProviderId?: string
+  ttsModelId?: string
 }
 
 interface Emits {
   (e: 'regenerate', messageId: string): void
   (e: 'replay-start', messageId: string): void
   (e: 'delete', messageId: string): void
+  (e: 'resend', messageId: string): void
+  (e: 'quote', quote: MessageQuote): void
   (e: 'load-more'): void
 }
 
@@ -181,6 +192,14 @@ const handleRegenerate = (messageId: string) => {
 // Handle delete event
 const handleDelete = (messageId: string) => {
   emit('delete', messageId)
+}
+
+const handleResend = (messageId: string) => {
+  emit('resend', messageId)
+}
+
+const handleQuote = (quote: MessageQuote) => {
+  emit('quote', quote)
 }
 
 // Handle replay-start event - scroll message to top of viewport

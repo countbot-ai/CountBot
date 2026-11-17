@@ -1,101 +1,117 @@
 <template>
-  <div class="nc-shell" :class="{ 'sidebar-collapsed': !sidebarOpen, resizing: isResizing }">
-    <div class="nc-sidebar-wrap">
-      <NextSidebar
+  <div class="nc-shell">
+    <NextRail
+      :active-section="activeSection"
+      :show-logout="showLogout"
+      @select-section="handleSelectSection"
+      @open-settings="openSettingsTab"
+      @logout="handleLogout"
+    />
+
+    <div v-show="isChatView" class="nc-chat-view">
+      <NextListPane
+        ref="listPaneRef"
+        :open="listPaneOpen"
         :sessions="chatStore.sessions"
         :current-session-id="chatStore.currentSessionId"
         :loading="chatStore.isLoadingSessions"
-        :open="sidebarOpen"
         @create="handleCreateSession"
         @select="handleSelectSession"
         @config="handleOpenSessionConfig"
         @rename="handleRenameSession"
         @delete="handleDeleteSession"
-        @open-panel="handleOpenPanel"
-        @open-settings="openSettingsTab"
-        @toggle="toggleSidebar"
-        @close="sidebarOpen = false"
-      />
-    </div>
-
-    <div class="nc-workspace">
-      <NextTopbar
-        :title="topbarTitle"
-        :has-messages="messages.length > 0"
-        :is-streaming="isStreaming"
-        @toggle-sidebar="toggleSidebar"
-        @new-session="handleCreateSession"
-        @clear-chat="clearCurrentChat"
-        @open-panel="handleOpenTopbarPanel"
-        @open-settings="openSettingsTab('general')"
-        @open-system="showSystemSidebar = true"
+        @close="closeListPane"
       />
 
-      <ConnectionStatusBar
-        :is-connected="isConnected"
-        :is-connecting="isConnecting"
-        :reconnecting-visible="reconnectingVisible"
-        :reconnect-attempts-display="reconnectAttemptsDisplay"
-        :max-attempts="maxReconnectAttempts"
-        :disconnected-reason="connectionError"
-        @reconnect="() => manualReconnect(chatStore.currentSessionId || undefined)"
-      />
-
-      <SecurityWarningBanner
-        :visible="securityWarningVisible"
-        @setup-password="showPasswordSetup = true"
-        @dismiss="dismissSecurityWarning"
-      />
-
-      <main
-        class="nc-main"
-        @dragenter.prevent="handleDragEnter"
-        @dragover.prevent="handleDragOver"
-        @dragleave.prevent="handleDragLeave"
-        @drop.prevent="handleDrop"
-      >
-        <div v-if="isLoadingMessages" class="nc-loading">
-          <LoadingState type="skeleton" :lines="5" />
-        </div>
-
-        <NextWelcome
-          v-else-if="messages.length === 0"
-          @quick-action="handleWelcomeAction"
-        >
-          <template #composer>
-            <NextComposer
-              :ref="bindComposerRef"
-              v-bind="(composerBindings as any)"
-              variant="hero"
-              :workspace-path="currentWorkspacePath"
-              @open-workspace="handleOpenWorkspaceConfig"
-            />
-          </template>
-        </NextWelcome>
-
-        <MessageList
-          v-else
-          ref="messageListRef"
-          :messages="messages"
-          :auto-scroll="true"
-          :has-more-history="hasMoreHistory"
-          :is-loading-more="isLoadingOlderMessages"
+      <div class="nc-workspace">
+        <NextTopbar
+          :title="topbarTitle"
+          :has-messages="messages.length > 0"
           :is-streaming="isStreaming"
-          @regenerate="handleRegenerate"
-          @delete="handleDelete"
-          @load-more="handleLoadOlderMessages"
+          @toggle-sidebar="toggleListPane"
+          @new-session="handleCreateSession"
+          @clear-chat="clearCurrentChat"
+          @open-panel="handleOpenTopbarPanel"
+          @open-settings="openSettingsTab('general')"
+          @open-system="showSystemSidebar = true"
+          :show-logout="showLogout"
+          @logout="handleLogout"
         />
-      </main>
 
-      <NextComposer
-        v-if="!isLoadingMessages && messages.length > 0"
-        :ref="bindComposerRef"
-        v-bind="(composerBindings as any)"
-        variant="docked"
-        :workspace-path="currentWorkspacePath"
-        @open-workspace="handleOpenWorkspaceConfig"
-      />
+        <ConnectionStatusBar
+          :is-connected="isConnected"
+          :is-connecting="isConnecting"
+          :reconnecting-visible="reconnectingVisible"
+          :reconnect-attempts-display="reconnectAttemptsDisplay"
+          :max-attempts="maxReconnectAttempts"
+          :disconnected-reason="connectionError"
+          @reconnect="() => manualReconnect(chatStore.currentSessionId || undefined)"
+        />
+
+        <SecurityWarningBanner
+          :visible="securityWarningVisible"
+          @setup-password="showPasswordSetup = true"
+          @dismiss="dismissSecurityWarning"
+        />
+
+        <main
+          class="nc-main"
+          @dragenter.prevent="handleDragEnter"
+          @dragover.prevent="handleDragOver"
+          @dragleave.prevent="handleDragLeave"
+          @drop.prevent="handleDrop"
+        >
+          <div v-if="isLoadingMessages" class="nc-loading">
+            <LoadingState type="skeleton" :lines="5" />
+          </div>
+
+          <NextWelcome
+            v-else-if="messages.length === 0"
+            @quick-action="handleWelcomeAction"
+          >
+            <template #composer>
+              <NextComposer
+                :ref="bindComposerRef"
+                v-bind="(composerBindings as any)"
+                variant="hero"
+                :workspace-path="currentWorkspacePath"
+                @open-workspace="handleOpenWorkspaceConfig"
+              />
+            </template>
+          </NextWelcome>
+
+          <MessageList
+            v-else
+            ref="messageListRef"
+            :messages="messages"
+            :auto-scroll="true"
+            :has-more-history="hasMoreHistory"
+            :is-loading-more="isLoadingOlderMessages"
+            :is-streaming="isStreaming"
+            :tts-enabled="currentCapabilities.tts"
+            :tts-provider-id="modelSelection.currentProviderId.value"
+            :tts-model-id="modelSelection.currentModelId.value"
+            @regenerate="handleRegenerate"
+            @delete="handleDelete"
+            @resend="handleResend"
+            @quote="handleQuote"
+            @load-more="handleLoadOlderMessages"
+          />
+        </main>
+
+        <NextComposer
+          v-if="!isLoadingMessages && messages.length > 0"
+          :ref="bindComposerRef"
+          v-bind="(composerBindings as any)"
+          variant="docked"
+          :workspace-path="currentWorkspacePath"
+          @open-workspace="handleOpenWorkspaceConfig"
+        />
+      </div>
     </div>
+
+    <!-- 非聊天分区：整屏业务页，聊天窗口不参与渲染 -->
+    <HomeSection v-if="pageSection" :section="pageSection" />
 
     <!-- 拖拽上传遮罩 -->
     <div v-if="isDraggingOver" class="nc-drag-overlay">
@@ -116,33 +132,6 @@
       @updated="handleSessionConfigUpdated"
     />
 
-    <!-- 右侧面板 -->
-    <aside v-if="activePanel" ref="panelRef" class="nc-panel" :style="panelStyle">
-      <div class="nc-resize-handle" @mousedown="startResize">
-        <div class="nc-resize-line" />
-      </div>
-      <div class="nc-panel-head">
-        <h2 class="nc-panel-title">{{ getPanelTitle() }}</h2>
-        <button class="nc-panel-close" :title="$t('common.close')" @click="closePanel">
-          <component :is="XIcon" :size="18" />
-        </button>
-      </div>
-      <div class="nc-panel-body">
-        <SessionPanel v-if="activePanel === 'sessions'" @open-config="handleOpenSessionConfig" />
-        <ToolsPanel v-else-if="activePanel === 'tools'" />
-        <SkillsLibrary v-else-if="activePanel === 'skills'" />
-        <WikiPanel v-else-if="activePanel === 'wiki'" />
-        <CronManager v-else-if="activePanel === 'cron'" />
-        <SettingsPanel
-          v-else-if="activePanel === 'settings'"
-          :initial-tab="settingsInitialTab"
-          @close="closePanel"
-          @saved="handleSettingsSaved"
-        />
-        <p v-else class="nc-panel-placeholder">{{ $t('common.comingSoon') }}</p>
-      </div>
-    </aside>
-
     <!-- 左侧系统信息侧边栏 -->
     <SystemSidebar :visible="showSystemSidebar" @close="showSystemSidebar = false" />
 
@@ -160,7 +149,7 @@
 
     <!-- 遮罩 -->
     <div
-      v-if="activePanel || showTimeline || isMobileSidebarOpen"
+      v-if="showTimeline || isMobileListOpen"
       class="nc-overlay"
       @click="handleOverlayClick"
     />
@@ -171,27 +160,20 @@
 
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  X as XIcon,
-  Upload as UploadIcon
-} from 'lucide-vue-next'
+import { Upload as UploadIcon } from 'lucide-vue-next'
 import { LoadingState, FilePreviewModal } from '@/components/ui'
 import MessageList from './MessageList.vue'
-import SessionPanel from './SessionPanel.vue'
-import SettingsPanel from '@/modules/settings/SettingsPanel.vue'
-import ToolsPanel from '@/modules/tools/ToolsPanel.vue'
-import SkillsLibrary from '@/modules/skills/SkillsLibrary.vue'
-import CronManager from '@/modules/scheduler/CronManager.vue'
-import WikiPanel from '@/modules/wiki/WikiPanel.vue'
 import SystemSidebar from '@/modules/system/SystemSidebar.vue'
 import TimelinePanel from './TimelinePanel.vue'
 
 // 新主窗口布局组件
-import NextSidebar from './next/NextSidebar.vue'
+import NextRail from './next/NextRail.vue'
+import NextListPane from './next/NextListPane.vue'
 import NextTopbar from './next/NextTopbar.vue'
 import NextWelcome from './next/NextWelcome.vue'
-import type { WelcomeQuickAction } from './next/types'
+import type { ChatSection, WelcomeQuickAction } from './next/types'
 import NextComposer from './next/NextComposer.vue'
+import HomeSection from '@/modules/sections/HomeSection.vue'
 
 import ConnectionStatusBar from '@/components/chat/ConnectionStatusBar.vue'
 import SecurityWarningBanner from '@/components/chat/SecurityWarningBanner.vue'
@@ -207,22 +189,46 @@ import { useQueuedMessages } from '@/modules/chat/composables/useQueuedMessages'
 import { useSessionHistoryLoader } from '@/modules/chat/composables/useSessionHistoryLoader'
 import { useChatRealtime } from '@/modules/chat/composables/useChatRealtime'
 import { useSessionModelSelection } from '@/modules/chat/composables/useSessionModelSelection'
+import { buildQuotedContent } from '@/modules/chat/utils/messageQuote'
+import type { MessageQuote } from '@/types/chat'
 
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chat'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
 import { useSettingsStore } from '@/store/settings'
+import { useUserStore } from '@/store/user'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useKeyboard, commonShortcuts } from '@/composables/useKeyboard'
-import { queueAPI } from '@/api/endpoints'
+import { authAPI, queueAPI } from '@/api/endpoints'
 import type { SettingsTab } from '@/types/settings'
 
 const { t } = useI18n()
+const router = useRouter()
 const chatStore = useChatStore()
 const agentTeamsStore = useAgentTeamsStore()
+const userStore = useUserStore()
 const toast = useToast()
 const { confirm } = useConfirm()
+
+/** 登录态下显示注销入口；本机免登录时隐藏 */
+const showLogout = computed(() => userStore.isAuthenticated)
+
+const handleLogout = async () => {
+  const ok = await confirm({
+    title: t('sidebar.logout') || '注销',
+    message: '确认退出当前登录？',
+  })
+  if (!ok) return
+  try {
+    await authAPI.logout()
+  } catch {
+    // 请求失败也要清本地凭据并跳转，否则用户无法退出
+  }
+  localStorage.removeItem('CountBot_token')
+  window.location.href = '/login'
+}
 
 const {
   isConnected,
@@ -276,6 +282,9 @@ const {
 const isDraggingOver = ref(false)
 const dragCounter = ref(0)
 
+/** 待引用的消息，发送时拼到正文开头进入上下文 */
+const quotedMessage = ref<MessageQuote | null>(null)
+
 // 安全警告
 const showSecurityWarning = inject<import('vue').Ref<boolean>>('showSecurityWarning', ref(false))
 const securityWarningDismissed = ref(false)
@@ -297,9 +306,6 @@ const configSessionId = ref<string>('')
 function handleOpenSessionConfig(sessionId: string) {
   configSessionId.value = sessionId
   showSessionConfig.value = true
-  if (activePanel.value === 'sessions') {
-    closePanel()
-  }
 }
 
 // 侧边栏删除会话：不可逆操作，确认弹窗 loading 锁死直到删除完成
@@ -332,34 +338,31 @@ async function handleRenameSession(payload: { sessionId: string; name: string })
   }
 }
 
-type PanelType = 'sessions' | 'tools' | 'skills' | 'wiki' | 'cron' | 'settings' | null
-
 const isMobile = () => typeof window !== 'undefined' && window.innerWidth <= 860
-const sidebarOpen = ref(!isMobile())
-const isMobileSidebarOpen = computed(() => isMobile() && sidebarOpen.value)
+
+/** 当前分区：sessions 渲染聊天视图，其余分区渲染整屏业务页 */
+const activeSection = ref<ChatSection>('sessions')
+const isChatView = computed(() => activeSection.value === 'sessions')
+const pageSection = computed(() =>
+  activeSection.value === 'sessions' ? null : activeSection.value,
+)
+
+/** 聊天视图下的会话列表展开状态；移动端默认收起 */
+const listPaneOpen = ref(!isMobile())
+const isMobileListOpen = computed(
+  () => isMobile() && isChatView.value && listPaneOpen.value,
+)
 
 const isStoppingTask = ref(false)
 const messageListRef = ref<InstanceType<typeof MessageList>>()
 const chatInputRef = ref<InstanceType<typeof NextComposer>>()
-const panelRef = ref<HTMLElement>()
-const activePanel = ref<PanelType>(null)
-const settingsInitialTab = ref<SettingsTab>('general')
+const listPaneRef = ref<InstanceType<typeof NextListPane>>()
+
 const showSystemSidebar = ref(false)
 const showTimeline = ref(false)
 const activeMessageId = ref<string | null>(null)
 const showPreviewModal = ref(false)
 const previewFile = ref<File | null>(null)
-
-// 面板宽度调整
-const panelWidth = ref(720)
-const isResizing = ref(false)
-const minPanelWidth = 380
-const maxPanelWidth = 1200
-const clampPanelWidth = (width: number) => Math.min(Math.max(width, minPanelWidth), maxPanelWidth)
-const panelStyle = computed(() => ({
-  width: `min(${panelWidth.value}px, calc(100vw - 24px))`,
-  maxWidth: 'calc(100vw - 24px)'
-}))
 
 const settingsStore = useSettingsStore()
 
@@ -369,8 +372,12 @@ const currentSession = computed(() =>
 const currentSessionName = computed(() => currentSession.value?.name || '')
 const topbarTitle = computed(() => (messages.value.length > 0 ? currentSessionName.value : ''))
 
-// 输入框顶部展示实际生效的工作空间：会话自定义优先，否则用全局默认
+// 输入框顶部展示实际生效的工作空间：会话自定义优先，否则用全局默认。
+// 普通用户工作区由系统自动分配、不可自定义，直接不显示该入口。
 const currentWorkspacePath = computed(() => {
+  if (!userStore.isAdmin) {
+    return ''
+  }
   const sessionWorkspace = currentSession.value?.effectiveWorkspacePath
   if (sessionWorkspace) {
     return sessionWorkspace
@@ -403,13 +410,34 @@ const canSend = computed(() => {
          !isStreaming.value
 })
 
-const toggleSidebar = () => {
-  sidebarOpen.value = !sidebarOpen.value
+/** 顶栏 / 快捷键的折叠开关：非聊天分区先回到聊天，再控制列表 */
+const toggleListPane = () => {
+  if (!isChatView.value) {
+    activeSection.value = 'sessions'
+    listPaneOpen.value = true
+    return
+  }
+  listPaneOpen.value = !listPaneOpen.value
+}
+
+const closeListPane = () => {
+  listPaneOpen.value = false
+}
+
+/** 会话再点一次折叠列表；其它分区直接整屏切换 */
+const handleSelectSection = (section: ChatSection) => {
+  if (section === activeSection.value) {
+    if (section === 'sessions') toggleListPane()
+    return
+  }
+  activeSection.value = section
+  if (section === 'sessions' && !isMobile()) {
+    listPaneOpen.value = true
+  }
 }
 
 const openSettingsTab = (tab: SettingsTab = 'general') => {
-  settingsInitialTab.value = tab
-  showPanel('settings')
+  void router.push({ name: 'settings', params: { tab } })
 }
 
 const {
@@ -461,6 +489,7 @@ useChatRealtime({
 
 watch(() => chatStore.currentSessionId, (newSessionId, oldSessionId) => {
   clearAttachments()
+  quotedMessage.value = null
   if (newSessionId) {
     modelSelection.loadSessionSelection(newSessionId).catch(() => {})
     const shouldClear = oldSessionId !== undefined && oldSessionId !== newSessionId
@@ -469,8 +498,10 @@ watch(() => chatStore.currentSessionId, (newSessionId, oldSessionId) => {
 })
 
 const sendMessage = () => {
+  const text = inputMessage.value.trim()
   const payload = {
-    content: inputMessage.value.trim(),
+    // 引用内容拼在正文前面，作为普通用户消息进入上下文，历史记录里也能原样还原
+    content: quotedMessage.value ? buildQuotedContent(quotedMessage.value, text) : text,
     attachmentItems: readyAttachments.value.map((item) => ({
       path: item.path,
       name: item.name,
@@ -484,6 +515,7 @@ const sendMessage = () => {
 
   clearInput()
   clearAttachments()
+  quotedMessage.value = null
   sendOrQueueMessage(payload)
 }
 
@@ -504,12 +536,22 @@ const handleSelectModel = async (providerId: string, modelId: string) => {
 }
 
 const reasoningLevels = computed(() => modelSelection.reasoningLevels.value)
+const currentCapabilities = computed(() => modelSelection.currentCapabilities.value)
+const chatMode = computed(() => modelSelection.chatMode.value)
 
 const handleSelectReasoningLevel = async (level: string) => {
   try {
     await modelSelection.selectReasoningLevel(chatStore.currentSessionId || '', level)
   } catch (error: any) {
     toast.error(error?.response?.data?.detail || t('chat.reasoningLevel.saveFailed'))
+  }
+}
+
+const handleSelectChatMode = async (mode: 'agent' | 'chat') => {
+  try {
+    await modelSelection.selectChatMode(chatStore.currentSessionId || '', mode)
+  } catch (error: any) {
+    toast.error(error?.response?.data?.detail || t('chat.mode.saveFailed'))
   }
 }
 
@@ -607,6 +649,7 @@ async function clearCurrentChat() {
       try {
         clearMessages()
         clearAttachments()
+        quotedMessage.value = null
         if (chatStore.currentSessionId) {
           await chatStore.clearMessages(chatStore.currentSessionId)
           clearSessionCache(chatStore.currentSessionId)
@@ -647,6 +690,9 @@ const handleDelete = async (messageId: string) => {
     if (messageIndex === -1) return
 
     messages.value.splice(messageIndex, 1)
+    if (quotedMessage.value?.id === messageId) {
+      quotedMessage.value = null
+    }
     await chatStore.deleteMessage(chatStore.currentSessionId, parseInt(messageId))
     toast.success(t('chat.messageDeleted'))
   } catch (error) {
@@ -659,6 +705,26 @@ const handleDelete = async (messageId: string) => {
   }
 }
 
+/** 重发：从这条用户消息起截断，原样再发一次 */
+const handleResend = (messageId: string) => {
+  const messageIndex = messages.value.findIndex(m => m.id === messageId)
+  if (messageIndex === -1) return
+
+  const target = messages.value[messageIndex]
+  if (target.role !== 'user') return
+
+  const content = target.content
+  const attachmentItems = target.attachmentItems || []
+  messages.value.splice(messageIndex)
+
+  sendImmediateMessage({ content, attachmentItems })
+}
+
+const handleQuote = (quote: MessageQuote) => {
+  quotedMessage.value = { ...quote }
+  nextTick(() => chatInputRef.value?.textareaRef?.focus())
+}
+
 const handleLoadOlderMessages = async () => {
   if (!chatStore.currentSessionId) return
   await loadOlderMessages(chatStore.currentSessionId)
@@ -667,22 +733,6 @@ const handleLoadOlderMessages = async () => {
 const closePreviewModal = () => {
   showPreviewModal.value = false
   previewFile.value = null
-}
-
-// 面板管理
-const showPanel = (panel: Exclude<PanelType, null>) => {
-  activePanel.value = panel
-  if (panel === 'settings') {
-    panelWidth.value = clampPanelWidth(maxPanelWidth)
-  }
-}
-
-const closePanel = () => {
-  activePanel.value = null
-}
-
-const handleOpenPanel = (panel: 'sessions' | 'skills' | 'cron' | 'wiki') => {
-  showPanel(panel)
 }
 
 const handleOpenTopbarPanel = (panel: 'timeline') => {
@@ -705,26 +755,10 @@ const handleTimelineScrollTo = (messageId: string) => {
 }
 
 const handleOverlayClick = () => {
-  if (isResizing.value) return
-  if (activePanel.value) {
-    closePanel()
-  } else if (showTimeline.value) {
+  if (showTimeline.value) {
     showTimeline.value = false
-  } else if (isMobileSidebarOpen.value) {
-    sidebarOpen.value = false
-  }
-}
-
-const handleSettingsSaved = () => {
-  if (chatStore.currentSessionId) {
-    closeConnection()
-    resetInitializedSession()
-
-    setTimeout(() => {
-      if (chatStore.currentSessionId) {
-        initializeChat(chatStore.currentSessionId, false)
-      }
-    }, 500)
+  } else if (isMobileListOpen.value) {
+    closeListPane()
   }
 }
 
@@ -739,81 +773,6 @@ const handleSessionConfigUpdated = (action: 'saved' | 'reset') => {
   )
 }
 
-// 拖动调整面板宽度
-const startResize = (e: MouseEvent) => {
-  e.preventDefault()
-  isResizing.value = true
-
-  const startX = e.clientX
-  const startWidth = panelWidth.value
-  let targetWidth = startWidth
-  let rafId = 0
-  let velocity = 0
-  let lastTs = performance.now()
-
-  const prefersReducedMotion =
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-  const springStep = (now: number) => {
-    const dt = Math.min((now - lastTs) / 1000, 0.032)
-    lastTs = now
-    const displacement = panelWidth.value - targetWidth
-    const acceleration = -1200 * displacement - 80 * velocity
-    velocity += acceleration * dt
-    panelWidth.value += velocity * dt
-
-    if (Math.abs(panelWidth.value - targetWidth) < 0.4 && Math.abs(velocity) < 4) {
-      panelWidth.value = targetWidth
-      velocity = 0
-      rafId = 0
-      return
-    }
-    rafId = requestAnimationFrame(springStep)
-  }
-
-  const handleMouseMove = (e: MouseEvent) => {
-    const deltaX = startX - e.clientX
-    targetWidth = clampPanelWidth(startWidth + deltaX)
-    if (prefersReducedMotion) {
-      panelWidth.value = targetWidth
-      return
-    }
-    if (!rafId) {
-      lastTs = performance.now()
-      rafId = requestAnimationFrame(springStep)
-    }
-  }
-
-  const handleMouseUp = () => {
-    isResizing.value = false
-    document.removeEventListener('mousemove', handleMouseMove)
-    document.removeEventListener('mouseup', handleMouseUp)
-    if (rafId) {
-      cancelAnimationFrame(rafId)
-      rafId = 0
-    }
-    panelWidth.value = targetWidth
-    velocity = 0
-    localStorage.setItem('panelWidth', String(Math.round(panelWidth.value)))
-  }
-
-  document.addEventListener('mousemove', handleMouseMove)
-  document.addEventListener('mouseup', handleMouseUp)
-}
-
-const getPanelTitle = () => {
-  const titles: Record<Exclude<PanelType, null>, string> = {
-    sessions: t('nav.sessions'),
-    tools: t('nav.tools'),
-    skills: t('nav.skills'),
-    wiki: t('nav.wiki'),
-    cron: t('nav.cron'),
-    settings: t('settings.title')
-  }
-  return activePanel.value ? titles[activePanel.value] : ''
-}
-
 const handleOpenSettings = (section: string) => {
   const sectionToTab: Record<string, SettingsTab> = {
     'provider': 'provider',
@@ -821,15 +780,30 @@ const handleOpenSettings = (section: string) => {
     'personality': 'persona',
     'teams': 'multiagent',
     'memory': 'memory',
-    'multiagent': 'multiagent'
+    'multiagent': 'multiagent',
+    'model': 'model',
+    'persona': 'persona',
+    'sharedskills': 'sharedskills'
   }
 
   openSettingsTab(sectionToTab[section] || 'general')
 }
 
+/** 已从设置页剥离的入口：欢迎页快捷方式直接落到对应整屏页 */
+const HOME_SECTION_OF: Record<string, ChatSection> = {
+  channels: 'channels',
+  teams: 'multiagent',
+  persona: 'persona',
+}
+
 const handleWelcomeAction = (action: WelcomeQuickAction) => {
   if (action.kind === 'panel') {
-    showPanel(action.value as Exclude<PanelType, null>)
+    activeSection.value = action.value as ChatSection
+    return
+  }
+  const section = HOME_SECTION_OF[action.value]
+  if (section) {
+    activeSection.value = section
     return
   }
   handleOpenSettings(action.value)
@@ -839,7 +813,8 @@ const handleCreateSession = async () => {
   try {
     await chatStore.createSession()
     toast.success(t('chat.sessionCreated'))
-    if (isMobile()) sidebarOpen.value = false
+    activeSection.value = 'sessions'
+    if (isMobile()) closeListPane()
   } catch (error) {
     toast.error(t('common.error'))
   }
@@ -847,7 +822,8 @@ const handleCreateSession = async () => {
 
 const handleSelectSession = (sessionId: string) => {
   chatStore.switchSession(sessionId)
-  if (isMobile()) sidebarOpen.value = false
+  activeSection.value = 'sessions'
+  if (isMobile()) closeListPane()
 }
 
 // 两个位置的输入卡会随消息状态互相切换，切换后需要重新同步 textarea
@@ -875,6 +851,10 @@ const composerBindings = computed<Record<string, any>>(() => ({
   isSessionOverride: modelSelection.isSessionOverride.value,
   reasoningLevels: reasoningLevels.value,
   activeReasoningLevel: modelSelection.currentReasoningLevel.value,
+  nativeCapabilities: currentCapabilities.value,
+  chatMode: chatMode.value,
+  allowedChatModes: modelSelection.allowedChatModes.value,
+  quotedMessage: quotedMessage.value,
   onInput: (value: string) => {
     inputMessage.value = value
     handleInput()
@@ -885,8 +865,12 @@ const composerBindings = computed<Record<string, any>>(() => ({
   onTeamSelect: selectTeam,
   onFilesSelected: handleComposerFiles,
   onRemoveAttachment: removeAttachment,
+  onRemoveQuote: () => {
+    quotedMessage.value = null
+  },
   onSelectModel: handleSelectModel,
   onSelectReasoningLevel: handleSelectReasoningLevel,
+  onSelectChatMode: handleSelectChatMode,
 }))
 
 watch(
@@ -908,42 +892,38 @@ useKeyboard([
     }
   }),
   commonShortcuts.escape(() => {
-    if (activePanel.value) {
-      closePanel()
-    } else if (isMobileSidebarOpen.value) {
-      sidebarOpen.value = false
+    if (showTimeline.value) {
+      showTimeline.value = false
+    } else if (isMobileListOpen.value) {
+      closeListPane()
     }
   }),
   commonShortcuts.search(() => {
-    showPanel('sessions')
+    activeSection.value = 'sessions'
+    listPaneOpen.value = true
+    void listPaneRef.value?.focusSearch()
   }),
   commonShortcuts.new(async () => {
     await handleCreateSession()
   }),
   commonShortcuts.toggleSidebar(() => {
-    toggleSidebar()
+    toggleListPane()
   }),
   commonShortcuts.settings(() => {
-    showPanel('settings')
+    openSettingsTab('general')
   })
 ])
 
 // 初始化
 onMounted(async () => {
   try {
-    const savedWidth = localStorage.getItem('panelWidth')
-    if (savedWidth) {
-      const parsedWidth = parseInt(savedWidth, 10)
-      if (!Number.isNaN(parsedWidth)) {
-        panelWidth.value = clampPanelWidth(parsedWidth)
-      }
-    }
-
     if (chatInputRef.value?.textareaRef) {
       textareaRef.value = chatInputRef.value.textareaRef
     }
 
-    if (!settingsStore.settings) {
+    // /api/settings 仅管理员可读，判定前必须先加载 profile
+    await userStore.loadProfile().catch(() => undefined)
+    if (userStore.isAdmin && !settingsStore.settings) {
       await settingsStore.loadSettings().catch(() => {})
     }
     await chatStore.loadSessions()

@@ -1,6 +1,4 @@
-/**
- * 主样式文件
- */
+/** 主样式文件 */
 
 @import './tokens.css';
 @import './variables.css';
@@ -11,7 +9,7 @@
 @import './dark-mode.css';
 @import './components.css';
 @import './design-system.css';
-@import './settings-surface.css';
+@import './settings-page.css';
 @import './syntax-highlight.css';
 
 html,
@@ -100,8 +98,7 @@ html {
 }
 
 /* ============ 规则 4 - 流式打字：单字 90ms 从 blur(6px) 晕开到清晰 ============ */
-/* 相邻字通过 --i * 30ms 错开，形成波浪式晕开；由 MessageItem 在流式输出时
-   对尾部字符包 span.stream-char 注入（DOM 后处理，不动 v-html 结构）。 */
+/* 相邻字符按 --i * 30ms 错开，由 MessageItem 在流式输出时注入 span */
 .stream-char {
     display: inline;
     animation: stream-char-in var(--typewriter-duration) var(--ease-typewriter) both;

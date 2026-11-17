@@ -9,7 +9,7 @@
         <slot name="composer" />
       </div>
 
-      <div class="nc-welcome-chips">
+      <div v-if="userStore.loaded" class="nc-welcome-chips">
         <button
           v-for="action in quickActions"
           :key="action.id"
@@ -31,15 +31,19 @@ import {
   Blocks as BlocksIcon,
   Cpu as CpuIcon,
   Plug as PlugIcon,
+  SlidersHorizontal as SlidersIcon,
+  UserRound as PersonIcon,
   Users as UsersIcon,
 } from 'lucide-vue-next'
 import type { WelcomeQuickAction } from './types'
+import { useUserStore } from '@/store/user'
 
 defineEmits<{
   (e: 'quick-action', action: WelcomeQuickAction): void
 }>()
 
 const { t } = useI18n()
+const userStore = useUserStore()
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -48,36 +52,67 @@ const greeting = computed(() => {
   return t('chat.next.greetingEvening')
 })
 
-const quickActions = computed<WelcomeQuickAction[]>(() => [
-  {
-    id: 'provider',
-    label: t('chat.welcome.setupProvider'),
-    icon: CpuIcon,
-    kind: 'settings',
-    value: 'provider',
-  },
-  {
-    id: 'channels',
-    label: t('chat.welcome.setupChannels'),
-    icon: PlugIcon,
-    kind: 'settings',
-    value: 'channels',
-  },
-  {
-    id: 'teams',
-    label: t('chat.welcome.setupTeams'),
-    icon: UsersIcon,
-    kind: 'settings',
-    value: 'teams',
-  },
-  {
-    id: 'skills',
-    label: t('nav.skills'),
-    icon: BlocksIcon,
-    kind: 'panel',
-    value: 'skills',
-  },
-])
+/** 管理员入口指向全局配置，普通用户入口指向 /api/me/* 的用户级配置。 */
+const quickActions = computed<WelcomeQuickAction[]>(() => {
+  const adminActions: WelcomeQuickAction[] = [
+    {
+      id: 'provider',
+      label: t('chat.welcome.setupProvider'),
+      icon: CpuIcon,
+      kind: 'settings',
+      value: 'provider',
+    },
+    {
+      id: 'channels',
+      label: t('chat.welcome.setupChannels'),
+      icon: PlugIcon,
+      kind: 'settings',
+      value: 'channels',
+    },
+    {
+      id: 'teams',
+      label: t('chat.welcome.setupTeams'),
+      icon: UsersIcon,
+      kind: 'settings',
+      value: 'teams',
+    },
+  ]
+
+  const userActions: WelcomeQuickAction[] = [
+    {
+      id: 'model',
+      label: t('settings.tabs.model'),
+      icon: SlidersIcon,
+      kind: 'settings',
+      value: 'model',
+    },
+    {
+      id: 'persona',
+      label: t('settings.tabs.persona'),
+      icon: PersonIcon,
+      kind: 'settings',
+      value: 'persona',
+    },
+    {
+      id: 'sharedskills',
+      label: t('settings.tabs.sharedskills'),
+      icon: UsersIcon,
+      kind: 'settings',
+      value: 'sharedskills',
+    },
+  ]
+
+  return [
+    ...(userStore.isAdmin ? adminActions : userActions),
+    {
+      id: 'skills',
+      label: t('nav.skills'),
+      icon: BlocksIcon,
+      kind: 'panel',
+      value: 'skills',
+    },
+  ]
+})
 </script>
 
 <style scoped>

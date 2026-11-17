@@ -1,0 +1,323 @@
+.native-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 2px 0 7px;
+}
+
+.native-group {
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.22));
+  border-radius: 8px;
+  background: var(--surface-muted, rgba(148, 163, 184, 0.05));
+  overflow: hidden;
+}
+
+.native-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.native-group-head:hover {
+  background: var(--surface-hover, rgba(148, 163, 184, 0.08));
+}
+
+.native-group-icon {
+  flex: none;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-group-title {
+  flex: none;
+  color: var(--text-primary);
+}
+
+.native-group-count {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.native-group-status {
+  flex: none;
+  font-weight: 500;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-group-summary {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-group-chevron {
+  flex: none;
+  margin-left: auto;
+  transition: transform 0.18s ease;
+}
+
+.native-group-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.native-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 6px 6px;
+  border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.16));
+}
+
+.native-row {
+  border-radius: 6px;
+}
+
+.native-row.is-error {
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.native-row-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.native-row-head:hover {
+  background: var(--surface-elevated, rgba(148, 163, 184, 0.1));
+}
+
+.native-row-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-row-icon.is-spinning :deep(svg) {
+  animation: native-spin 1s linear infinite;
+}
+
+.native-row-title {
+  flex: none;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.native-row-sub {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-row-status {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-row-status.is-error {
+  color: #ef4444;
+}
+
+.native-row-count {
+  flex: none;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  line-height: 15px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--surface-elevated, rgba(148, 163, 184, 0.14));
+}
+
+.native-row-chevron {
+  flex: none;
+  transition: transform 0.18s ease;
+}
+
+.native-row-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.native-row-detail {
+  margin: 0 5px 5px 23px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.native-queries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.native-query {
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: var(--surface-elevated, rgba(148, 163, 184, 0.14));
+}
+
+.native-link {
+  font-size: 11px;
+  color: var(--accent, #3b82f6);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-results {
+  display: grid;
+  gap: 3px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.native-result {
+  display: flex;
+  gap: 6px;
+  padding: 4px 5px;
+  border-radius: 5px;
+  text-decoration: none;
+  background: var(--surface-elevated, rgba(148, 163, 184, 0.08));
+  border: 1px solid transparent;
+}
+
+.native-result:hover {
+  border-color: var(--border-subtle, rgba(148, 163, 184, 0.32));
+}
+
+.native-result-icon {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  flex: none;
+  margin-top: 2px;
+}
+
+.native-result-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.native-result-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-result-snippet {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.native-result-site {
+  font-size: 10px;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px 0;
+  font-size: 10.5px;
+}
+
+.native-sources-label {
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.native-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 180px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  background: var(--surface-muted, rgba(148, 163, 184, 0.1));
+}
+
+.native-source:hover {
+  color: var(--text-primary);
+}
+
+.native-source-index {
+  font-size: 9.5px;
+  color: var(--accent, #3b82f6);
+}
+
+.native-source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-refusal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #ef4444;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+@keyframes native-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

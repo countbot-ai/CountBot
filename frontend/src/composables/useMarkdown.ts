@@ -1,6 +1,7 @@
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { replaceWechatEmojisInHtml } from '@/modules/emoji'
 import { t } from '@/i18n'
 
 const COPY_BUTTON_SELECTOR = '.code-copy-btn'
@@ -153,15 +154,7 @@ const installCodeCopyHandler = () => {
     hasInstalledCodeCopyHandler = true
 }
 
-/**
- * Markdown rendering composable with syntax highlighting
- * 
- * Features:
- * - Markdown to HTML conversion using marked
- * - Syntax highlighting for code blocks using highlight.js
- * - Safe HTML rendering with sanitization
- * - Support for inline code and code blocks
- */
+/** Markdown 渲染：marked 转换、代码高亮、HTML 净化 */
 export function useMarkdown() {
     installCodeCopyHandler()
 
@@ -252,27 +245,20 @@ export function useMarkdown() {
         pedantic: false
     })
 
-    /**
-     * Render markdown to HTML
-     * @param markdown - Raw markdown string
-     * @returns HTML string
-     */
+    /** 将 Markdown 渲染为 HTML */
     const renderMarkdown = (markdown: string): string => {
         if (!markdown) return ''
 
         try {
-            return marked.parse(markdown) as string
+            // 渲染后只替换文本节点里的微信表情编码，代码块与行内代码保持原样
+            return replaceWechatEmojisInHtml(marked.parse(markdown) as string)
         } catch (error) {
             console.error('Markdown rendering error:', error)
             return markdown // Fallback to plain text
         }
     }
 
-    /**
-     * Extract code blocks from markdown
-     * @param markdown - Raw markdown string
-     * @returns Array of code blocks with language and content
-     */
+    /** 提取 Markdown 中的代码块 */
     const extractCodeBlocks = (markdown: string): Array<{ language: string; code: string }> => {
         const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g
         const blocks: Array<{ language: string; code: string }> = []
@@ -288,11 +274,7 @@ export function useMarkdown() {
         return blocks
     }
 
-    /**
-     * Check if text contains markdown syntax
-     * @param text - Text to check
-     * @returns True if text contains markdown
-     */
+    /** 判断文本是否包含 Markdown 语法 */
     const hasMarkdown = (text: string): boolean => {
         const markdownPatterns = [
             /^#{1,6}\s/, // Headers

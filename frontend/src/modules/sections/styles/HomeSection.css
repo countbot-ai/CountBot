@@ -1,0 +1,278 @@
+/**
+ * 整屏业务页：统一的页头 + 内容区。
+ * 尺寸与配色全部走全局令牌，浅色 / 暗色主题自动适配。
+ */
+.hs-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  animation: hs-enter 0.18s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+@keyframes hs-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hs-shell {
+    animation: none;
+  }
+}
+
+/* 聚焦不加 outline，双环咬合造景深 */
+.hs-shell :where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 3px var(--color-border-primary);
+}
+
+/* ---------- 页头 ---------- */
+
+.hs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 56px;
+  flex-shrink: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
+}
+
+.hs-head-text {
+  min-width: 0;
+}
+
+.hs-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.hs-desc {
+  margin: 2px 0 0;
+  max-width: 78ch;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-tertiary);
+  text-wrap: pretty;
+}
+
+.hs-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ---------- 分段控件 ---------- */
+
+.hs-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+
+.hs-segmented-item {
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.hs-segmented-item:hover {
+  color: var(--color-text-primary);
+}
+
+.hs-segmented-item.is-active {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ---------- 按钮 ---------- */
+
+.hs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.hs-btn--primary {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.hs-btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.hs-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hs-dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+/* ---------- 内容区 ---------- */
+
+.hs-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 页面自带滚动与占满高度的页（定时任务 / 技能库 / 知识库） */
+.hs-body.is-flush {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hs-body.is-flush > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.hs-fill {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.hs-fill > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.hs-inner {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+.hs-inner.is-narrow {
+  max-width: 1080px;
+}
+
+/* 列表型页面铺满可用宽度，避免两侧留出大片空白 */
+.hs-inner.is-wide {
+  max-width: none;
+}
+
+.hs-state {
+  padding: 48px 24px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- 与既有页面统一表面与表签栏 ---------- */
+
+.hs-body :deep(.skills-library),
+.hs-body :deep(.wiki-panel),
+.hs-body :deep(.cron-manager) {
+  background: var(--color-bg-primary);
+}
+
+.hs-body :deep(.wiki-header) {
+  padding: 10px 24px;
+  background: var(--color-bg-primary);
+  box-shadow: none;
+}
+
+/* 多智能体自带内边距，页面内不再叠加一层 */
+.hs-inner :deep(.multiagent-config) {
+  padding: 0;
+}
+
+/* 行内图标与文字基线对齐 */
+.hs-shell :deep(svg) {
+  vertical-align: -0.125em;
+}
+
+/* 暗色下标题字重略降，避免亮字发胖 */
+[data-theme='dark'] .hs-title {
+  font-weight: 550;
+}
+
+@media (max-width: 860px) {
+  .hs-head {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .hs-inner {
+    padding: 16px 16px 40px;
+  }
+
+  .hs-desc {
+    display: none;
+  }
+}

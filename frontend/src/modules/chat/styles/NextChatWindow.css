@@ -1,10 +1,4 @@
-/**
- * 新主窗口骨架
- *
- * 配色策略：不再另起一套色板，--nc-* 只是全局令牌的别名。
- * 浅色 #fcfcfb / #f5f5f3，暗色 #0b0b0a / #151515 / #1a1a19 / #20201e，
- * 强调色统一走 --color-accent；这样新窗口与设置页、旧页面是同一套色彩。
- */
+/** 新主窗口骨架：--nc-* 为全局令牌别名，强调色统一走 --color-accent */
 .nc-shell {
   --nc-surface: var(--color-bg-primary);
   --nc-sidebar-bg: var(--color-bg-secondary);
@@ -21,7 +15,7 @@
   --nc-primary-hover: var(--color-primary-hover);
 
   /* 会话列宽：消息流、输入卡、空态共用同一条中线 */
-  --chat-column-width: 820px;
+  --chat-column-width: 1120px;
 
   position: relative;
   display: flex;
@@ -53,21 +47,13 @@
   box-shadow: none;
 }
 
-/* ---------- 侧边栏容器 ---------- */
+/* ---------- 聊天视图（会话列表 + 对话窗口） ---------- */
 
-.nc-sidebar-wrap {
-  width: 216px;
-  flex: 0 0 216px;
+.nc-chat-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   height: 100%;
-  overflow: hidden;
-  transition:
-    width var(--transition-base) var(--ease-snappy),
-    flex-basis var(--transition-base) var(--ease-snappy);
-}
-
-.nc-shell.sidebar-collapsed .nc-sidebar-wrap {
-  width: 0;
-  flex-basis: 0;
 }
 
 /* ---------- 主工作区 ---------- */
@@ -94,94 +80,6 @@
   max-width: var(--chat-column-width);
   margin: 0 auto;
   padding: 32px 24px;
-}
-
-/* ---------- 右侧面板 ---------- */
-
-.nc-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  background: var(--nc-surface);
-  border-left: 1px solid var(--nc-border);
-  box-shadow: var(--shadow-lg);
-}
-
-.nc-resize-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -3px;
-  z-index: 2;
-  width: 6px;
-  cursor: col-resize;
-}
-
-.nc-resize-line {
-  width: 1px;
-  height: 100%;
-  margin: 0 auto;
-  background: transparent;
-  transition: background var(--transition-fast);
-}
-
-.nc-resize-handle:hover .nc-resize-line {
-  background: var(--nc-border-strong);
-}
-
-.nc-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 48px;
-  flex-shrink: 0;
-  padding: 0 12px 0 20px;
-  border-bottom: 1px solid var(--nc-border);
-}
-
-.nc-panel-title {
-  margin: 0;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.01em;
-  color: var(--nc-text);
-}
-
-.nc-panel-close {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--nc-text-3);
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.nc-panel-close:hover {
-  background: var(--nc-hover);
-  color: var(--nc-text);
-}
-
-.nc-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.nc-panel-placeholder {
-  padding: 24px;
-  color: var(--nc-text-3);
-  font-size: var(--font-size-sm);
 }
 
 /* ---------- 时间轴 ---------- */
@@ -248,17 +146,8 @@
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 860px) {
-  .nc-sidebar-wrap {
-    width: 0;
-    flex-basis: 0;
-  }
-
-  .nc-panel {
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  .nc-resize-handle {
-    display: none;
+  /* 第 2 栏在移动端改为覆盖层，由 NextListPane 自己处理定位 */
+  .nc-workspace {
+    min-width: 0;
   }
 }

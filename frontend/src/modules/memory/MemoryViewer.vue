@@ -1,82 +1,36 @@
 <template>
   <div ref="rootEl" class="memory-viewer">
-    <div class="memory-shell">
-      <div class="memory-header">
-        <div class="section-header">
-          <h3 class="section-title">{{ t('memory.title') }}</h3>
-          <p class="section-desc">{{ t('memory.emptyLongTermDesc') }}</p>
-        </div>
-      </div>
+    <SettingsCard :title="t('memory.longTermMemory')" flush>
+      <template #actions>
+        <span class="co-row-value">{{ longTermLineCount }} {{ t('memory.lines') }}</span>
+        <button class="icon-btn" :disabled="isLoading" :title="t('common.retry')" @click="handleRefresh">
+          <component :is="RefreshCwIcon" :size="15" :class="{ spinning: isLoading }" />
+        </button>
+        <button class="co-btn co-btn--secondary btn-compact" @click="emit('edit', 'long-term')">
+          <component :is="PencilIcon" :size="14" />
+          {{ t('common.edit') }}
+        </button>
+      </template>
 
-      <div class="memory-toolbar">
-        <div class="memory-tabs">
-          <button
-            class="memory-tab"
-            :class="{ active: activeTab === 'long-term' }"
-            @click="changeTab('long-term')"
-          >
-            {{ t('memory.longTermMemory') }}
-          </button>
-        </div>
-
-        <div class="memory-actions">
-          <div class="memory-stat-line">
-            <span>{{ longTermLineCount }} {{ t('memory.lines') }}</span>
-          </div>
-
-          <button
-            class="btn-icon"
-            :disabled="isLoading"
-            :title="t('common.retry')"
-            @click="handleRefresh"
-          >
-            <RefreshCwIcon :class="{ spinning: isLoading }" :size="20" />
-          </button>
-        </div>
-      </div>
-
-      <div v-if="error" class="error-message">
-        <AlertCircleIcon :size="18" />
+      <p v-if="error" class="error-row">
+        <component :is="AlertCircleIcon" :size="14" />
         <span>{{ error }}</span>
-        <button class="btn-text" @click="clearError">{{ t('common.close') }}</button>
+        <button class="link-btn" @click="clearError">{{ t('common.close') }}</button>
+      </p>
+
+      <div v-if="isLoading" class="state-block">{{ t('common.loading') }}</div>
+
+      <div v-else-if="!hasLongTermMemory" class="state-block">
+        <component :is="FileTextIcon" :size="22" class="state-icon" />
+        <p class="state-title">{{ t('memory.emptyLongTerm') }}</p>
+        <p class="state-desc">{{ t('memory.emptyLongTermDesc') }}</p>
+        <button class="co-btn co-btn--primary" @click="emit('edit', 'long-term')">
+          {{ t('memory.createMemory') }}
+        </button>
       </div>
 
-      <div class="memory-content">
-        <div class="memory-content-actions">
-          <button
-            class="btn-secondary btn-sm"
-            @click="emit('edit', 'long-term')"
-          >
-            <EditIcon :size="16" />
-            <span>{{ t('common.edit') }}</span>
-          </button>
-        </div>
-
-        <div class="memory-section">
-          <div v-if="isLoading" class="loading-state">
-            <div class="spinner" />
-            <p>{{ t('common.loading') }}</p>
-          </div>
-
-          <div v-else-if="!hasLongTermMemory" class="empty-state">
-            <FileTextIcon :size="48" />
-            <h3>{{ t('memory.emptyLongTerm') }}</h3>
-            <p>{{ t('memory.emptyLongTermDesc') }}</p>
-            <button class="btn-primary" @click="emit('edit', 'long-term')">
-              <PlusIcon :size="18" />
-              <span>{{ t('memory.createMemory') }}</span>
-            </button>
-          </div>
-
-          <div v-else class="document-card">
-            <div class="document-card-header">
-              <h3>{{ t('memory.longTermMemory') }}</h3>
-            </div>
-            <div class="memory-text document-card-body" v-html="renderMarkdown(longTermMemory)" />
-          </div>
-        </div>
-      </div>
-    </div>
+      <div v-else class="memory-text" v-html="renderMarkdown(longTermMemory)" />
+    </SettingsCard>
   </div>
 </template>
 
@@ -87,12 +41,12 @@ import { useMemoryStore } from '@/store/memory'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useMermaid } from '@/composables/useMermaid'
 import {
-  AlertCircleIcon,
-  EditIcon,
-  FileTextIcon,
-  PlusIcon,
-  RefreshCwIcon,
+  AlertCircle as AlertCircleIcon,
+  FileText as FileTextIcon,
+  Pencil as PencilIcon,
+  RefreshCw as RefreshCwIcon,
 } from 'lucide-vue-next'
+import { SettingsCard } from '@/modules/settings/ui'
 
 type MemoryTab = 'long-term'
 
@@ -110,21 +64,21 @@ const memoryStore = useMemoryStore()
 const { renderMarkdown } = useMarkdown()
 const rootEl = ref<HTMLElement | null>(null)
 
-const activeTab = computed(() => props.tab)
 const isLoading = computed(() => memoryStore.isLoading)
 const error = computed(() => memoryStore.error)
 const longTermMemory = computed(() => memoryStore.longTermMemory)
 const hasLongTermMemory = computed(() => memoryStore.hasLongTermMemory)
-const longTermLineCount = computed(() => longTermMemory.value.split('\n').filter(line => line.trim()).length)
+const longTermLineCount = computed(
+  () => longTermMemory.value.split('\n').filter((line) => line.trim()).length,
+)
+
+// 只有一个记忆分区，props.tab 只用于保持外部接口稳定
+void props.tab
 
 useMermaid(rootEl, [longTermMemory])
 
 const handleRefresh = async () => {
   await memoryStore.loadLongTermMemory()
-}
-
-const changeTab = (target: MemoryTab) => {
-  emit('change-tab', target)
 }
 
 const clearError = () => {
@@ -135,6 +89,130 @@ onMounted(async () => {
   await memoryStore.loadLongTermMemory()
 })
 </script>
+
 <style scoped>
-@import './styles/MemoryViewer.css';
+.btn-compact {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--font-size-xs);
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px var(--co-row-gutter);
+  border-bottom: 1px solid var(--color-border-primary);
+  font-size: var(--font-size-xs);
+  color: var(--color-error);
+}
+
+.link-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 56px 16px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.state-icon {
+  color: var(--color-text-disabled);
+}
+
+.state-title {
+  margin: 4px 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.state-desc {
+  margin: 0 0 8px;
+  max-width: 52ch;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
+.memory-text {
+  padding: 14px var(--co-row-gutter) 18px;
+  font-size: var(--font-size-sm);
+  line-height: 1.75;
+  color: var(--color-text-primary);
+}
+
+/* 首个块不留顶部外边距，否则卡片头和正文之间会空出一段 */
+.memory-text :deep(> :first-child) {
+  margin-top: 0;
+}
+
+/* 记忆文件的标题仅作分区标记，字号低于正文标题 */
+.memory-text :deep(h1) {
+  margin: 16px 0 6px;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.memory-text :deep(h2) {
+  margin: 14px 0 6px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.memory-text :deep(h3),
+.memory-text :deep(h4) {
+  margin: 12px 0 4px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.memory-text :deep(p) {
+  margin: 0 0 6px;
+}
+
+.memory-text :deep(ul),
+.memory-text :deep(ol) {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
 </style>

@@ -85,12 +85,26 @@
         />
       </label>
     </div>
+
+    <div v-if="showStreamSelect" class="parameter-group">
+      <label class="parameter-label">
+        <span>{{ $t('settings.model.streamMode') }}</span>
+      </label>
+      <p class="parameter-help">{{ $t('settings.model.streamModeDesc') }}</p>
+      <Select
+        v-model="streamModeValue"
+        class="parameter-select"
+        :options="streamModeOptions"
+        :aria-label="$t('settings.model.streamMode')"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Select from '@/components/ui/Select.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import {
   MAX_ITERATIONS_LIMIT,
@@ -113,15 +127,19 @@ interface Props {
   maxTokens: number
   maxIterations?: number
   thinkingEnabled?: boolean
+  streamEnabled?: boolean
   showMaxIterations?: boolean
   showThinkingToggle?: boolean
+  showStreamSelect?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   maxIterations: MODEL_CONFIG_FALLBACK.max_iterations,
   thinkingEnabled: MODEL_CONFIG_FALLBACK.thinking_enabled,
+  streamEnabled: MODEL_CONFIG_FALLBACK.stream_enabled,
   showMaxIterations: true,
   showThinkingToggle: true,
+  showStreamSelect: true,
 })
 
 const emit = defineEmits<{
@@ -129,6 +147,7 @@ const emit = defineEmits<{
   (e: 'update:maxTokens', value: number): void
   (e: 'update:maxIterations', value: number): void
   (e: 'update:thinkingEnabled', value: boolean): void
+  (e: 'update:streamEnabled', value: boolean): void
 }>()
 
 const { t } = useI18n()
@@ -152,6 +171,19 @@ const maxIterationsSliderIndex = computed({
 const thinkingEnabledValue = computed({
   get: () => props.thinkingEnabled,
   set: (value: boolean) => emit('update:thinkingEnabled', value),
+})
+
+const streamModeOptions = computed(() => [
+  { value: 'stream', label: t('settings.model.streamModeStreaming') },
+  { value: 'non-stream', label: t('settings.model.streamModeNonStreaming') },
+])
+
+const streamModeValue = computed({
+  get: () => (props.streamEnabled ? 'stream' : 'non-stream'),
+  set: (value: string | string[]) => {
+    const mode = Array.isArray(value) ? value[0] : value
+    emit('update:streamEnabled', mode === 'stream')
+  },
 })
 
 const temperatureLabel = computed(() =>
@@ -281,6 +313,10 @@ const maxIterationsLabel = computed(() =>
 .parameter-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.parameter-select {
+  width: 220px;
 }
 
 .parameter-reset {

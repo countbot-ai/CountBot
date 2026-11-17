@@ -8,3 +8,4 @@ export type { ApiError, RetryConfig } from './client'
 
 // 导出所有 API 端点
 export * from './endpoints'
+export * from './nativeCaps'

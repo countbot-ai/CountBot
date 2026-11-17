@@ -1,6 +1,6 @@
 <template>
   <div class="mcp-panel">
-    <!-- Header -->
+    <!-- 顶部：启停开关 -->
     <div class="mcp-header">
       <div class="header-left">
         <h3 class="panel-title">{{ $t('settings.mcp.title') }}</h3>
@@ -21,14 +21,14 @@
       </div>
     </div>
 
-    <!-- Disabled State -->
+    <!-- 停用状态 -->
     <div v-if="!enabled" class="mcp-disabled-hint">
       <p>{{ $t('settings.mcp.disabledHint') }}</p>
     </div>
 
-    <!-- Enabled State -->
+    <!-- 启用状态 -->
     <template v-else>
-      <!-- Stats -->
+      <!-- 统计卡片 -->
       <div class="mcp-stats">
         <div class="stat-card">
           <span class="stat-value">{{ summary.total_servers }}</span>
@@ -48,7 +48,7 @@
         </div>
       </div>
 
-      <!-- Toolbar -->
+      <!-- 工具栏 -->
       <div class="mcp-toolbar">
         <div class="toolbar-group">
           <button class="mcp-btn mcp-btn-primary" @click="handleAdd">
@@ -74,20 +74,20 @@
         </div>
       </div>
 
-      <!-- Server List -->
+      <!-- 服务器列表 -->
       <div class="mcp-list">
         <div v-if="registry.servers.length === 0 && !editingServerId" class="empty-hint">
           {{ $t('settings.mcp.noServers') }}
         </div>
 
-        <!-- Existing Servers -->
+        <!-- 已有服务器 -->
         <div
           v-for="(server, index) in registry.servers"
           :key="server.id"
           class="server-card"
           :class="{ 'is-expanded': editingServerId === server.id }"
         >
-          <!-- Server Header (always visible, click to toggle) -->
+          <!-- 服务器头部：常显，点击展开/收起 -->
           <div class="server-header" @click="handleToggleExpand(server)">
             <div class="server-header-left">
               <span class="expand-arrow" :class="{ expanded: editingServerId === server.id }">▶</span>
@@ -127,7 +127,7 @@
             </div>
           </div>
 
-          <!-- Server Editor (expandable) -->
+          <!-- 服务器编辑区（可展开）-->
           <div v-if="editingServerId === server.id" class="server-body">
             <McpServerEditor
               :server="editingDraft"
@@ -142,7 +142,7 @@
           </div>
         </div>
 
-        <!-- New Server Editor -->
+        <!-- 新建服务器编辑区 -->
         <div v-if="isNewServer && editingServerId" class="server-card is-new">
           <McpServerEditor
             :server="editingDraft"
@@ -158,7 +158,7 @@
       </div>
     </template>
 
-    <!-- Tools Modal -->
+    <!-- 工具清单弹窗 -->
     <div v-if="showToolsModal" class="mcp-modal-overlay" @click.self="closeToolsModal">
       <div class="mcp-modal">
         <div class="mcp-modal-header">

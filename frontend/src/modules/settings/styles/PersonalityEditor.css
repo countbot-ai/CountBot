@@ -19,6 +19,13 @@
   color: var(--text-primary);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .header-create-button {
   flex-shrink: 0;
 }
@@ -64,18 +71,19 @@
 }
 
 .personality-card {
-  padding: 20px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 18px;
-  transition: all 0.2s ease;
-  box-shadow: var(--shadow-sm);
+  padding: 18px;
+  background: var(--color-bg-elevated);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: 12px;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  box-shadow: var(--shadow-xs);
 }
 
 .personality-card:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border-secondary);
   box-shadow: var(--shadow-sm);
-  transform: translateY(-2px);
 }
 
 .personality-card.inactive {

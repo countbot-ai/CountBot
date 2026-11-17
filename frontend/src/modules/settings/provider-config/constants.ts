@@ -3,7 +3,7 @@
  * 只保留无状态逻辑，方便被三个 composable 与子组件共用。
  */
 
-import type { ProviderApiType } from '@/api'
+import type { ProviderApiType, ProviderConfig, ProviderMetadata } from '@/api'
 
 /** 本地推理服务：不要求 API Key。 */
 export const LOCAL_PROVIDERS = ['ollama', 'vllm', 'lm_studio']
@@ -16,6 +16,24 @@ export const CUSTOM_PROVIDERS = ['custom_openai', 'custom_anthropic']
 
 export const DEFAULT_API_TYPE: ProviderApiType = 'openai-chat-completions'
 export const ANTHROPIC_API_TYPE: ProviderApiType = 'anthropic-messages'
+
+/**
+ * 同一供应商在不同 API 协议下的专用根地址。
+ * 例：DeepSeek 的 OpenAI 兼容端点是 /v1，Anthropic 兼容端点是 /anthropic。
+ */
+const API_TYPE_BASE_URLS: Record<string, Partial<Record<ProviderApiType, string>>> = {
+  deepseek: {
+    'anthropic-messages': 'https://api.deepseek.com/anthropic',
+  },
+}
+
+/** 该供应商 + 协议是否有专用的根地址，没有则返回空串。 */
+export function resolveApiTypeBaseUrl(
+  providerId: string | undefined,
+  apiType: ProviderApiType,
+): string {
+  return API_TYPE_BASE_URLS[providerId || '']?.[apiType] || ''
+}
 
 /** Anthropic 系走 messages 协议，其余默认 chat.completions。 */
 export function resolveDefaultApiType(providerId: string | undefined): ProviderApiType {
@@ -53,4 +71,41 @@ export function buildEditableApiKeys(
 ): string[] {
   const normalized = normalizeApiKeys(values, fallbackApiKey)
   return normalized.length ? normalized : ['']
+}
+
+/**
+ * 连接信息的可比较签名。
+ *
+ * 只比较会写回后端的字段，并在这里补上默认值——
+ * 例如已保存的 `api_base` 为空时界面会展示默认地址，不能因此被判成「有未保存更改」。
+ */
+export function buildConnectionSignature(
+  meta: ProviderMetadata,
+  config?: ProviderConfig,
+): string {
+  const defaultBase = (meta.defaultApiBase || meta.default_api_base || '').replace(/\/+$/, '')
+  return JSON.stringify({
+    name: String(config?.name || '').trim(),
+    api_base: String(config?.api_base || defaultBase || '').replace(/\/+$/, ''),
+    api_type: config?.api_type || resolveDefaultApiType(meta.id),
+    enabled: config?.enabled !== false,
+    api_keys: normalizeApiKeys(config?.api_keys, config?.api_key || ''),
+  })
+}
+
+/**
+ * 供应商展示名：优先用 i18n 里的本地化名称，其次用后端元数据，最后回落到 ID。
+ * 用户自定义的显示名不在这里处理，由调用方优先判断。
+ */
+export function resolveProviderLabel(
+  providerId: string,
+  translate: (key: string) => string,
+  hasTranslation: (key: string) => boolean,
+  fallback = '',
+): string {
+  const key = `settings.providers.${providerId}`
+  if (providerId && hasTranslation(key)) {
+    return translate(key)
+  }
+  return fallback || providerId
 }

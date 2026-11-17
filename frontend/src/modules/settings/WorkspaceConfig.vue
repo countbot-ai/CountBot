@@ -1,195 +1,95 @@
 <template>
-  <div class="workspace-config">
-    <div class="section-header">
-      <h3 class="section-title">
-        {{ $t('settings.workspace.title') }}
-      </h3>
-      <p class="section-desc">
-        {{ $t('settings.workspace.description') }}
+  <SettingsCard :title="$t('settings.workspace.pathCardTitle')" :description="$t('settings.workspace.pathHint')">
+    <SettingsRow :label="$t('settings.workspace.workspacePath')" layout="block">
+      <div class="path-row">
+        <input
+          v-model="workspaceConfig.path"
+          class="co-input path-input"
+          type="text"
+          :placeholder="defaultWorkspacePath || $t('settings.workspace.workspacePathPlaceholder')"
+          @blur="handlePathChange"
+        >
+        <button class="co-btn co-btn--secondary" @click="handleSelectDirectory">
+          <component :is="FolderOpenIcon" :size="14" />
+          {{ $t('settings.workspace.selectDirectory') }}
+        </button>
+      </div>
+      <template #below>
+        <p v-if="defaultWorkspacePath" class="note-line">
+          {{ $t('settings.workspace.defaultPath') }}：<code>{{ defaultWorkspacePath }}</code>
+        </p>
+        <p class="note-line">{{ $t('settings.workspace.globalScopeHint') }}</p>
+      </template>
+    </SettingsRow>
+  </SettingsCard>
+
+  <SettingsCard v-if="currentSession" :title="$t('settings.workspace.currentSessionTitle')">
+    <SettingsRow
+      :label="$t('settings.workspace.currentSessionTitle')"
+      :description="currentSessionIsCustom
+        ? $t('settings.workspace.currentSessionCustom')
+        : $t('settings.workspace.currentSessionGlobal')"
+      wide-control
+    >
+      <code class="path-text">{{ currentSessionWorkspacePath }}</code>
+      <button
+        v-if="currentSessionIsCustom"
+        class="co-btn co-btn--secondary"
+        @click="handleFollowGlobal"
+      >
+        {{ $t('settings.workspace.followGlobal') }}
+      </button>
+      <template #below>
+        <p class="note-line">{{ $t('settings.workspace.currentSessionHint') }}</p>
+      </template>
+    </SettingsRow>
+  </SettingsCard>
+
+  <SettingsCard v-if="workspaceInfo" :title="$t('settings.workspace.info.title')">
+    <SettingsRow :label="$t('settings.workspace.info.workspace')">
+      <span class="metric">{{ workspaceInfo.workspace.size_formatted }}</span>
+      <span class="metric-sub">
+        {{ workspaceInfo.workspace.files }} {{ $t('settings.workspace.info.files') }} ·
+        {{ workspaceInfo.workspace.directories }} {{ $t('settings.workspace.info.directories') }}
+      </span>
+    </SettingsRow>
+
+    <SettingsRow :label="$t('settings.workspace.info.tempFiles')">
+      <template v-if="workspaceInfo.temp.files > 0">
+        <button class="co-btn co-btn--secondary btn-compact" @click="cleanTempFiles(false)">
+          {{ $t('settings.workspace.info.clean') }}
+        </button>
+        <button class="co-btn co-btn--secondary btn-compact" @click="cleanTempFiles(true)">
+          {{ $t('settings.workspace.info.cleanAll') }}
+        </button>
+      </template>
+      <span class="metric">{{ workspaceInfo.temp.size_formatted }}</span>
+      <span class="metric-sub">
+        {{ workspaceInfo.temp.files }} {{ $t('settings.workspace.info.files') }}
+      </span>
+    </SettingsRow>
+  </SettingsCard>
+
+  <SettingsCard :title="$t('settings.workspace.warning.title')">
+    <div class="warning-block">
+      <p class="warning-lead">
+        <component :is="AlertTriangleIcon" :size="14" />
+        <span>{{ $t('settings.workspace.warning.message') }}</span>
       </p>
+      <ul class="warning-list">
+        <li>{{ $t('settings.workspace.warning.skills') }}</li>
+        <li>{{ $t('settings.workspace.warning.memory') }}</li>
+        <li>{{ $t('settings.workspace.warning.files') }}</li>
+      </ul>
     </div>
-
-    <div class="config-options">
-      <!-- 当前会话工作空间：说明会话级覆盖与全局默认的关系 -->
-      <div v-if="currentSession" class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="FolderIcon"
-              :size="20"
-              class="icon"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.workspace.currentSessionTitle') }}</h4>
-              <p class="card-desc">
-                {{
-                  currentSessionIsCustom
-                    ? $t('settings.workspace.currentSessionCustom')
-                    : $t('settings.workspace.currentSessionGlobal')
-                }}
-              </p>
-            </div>
-          </div>
-          <Button
-            v-if="currentSessionIsCustom"
-            variant="secondary"
-            size="sm"
-            @click="handleFollowGlobal"
-          >
-            {{ $t('settings.workspace.followGlobal') }}
-          </Button>
-        </div>
-        <div class="card-body">
-          <div class="path-display">
-            <component :is="FolderIcon" :size="16" />
-            <span>{{ currentSessionWorkspacePath }}</span>
-          </div>
-          <p class="hint-text">{{ $t('settings.workspace.currentSessionHint') }}</p>
-        </div>
-      </div>
-
-      <!-- 重要提示卡片 -->
-      <div class="config-card warning-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="AlertTriangleIcon"
-              :size="20"
-              class="icon icon-warning"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.workspace.warning.title') }}</h4>
-              <p class="card-desc">{{ $t('settings.workspace.warning.message') }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <ul class="warning-list">
-            <li>{{ $t('settings.workspace.warning.skills') }}</li>
-            <li>{{ $t('settings.workspace.warning.memory') }}</li>
-            <li>{{ $t('settings.workspace.warning.files') }}</li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- 工作空间路径配置卡片 -->
-      <div class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="FolderIcon"
-              :size="20"
-              class="icon"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.workspace.workspacePath') }}</h4>
-              <p class="card-desc">{{ $t('settings.workspace.pathHint') }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="path-input-group">
-            <Input
-              v-model="workspaceConfig.path"
-              type="text"
-              :placeholder="defaultWorkspacePath || $t('settings.workspace.workspacePathPlaceholder')"
-              @blur="handlePathChange"
-            />
-            <Button
-              variant="secondary"
-              :icon="FolderOpenIcon"
-              @click="handleSelectDirectory"
-            >
-              {{ $t('settings.workspace.selectDirectory') }}
-            </Button>
-          </div>
-          <p v-if="defaultWorkspacePath" class="hint-text">
-            {{ $t('settings.workspace.defaultPath') }}：{{ defaultWorkspacePath }}
-          </p>
-          <p class="hint-text">{{ $t('settings.workspace.globalScopeHint') }}</p>
-        </div>
-      </div>
-
-      <!-- 工作空间信息卡片 -->
-      <div v-if="workspaceInfo" class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="FolderIcon"
-              :size="20"
-              class="icon"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.workspace.info.title') }}</h4>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">{{ $t('settings.workspace.info.workspace') }}</span>
-              <span class="info-value">
-                {{ workspaceInfo.workspace.files }} {{ $t('settings.workspace.info.files') }}，{{ workspaceInfo.workspace.directories }} {{ $t('settings.workspace.info.directories') }}
-              </span>
-              <span class="info-size">{{ workspaceInfo.workspace.size_formatted }}</span>
-            </div>
-            
-            <div class="info-item">
-              <span class="info-label">{{ $t('settings.workspace.info.tempFiles') }}</span>
-              <span class="info-value">{{ workspaceInfo.temp.files }} {{ $t('settings.workspace.info.files') }}</span>
-              <span class="info-size">{{ workspaceInfo.temp.size_formatted }}</span>
-              <div v-if="workspaceInfo.temp.files > 0" class="info-actions">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  @click="cleanTempFiles(false)"
-                >
-                  {{ $t('settings.workspace.info.clean') }}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  @click="cleanTempFiles(true)"
-                >
-                  {{ $t('settings.workspace.info.cleanAll') }}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 当前路径显示卡片 -->
-      <div v-if="workspaceConfig.path" class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="FolderIcon"
-              :size="20"
-              class="icon"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.workspace.currentPath') }}</h4>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="path-display">
-            <component :is="FolderIcon" :size="16" />
-            <span>{{ workspaceConfig.path }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  </SettingsCard>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpen as FolderOpenIcon, Folder as FolderIcon, AlertTriangle as AlertTriangleIcon } from 'lucide-vue-next'
-import Input from '@/components/ui/Input.vue'
-import Button from '@/components/ui/Button.vue'
+import { FolderOpen as FolderOpenIcon, AlertTriangle as AlertTriangleIcon } from 'lucide-vue-next'
+import { SettingsCard, SettingsRow } from './ui'
 import { useSettingsStore } from '@/store/settings'
 import { useChatStore } from '@/store/chat'
 import { useToast } from '@/composables/useToast'
@@ -207,7 +107,12 @@ const workspaceConfig = ref({
 })
 
 const defaultWorkspacePath = ref('')
-const workspaceInfo = ref(null)
+interface WorkspaceInfo {
+  workspace: { path?: string; files: number; directories: number; size_formatted: string }
+  temp: { files: number; size_formatted: string }
+}
+
+const workspaceInfo = ref<WorkspaceInfo | null>(null)
 const isUpdating = ref(false)
 const isLoadingInfo = ref(false)
 const lastLoadTime = ref(0)
@@ -249,15 +154,6 @@ async function handleFollowGlobal() {
     console.error('Failed to reset session workspace:', error)
     toast.error(t('chat.sessionConfig.workspaceSaveFailed'), t('common.error'))
   }
-}
-
-// 防抖加载工作空间信息
-let loadInfoTimer: number | null = null
-const debouncedLoadWorkspaceInfo = (forceRefresh = false) => {
-  if (loadInfoTimer) {
-    clearTimeout(loadInfoTimer)
-  }
-  loadInfoTimer = window.setTimeout(() => loadWorkspaceInfo(forceRefresh), 500)
 }
 
 // 初始化配置
@@ -394,8 +290,7 @@ const cleanTempFiles = async (cleanAll = false) => {
 
 // 处理路径输入变化（blur 时触发）
 const handlePathChange = () => {
-  // 路径变化已通过 v-model + watch 自动同步到 store 和后端
-  // 此处可做额外校验
+  // 路径变化已由 v-model + watch 同步到 store 与后端，此处仅做校验
   const path = workspaceConfig.value.path.trim()
   if (path) {
     // 更智能的路径验证
@@ -481,8 +376,93 @@ const handleSelectDirectory = async () => {
     toast.error(t('settings.workspace.selectDirectoryFailed'), t('common.error'))
   }
 }
-
 </script>
+
 <style scoped>
-@import './styles/WorkspaceConfig.css';
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.path-text {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-line {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+
+.note-line + .note-line {
+  margin-top: 3px;
+}
+
+.note-line code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.metric {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.metric-sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.btn-compact {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--font-size-xs);
+}
+
+.warning-block {
+  padding: 12px var(--co-row-gutter) 14px;
+}
+
+.warning-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.warning-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: var(--font-size-xs);
+  line-height: 1.8;
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 680px) {
+  .path-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 </style>

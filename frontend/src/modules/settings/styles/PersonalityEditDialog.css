@@ -217,3 +217,206 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* 克隆人格字段较多，编辑框加宽，避免每个输入框都窄成一条 */
+.dialog-content.is-clone {
+  max-width: 780px;
+}
+
+.clone-block {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.clone-block > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  list-style: none;
+}
+
+.clone-block > summary::-webkit-details-marker {
+  display: none;
+}
+
+.clone-block > summary::before {
+  content: '▸';
+  font-size: 12px;
+  color: var(--text-tertiary);
+  transition: transform 0.15s;
+}
+
+.clone-block[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.clone-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-primary-light, rgba(59, 130, 246, 0.12));
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.clone-group {
+  margin-top: 18px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mini-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mini-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.empty-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.item-card {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.remove-btn {
+  flex-shrink: 0;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.remove-btn:hover {
+  background: var(--bg-hover);
+  color: var(--color-danger, #ef4444);
+}
+
+.textarea-sm {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.input-sm {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.verify-row {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.dna-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dna-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dna-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tag-group {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tag-group-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.doc-block {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.doc-block > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.doc-text {
+  margin: 8px 0 0;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-family: inherit;
+}

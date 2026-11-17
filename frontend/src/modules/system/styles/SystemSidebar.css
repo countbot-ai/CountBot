@@ -156,17 +156,18 @@
   color: var(--text-primary);
 }
 
-/* 认证区域 */
+/* 认证区域：置于侧栏顶部，与标题区用分隔线区隔 */
 .auth-section {
-  margin-top: 8px;
+  padding: 12px 16px 0;
 }
 
 .auth-divider {
   height: 1px;
   background: var(--border-color);
-  margin: 16px 0;
+  margin: 12px 0 0;
 }
 
+/* 身份与注销同一行：注销按钮贴右，不占整行高度 */
 .auth-user {
   display: flex;
   align-items: center;
@@ -174,7 +175,6 @@
   padding: 10px 12px;
   background: var(--bg-tertiary);
   border-radius: 8px;
-  margin-bottom: 12px;
 }
 
 .auth-user-icon {
@@ -194,12 +194,16 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  flex: 1;
 }
 
-.auth-user-label {
+.auth-user-name {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .auth-user-status {
@@ -211,23 +215,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 9px 0;
-  font-size: 13px;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--border-color, var(--color-border-primary));
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
+  flex-shrink: 0;
   transition: all 0.15s;
-}
-
-.logout-btn:hover {
-  color: var(--color-error);
-  border-color: var(--color-error);
-  background: var(--color-error-bg);
 }
 
 .logout-btn:hover {

@@ -1,37 +1,23 @@
 <template>
   <div class="multi-bot-editor">
-    <div class="config-section config-section-highlight">
-      <div class="enable-toggle-wrapper">
-        <div class="enable-toggle-content">
-          <div class="enable-toggle-label">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect x="4.5" y="7" width="15" height="10.5" rx="4" fill="currentColor" opacity="0.16"></rect>
-              <rect x="6.5" y="8.5" width="11" height="8" rx="3" stroke="currentColor" stroke-width="1.8"></rect>
-              <path d="M10 6L8.5 4.5M14 6l1.5-1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-              <circle cx="10" cy="12.5" r="1" fill="currentColor"></circle>
-              <circle cx="14" cy="12.5" r="1" fill="currentColor"></circle>
-              <path d="M10 15h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-            </svg>
-            <span class="enable-toggle-title">{{ enableTitle }}</span>
-          </div>
-          <p class="enable-toggle-hint">{{ enableHint }}</p>
+    <SettingsRow :label="enableTitle" :description="enableHint">
+      <SwitchToggle
+        v-model="channelEnabled"
+        :width="52"
+        :height="28"
+        :aria-label="enableTitle"
+      />
+      <template v-if="!channelEnabled" #below>
+        <div class="enable-warning">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <span>{{ disabledWarning }}</span>
         </div>
-        <SwitchToggle
-          v-model="channelEnabled"
-          :width="52"
-          :height="28"
-          :aria-label="enableTitle"
-        />
-      </div>
-      <div v-if="!channelEnabled" class="enable-warning">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-          <line x1="12" y1="9" x2="12" y2="13"></line>
-          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-        </svg>
-        <span>{{ disabledWarning }}</span>
-      </div>
-    </div>
+      </template>
+    </SettingsRow>
 
     <div v-if="guide" class="guide-card">
       <div class="guide-header">
@@ -115,17 +101,19 @@
             <span>{{ formatDeliveryError(getBotDeliveryError(primaryBot)) }}</span>
           </div>
 
-          <div class="config-section">
-            <label class="config-label">{{ t('settings.channels.multiBot.botName') }}</label>
+          <SettingsRow
+            :label="t('settings.channels.multiBot.botName')"
+            :description="t('settings.channels.multiBot.botNameHint')"
+            wide-control
+          >
             <input
               v-model="primaryBot.display_name"
               type="text"
               :placeholder="t('settings.channels.multiBot.primaryBotNamePlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
-            <p class="config-hint">{{ t('settings.channels.multiBot.botNameHint') }}</p>
-          </div>
+          </SettingsRow>
 
           <slot
             name="fields"
@@ -143,22 +131,22 @@
             </summary>
 
             <div class="advanced-group-body">
-              <div class="config-section config-section-advanced">
-                <label class="config-label">
-                  {{ t('settings.channels.multiBot.internalAccountId') }}
-                  <span class="advanced-badge">高级</span>
-                </label>
+              <SettingsRow
+                :description="t('settings.channels.multiBot.internalAccountIdHint')"
+                badge="高级"
+                wide-control
+              >
+                <template #label>{{ t('settings.channels.multiBot.internalAccountId') }}</template>
                 <input
                   type="text"
                   :value="primaryBot.draft_account_id"
                   :placeholder="t('settings.channels.multiBot.primaryAccountPlaceholder')"
-                  class="config-input"
+                  class="co-input"
                   @input="updateDraftAccountId(primaryBot, ($event.target as HTMLInputElement).value)"
                   @blur="commitAccountId(primaryBot, 'default')"
                   @keydown.enter.prevent="commitAccountId(primaryBot, 'default')"
                 />
-                <p class="config-hint">{{ t('settings.channels.multiBot.internalAccountIdHint') }}</p>
-              </div>
+              </SettingsRow>
 
               <ChannelRouteConfig :model="primaryBot" @change="handleChange" />
             </div>
@@ -240,16 +228,15 @@
             <span>{{ formatDeliveryError(getBotDeliveryError(account)) }}</span>
           </div>
 
-          <div class="config-section">
-            <label class="config-label">{{ t('settings.channels.multiBot.botName') }}</label>
+          <SettingsRow :label="t('settings.channels.multiBot.botName')" wide-control>
             <input
               v-model="account.display_name"
               type="text"
               :placeholder="t('settings.channels.multiBot.botNamePlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
-          </div>
+          </SettingsRow>
 
           <slot
             name="fields"
@@ -267,21 +254,18 @@
             </summary>
 
             <div class="advanced-group-body">
-              <div class="config-section config-section-advanced">
-                <label class="config-label">
-                  {{ t('settings.channels.multiBot.internalAccountId') }}
-                  <span class="advanced-badge">高级</span>
-                </label>
+              <SettingsRow badge="高级" wide-control>
+                <template #label>{{ t('settings.channels.multiBot.internalAccountId') }}</template>
                 <input
                   type="text"
                   :value="account.draft_account_id"
                   :placeholder="t('settings.channels.multiBot.accountPlaceholder')"
-                  class="config-input"
+                  class="co-input"
                   @input="updateDraftAccountId(account, ($event.target as HTMLInputElement).value)"
                   @blur="commitAccountId(account, 'bot')"
                   @keydown.enter.prevent="commitAccountId(account, 'bot')"
                 />
-              </div>
+              </SettingsRow>
 
               <ChannelRouteConfig :model="account" @change="handleChange" />
             </div>
@@ -310,6 +294,7 @@ import {
 } from 'lucide-vue-next'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import { useChannelsStore } from '@/store/channels'
+import { SettingsRow } from '../ui'
 import ChannelRouteConfig from './ChannelRouteConfig.vue'
 
 interface GuideConfig {

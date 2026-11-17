@@ -1,6 +1,4 @@
-/**
- * Vue3 应用入口
- */
+/** Vue3 应用入口 */
 
 import { createApp } from 'vue'
 import App from './App.vue'
@@ -9,6 +7,7 @@ import { pinia } from './store'
 import i18n from './i18n'
 import { installImeGuard } from './utils/imeGuard'
 import './assets/styles/main.css'
+import './modules/emoji/emoji.css'
 
 const VITE_PRELOAD_RELOAD_KEY = '__countbot_vite_preload_reload_at__'
 const VITE_PRELOAD_RELOAD_COOLDOWN_MS = 10_000

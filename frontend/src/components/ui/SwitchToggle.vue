@@ -116,9 +116,10 @@ function handleChange(event: Event) {
     box-shadow 0.2s ease;
 }
 
+/* 开启态跟随主题强调色：切换调色板时与之同步，不用固定的成功绿 */
 .switch-toggle-input:checked + .switch-toggle-track {
-  border-color: var(--color-success);
-  background: var(--color-success);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
   box-shadow: var(--shadow-sm);
 }
 

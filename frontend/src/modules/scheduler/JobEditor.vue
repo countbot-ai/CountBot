@@ -178,8 +178,8 @@
           >
             <option
               v-for="model in group.models"
-              :key="`${group.providerId}:${model.id}`"
-              :value="`${group.providerId}:${model.id}`"
+              :key="modelOptionKey(group, model)"
+              :value="modelOptionKey(group, model)"
             >
               {{ model.display_name || model.id }}
             </option>
@@ -349,11 +349,14 @@ import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import CronBuilder from './CronBuilder.vue'
 import { useChannelsStore } from '@/store/channels'
 import { useSettingsStore } from '@/store/settings'
-import { settingsAPI } from '@/api'
+import { meAPI } from '@/api'
 import type { CronJob, ProviderMetadata } from '@/api'
+import { useModelCatalog } from '@/composables/useModelCatalog'
 import {
   buildProviderOptions,
+  buildProviderOptionsFromMeModels,
   buildSelectableModelGroups,
+  type ProviderOption,
 } from '@/composables/useProviderModelCatalog'
 
 interface Props {
@@ -438,7 +441,7 @@ const syncAccountWithChannel = () => {
 }
 
 onMounted(() => {
-  // 强制刷新：渠道页刚启用/停用的渠道要立刻反映到推送目标里，不能吃旧缓存
+  // 强制刷新，确保渠道启用状态立即反映到推送目标
   void channelsStore.fetchDeliveryTargets(true)
 })
 
@@ -488,15 +491,23 @@ const syncChatIdWithChannel = () => {
 
 watch(() => formData.channel, syncChatIdWithChannel, { immediate: true })
 
-// 任务模型：复用「设置 -> 供应商」里的模型清单，与对话窗口的模型下拉同源
+// 任务模型：管理员复用全局供应商清单；普通用户复用 /api/me/models 的可选模型
 const settingsStore = useSettingsStore()
+const modelCatalog = useModelCatalog()
 const providerMetadata = ref<ProviderMetadata[]>([])
+const userProviderOptions = ref<ProviderOption[]>([])
 
 const modelGroups = computed(() =>
   buildSelectableModelGroups(
-    buildProviderOptions(settingsStore.settings?.providers, providerMetadata.value)
+    modelCatalog.isUserScoped.value
+      ? userProviderOptions.value
+      : buildProviderOptions(settingsStore.settings?.providers, providerMetadata.value)
   )
 )
+
+/** 共享模型合并展示时，条目自带真实供应商 ID。 */
+const modelOptionKey = (group: { providerId: string }, model: { id: string; provider_id?: string | null }) =>
+  `${model.provider_id || group.providerId}:${model.id}`
 
 const globalModelLabel = computed(() => {
   const model = settingsStore.settings?.model
@@ -530,22 +541,29 @@ const modelSelectionKey = computed({
   },
 })
 
-// 任务保存的模型可能已从清单里移除（供应商被停用等），保底显示原值避免静默改写
+// 任务保存的模型可能已从清单移除，回退显示原值避免静默改写
 const currentModelMissing = computed(() => {
   const key = modelSelectionKey.value
   if (!key) {
     return false
   }
   return !modelGroups.value.some(group =>
-    group.models.some(model => `${group.providerId}:${model.id}` === key)
+    group.models.some(model => modelOptionKey(group, model) === key)
   )
 })
 
 onMounted(async () => {
+  await modelCatalog.ensureIdentity().catch(() => {})
+  if (modelCatalog.isUserScoped.value) {
+    const data = await meAPI.listModels().catch(() => null)
+    userProviderOptions.value = data ? buildProviderOptionsFromMeModels(data) : []
+    return
+  }
+  // 全局设置仅管理员可读
   if (!settingsStore.settings) {
     await settingsStore.loadSettings().catch(() => {})
   }
-  providerMetadata.value = await settingsAPI.getProviders().catch(() => [])
+  providerMetadata.value = await modelCatalog.listProviders().catch(() => [])
 })
 
 const validateForm = (): boolean => {

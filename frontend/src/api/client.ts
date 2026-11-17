@@ -1,13 +1,4 @@
-/**
- * Axios API 客户端
- * 
- * 功能:
- * - 自动重试失败的请求
- * - 请求/响应拦截器
- * - 错误处理和转换
- * - 请求超时控制
- * - 请求取消支持
- */
+/** Axios API 客户端：自动重试、拦截器、错误转换、超时与取消支持 */
 
 import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 
@@ -185,11 +176,18 @@ function transformError(error: AxiosError): ApiError {
     if (error.response) {
         // 服务器返回错误响应
         const data = error.response.data as any
+        // 部分接口用嵌套 detail 承载分类错误，需拆一层才能取到 message 与 code
+        const nested = data?.detail && typeof data.detail === 'object' ? data.detail : null
+        const message =
+            data?.message ||
+            nested?.detail ||
+            (typeof data?.detail === 'string' ? data.detail : null) ||
+            `Request failed with status ${error.response.status}`
 
         return {
-            message: data?.message || data?.detail || `Request failed with status ${error.response.status}`,
+            message,
             status: error.response.status,
-            code: data?.code || error.code,
+            code: data?.code || nested?.code || error.code,
             details: data?.details || data,
         }
     } else if (error.request) {

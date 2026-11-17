@@ -79,10 +79,12 @@
                 :max-tokens="modelConfig.max_tokens ?? 0"
                 :max-iterations="modelConfig.max_iterations ?? 0"
                 :thinking-enabled="modelConfig.thinking_enabled ?? true"
+                :stream-enabled="modelConfig.stream_enabled ?? true"
                 @update:temperature="modelConfig.temperature = $event"
                 @update:maxTokens="modelConfig.max_tokens = $event"
                 @update:maxIterations="modelConfig.max_iterations = $event"
                 @update:thinkingEnabled="modelConfig.thinking_enabled = $event"
+                @update:streamEnabled="modelConfig.stream_enabled = $event"
               />
 
               <!-- 高级 API 设置 -->
@@ -180,7 +182,8 @@ import {
   X, Settings, Sparkles, Cpu, ChevronDown, Lock, 
   Save, RotateCcw, Loader2, Globe, CheckCircle, XCircle
 } from 'lucide-vue-next'
-import { settingsAPI, type ProviderMetadata } from '@/api'
+import { type ProviderMetadata } from '@/api'
+import { useModelCatalog } from '@/composables/useModelCatalog'
 import { agentTeamsApi, type TeamModelConfig } from '@/api/agentTeams'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
@@ -203,6 +206,8 @@ import {
 
 const { t } = useI18n()
 const toast = useToast()
+// 供应商目录与连通性测试按身份分流，普通用户不走管理员接口
+const modelCatalog = useModelCatalog()
 const { confirm } = useConfirm()
 
 type ProviderOption = Pick<ProviderMetadata, 'id' | 'name'> & {
@@ -234,7 +239,7 @@ const modelConfig = ref<TeamModelConfig>(createDefaultModelConfig())
 
 async function loadProviders() {
   try {
-    const providersData = await settingsAPI.getProviders()
+    const providersData = await modelCatalog.listProviders()
     providers.value = getSelectableProviders(providersData).map(p => ({
       id: p.id,
       name: p.name,
@@ -430,7 +435,7 @@ async function handleTestConnection() {
   testResult.value = null
 
   try {
-    const response = await settingsAPI.testConnection({
+    const response = await modelCatalog.testConnection({
       provider: modelConfig.value.provider || 'zhipu',
       api_key: modelConfig.value.api_key || undefined,
       api_base: modelConfig.value.api_base || undefined,

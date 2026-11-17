@@ -12,17 +12,17 @@
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
     <template #fields="{ model, handleChange, botKey }">
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow wide-control>
+        <template #label>
           {{ t('settings.channels.serverchan.sendKey') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.sendkey"
             :placeholder="t('settings.channels.serverchan.sendKeyPlaceholder')"
-            class="config-input"
+            class="co-input"
             autocomplete="off"
             @input="handleChange"
           />
@@ -37,17 +37,17 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">
-          {{ t('settings.channels.serverchan.sendKeyHint') }}
-          <a href="https://sct.ftqq.com/docs/getting-started/sendkey/" target="_blank" rel="noopener noreferrer">
-            {{ t('settings.channels.serverchan.sendKeyGuide') }}
-          </a>
-        </p>
-      </div>
+        <template #below>
+          <p class="co-row-desc">
+            {{ t('settings.channels.serverchan.sendKeyHint') }}
+            <a href="https://sct.ftqq.com/docs/getting-started/sendkey/" target="_blank" rel="noopener noreferrer">
+              {{ t('settings.channels.serverchan.sendKeyGuide') }}
+            </a>
+          </p>
+        </template>
+      </SettingsRow>
 
-      <div class="config-section">
-        <p class="config-hint">{{ t('settings.channels.serverchan.notice') }}</p>
-      </div>
+      <p class="co-row-desc">{{ t('settings.channels.serverchan.notice') }}</p>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -56,6 +56,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 
 interface Props {
   channelId: string

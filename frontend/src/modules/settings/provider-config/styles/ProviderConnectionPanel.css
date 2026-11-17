@@ -1,16 +1,16 @@
-/* 供应商连接表单：名称 / Base URL / 协议 / 密钥 */
+/* 供应商连接表单：显示名称 / API 格式 / Base URL / API 密钥 */
 
 .provider-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
   align-items: start;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -22,53 +22,185 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .label-hint {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
 }
 
 .required-hint {
   color: var(--color-error);
 }
 
+.label-tag {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
 .hint {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+  text-wrap: pretty;
 }
+
+/* 表单控件压到 34px，接近设置页其它原语的高度 */
+.provider-form :deep(.input-container) {
+  min-height: 34px;
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+}
+
+.provider-form :deep(.input-container:focus-within) {
+  border-color: var(--color-border-strong);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 3px var(--color-primary-alpha);
+}
+
+.provider-form :deep(.select-container) {
+  min-height: 34px;
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+}
+
+.provider-form :deep(.select-value) {
+  font-size: 13px;
+}
+
+.provider-form :deep(.select-container:focus),
+.provider-form :deep(.select-container.is-open) {
+  border-color: var(--color-border-strong);
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 3px var(--color-primary-alpha);
+}
+
+.provider-form :deep(.input) {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.provider-form :deep(.input-prefix) {
+  padding: 0 0 0 10px;
+  color: var(--color-text-tertiary);
+}
+
+.provider-form :deep(.input-container.has-prefix .input) {
+  padding-left: 6px;
+}
+
+.provider-form :deep(.input-suffix) {
+  padding: 0 6px;
+}
+
+/* ---------- Base URL 恢复默认 ---------- */
+
+.input-with-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.input-with-action > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.input-action:hover {
+  background: var(--color-accent-alpha);
+  color: var(--color-accent);
+}
+
+/* ---------- API 密钥 ---------- */
 
 .api-key-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .api-key-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
+}
+
+.api-key-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-tertiary);
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.api-key-tag.is-primary {
+  background: var(--color-accent-alpha);
+  color: var(--color-accent);
 }
 
 .api-key-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
   border-radius: 7px;
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .api-key-remove:hover {
@@ -80,16 +212,40 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
+}
+
+.api-key-actions :deep(.button) {
+  height: 28px;
+  padding: 0 8px;
 }
 
 .api-key-hint {
   min-width: 0;
+  flex: 1;
+  text-align: right;
 }
 
+/* ---------- 思考控制说明 ---------- */
+
 .provider-capability-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.provider-capability-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 @container (max-width: 680px) {
@@ -98,6 +254,10 @@
   }
 
   .api-key-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .api-key-hint {
+    text-align: left;
   }
 }

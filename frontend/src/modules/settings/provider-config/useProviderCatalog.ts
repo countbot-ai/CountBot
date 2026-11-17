@@ -4,29 +4,27 @@
  * 唯一所有者：`availableProviders`（后端供应商目录）与 `selectedProvider`（当前编辑的供应商）。
  *
  * 左栏只展示「已经保存过、且真的配了密钥或模型」的供应商：
- * 草稿里新加的供应商在保存成功前不会出现，保存成功后才会进入左栏，
- * 同时也就能在对话窗口的模型下拉里选到（下拉读的是同一份已保存配置）。
+ * 草稿里新加的供应商在保存成功前不会进入「已接入」分组，
+ * 但会带着「未保存」标记留在左栏，保存成功后标记自动失效。
  */
 
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { settingsAPI } from '@/api'
-import type { ProviderMetadata } from '@/api'
-import { useSettingsStore } from '@/store/settings'
+import type { ProviderConfig, ProviderMetadata } from '@/api'
 import {
   computeProviderRuntimeState,
   findProviderById,
   sortProvidersForDisplay,
 } from '@/utils/providerRuntime'
+import { buildConnectionSignature, resolveProviderLabel } from './constants'
+import type { ProviderConfigSource } from './source'
 import type { ProviderNavItem } from './types'
 
 export interface ProviderCatalog {
   availableProviders: Ref<ProviderMetadata[]>
   selectedProvider: Ref<string>
-  showAllProviders: Ref<boolean>
   selectedProviderMeta: ComputedRef<ProviderMetadata | undefined>
   navigationProviders: ComputedRef<ProviderNavItem[]>
-  hiddenProviderCount: ComputedRef<number>
   addableProviders: ComputedRef<ProviderMetadata[]>
   loadProviders: () => Promise<void>
   selectProvider: (providerId: string) => void
@@ -49,13 +47,22 @@ function isConfigured(config: unknown): boolean {
   return ((record.models as unknown[]) || []).length > 0
 }
 
-export function useProviderCatalog(): ProviderCatalog {
-  const { t } = useI18n()
-  const settingsStore = useSettingsStore()
+/**
+ * 连接信息的可比较签名（含默认值归一化）。
+ * 已保存的 `api_base` 为空时界面会展示默认地址，不能因此被判成「有未保存更改」。
+ */
+function connectionSignature(
+  meta: ProviderMetadata,
+  config?: ProviderConfig,
+): string {
+  return buildConnectionSignature(meta, config)
+}
+
+export function useProviderCatalog(source: ProviderConfigSource): ProviderCatalog {
+  const { t, te } = useI18n()
 
   const availableProviders = ref<ProviderMetadata[]>([])
   const selectedProvider = ref('')
-  const showAllProviders = ref(false)
   /**
    * 本次会话里通过「添加供应商」显式接过的供应商。
    * 后端为每个供应商都预建了空配置，光看配置无法区分「用户刚加的」和「一直存在的空壳」，
@@ -68,20 +75,18 @@ export function useProviderCatalog(): ProviderCatalog {
    * 首次渲染时 persistedSettings 可能还没就绪，先退回当前配置避免闪空。
    */
   const savedProviderConfigs = computed(
-    () => (settingsStore.persistedSettings || settingsStore.settings)?.providers || {},
+    () => (source.persistedSettings.value || source.settings.value)?.providers || {},
   )
 
   const selectedProviderMeta = computed(() =>
     findProviderById(availableProviders.value, selectedProvider.value),
   )
 
-  /**
-   * 左栏全集：后端有目录 + （已保存配过 或 本次刚添加）。
-   */
+  /** 左栏全集：后端有目录 + （已保存配过 或 本次刚添加）。 */
   const allNavItems = computed<ProviderNavItem[]>(() => {
     const savedConfigs = savedProviderConfigs.value
-    const draftConfigs = settingsStore.settings?.providers || {}
-    const currentProviderId = settingsStore.settings?.model?.provider || ''
+    const draftConfigs = source.settings.value?.providers || {}
+    const currentProviderId = source.settings.value?.model?.provider || ''
 
     return sortProvidersForDisplay(availableProviders.value)
       .filter(
@@ -91,8 +96,11 @@ export function useProviderCatalog(): ProviderCatalog {
       )
       .map(meta => {
         const savedConfig = savedConfigs[meta.id]
+        const draftConfig = draftConfigs[meta.id]
+        const configured = isConfigured(savedConfig)
+        const pendingSave = !configured && addedProviderIds.value.includes(meta.id)
         // 刚添加、还没配好的：用草稿数据，界面才能立刻反映刚填的名字
-        const config = savedConfig || draftConfigs[meta.id]
+        const config = pendingSave ? (draftConfig || savedConfig) : (savedConfig || draftConfig)
         const enabledCount = (config?.models || []).filter(
           model => model.enabled !== false,
         ).length
@@ -102,8 +110,15 @@ export function useProviderCatalog(): ProviderCatalog {
           api_keys: config?.api_keys || [],
           api_base: config?.api_base || '',
         })
-        const name = config?.name || meta.name || meta.id
-        const configured = isConfigured(savedConfig)
+        const name = config?.name
+          || resolveProviderLabel(meta.id, t, te, meta.name || meta.id)
+        const statusText = runtime.selectable
+          ? t('settings.providers.providerReadyHint')
+          : runtime.reason === 'missing_api_key'
+            ? t('settings.providers.providerMissingApiKeyHint')
+            : runtime.reason === 'missing_api_base'
+              ? t('settings.providers.providerMissingApiBaseHint')
+              : t('settings.providers.providerDisabledHint')
 
         return {
           id: meta.id,
@@ -112,25 +127,20 @@ export function useProviderCatalog(): ProviderCatalog {
           modelSummary: enabledCount
             ? t('settings.providers.models.count', { count: enabledCount })
             : t('settings.providers.models.emptyHint'),
+          statusText,
           statusClass: runtime.selectable ? 'is-ready' : 'is-warning',
           configured,
           // 刚添加但还没保存配好：显示「未保存」，保存成功后自动消失
-          pendingSave: !configured && addedProviderIds.value.includes(meta.id),
+          pendingSave,
+          dirty: pendingSave
+            || connectionSignature(meta, draftConfig) !== connectionSignature(meta, savedConfig),
         } as ProviderNavItem
       })
   })
 
-  /** 默认只出「已保存且配过密钥或模型」的，外加刚添加、还没保存的 */
+  /** 已接入的供应商；刚添加、还没保存的也先留在列表里 */
   const navigationProviders = computed(() =>
-    showAllProviders.value
-      ? allNavItems.value
-      : allNavItems.value.filter(item => item.configured || item.pendingSave),
-  )
-
-  const hiddenProviderCount = computed(
-    () =>
-      allNavItems.value.length
-      - allNavItems.value.filter(item => item.configured || item.pendingSave).length,
+    allNavItems.value.filter(item => item.configured || item.pendingSave),
   )
 
   /** 还没真正接进来的供应商：可以出现在「添加供应商」里 */
@@ -141,7 +151,7 @@ export function useProviderCatalog(): ProviderCatalog {
   )
 
   async function loadProviders(): Promise<void> {
-    availableProviders.value = sortProvidersForDisplay(await settingsAPI.getProviders())
+    availableProviders.value = sortProvidersForDisplay(await source.api.listProviderMetadata())
   }
 
   function selectProvider(providerId: string): void {
@@ -165,10 +175,8 @@ export function useProviderCatalog(): ProviderCatalog {
   return {
     availableProviders,
     selectedProvider,
-    showAllProviders,
     selectedProviderMeta,
     navigationProviders,
-    hiddenProviderCount,
     addableProviders,
     loadProviders,
     selectProvider,

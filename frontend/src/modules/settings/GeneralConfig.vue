@@ -1,102 +1,60 @@
 <template>
-  <div class="general-config">
-    <div class="section-header">
-      <h3 class="section-title">
-        {{ $t('settings.general.title') }}
-      </h3>
-      <p class="section-desc">
-        {{ $t('settings.general.description') }}
-      </p>
-    </div>
-
-    <div class="config-options">
-      <!-- 主题设置 -->
-      <div class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component :is="activeThemeIcon" :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.general.theme') }}</h4>
-              <p class="card-desc">{{ $t('settings.general.themeDesc') }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="theme-options">
-            <button
-              v-for="theme in themes"
-              :key="theme.value"
-              class="theme-btn"
-              :class="{ active: themePreset === theme.value }"
-              @click="setThemePreset(theme.value)"
-            >
-              <component :is="theme.icon" :size="18" />
-              <span>{{ $t(theme.label) }}</span>
-            </button>
-          </div>
-        </div>
+  <SettingsCard :title="$t('settings.general.appearanceCard')">
+    <SettingsRow
+      :label="$t('settings.general.theme')"
+      :description="$t('settings.general.themeDesc')"
+      layout="block"
+    >
+      <div class="theme-grid">
+        <button
+          v-for="theme in themes"
+          :key="theme.value"
+          class="theme-tile"
+          :class="{ 'is-active': themePreset === theme.value }"
+          :aria-pressed="themePreset === theme.value"
+          @click="setThemePreset(theme.value)"
+        >
+          <component :is="theme.icon" :size="16" class="theme-tile-icon" />
+          <span class="theme-tile-label">{{ $t(theme.label) }}</span>
+        </button>
       </div>
+    </SettingsRow>
 
-      <!-- 语言设置 -->
-      <div class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="LanguagesIcon"
-              :size="20"
-              class="icon"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.general.language') }}</h4>
-              <p class="card-desc">{{ $t('settings.general.languageDesc') }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="language-options">
-            <button
-              v-for="lang in languages"
-              :key="lang.value"
-              class="language-btn"
-              :class="{ active: currentLocale === lang.value }"
-              @click="setLanguage(lang.value)"
-            >
-              <span class="language-flag">{{ lang.flag }}</span>
-              <span class="language-name">{{ lang.label }}</span>
-            </button>
-          </div>
-        </div>
+    <SettingsRow
+      :label="$t('settings.general.language')"
+      :description="$t('settings.general.languageDesc')"
+    >
+      <div class="co-segmented">
+        <button
+          v-for="lang in languages"
+          :key="lang.value"
+          class="co-segmented-item"
+          :class="{ 'is-active': currentLocale === lang.value }"
+          @click="setLanguage(lang.value)"
+        >
+          {{ lang.label }}
+        </button>
       </div>
+    </SettingsRow>
 
-      <div class="config-card">
-        <div class="card-header">
-          <div class="header-left">
-            <component
-              :is="LanguagesIcon"
-              :size="20"
-              class="icon"
-            />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.general.outputLanguage') }}</h4>
-              <p class="card-desc">{{ $t('settings.general.outputLanguageDesc') }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <Input
-            v-model="outputLanguage"
-            type="text"
-            :placeholder="$t('settings.general.outputLanguagePlaceholder')"
-            :hint="$t('settings.general.outputLanguageHint')"
-          />
-        </div>
-      </div>
-    </div>
-  </div>
+    <SettingsRow
+      :label="$t('settings.general.outputLanguage')"
+      :description="$t('settings.general.outputLanguageDesc')"
+      :hint="$t('settings.general.outputLanguageHint')"
+      wide-control
+    >
+      <Input
+        v-model="outputLanguage"
+        class="output-language-input"
+        type="text"
+        :placeholder="$t('settings.general.outputLanguagePlaceholder')"
+      />
+    </SettingsRow>
+  </SettingsCard>
 </template>
 
 <script setup lang="ts">
-import { computed, watch, type Component } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import {
   Sun as SunIcon,
   Moon as MoonIcon,
@@ -104,7 +62,6 @@ import {
   Snowflake as SnowflakeIcon,
   Trees as TreesIcon,
   Flower2 as Flower2Icon,
-  Languages as LanguagesIcon
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import Input from '@/components/ui/Input.vue'
@@ -112,22 +69,52 @@ import { setLocale } from '@/i18n'
 import { useTheme } from '@/composables/useTheme'
 import type { ThemePreset } from '@/i18n/utils/detector'
 import { useSettingsStore } from '@/store/settings'
+import { usePersonaSource } from '@/composables/usePersonaSource'
+import { SettingsCard, SettingsRow } from './ui'
 
 const { locale } = useI18n()
 const { themePreset, setThemePreset } = useTheme()
 const settingsStore = useSettingsStore()
+// 输出语言属于用户人设：管理员改全局配置，普通用户改自己的配置
+const personaSource = usePersonaSource()
 
 const currentLocale = computed(() => locale.value)
+
+/** 普通用户的输出语言存在本地（全局配置不可读），管理员沿用全局草稿 */
+const localOutputLanguage = ref('中文')
+
 const outputLanguage = computed({
-  get: () => settingsStore.settings?.persona.output_language || '中文',
+  get: () =>
+    personaSource.isUserScoped.value
+      ? localOutputLanguage.value
+      : settingsStore.settings?.persona.output_language || '中文',
   set: (value: string) => {
+    if (personaSource.isUserScoped.value) {
+      localOutputLanguage.value = value
+      return
+    }
     if (settingsStore.settings) {
       settingsStore.settings.persona.output_language = value
     }
-  }
+  },
 })
 
-type ThemeOption = {
+// 输出语言归属用户人设，身份异步到位，用 watch 跟踪角色确定数据来源
+watch(
+  () => personaSource.isUserScoped.value,
+  async (scoped) => {
+    if (!scoped) return
+    try {
+      const persona = await personaSource.load()
+      localOutputLanguage.value = String(persona.output_language || '中文')
+    } catch (error) {
+      console.error('Failed to load output language:', error)
+    }
+  },
+  { immediate: true },
+)
+
+interface ThemeOption {
   value: ThemePreset
   label: string
   icon: Component
@@ -139,230 +126,103 @@ const themes: ThemeOption[] = [
   { value: 'auto', label: 'settings.general.autoTheme', icon: MonitorIcon },
   { value: 'cool', label: 'settings.general.coolTheme', icon: SnowflakeIcon },
   { value: 'forest', label: 'settings.general.forestTheme', icon: TreesIcon },
-  { value: 'sakura', label: 'settings.general.sakuraTheme', icon: Flower2Icon }
+  { value: 'sakura', label: 'settings.general.sakuraTheme', icon: Flower2Icon },
 ]
-
-const activeThemeIcon = computed(
-  () => themes.find((theme) => theme.value === themePreset.value)?.icon ?? SunIcon
-)
 
 const languages = [
-  { value: 'zh-CN', label: '简体中文', flag: '🇨🇳' },
-  { value: 'en-US', label: 'English', flag: '🇺🇸' }
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'en-US', label: 'English' },
 ]
 
+/** 统一走 i18n 入口，同步 locale、localStorage 与 <html lang> */
 function setLanguage(lang: string) {
-  // 统一走 i18n 的入口：同时更新 locale、localStorage（CountBot-language）和 <html lang>。
-  // 之前这里写的是错误的键 'locale'，刷新后 bootstrap 读不到，语言就丢回系统默认。
-  const next = lang === 'zh-CN' ? 'zh-CN' : 'en-US'
-  setLocale(next)
+  setLocale(lang === 'zh-CN' ? 'zh-CN' : 'en-US')
 }
 
+// 输出语言留空会让注入的提示词带上空字符串，回落到中文
 watch(
-  () => settingsStore.settings?.persona.output_language,
+  () => (personaSource.isUserScoped.value ? localOutputLanguage.value : settingsStore.settings?.persona.output_language),
   (value) => {
+    if (personaSource.isUserScoped.value) {
+      if (!value?.trim()) localOutputLanguage.value = '中文'
+      return
+    }
     if (settingsStore.settings?.persona && !value?.trim()) {
       settingsStore.settings.persona.output_language = '中文'
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
+/** 保存通用设置：普通用户的输出语言在此落库，管理员已写入全局草稿 */
+async function saveConfig(): Promise<boolean> {
+  if (personaSource.isUserScoped.value) {
+    await personaSource.save({ output_language: localOutputLanguage.value || '中文' })
+  }
+  return true
+}
+
+defineExpose({ saveConfig })
 </script>
 
 <style scoped>
-.general-config {
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.theme-tile {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xl);
-  padding: var(--spacing-md);
-}
-
-.section-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.section-title {
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.section-desc {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  margin: 0;
-  line-height: var(--line-height-relaxed);
-}
-
-.config-options {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-}
-
-.config-card {
-  background: var(--color-bg-primary);
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  transition: all var(--transition-base);
-}
-
-.config-card:hover {
-  border-color: var(--color-border-secondary);
-  box-shadow: var(--shadow-sm);
-}
-
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: var(--spacing-lg);
-  gap: var(--spacing-md);
-}
-
-.header-left {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-md);
-  flex: 1;
-  min-width: 0;
-}
-
-.icon {
-  flex-shrink: 0;
-  color: var(--color-primary);
-  margin-top: 2px;
-}
-
-.header-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  flex: 1;
-  min-width: 0;
-}
-
-.card-title {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.card-desc {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  margin: 0;
-  line-height: var(--line-height-normal);
-}
-
-.card-body {
-  border-top: 1px solid var(--color-border-primary);
-  padding: var(--spacing-lg);
+  border-radius: var(--radius-md);
   background: var(--color-bg-secondary);
-}
-
-/* 主题选项 */
-.theme-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--spacing-sm);
-}
-
-.theme-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-md);
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-md);
   color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-base);
+  font-family: inherit;
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-}
-
-.theme-btn:hover {
-  border-color: var(--color-border-secondary);
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
-}
-
-.theme-btn.active {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-}
-
-.theme-btn.active:hover {
-  transform: translateY(-2px);
-}
-
-/* 语言选项 */
-.language-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--spacing-sm);
-}
-
-.language-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  background: var(--color-bg-primary);
-  border: 2px solid var(--color-border-primary);
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-base);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-}
-
-.language-btn:hover {
-  border-color: var(--color-border-secondary);
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
-}
-
-.language-btn.active {
-  border-color: var(--color-border-strong);
-  /* 与主题卡片共用同一选中态令牌，避免两处选中色随色调切换后再次分叉 */
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-}
-
-.language-btn.active:hover {
-  transform: translateY(-2px);
-}
-
-.language-flag {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.language-name {
-  flex: 1;
   text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
-/* 响应式 */
-@media (max-width: 768px) {
-  .theme-options,
-  .language-options {
-    grid-template-columns: 1fr;
+.theme-tile:hover {
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+/* 选中态只用边框与文字层级表达，不加彩色填充 */
+.theme-tile.is-active {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.theme-tile-icon {
+  flex-shrink: 0;
+}
+
+.theme-tile-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.output-language-input {
+  width: 100%;
+  max-width: 280px;
+}
+
+@media (max-width: 680px) {
+  .output-language-input {
+    max-width: none;
   }
 }
 </style>

@@ -9,17 +9,11 @@ export interface WebSocketMessage {
 
 export interface UseWebSocketOptions {
   onMessage?: (message: WebSocketMessage) => void
-  /**
-   * isReconnect 为 true 表示这是断线恢复后建立的连接，
-   * 调用方可据此补齐断线期间错过的数据。
-   */
+  /** isReconnect 表示断线恢复后建立的连接，调用方可据此补齐数据 */
   onOpen?: (isReconnect: boolean) => void
   onClose?: (event: CloseEvent) => void
   onError?: (error: Event) => void
-  /**
-   * 返回 true 表示当前有请求正在处理。服务端事件循环在跑对话时读不到 ping，
-   * 此时不能用 pong 超时判定连接已失活，否则会误杀正常的长时间输出。
-   */
+  /** 返回 true 表示当前有请求在处理，此时不能用 pong 超时判定失活 */
   isBusy?: () => boolean
 }
 
@@ -35,10 +29,7 @@ const PONG_TIMEOUT = 65000
 // 连续握手失败达到该次数后给出排查提示（握手被拒通常只能拿到 1006）
 const HANDSHAKE_HINT_THRESHOLD = 3
 
-/**
- * 服务端明确告知、重试没有意义的关闭。
- * 1011 带原因时才认定是模型服务不可用；不带原因的 1011 仍按普通故障重试。
- */
+/** 服务端明确告知且重试无意义的关闭；1011 仅带原因时视为致命 */
 function isFatalClose(event: CloseEvent): boolean {
   if (event.code === 4001 || event.code === 4003) return true
   return event.code === 1011 && Boolean(event.reason)
@@ -93,8 +84,7 @@ export function useWebSocket() {
         return
       }
 
-      // 有请求在跑时服务端无法及时回 pong，视为存活；
-      // 仅在空闲状态下用 pong 超时判定连接是否已经失活。
+      // 请求处理中服务端无法及时回 pong，仅在空闲时用 pong 超时判定失活
       if (busyProbe?.() === true) {
         lastPongAt = Date.now()
       } else if (Date.now() - lastPongAt > PONG_TIMEOUT) {
@@ -226,6 +216,9 @@ export function useWebSocket() {
   }
 
   function handleFatalClose(event: CloseEvent) {
+    // 同一条连接可能因重复的关闭回调多次抵达，只提示一次，避免刷屏
+    if (fatal) return
+
     fatal = true
     clearReconnectTimer()
     reconnectingVisible.value = false
@@ -313,8 +306,7 @@ export function useWebSocket() {
         return
       }
 
-      // 握手都没完成通常是服务端拒绝（未认证 / 未初始化 / 模型不可用），
-      // 浏览器只会给出 1006，这里累计次数后给出排查提示。
+      // 握手未完成通常是服务端拒绝，浏览器只给出 1006，累计次数后提示排查
       if (opened) {
         handshakeFailures = 0
       } else {
@@ -332,10 +324,14 @@ export function useWebSocket() {
   function connectWebSocket(sessionId: string) {
     if (!sessionId) return
 
+    // fatal 为粘性标记，仅用户主动重连才解除，避免反复握手收到致命关闭
     disposed = false
-    fatal = false
     desiredSessionId = sessionId
     attachNetworkListeners()
+
+    if (fatal) {
+      return
+    }
 
     const active = ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
     if (active && wsSessionId === sessionId) {

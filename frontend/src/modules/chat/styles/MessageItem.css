@@ -545,6 +545,30 @@
   white-space: pre-wrap;
 }
 
+/* 引用卡片：用户消息里被引用的那段原文，压成侧边竖线的小块 */
+.message-quote {
+  margin-bottom: 8px;
+  padding: 0 0 0 8px;
+  border-left: 2px solid var(--color-border-secondary);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.message-quote-head {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.message-quote-text {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .message-time {
   font-size: var(--font-size-xs);
   color: var(--color-text-disabled);

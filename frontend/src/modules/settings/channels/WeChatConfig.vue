@@ -13,38 +13,34 @@
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
     <template #fields="{ model, handleChange, botKey, isPrimary }">
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.wechat.baseUrl') }}</label>
+      <SettingsRow :label="t('settings.channels.wechat.baseUrl')" :description="t('settings.channels.wechat.baseUrlHint')" wide-control>
         <input
           v-model="model.base_url"
           type="text"
           :placeholder="t('settings.channels.wechat.baseUrlPlaceholder')"
-          class="config-input"
+          class="co-input"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.wechat.baseUrlHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.wechat.cdnBaseUrl') }}</label>
+      <SettingsRow :label="t('settings.channels.wechat.cdnBaseUrl')" :description="t('settings.channels.wechat.cdnBaseUrlHint')" wide-control>
         <input
           v-model="model.cdn_base_url"
           type="text"
           :placeholder="t('settings.channels.wechat.cdnBaseUrlPlaceholder')"
-          class="config-input"
+          class="co-input"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.wechat.cdnBaseUrlHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.wechat.token') }}</label>
+      <SettingsRow :description="t('settings.channels.wechat.tokenHint')" wide-control>
+        <template #label>{{ t('settings.channels.wechat.token') }}</template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.token"
             :placeholder="t('settings.channels.wechat.tokenPlaceholder')"
-            class="config-input"
+            class="co-input"
             @input="handleChange"
           />
           <button
@@ -63,91 +59,88 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.wechat.tokenHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section login-section">
-        <div class="login-section-header">
-          <div>
-            <label class="config-label">{{ t('settings.channels.wechat.qrLogin') }}</label>
-            <p class="config-hint">{{ t('settings.channels.wechat.qrLoginHint') }}</p>
-          </div>
-          <button
-            type="button"
-            class="login-button"
-            :disabled="getLoginState(botKey).busy"
-            @click="beginQrLogin(model, botKey, isPrimary)"
-          >
-            {{
-              getLoginState(botKey).busy
-                ? t('settings.channels.wechat.loginStarting')
-                : t('settings.channels.wechat.startLogin')
-            }}
-          </button>
-        </div>
+      <SettingsRow
+        :label="t('settings.channels.wechat.qrLogin')"
+        :description="t('settings.channels.wechat.qrLoginHint')"
+      >
+        <button
+          type="button"
+          class="login-button"
+          :disabled="getLoginState(botKey).busy"
+          @click="beginQrLogin(model, botKey, isPrimary)"
+        >
+          {{
+            getLoginState(botKey).busy
+              ? t('settings.channels.wechat.loginStarting')
+              : t('settings.channels.wechat.startLogin')
+          }}
+        </button>
 
-        <div class="login-status-card" :class="`status-${getLoginState(botKey).status}`">
-          <div class="status-row">
-            <span class="status-label">{{ t('settings.channels.wechat.loginStatus') }}</span>
-            <span class="status-value">{{ formatLoginStatus(getLoginState(botKey).status) }}</span>
-          </div>
-          <p class="status-message">{{ getLoginState(botKey).message || t('settings.channels.wechat.loginIdle') }}</p>
-
-          <div
-            v-if="model.login_bot_id || model.login_user_id"
-            class="login-meta"
-          >
-            <div v-if="model.login_bot_id" class="meta-item">
-              <span class="meta-label">{{ t('settings.channels.wechat.loginBotId') }}</span>
-              <span class="meta-value">{{ model.login_bot_id }}</span>
+        <template #below>
+          <div class="login-status-card" :class="`status-${getLoginState(botKey).status}`">
+            <div class="status-row">
+              <span class="status-label">{{ t('settings.channels.wechat.loginStatus') }}</span>
+              <span class="status-value">{{ formatLoginStatus(getLoginState(botKey).status) }}</span>
             </div>
-            <div v-if="model.login_user_id" class="meta-item">
-              <span class="meta-label">{{ t('settings.channels.wechat.loginUserId') }}</span>
-              <span class="meta-value">{{ model.login_user_id }}</span>
-            </div>
-          </div>
+            <p class="status-message">{{ getLoginState(botKey).message || t('settings.channels.wechat.loginIdle') }}</p>
 
-          <div v-if="getLoginState(botKey).qrcodeUrl" class="qr-card">
-            <img
-              :src="getLoginState(botKey).qrcodeUrl"
-              :alt="t('settings.channels.wechat.qrCodeAlt')"
-              class="qr-image"
-              @error="handleQrImageError(botKey)"
-            />
-            <div class="qr-actions">
-              <button
-                type="button"
-                class="secondary-button"
-                :disabled="getLoginState(botKey).polling"
-                @click="pollQrLogin(botKey)"
-              >
-                {{
-                  getLoginState(botKey).polling
-                    ? t('settings.channels.wechat.polling')
-                    : t('settings.channels.wechat.checkLogin')
-                }}
-              </button>
-              <button
-                type="button"
-                class="secondary-button"
-                @click="clearLoginState(botKey)"
-              >
-                {{ t('common.close') }}
-              </button>
+            <div
+              v-if="model.login_bot_id || model.login_user_id"
+              class="login-meta"
+            >
+              <div v-if="model.login_bot_id" class="meta-item">
+                <span class="meta-label">{{ t('settings.channels.wechat.loginBotId') }}</span>
+                <span class="meta-value">{{ model.login_bot_id }}</span>
+              </div>
+              <div v-if="model.login_user_id" class="meta-item">
+                <span class="meta-label">{{ t('settings.channels.wechat.loginUserId') }}</span>
+                <span class="meta-value">{{ model.login_user_id }}</span>
+              </div>
+            </div>
+
+            <div v-if="getLoginState(botKey).qrcodeUrl" class="qr-card">
+              <img
+                :src="getLoginState(botKey).qrcodeUrl"
+                :alt="t('settings.channels.wechat.qrCodeAlt')"
+                class="qr-image"
+                @error="handleQrImageError(botKey)"
+              />
+              <div class="qr-actions">
+                <button
+                  type="button"
+                  class="secondary-button"
+                  :disabled="getLoginState(botKey).polling"
+                  @click="pollQrLogin(botKey)"
+                >
+                  {{
+                    getLoginState(botKey).polling
+                      ? t('settings.channels.wechat.polling')
+                      : t('settings.channels.wechat.checkLogin')
+                  }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  @click="clearLoginState(botKey)"
+                >
+                  {{ t('common.close') }}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </template>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.wechat.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.wechat.allowFrom')" :description="t('settings.channels.wechat.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.wechat.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
@@ -156,8 +149,7 @@
             + {{ t('settings.channels.wechat.addUser') }}
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.wechat.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -167,6 +159,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 
 interface Props {
   channelId: string

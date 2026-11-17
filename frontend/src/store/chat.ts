@@ -12,6 +12,7 @@ import {
     type Message as ApiMessage,
     type GetMessagesParams,
 } from '@/api'
+import type { NativeChatEvent } from '@/types/nativeCaps'
 import { parseTimestamp } from '@/utils/time'
 
 export interface Session {
@@ -32,6 +33,7 @@ export interface Message {
     content: string
     reasoningContent?: string | null
     attachmentItems?: AttachmentItem[]
+    nativeEvents?: NativeChatEvent[]
     createdAt: string
     toolCallCount?: number
     specialToolCallNames?: string[]
@@ -204,6 +206,7 @@ export const useChatStore = defineStore('chat', () => {
                 content: m.content,
                 reasoningContent: m.reasoning_content,
                 attachmentItems: m.attachment_items || [],
+                nativeEvents: m.native_events || [],
                 createdAt: m.created_at,
                 toolCallCount: m.tool_call_count || 0,
                 specialToolCallNames: m.special_tool_call_names || [],

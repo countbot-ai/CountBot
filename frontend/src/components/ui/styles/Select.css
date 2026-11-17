@@ -188,6 +188,15 @@
   color: var(--color-primary);
 }
 
+/* 供应商等前缀图标：选中值 + 下拉行共用 */
+.select-leading-icon,
+.option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .option-label {
   flex: 1;
   font-size: var(--font-size-base);

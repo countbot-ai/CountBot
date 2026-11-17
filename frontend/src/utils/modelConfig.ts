@@ -6,6 +6,7 @@ export interface ModelConfigLike {
   max_tokens?: number
   max_iterations?: number
   thinking_enabled?: boolean
+  stream_enabled?: boolean
   supports_image?: boolean | null
   api_key?: string
   api_base?: string
@@ -20,6 +21,7 @@ export const MODEL_CONFIG_FALLBACK: Required<ModelConfigLike> = {
   // 0 = 不限制工具调用次数
   max_iterations: 0,
   thinking_enabled: true,
+  stream_enabled: true,
   supports_image: null,
   api_key: '',
   api_base: '',
@@ -63,6 +65,7 @@ const DIFF_KEYS: Array<keyof ModelConfigLike> = [
   'max_tokens',
   'max_iterations',
   'thinking_enabled',
+  'stream_enabled',
   'supports_image',
   'api_key',
   'api_base',
@@ -120,6 +123,7 @@ export function buildCustomModelEditorConfig<T extends ModelConfigLike>(
     max_tokens: override?.max_tokens ?? MODEL_CONFIG_FALLBACK.max_tokens,
     max_iterations: override?.max_iterations ?? MODEL_CONFIG_FALLBACK.max_iterations,
     thinking_enabled: override?.thinking_enabled ?? MODEL_CONFIG_FALLBACK.thinking_enabled,
+    stream_enabled: override?.stream_enabled ?? MODEL_CONFIG_FALLBACK.stream_enabled,
     supports_image: override?.supports_image ?? MODEL_CONFIG_FALLBACK.supports_image,
     api_key: typeof override?.api_key === 'string' ? override.api_key : '',
     api_base: typeof override?.api_base === 'string' ? override.api_base : '',
@@ -155,10 +159,21 @@ export function buildModelConfigOverrides<T extends ModelConfigLike>(
 }
 
 export function buildSendableModelConfig(
-  config?: Pick<ModelConfigLike, 'temperature' | 'max_tokens' | 'thinking_enabled'> | null,
-): Partial<Pick<ModelConfigLike, 'temperature' | 'max_tokens' | 'thinking_enabled'>> {
+  config?: Pick<
+    ModelConfigLike,
+    'temperature' | 'max_tokens' | 'thinking_enabled' | 'stream_enabled'
+  > | null,
+): Partial<
+  Pick<
+    ModelConfigLike,
+    'temperature' | 'max_tokens' | 'thinking_enabled' | 'stream_enabled'
+  >
+> {
   const payload: Partial<
-    Pick<ModelConfigLike, 'temperature' | 'max_tokens' | 'thinking_enabled'>
+    Pick<
+      ModelConfigLike,
+      'temperature' | 'max_tokens' | 'thinking_enabled' | 'stream_enabled'
+    >
   > = {}
 
   if (config?.temperature != null && config.temperature > 0) {
@@ -171,6 +186,10 @@ export function buildSendableModelConfig(
 
   if (config?.thinking_enabled != null) {
     payload.thinking_enabled = config.thinking_enabled
+  }
+
+  if (config?.stream_enabled != null) {
+    payload.stream_enabled = config.stream_enabled
   }
 
   return payload
@@ -339,4 +358,23 @@ export function formatModelConfigSummary(
   })
 
   return `Temp ${temperatureLabel} · Tokens ${maxTokensLabel} · Iterations ${maxIterationsLabel}`
+}
+
+/** 是否官方 DeepSeek API 地址。 */
+export function isOfficialDeepSeekApiBase(apiBase?: string | null): boolean {
+  if (!apiBase) {
+    return false
+  }
+  try {
+    const host = new URL(apiBase).hostname.toLowerCase()
+    return host === 'api.deepseek.com' || host.endsWith('.deepseek.com')
+  } catch {
+    return false
+  }
+}
+
+/** 原生能力对所有 DeepSeek 与自定义供应商开放，是否生效由模型勾选决定。 */
+export function supportsNativeCapabilities(providerId?: string | null): boolean {
+  const id = String(providerId || '').trim().toLowerCase()
+  return id === 'deepseek' || id === 'custom_openai' || id === 'custom_anthropic'
 }

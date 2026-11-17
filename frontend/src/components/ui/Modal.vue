@@ -5,12 +5,14 @@
         v-if="modelValue"
         class="modal-overlay"
         :class="{ 'is-closing': isClosing }"
+        :style="overlayZStyle"
         @click="handleOverlayClick"
       >
         <div
           ref="modalRef"
           class="modal-container"
           :class="[`modal-${size}`, { 'is-closing': isClosing }]"
+          :style="containerZStyle"
           role="dialog"
           :aria-modal="true"
           :aria-labelledby="titleId"
@@ -93,6 +95,8 @@ interface Props {
   confirmText?: string
   cancelText?: string
   confirmLoading?: boolean
+  /** 覆盖层 z-index；用于确认框等需要盖在普通弹窗之上的浮层 */
+  zIndex?: number
 }
 
 interface Emits {
@@ -120,6 +124,14 @@ const modalRef = ref<HTMLElement>()
 const isClosing = ref(false)
 const titleId = computed(() => `modal-title-${Math.random().toString(36).substr(2, 9)}`)
 const descriptionId = computed(() => `modal-desc-${Math.random().toString(36).substr(2, 9)}`)
+
+// 不传 zIndex 时沿用样式表里的默认层级；传了则容器比遮罩再高 1
+const overlayZStyle = computed(() =>
+  props.zIndex ? { zIndex: String(props.zIndex) } : undefined,
+)
+const containerZStyle = computed(() =>
+  props.zIndex ? { zIndex: String(props.zIndex + 1) } : undefined,
+)
 
 const handleClose = () => {
   isClosing.value = true
@@ -221,14 +233,15 @@ onBeforeUnmount(() => {
 
 .modal-container {
   position: relative;
-  background: var(--bg-primary);
-  border-radius: var(--radius-lg);
+  background: var(--color-bg-primary);
+  border-radius: 14px;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - var(--spacing-3xl));
   width: 100%;
   z-index: 10001;
+  overflow: hidden;
 }
 
 .modal-small {
@@ -252,45 +265,49 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-lg);
-  border-bottom: 1px solid var(--border-color, var(--color-border-primary));
-  background: var(--bg-primary);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
 }
 
 .modal-title {
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
+/* 关闭按钮：幽灵态，悬停只抬一层底色，不做红框 */
 .modal-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-color, var(--color-border-primary));
-  border-radius: var(--radius-md);
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .modal-close:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
-  border-color: var(--color-error);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .modal-body {
   flex: 1;
-  padding: var(--spacing-lg);
+  padding: 20px;
   overflow-y: auto;
-  color: var(--text-primary);
-  background: var(--bg-primary);
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
   /* 预留最小高度，避免「加载中 → 加载完成」时弹窗高度猛跳 */
   min-height: 120px;
 }
@@ -299,11 +316,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-lg);
-  border-top: 1px solid var(--border-color, var(--color-border-primary));
-  background: var(--bg-secondary);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border-primary);
+  background: var(--color-bg-primary);
 }
 
 /* 深色模式 */

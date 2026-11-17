@@ -116,28 +116,14 @@ export function useChatInput() {
       }
     }
     
-    // 正常输入模式 - 根据平台处理发送快捷键
+    // 正常输入模式：Enter 发送，Shift+Enter 换行（各平台保持一致）
     if (e.key === 'Enter') {
-      const macOS = isMac()
-      
-      if (macOS) {
-        // Mac: Cmd+Enter 发送，Enter 换行
-        if (e.metaKey && !e.shiftKey) {
-          e.preventDefault()
-          onSend()
-        }
-        // Enter 或 Shift+Enter 都是换行（默认行为）
-      } else {
-        // Windows/Linux: Enter 发送，Shift+Enter 换行
-        if (e.shiftKey) {
-          // Shift+Enter 换行（默认行为）
-          return
-        } else {
-          // Enter 发送消息
-          e.preventDefault()
-          onSend()
-        }
+      if (e.shiftKey) {
+        // Shift+Enter 换行（默认行为）
+        return
       }
+      e.preventDefault()
+      onSend()
     }
   }
   

@@ -1,130 +1,98 @@
 <template>
-  <div class="model-config">
-    <div class="section-header">
-      <h3 class="section-title">
-        {{ $t('settings.model.title') }}
-      </h3>
-    </div>
+  <SettingsCard :title="$t('settings.model.draftTitle')" flush>
+    <SettingsRow :label="$t('settings.providers.savedSnapshot')">
+      <span class="co-row-value">{{ savedSummary }}</span>
+    </SettingsRow>
+    <SettingsRow :label="$t('settings.providers.currentDraft')">
+      <span v-if="isDraftChanged" class="co-row-badge">{{ $t('settings.saveState.dirty') }}</span>
+      <span class="co-row-value">{{ draftSummary }}</span>
+    </SettingsRow>
+  </SettingsCard>
 
-    <div class="draft-callout" :class="{ 'is-dirty': isDraftChanged }">
-      <div class="draft-item">
-        <span class="draft-label">{{ $t('settings.providers.presetPanel.savedSnapshot') }}</span>
-        <strong>{{ savedSummary }}</strong>
+  <SettingsCard :title="$t('settings.model.paramsTitle')">
+    <SettingsRow :label="$t('settings.model.temperature')" :description="$t('settings.model.temperatureDesc')" layout="block">
+      <div class="slider-head">
+        <input v-model.number="modelConfig.temperature" class="co-slider" type="range" min="0" max="2" step="0.1">
+        <span class="co-row-value">{{ temperatureLabel }}</span>
       </div>
-      <div class="draft-item">
-        <span class="draft-label">{{ $t('settings.providers.presetPanel.currentDraft') }}</span>
-        <strong>{{ draftSummary }}</strong>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label class="label">
-        {{ $t('settings.model.temperature') }}
-        <span class="value">{{ temperatureLabel }}</span>
-      </label>
-      <p class="help-text">
-        {{ $t('settings.model.temperatureDesc') }}
-      </p>
-      <input
-        v-model.number="modelConfig.temperature"
-        type="range"
-        min="0"
-        max="2"
-        step="0.1"
-        class="slider"
-      >
-      <div class="slider-labels">
+      <div class="co-slider-scale">
         <span>{{ $t('common.default') }}</span>
         <span>1</span>
         <span>2</span>
       </div>
-    </div>
+    </SettingsRow>
 
-    <!-- Max Tokens -->
-    <div class="form-group">
-      <label class="label">
-        {{ $t('settings.model.maxTokens') }}
-        <span class="value">{{ maxTokensLabel }}</span>
-      </label>
-      <p class="help-text">
-        {{ $t('settings.model.maxTokensDesc') }}
-      </p>
-      <input
-        v-model.number="maxTokensSliderIndex"
-        type="range"
-        min="0"
-        :max="MAX_TOKENS_SLIDER_MAX"
-        :step="MAX_TOKENS_SLIDER_STEP"
-        class="slider"
-      >
-      <div class="slider-labels slider-labels-token">
-        <span v-for="(label, index) in maxTokensScaleLabels" :key="`scale-${index}`">{{ label }}</span>
-      </div>
-      <div class="token-actions">
+    <SettingsRow :label="$t('settings.model.maxTokens')" :description="$t('settings.model.maxTokensDesc')" layout="block">
+      <div class="slider-head">
+        <input
+          v-model.number="maxTokensSliderIndex"
+          class="co-slider"
+          type="range"
+          min="0"
+          :max="MAX_TOKENS_SLIDER_MAX"
+          :step="MAX_TOKENS_SLIDER_STEP"
+        >
+        <span class="co-row-value">{{ maxTokensLabel }}</span>
         <button
           type="button"
-          class="token-reset"
+          class="co-btn co-btn--ghost btn-compact"
           :disabled="modelConfig.maxTokens === MODEL_CONFIG_FALLBACK.max_tokens"
           @click="modelConfig.maxTokens = MODEL_CONFIG_FALLBACK.max_tokens"
         >
           {{ $t('settings.model.maxTokensReset') }}
         </button>
       </div>
-    </div>
+      <div class="co-slider-scale">
+        <span v-for="(label, index) in maxTokensScaleLabels" :key="`scale-${index}`">{{ label }}</span>
+      </div>
+    </SettingsRow>
 
-    <!-- Max Iterations -->
-    <div class="form-group">
-      <label class="label">
-        {{ $t('settings.model.maxIterations') }}
-        <span class="value">{{ maxIterationsLabel }}</span>
-      </label>
-      <p class="help-text">
-        {{ $t('settings.model.maxIterationsDesc') }}
-      </p>
-      <input
-        v-model.number="maxIterationsSliderIndex"
-        type="range"
-        min="0"
-        :max="MAX_ITERATIONS_SLIDER_MAX"
-        step="1"
-        class="slider"
-      >
-      <div class="slider-labels">
+    <SettingsRow :label="$t('settings.model.maxIterations')" :description="$t('settings.model.maxIterationsDesc')" layout="block">
+      <div class="slider-head">
+        <input
+          v-model.number="maxIterationsSliderIndex"
+          class="co-slider"
+          type="range"
+          min="0"
+          :max="MAX_ITERATIONS_SLIDER_MAX"
+          step="1"
+        >
+        <span class="co-row-value">{{ maxIterationsLabel }}</span>
+      </div>
+      <div class="co-slider-scale">
         <span>1</span>
         <span>{{ Math.round(MAX_ITERATIONS_LIMIT / 2) }}</span>
         <span>{{ $t('settings.model.maxIterationsUnlimited') }}</span>
       </div>
-    </div>
+    </SettingsRow>
 
-    <div class="form-group">
-      <label class="label">
-        {{ $t('settings.model.imageInput') }}
-      </label>
-      <p class="help-text">
-        {{ $t('settings.model.imageInputDesc') }}
-      </p>
+    <SettingsRow :label="$t('settings.model.imageInput')" :description="$t('settings.model.imageInputDesc')">
       <Select
         v-model="imageSupportMode"
+        class="select-control"
         :options="imageSupportOptions"
         :aria-label="$t('settings.model.imageInput')"
       />
-    </div>
+    </SettingsRow>
 
-    <div class="form-group toggle-group">
-      <label class="toggle-label">
-        <div class="toggle-content">
-          <span class="toggle-text">{{ $t('settings.model.thinkingEnabled') }}</span>
-          <span class="toggle-hint">{{ $t('settings.model.thinkingEnabledDesc') }}</span>
-        </div>
-        <SwitchToggle
-          v-model="modelConfig.thinkingEnabled"
-          :width="48"
-          :height="28"
-          :aria-label="$t('settings.model.thinkingEnabled')"
-        />
-      </label>
-    </div>
-  </div>
+    <SettingsRow :label="$t('settings.model.thinkingEnabled')" :description="$t('settings.model.thinkingEnabledDesc')">
+      <SwitchToggle
+        v-model="modelConfig.thinkingEnabled"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.model.thinkingEnabled')"
+      />
+    </SettingsRow>
+
+    <SettingsRow :label="$t('settings.model.streamMode')" :description="$t('settings.model.streamModeDesc')">
+      <Select
+        v-model="streamMode"
+        class="select-control"
+        :options="streamModeOptions"
+        :aria-label="$t('settings.model.streamMode')"
+      />
+    </SettingsRow>
+  </SettingsCard>
 </template>
 
 <script setup lang="ts">
@@ -133,6 +101,7 @@ import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/store/settings'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import Select from '@/components/ui/Select.vue'
+import { SettingsCard, SettingsRow } from './ui'
 import {
   MAX_ITERATIONS_LIMIT,
   MAX_ITERATIONS_SLIDER_MAX,
@@ -158,6 +127,7 @@ const modelConfig = ref({
   maxTokens: MODEL_CONFIG_FALLBACK.max_tokens,
   maxIterations: MODEL_CONFIG_FALLBACK.max_iterations,
   thinkingEnabled: MODEL_CONFIG_FALLBACK.thinking_enabled,
+  streamEnabled: MODEL_CONFIG_FALLBACK.stream_enabled,
   supportsImage: MODEL_CONFIG_FALLBACK.supports_image,
 })
 
@@ -173,6 +143,7 @@ onMounted(async () => {
       maxTokens: effectiveConfig.max_tokens,
       maxIterations: effectiveConfig.max_iterations,
       thinkingEnabled: effectiveConfig.thinking_enabled,
+      streamEnabled: effectiveConfig.stream_enabled,
       supportsImage: effectiveConfig.supports_image ?? null,
     }
     isUpdating.value = false
@@ -189,6 +160,7 @@ watch(() => settingsStore.settings?.model, (newModel) => {
       maxTokens: effectiveConfig.max_tokens,
       maxIterations: effectiveConfig.max_iterations,
       thinkingEnabled: effectiveConfig.thinking_enabled,
+      streamEnabled: effectiveConfig.stream_enabled,
       supportsImage: effectiveConfig.supports_image ?? null,
     }
     isUpdating.value = false
@@ -204,6 +176,7 @@ watch(modelConfig, (newConfig) => {
     settingsStore.settings.model.max_tokens = newConfig.maxTokens
     settingsStore.settings.model.max_iterations = newConfig.maxIterations
     settingsStore.settings.model.thinking_enabled = newConfig.thinkingEnabled
+    settingsStore.settings.model.stream_enabled = newConfig.streamEnabled
     settingsStore.settings.model.supports_image = newConfig.supportsImage
     isUpdating.value = false
   }
@@ -241,6 +214,19 @@ const imageSupportOptions = computed(() => [
   { value: 'on', label: t('settings.model.imageInputOn') },
   { value: 'off', label: t('settings.model.imageInputOff') },
 ])
+
+const streamModeOptions = computed(() => [
+  { value: 'stream', label: t('settings.model.streamModeStreaming') },
+  { value: 'non-stream', label: t('settings.model.streamModeNonStreaming') },
+])
+
+const streamMode = computed({
+  get: () => (modelConfig.value.streamEnabled ? 'stream' : 'non-stream'),
+  set: (value: string | string[]) => {
+    const mode = Array.isArray(value) ? value[0] : value
+    modelConfig.value.streamEnabled = mode === 'stream'
+  },
+})
 
 const imageSupportMode = computed({
   get: () => {
@@ -311,15 +297,50 @@ const isDraftChanged = computed(() => {
     maxTokens: savedModel.max_tokens,
     maxIterations: savedModel.max_iterations,
     thinkingEnabled: savedModel.thinking_enabled,
+    streamEnabled: savedModel.stream_enabled,
   }) !== JSON.stringify({
     temperature: modelConfig.value.temperature,
     maxTokens: modelConfig.value.maxTokens,
     maxIterations: modelConfig.value.maxIterations,
     thinkingEnabled: modelConfig.value.thinkingEnabled,
+    streamEnabled: modelConfig.value.streamEnabled,
   })
 })
 
 </script>
+
 <style scoped>
-@import './styles/ModelConfig.css';
+.slider-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.slider-head .co-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.slider-head .co-row-value {
+  min-width: 52px;
+  text-align: right;
+}
+
+.btn-compact {
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+  flex-shrink: 0;
+}
+
+.select-control {
+  width: 220px;
+}
+
+@media (max-width: 680px) {
+  .select-control {
+    width: 100%;
+  }
+}
 </style>

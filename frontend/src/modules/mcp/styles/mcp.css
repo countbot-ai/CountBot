@@ -1,7 +1,4 @@
-/* ============================================================
-   MCP (Model Context Protocol) Module Styles
-   风格与设置页面保持一致
-   ============================================================ */
+/* MCP（Model Context Protocol）模块样式；风格与设置页面保持一致 */
 
 :root {
   --mcp-success: var(--color-success);
@@ -14,9 +11,7 @@
   --mcp-info-bg: var(--color-info-light);
 }
 
-/* ============================================================
-   Panel Layout
-   ============================================================ */
+/* ---- 面板布局 ---- */
 
 .mcp-panel {
   display: flex;
@@ -27,7 +22,7 @@
   min-width: 0;
 }
 
-/* ---- Header ---- */
+/* ---- 顶部 ---- */
 .mcp-header {
   display: flex;
   align-items: center;
@@ -65,7 +60,7 @@
   flex-shrink: 0;
 }
 
-/* ---- Switch ---- */
+/* ---- 开关 ---- */
 .switch-label {
   display: flex;
   align-items: center;
@@ -110,7 +105,7 @@
   transform: translateX(22px);
 }
 
-/* ---- Disabled Hint ---- */
+/* ---- 停用提示 ---- */
 .mcp-disabled-hint {
   padding: 32px 20px;
   text-align: center;
@@ -127,9 +122,7 @@
   margin: 0;
 }
 
-/* ============================================================
-   Stats Cards
-   ============================================================ */
+/* ---- 统计卡片 ---- */
 
 .mcp-stats {
   display: grid;
@@ -171,9 +164,7 @@
   margin-top: 4px;
 }
 
-/* ============================================================
-   Toolbar
-   ============================================================ */
+/* ---- 工具栏 ---- */
 
 .mcp-toolbar {
   display: flex;
@@ -199,7 +190,7 @@
   flex-shrink: 0;
 }
 
-/* ---- Mode Switch ---- */
+/* ---- 模式切换 ---- */
 .mode-switch {
   display: inline-flex;
   border-radius: 8px;
@@ -239,9 +230,7 @@
   border-left: 1px solid var(--color-border-primary);
 }
 
-/* ============================================================
-   Buttons
-   ============================================================ */
+/* ---- 按钮 ---- */
 
 .mcp-btn {
   display: inline-flex;
@@ -307,9 +296,7 @@
   font-size: 13px;
 }
 
-/* ============================================================
-   Server List
-   ============================================================ */
+/* ---- 服务器列表 ---- */
 
 .mcp-list {
   display: flex;
@@ -342,7 +329,7 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* ---- Server Header (clickable) ---- */
+/* ---- 服务器头部（可点击）---- */
 .server-header {
   display: flex;
   align-items: center;
@@ -366,7 +353,7 @@
   min-width: 0;
 }
 
-/* ---- Expand Arrow ---- */
+/* ---- 展开箭头 ---- */
 .expand-arrow {
   font-size: 10px;
   color: var(--text-secondary);
@@ -408,7 +395,7 @@
   margin-left: 12px;
 }
 
-/* ---- Server Body (expandable) ---- */
+/* ---- 服务器主体（可展开）---- */
 .server-body {
   border-top: 1px solid var(--color-border-primary);
   animation: mcpExpandIn 0.2s ease-out;
@@ -425,7 +412,7 @@
   }
 }
 
-/* ---- Badges ---- */
+/* ---- 徽标 ---- */
 .mcp-badge {
   display: inline-flex;
   align-items: center;
@@ -483,9 +470,7 @@
   color: var(--color-primary);
 }
 
-/* ============================================================
-   Empty State
-   ============================================================ */
+/* ---- 空状态 ---- */
 
 .empty-hint {
   padding: 32px;
@@ -498,9 +483,7 @@
     linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-secondary));
 }
 
-/* ============================================================
-   Form Elements
-   ============================================================ */
+/* ---- 表单元素 ---- */
 
 .mcp-field {
   display: flex;
@@ -565,7 +548,7 @@
   box-shadow: none;
 }
 
-/* ---- Checkbox ---- */
+/* ---- 复选框 ---- */
 .mcp-checkbox {
   display: flex;
   align-items: center;
@@ -582,7 +565,7 @@
   cursor: pointer;
 }
 
-/* ---- Key-Value Row ---- */
+/* ---- 键值行 ---- */
 .mcp-kv-row {
   display: flex;
   gap: 6px;
@@ -639,9 +622,7 @@
   background: var(--color-bg-tertiary);
 }
 
-/* ============================================================
-   Editor
-   ============================================================ */
+/* ---- 编辑器 ---- */
 
 .mcp-editor {
   display: flex;
@@ -675,7 +656,7 @@
   flex: 1;
 }
 
-/* ---- Test Row ---- */
+/* ---- 测试行 ---- */
 .mcp-test-row {
   display: flex;
   align-items: center;
@@ -707,7 +688,7 @@
   border: 1px solid var(--color-border-primary);
 }
 
-/* ---- Editor Actions ---- */
+/* ---- 编辑操作 ---- */
 .mcp-editor-actions {
   display: flex;
   gap: 8px;
@@ -715,9 +696,7 @@
   border-top: 1px solid var(--color-border-primary);
 }
 
-/* ============================================================
-   JSON Editor
-   ============================================================ */
+/* ---- JSON 编辑器 ---- */
 
 .mcp-json-editor {
   display: flex;
@@ -747,9 +726,7 @@
   border: 1px solid var(--color-border-primary);
 }
 
-/* ============================================================
-   Tools Modal
-   ============================================================ */
+/* ---- 工具弹窗 ---- */
 
 .mcp-modal-overlay {
   position: fixed;
@@ -849,9 +826,7 @@
   justify-content: flex-end;
 }
 
-/* ============================================================
-   Dark Theme
-   ============================================================ */
+/* ---- 深色主题 ---- */
 
 
 
@@ -877,9 +852,7 @@
 
 
 
-/* ============================================================
-   Responsive
-   ============================================================ */
+/* ---- 响应式 ---- */
 
 @media (max-width: 700px) {
   .mcp-stats {

@@ -93,7 +93,7 @@
       class="jobs-list"
     >
       <div
-        v-for="job in jobs"
+        v-for="(job, index) in jobs"
         :key="job.id"
         class="job-card"
         :class="{ 'disabled': !job.enabled }"
@@ -102,6 +102,7 @@
         <div class="card-header-compact">
           <div class="job-main-info">
             <div class="job-title-row">
+              <span class="job-index">{{ String(index + 1).padStart(2, '0') }}</span>
               <component :is="ClockIcon" :size="18" class="job-icon" />
               <h3 class="job-name">{{ job.name }}</h3>
               <span class="status-badge" :class="{ 'enabled': job.enabled }">

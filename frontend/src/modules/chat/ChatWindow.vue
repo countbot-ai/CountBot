@@ -67,6 +67,8 @@
         :is-streaming="isStreaming"
         @regenerate="handleRegenerate"
         @delete="handleDelete"
+        @resend="handleResend"
+        @quote="handleQuote"
         @load-more="handleLoadOlderMessages"
       />
     </main>
@@ -95,10 +97,13 @@
       :is-session-override="modelSelection.isSessionOverride.value"
       :reasoning-levels="reasoningLevels"
       :active-reasoning-level="modelSelection.currentReasoningLevel.value"
+      :chat-mode="modelSelection.chatMode.value"
+      :allowed-chat-modes="modelSelection.allowedChatModes.value"
       @files-selected="handleComposerFiles"
       @remove-attachment="removeAttachment"
       @select-model="handleSelectModel"
       @select-reasoning-level="handleSelectReasoningLevel"
+      @select-chat-mode="handleSelectChatMode"
     />
 
     <!-- Drag and Drop Overlay -->
@@ -130,12 +135,6 @@
         <SkillsLibrary v-else-if="activePanel === 'skills'" />
         <WikiPanel v-else-if="activePanel === 'wiki'" />
         <CronManager v-else-if="activePanel === 'cron'" />
-        <SettingsPanel
-          v-else-if="activePanel === 'settings'"
-          :initial-tab="settingsInitialTab"
-          @close="closePanel"
-          @saved="handleSettingsSaved"
-        />
         <p v-else class="panel-placeholder">{{ $t('common.comingSoon') }}</p>
       </div>
     </aside>
@@ -169,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, inject } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, inject } from 'vue'
 import {
   PanelLeftOpen as SessionsIcon,
   BrainCircuit as WorkflowIcon,
@@ -184,7 +183,6 @@ import {
 import { LoadingState, FilePreviewModal } from '@/components/ui'
 import MessageList from './MessageList.vue'
 import SessionPanel from './SessionPanel.vue'
-import SettingsPanel from '@/modules/settings/SettingsPanel.vue'
 import ToolsPanel from '@/modules/tools/ToolsPanel.vue'
 import SkillsLibrary from '@/modules/skills/SkillsLibrary.vue'
 import CronManager from '@/modules/scheduler/CronManager.vue'
@@ -202,10 +200,7 @@ import WelcomeGuide from '@/components/chat/WelcomeGuide.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 
 // ---------------------------------------------------------------
-// 🎨 自定义 Welcome 图标
-// 把你的 SVG 字符串粘贴到下面引号内即可替换欢迎页图标。
-// 留空字符串 '' 则显示默认聊天气泡图标。
-// 示例：'<svg xmlns="http://www.w3.org/2000/svg" ...>...</svg>'
+// 自定义 Welcome 图标：将 SVG 字符串填入下方，留空则使用默认图标
 // ---------------------------------------------------------------
 const WELCOME_ICON_SVG = ''
 
@@ -220,6 +215,7 @@ import { useChatRealtime } from '@/modules/chat/composables/useChatRealtime'
 import { useSessionModelSelection } from '@/modules/chat/composables/useSessionModelSelection'
 
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useChatStore } from '@/store/chat'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
 import { useSettingsStore } from '@/store/settings'
@@ -227,9 +223,12 @@ import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { useKeyboard, commonShortcuts } from '@/composables/useKeyboard'
 import { queueAPI } from '@/api/endpoints'
+import { buildQuotedContent } from '@/modules/chat/utils/messageQuote'
 import type { SettingsTab } from '@/types/settings'
+import type { MessageQuote } from '@/types/chat'
 
 const { t } = useI18n()
+const router = useRouter()
 const chatStore = useChatStore()
 const agentTeamsStore = useAgentTeamsStore()
 const toast = useToast()
@@ -309,9 +308,7 @@ const handlePasswordSetupSuccess = () => {
 const showSessionConfig = ref(false)
 const configSessionId = ref<string>('')
 
-/**
- * 打开会话配置面板
- */
+/** 打开会话配置面板 */
 function handleOpenSessionConfig(sessionId: string) {
   configSessionId.value = sessionId
   showSessionConfig.value = true
@@ -321,14 +318,13 @@ function handleOpenSessionConfig(sessionId: string) {
   }
 }
 
-type PanelType = 'sessions' | 'tools' | 'skills' | 'wiki' | 'cron' | 'settings' | null
+type PanelType = 'sessions' | 'tools' | 'skills' | 'wiki' | 'cron' | null
 
 const isStoppingTask = ref(false)
 const messageListRef = ref<InstanceType<typeof MessageList>>()
 const chatInputRef = ref<InstanceType<typeof ChatInput>>()
 const panelRef = ref<HTMLElement>()
 const activePanel = ref<PanelType>(null)
-const settingsInitialTab = ref<SettingsTab>('general')
 const showSystemSidebar = ref(false)
 const showTimeline = ref(false)
 const activeMessageId = ref<string | null>(null)
@@ -365,8 +361,7 @@ const canSend = computed(() => {
 })
 
 const openSettingsTab = (tab: SettingsTab = 'general') => {
-  settingsInitialTab.value = tab
-  showPanel('settings')
+  void router.push({ name: 'settings', params: { tab } })
 }
 
 const headerActions = computed(() => [  { id: 'sessions', icon: SessionsIcon, label: 'nav.sessions', tooltip: 'nav.sessionsTooltip', onClick: () => showPanel('sessions') },
@@ -430,8 +425,7 @@ watch(() => chatStore.currentSessionId, (newSessionId, oldSessionId) => {
   clearAttachments()
   if (newSessionId) {
     modelSelection.loadSessionSelection(newSessionId).catch(() => {})
-    // 只有在真正切换会话时才清空消息
-    // 如果是首次加载（oldSessionId 为 undefined），不清空（可能有缓存）
+    // 仅在真正切换会话时清空消息；首次加载不清空，保留缓存
     const shouldClear = oldSessionId !== undefined && oldSessionId !== newSessionId
     initializeChat(newSessionId, shouldClear)
   }
@@ -485,10 +479,16 @@ const handleSelectReasoningLevel = async (level: string) => {
   }
 }
 
-/**
- * 设置页保存后刷新下拉数据。
- * 否则刚加好的供应商/模型要刷新页面才能在对话窗口里选到。
- */
+// 输入框里的对话模式：agent 可调用工具；chat 纯对话，不注入工具与技能
+const handleSelectChatMode = async (mode: 'agent' | 'chat') => {
+  try {
+    await modelSelection.selectChatMode(chatStore.currentSessionId || '', mode)
+  } catch (error: any) {
+    toast.error(error?.response?.data?.detail || t('chat.mode.saveFailed'))
+  }
+}
+
+/** 设置页保存后刷新下拉数据，避免新供应商需刷新页面才可选 */
 watch(
   () => settingsStore.persistedSettings,
   persisted => {
@@ -644,6 +644,27 @@ const handleDelete = async (messageId: string) => {
   }
 }
 
+/** 重发：从这条用户消息起截断，原样再发一次 */
+const handleResend = (messageId: string) => {
+  const messageIndex = messages.value.findIndex(m => m.id === messageId)
+  if (messageIndex === -1) return
+
+  const target = messages.value[messageIndex]
+  if (target.role !== 'user') return
+
+  const content = target.content
+  const attachmentItems = target.attachmentItems || []
+  messages.value.splice(messageIndex)
+
+  sendImmediateMessage({ content, attachmentItems })
+}
+
+// 旧版输入框没有独立的引用条：直接把引用块写进输入框
+const handleQuote = (quote: MessageQuote) => {
+  inputMessage.value = buildQuotedContent(quote, inputMessage.value.trim())
+  nextTick(() => textareaRef.value?.focus())
+}
+
 const handleLoadOlderMessages = async () => {
   if (!chatStore.currentSessionId) return
   await loadOlderMessages(chatStore.currentSessionId)
@@ -657,10 +678,6 @@ const closePreviewModal = () => {
 // 面板管理
 const showPanel = (panel: Exclude<PanelType, null>) => {
   activePanel.value = panel
-  // 设置页信息密度高（左栏供应商 + 右栏卡片 + 模型清单），默认以最宽打开
-  if (panel === 'settings') {
-    panelWidth.value = clampPanelWidth(maxPanelWidth)
-  }
 }
 
 const closePanel = () => {
@@ -678,19 +695,6 @@ const handleTimelineScrollTo = (messageId: string) => {
   setTimeout(() => {
     activeMessageId.value = null
   }, 3000)
-}
-
-const handleSettingsSaved = () => {
-  if (chatStore.currentSessionId) {
-    closeConnection()
-    resetInitializedSession()
-    
-    setTimeout(() => {
-      if (chatStore.currentSessionId) {
-        initializeChat(chatStore.currentSessionId, false)  // 重连不清空
-      }
-    }, 500)
-  }
 }
 
 const handleSessionConfigUpdated = (action: 'saved' | 'reset') => {
@@ -714,7 +718,7 @@ const startResize = (e: MouseEvent) => {
   let velocity = 0
   let lastTs = performance.now()
 
-  // 规则 9 - 拖拽用过阻尼弹簧（stiffness 1200 / damping 80，ζ≈1.15 > 1，零回弹咬死）
+  // 规则 9 - 拖拽使用过阻尼弹簧（stiffness 1200 / damping 80，ζ≈1.15，无回弹）
   const prefersReducedMotion =
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -772,8 +776,7 @@ const getPanelTitle = () => {
     tools: t('nav.tools'),
     skills: t('nav.skills'),
     wiki: t('nav.wiki'),
-    cron: t('nav.cron'),
-    settings: t('settings.title')
+    cron: t('nav.cron')
   }
   return activePanel.value ? titles[activePanel.value] : ''
 }
@@ -824,7 +827,7 @@ useKeyboard([
     }
   }),
   commonShortcuts.settings(() => {
-    showPanel('settings')
+    openSettingsTab('general')
   })
 ])
 

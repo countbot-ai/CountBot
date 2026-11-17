@@ -1,0 +1,14 @@
+/* 微信表情展示样式；v-html 节点不受 scoped 约束，故以全局样式引入 */
+.wx-emoji {
+  display: inline-block;
+  font-family:
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Noto Color Emoji',
+    'Twemoji Mozilla',
+    sans-serif;
+  font-size: 1.15em;
+  line-height: 1;
+  vertical-align: -0.15em;
+  margin: 0 1px;
+}

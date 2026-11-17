@@ -1,116 +1,59 @@
 <template>
   <div class="config-import-export">
-    <div class="section-header">
-      <h3 class="section-title">{{ $t('settings.importExport.title') }}</h3>
-      <p class="section-desc">{{ $t('settings.importExport.description') }}</p>
-    </div>
-
-    <div class="overview-card">
-      <div class="overview-item">
-        <component :is="DatabaseIcon" :size="18" class="overview-icon" />
-        <div class="overview-text">
-          <strong>{{ availableSections.length }}</strong>
-          <span>可选配置块</span>
-        </div>
+    <div class="stat-strip">
+      <div class="stat">
+        <strong>{{ availableSections.length }}</strong>
+        <span>{{ $t('settings.importExport.statSections') }}</span>
       </div>
-      <div class="overview-item">
-        <component :is="RefreshCwIcon" :size="18" class="overview-icon" />
-        <div class="overview-text">
-          <strong>2</strong>
-          <span>导入模式</span>
-        </div>
+      <div class="stat-divider" />
+      <div class="stat">
+        <strong>2</strong>
+        <span>{{ $t('settings.importExport.statModes') }}</span>
       </div>
-      <div class="overview-item">
-        <component :is="NetworkIcon" :size="18" class="overview-icon" />
-        <div class="overview-text">
-          <strong>JSON</strong>
-          <span>统一迁移格式</span>
-        </div>
+      <div class="stat-divider" />
+      <div class="stat">
+        <strong>JSON</strong>
+        <span>{{ $t('settings.importExport.statFormat') }}</span>
       </div>
     </div>
 
-    <div class="config-cards">
-      <article class="config-card export-card">
-        <div class="card-header">
-          <div class="header-icon export">
-            <DownloadIcon :size="20" />
-          </div>
-          <div class="header-text">
-            <h4 class="card-title">{{ $t('settings.importExport.export') }}</h4>
-            <p class="card-desc">{{ $t('settings.importExport.exportDesc') }}</p>
-          </div>
-        </div>
+    <SettingsCard :title="$t('settings.importExport.export')" :description="$t('settings.importExport.exportDesc')">
+      <template #actions>
+        <button class="co-btn co-btn--primary" :disabled="isExporting" @click="showExportDialog = true">
+          <component :is="DownloadIcon" :size="14" />
+          {{ $t('settings.importExport.exportButton') }}
+        </button>
+      </template>
 
-        <div class="card-body">
-          <ul class="feature-list">
-            <li>
-              <CheckCircle2Icon :size="16" />
-              <span>按配置块精确导出，避免把无关设置一起带走</span>
-            </li>
-            <li>
-              <CheckCircle2Icon :size="16" />
-              <span>默认不包含敏感密钥，适合发给同事或迁移环境</span>
-            </li>
-            <li>
-              <CheckCircle2Icon :size="16" />
-              <span>额外支持 Coding Plan 与智能体团队导出</span>
-            </li>
-          </ul>
+      <ul class="feature-list">
+        <li v-for="n in 3" :key="`export-${n}`">
+          <component :is="CheckIcon" :size="13" />
+          <span>{{ $t(`settings.importExport.exportFeature${n}`) }}</span>
+        </li>
+      </ul>
+    </SettingsCard>
 
-          <div class="card-footer">
-            <button @click="showExportDialog = true" class="action-btn primary" :disabled="isExporting">
-              <DownloadIcon :size="16" />
-              <span>{{ $t('settings.importExport.exportButton') }}</span>
-            </button>
-            <p class="footer-hint">支持全局设置、本地扩展配置和多智能体团队</p>
-          </div>
-        </div>
-      </article>
+    <SettingsCard
+      :title="$t('settings.importExport.import')"
+      :description="$t('settings.importExport.importDesc')"
+      variant="danger"
+    >
+      <template #actions>
+        <button class="co-btn co-btn--secondary" :disabled="isImporting" @click="triggerImport">
+          <component :is="UploadIcon" :size="14" />
+          {{ $t('settings.importExport.importButton') }}
+        </button>
+      </template>
 
-      <article class="config-card import-card">
-        <div class="card-header">
-          <div class="header-icon import">
-            <UploadIcon :size="20" />
-          </div>
-          <div class="header-text">
-            <h4 class="card-title">{{ $t('settings.importExport.import') }}</h4>
-            <p class="card-desc">{{ $t('settings.importExport.importDesc') }}</p>
-          </div>
-        </div>
+      <ul class="feature-list">
+        <li v-for="n in 3" :key="`import-${n}`">
+          <component :is="CheckIcon" :size="13" />
+          <span>{{ $t(`settings.importExport.importFeature${n}`) }}</span>
+        </li>
+      </ul>
 
-        <div class="card-body">
-          <ul class="feature-list">
-            <li>
-              <CheckCircle2Icon :size="16" />
-              <span>支持覆盖和合并两种导入策略</span>
-            </li>
-            <li>
-              <CheckCircle2Icon :size="16" />
-              <span>导入后立即应用全局设置，并刷新渠道配置</span>
-            </li>
-            <li>
-              <CheckCircle2Icon :size="16" />
-              <span>智能体团队按团队名称更新，支持整批恢复</span>
-            </li>
-          </ul>
-
-          <div class="card-footer">
-            <button @click="triggerImport" class="action-btn secondary" :disabled="isImporting">
-              <UploadIcon :size="16" />
-              <span>{{ $t('settings.importExport.importButton') }}</span>
-            </button>
-            <p class="footer-hint">支持带团队配置的导出文件直接回填</p>
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".json"
-              class="hidden-input"
-              @change="handleFileSelect"
-            />
-          </div>
-        </div>
-      </article>
-    </div>
+      <input ref="fileInput" type="file" accept=".json" class="hidden-input" @change="handleFileSelect">
+    </SettingsCard>
 
     <teleport to="body">
       <div v-if="showExportDialog" class="modal-overlay" @click="showExportDialog = false">
@@ -317,7 +260,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AlertTriangle as AlertTriangleIcon,
-  CheckCircle2 as CheckCircle2Icon,
+  Check as CheckIcon,
   Cpu as CpuIcon,
   Database as DatabaseIcon,
   Download as DownloadIcon,
@@ -344,6 +287,7 @@ import {
 import { useSettingsStore } from '@/store/settings'
 import { useChannelsStore } from '@/store/channels'
 import { useAgentTeamsStore } from '@/store/agentTeams'
+import { SettingsCard } from './ui'
 
 type ExportSectionKey =
   | 'providers'
@@ -838,4 +782,78 @@ function formatDate(dateStr: string | undefined): string {
 </script>
 <style scoped>
 @import './styles/ConfigImportExport.css';
+
+/* 概览条：三个数字并排，只做背景信息，不与卡片抢层级 */
+.stat-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 12px var(--co-row-gutter);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-secondary);
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stat strong {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.stat span {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border-primary);
+}
+
+.feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feature-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: var(--font-size-xs);
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.feature-list svg {
+  margin-top: 3px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 680px) {
+  .stat-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .stat-divider {
+    display: none;
+  }
+}
 </style>

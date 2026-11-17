@@ -881,3 +881,113 @@ select.config-input {
     align-items: flex-start;
   }
 }
+
+/* ---------- 与设置页骨架对齐：统一 12px 圆角、卡片底色、无阴影 ---------- */
+
+.external-coding-config {
+  gap: 10px;
+}
+
+.panel-header {
+  gap: 10px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.panel-header::before,
+.panel-header::after {
+  content: none;
+}
+
+/* 标题与副标题已由页头承担，这里只留 chips 和操作按钮 */
+.panel-eyebrow,
+.panel-title,
+.panel-subtitle,
+.panel-note {
+  display: none;
+}
+
+.panel-title-row {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.panel-title-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.panel-highlights {
+  gap: 6px;
+}
+
+.info-chip {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: var(--font-weight-normal);
+  line-height: 22px;
+}
+
+/* 已启用数量不再用绿色强调，避免与「成功」语义混淆 */
+.info-chip-success {
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.info-chip-muted {
+  background: transparent;
+  color: var(--color-text-tertiary);
+}
+
+.profile-library,
+.editor-card,
+.panel-state,
+.empty-state {
+  padding: 12px 14px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--co-card);
+  box-shadow: none;
+}
+
+.section-heading {
+  margin-bottom: 8px;
+}
+
+.profile-tabs {
+  gap: 6px;
+}
+
+.profile-tab {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+
+.profile-tab.active {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+  box-shadow: none;
+}
+
+.profile-tab-status {
+  width: 5px;
+  height: 5px;
+  background: var(--color-text-disabled);
+}
+
+.profile-tab-status.is-enabled {
+  background: var(--color-text-tertiary);
+}

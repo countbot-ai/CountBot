@@ -1,27 +1,112 @@
-/* 添加供应商弹窗 */
+/* 添加供应商：可搜索的分组画廊 */
 
 .add-provider {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 420px;
+  gap: 12px;
+  min-height: 220px;
+}
+
+/* ---------- 搜索 ---------- */
+
+.add-provider-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+  transition: border-color var(--transition-fast);
+}
+
+.add-provider-search:focus-within {
+  border-color: var(--color-border-strong);
+}
+
+.add-provider-search-icon {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.add-provider-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.add-provider-search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.add-provider-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* ---------- 分组 ---------- */
+
+.add-provider-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 440px;
   overflow-y: auto;
+  padding-right: 2px;
+}
+
+.add-provider-group-label {
+  margin: 0 0 6px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.add-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .add-provider-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 9px;
+  background: var(--color-bg-primary);
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .add-provider-item:hover {
+  border-color: var(--color-accent);
+  background: var(--color-bg-secondary);
+}
+
+.add-provider-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 8px;
   background: var(--color-bg-secondary);
 }
 
@@ -34,7 +119,8 @@
 }
 
 .add-provider-name {
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -43,8 +129,8 @@
 
 .add-provider-meta {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-tertiary);
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -52,9 +138,31 @@
 
 .add-provider-action {
   flex-shrink: 0;
-  color: var(--text-tertiary);
+  color: var(--color-text-tertiary);
+  opacity: 0;
+  transition:
+    opacity var(--transition-fast),
+    color var(--transition-fast);
 }
 
-.add-provider-item:hover .add-provider-action {
+.add-provider-item:hover .add-provider-action,
+.add-provider-item:focus-visible .add-provider-action {
+  opacity: 1;
   color: var(--color-accent);
+}
+
+/* ---------- 空态 ---------- */
+
+.add-provider-empty {
+  margin: 0;
+  padding: 32px 12px;
+  color: var(--color-text-tertiary);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .add-provider-grid {
+    grid-template-columns: 1fr;
+  }
 }

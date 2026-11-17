@@ -46,6 +46,7 @@ export interface TeamModelConfig {
     max_tokens?: number
     max_iterations?: number
     thinking_enabled?: boolean
+    stream_enabled?: boolean
     api_key?: string
     api_base?: string
 }

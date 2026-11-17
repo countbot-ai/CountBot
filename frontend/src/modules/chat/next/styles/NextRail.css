@@ -1,0 +1,135 @@
+/**
+ * 最左侧图标导航栏：56px 固定窄栏，图标 + 悬停提示。
+ * 会话入口置顶并默认选中，其余入口按「内容 / 配置」两组分隔。
+ */
+.nc-rail {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 56px;
+  flex: 0 0 56px;
+  height: 100%;
+  padding: 10px 0 10px;
+  background: var(--nc-sidebar-bg);
+  border-right: 1px solid var(--nc-sidebar-border);
+}
+
+.nc-rail-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.nc-rail-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.nc-rail-divider {
+  width: 20px;
+  height: 1px;
+  margin: 8px 0;
+  flex-shrink: 0;
+  background: var(--nc-sidebar-border);
+}
+
+.nc-rail-spacer {
+  flex: 1;
+  min-height: 8px;
+}
+
+.nc-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.nc-rail-item:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-rail-item.is-active {
+  background: var(--nc-active);
+  color: var(--nc-primary);
+}
+
+/* 选中态在栏边留一条 2px 强调线，视线能立刻定位当前分区 */
+.nc-rail-item.is-active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -10px;
+  width: 2px;
+  height: 16px;
+  border-radius: 0 2px 2px 0;
+  background: var(--nc-primary);
+  transform: translateY(-50%);
+}
+
+.nc-rail-item--danger:hover {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+/* 悬停提示：向右展开，纯 CSS，不额外引入浮层组件 */
+.nc-rail-item::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  z-index: 100;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--color-text-primary);
+  color: var(--color-bg-primary);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-4px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+  box-shadow: var(--shadow-md);
+}
+
+.nc-rail-item:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+@media (max-width: 860px) {
+  .nc-rail {
+    width: 52px;
+    flex-basis: 52px;
+    padding: 8px 0;
+  }
+
+  /* 触屏没有 hover，提示会残留，直接关掉 */
+  .nc-rail-item::after {
+    display: none;
+  }
+}

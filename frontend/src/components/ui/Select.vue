@@ -58,6 +58,12 @@
           </div>
         </template>
         <template v-else-if="!multiple && modelValue">
+          <component
+            :is="leadingIcon"
+            v-if="leadingIcon"
+            v-bind="leadingIconProps"
+            class="select-leading-icon"
+          />
           <span class="select-text">{{ getOptionLabel(modelValue as string) }}</span>
         </template>
         <template v-else>
@@ -123,6 +129,12 @@
               :size="16"
               class="option-check"
             />
+            <component
+              :is="option.icon"
+              v-if="option.icon"
+              v-bind="option.iconProps || {}"
+              class="option-icon"
+            />
             <span class="option-label">{{ option.label }}</span>
           </div>
         </div>
@@ -146,15 +158,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, type Component } from 'vue'
 import { ChevronDown as ChevronDownIcon, X as XIcon, Check as CheckIcon } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
 import { onClickOutside } from '@vueuse/core'
 
 export interface SelectOption {
   label: string
   value: string
   disabled?: boolean
+  /** 选项前缀图标（如供应商品牌图标）；渲染在下拉行与选中值前 */
+  icon?: Component
+  iconProps?: Record<string, unknown>
 }
 
 interface Props {
@@ -169,6 +183,9 @@ interface Props {
   multiple?: boolean
   searchable?: boolean
   ariaLabel?: string
+  /** 选中值左侧的图标；优先级高于选中项自带的 icon */
+  prefixIcon?: Component
+  prefixIconProps?: Record<string, unknown>
 }
 
 interface Emits {
@@ -208,6 +225,19 @@ const getOptionLabel = (value: string): string => {
   const option = props.options.find(opt => opt.value === value)
   return option?.label || value
 }
+
+/** 选中值左侧图标：显式 prefixIcon 优先，否则用选中项自带的 icon */
+const selectedOption = computed(() =>
+  props.options.find(option => option.value === props.modelValue),
+)
+
+const leadingIcon = computed<Component | undefined>(
+  () => props.prefixIcon || selectedOption.value?.icon,
+)
+
+const leadingIconProps = computed<Record<string, unknown>>(
+  () => (props.prefixIcon ? (props.prefixIconProps || {}) : (selectedOption.value?.iconProps || {})),
+)
 
 const isSelected = (value: string): boolean => {
   if (props.multiple && Array.isArray(props.modelValue)) {

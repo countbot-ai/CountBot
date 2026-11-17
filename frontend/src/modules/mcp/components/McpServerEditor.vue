@@ -1,6 +1,6 @@
 <template>
   <div class="mcp-editor" v-if="server">
-    <!-- Editor Mode Switch -->
+    <!-- 编辑模式切换 -->
     <div class="editor-mode-bar">
       <div class="mode-switch">
         <button class="mode-btn" :class="{ active: editorMode === 'form' }" @click="switchMode('form')">
@@ -12,7 +12,7 @@
       </div>
     </div>
 
-    <!-- Form Mode -->
+    <!-- 表单模式 -->
     <template v-if="editorMode === 'form'">
       <div class="mcp-field">
         <label class="mcp-field-label">{{ $t('settings.mcp.serverNamePlaceholder') }}</label>
@@ -117,7 +117,7 @@
       </div>
     </template>
 
-    <!-- JSON Mode -->
+    <!-- JSON 模式 -->
     <template v-else>
       <div class="mcp-json-editor-inline">
         <div v-if="jsonError" class="mcp-json-error">{{ jsonError }}</div>
@@ -131,7 +131,7 @@
       </div>
     </template>
 
-    <!-- Test Row -->
+    <!-- 连通性测试 -->
     <div class="mcp-test-row">
       <button class="mcp-btn" @click="$emit('test', server)" :disabled="testing">
         {{ testing ? $t('settings.mcp.testing') : $t('settings.mcp.testConnection') }}
@@ -141,7 +141,7 @@
       </span>
     </div>
 
-    <!-- Actions -->
+    <!-- 操作按钮 -->
     <div class="mcp-editor-actions" v-if="showActions">
       <button class="mcp-btn mcp-btn-primary" @click="handleSave" :disabled="saving || !!jsonError">
         {{ saving ? $t('settings.mcp.saving') : $t('settings.mcp.save') }}
@@ -228,7 +228,7 @@ function switchMode(mode: 'form' | 'json') {
         applyJsonToServer(parsed, props.server)
         jsonError.value = ''
       } catch {
-        // If JSON is invalid, keep the server as-is
+        // JSON 非法时保持原样，不把半成品写回模型
       }
     }
   }

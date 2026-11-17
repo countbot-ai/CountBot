@@ -7,11 +7,9 @@
  * 模型清单接口读的是已保存配置，所以拉取/测试前必须先保存。
  */
 
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ProviderApiType, ProviderConfig, ProviderMetadata } from '@/api'
-import { settingsAPI } from '@/api'
-import { useSettingsStore } from '@/store/settings'
 import { buildSendableModelConfig } from '@/utils/modelConfig'
 import { useToast } from '@/composables/useToast'
 import {
@@ -26,16 +24,16 @@ import {
   DEFAULT_API_TYPE,
   LOCAL_PROVIDERS,
   NO_API_KEY_PROVIDERS,
+  buildConnectionSignature,
   buildEditableApiKeys,
   normalizeApiKeys,
+  resolveApiTypeBaseUrl,
   resolveDefaultApiType,
 } from './constants'
+import type { ProviderConfigSource } from './source'
 import type {
-  AppliedSource,
-  ApplyDraftPayload,
   ConnectionTestResult,
   ProviderDraft,
-  ProviderDraftConfig,
 } from './types'
 
 export interface ProviderDraftState {
@@ -44,32 +42,30 @@ export interface ProviderDraftState {
   testing: Ref<boolean>
   testResult: Ref<ConnectionTestResult | null>
   isHydrating: Ref<boolean>
-  isApplyingExternalConfig: Ref<boolean>
-  appliedSource: Ref<AppliedSource | null>
+  /** 当前供应商连接信息是否有未保存的改动 */
+  isProviderDirty: ComputedRef<boolean>
+  /** 正在保存当前供应商 */
+  savingProvider: Ref<boolean>
   isApiKeyOptional: ComputedRef<boolean>
   isCustomProvider: ComputedRef<boolean>
   currentDefaultBaseUrl: ComputedRef<string | undefined>
   selectedProviderSelectable: ComputedRef<boolean>
   selectedProviderStatusText: ComputedRef<string>
   selectedProviderThinkingNote: ComputedRef<string>
-  currentDraftConfig: ComputedRef<ProviderDraftConfig>
-  savedSnapshot: ComputedRef<{ provider: string; model: string }>
-  draftSnapshot: ComputedRef<{ provider: string; model: string }>
-  appliedSourceText: ComputedRef<string>
-  draftStateHint: ComputedRef<string>
-  hasDraftChanges: ComputedRef<boolean>
   canTestConnection: ComputedRef<boolean>
   getPrimaryApiKey: () => string
   addApiKeyField: () => void
   removeApiKeyField: (index: number) => void
-  hydrateDraft: (providerId: string) => void
+  hydrateDraft: (providerId: string, fromPersisted?: boolean) => void
   initializeProvider: () => void
   /** 默认写回当前选中的供应商；切换供应商时要显式传入「旧」供应商，避免把旧草稿写进新供应商 */
   syncProviderDraftToStore: (providerId?: string) => void
   syncModelDraftToStore: () => void
-  saveProviderConnection: () => Promise<void>
+  /** 保存当前供应商的连接信息（不整卡落库，避免冲掉其他供应商的草稿） */
+  saveProviderConnection: () => Promise<boolean>
+  /** 丢弃当前供应商的草稿改动，回到最近一次保存的状态 */
+  discardDraft: () => void
   testConnection: () => Promise<void>
-  applyExternalConfig: (payload: ApplyDraftPayload) => void
   createProvider: (providerId: string) => boolean
   deleteProvider: (providerId: string) => Promise<boolean>
 }
@@ -91,12 +87,13 @@ export interface ProviderDraftDeps {
   selectedProvider: Ref<string>
   selectedProviderMeta: ComputedRef<ProviderMetadata | undefined>
   availableProviders: Ref<ProviderMetadata[]>
+  source: ProviderConfigSource
 }
 
 export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
   const { t } = useI18n()
   const toast = useToast()
-  const settingsStore = useSettingsStore()
+  const source = deps.source
 
   const providerConfig = ref<ProviderDraft>({
     apiKey: '',
@@ -110,8 +107,7 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
   const testing = ref(false)
   const testResult = ref<ConnectionTestResult | null>(null)
   const isHydrating = ref(false)
-  const isApplyingExternalConfig = ref(false)
-  const appliedSource = ref<AppliedSource | null>(null)
+  const savingProvider = ref(false)
 
   /* ---------------- 派生状态 ---------------- */
 
@@ -168,50 +164,6 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     return t(resolveThinkingControlNoteKey(deps.selectedProviderMeta.value))
   })
 
-  const currentDraftConfig = computed<ProviderDraftConfig>(() => ({
-    provider: deps.selectedProvider.value,
-    model: modelName.value,
-    apiKey: getPrimaryApiKey(),
-    baseUrl: providerConfig.value.baseUrl,
-    enabled: providerConfig.value.enabled,
-    temperature: settingsStore.settings?.model?.temperature,
-    maxTokens: settingsStore.settings?.model?.max_tokens,
-    maxIterations: settingsStore.settings?.model?.max_iterations,
-  }))
-
-  const savedSnapshot = computed(() => {
-    const savedModel = settingsStore.persistedSettings?.model
-    if (!savedModel) {
-      return { provider: t('common.loading'), model: '' }
-    }
-    const providerLabel =
-      findProviderById(deps.availableProviders.value, savedModel.provider)?.name
-      || savedModel.provider
-    return {
-      provider: providerLabel,
-      model: savedModel.model || t('common.default'),
-    }
-  })
-
-  const draftSnapshot = computed(() => ({
-    provider:
-      deps.selectedProviderMeta.value?.name
-      || deps.selectedProvider.value
-      || t('common.unknown'),
-    model: modelName.value || t('common.default'),
-  }))
-
-  const appliedSourceText = computed(() => {
-    if (!appliedSource.value) {
-      return ''
-    }
-    const prefix =
-      appliedSource.value.type === 'codingplan'
-        ? t('settings.providers.presetPanel.sourceCodingPlan')
-        : t('settings.providers.presetPanel.sourcePreset')
-    return `${prefix} · ${appliedSource.value.label}`
-  })
-
   const canTestConnection = computed(
     () =>
       Boolean(deps.selectedProvider.value)
@@ -219,46 +171,19 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
       && (isApiKeyOptional.value || Boolean(getPrimaryApiKey())),
   )
 
-  /** 与已保存配置逐字段比对，用于「当前草稿」卡片是否高亮。 */
-  const hasDraftChanges = computed(() => {
-    const saved = settingsStore.persistedSettings
-    if (!saved) {
+  /**
+   * 连接信息是否有未保存改动。
+   * 只比较名称 / 地址 / 协议 / 启用态 / 密钥；模型清单是即时保存的，不参与脏检查。
+   */
+  const isProviderDirty = computed(() => {
+    const meta = deps.selectedProviderMeta.value
+    if (!meta) {
       return false
     }
-
-    const savedProviderConfig = saved.providers?.[deps.selectedProvider.value]
-    const savedApiKeys = normalizeApiKeys(
-      savedProviderConfig?.api_keys,
-      savedProviderConfig?.api_key || '',
-    )
-    const savedProjection = {
-      provider: saved.model.provider,
-      model: saved.model.model,
-      apiKey: savedApiKeys[0] || '',
-      apiKeys: savedApiKeys,
-      baseUrl: savedProviderConfig?.api_base || currentDefaultBaseUrl.value || '',
-      enabled: savedProviderConfig?.enabled ?? true,
-      name: savedProviderConfig?.name || '',
-      apiType: savedProviderConfig?.api_type || DEFAULT_API_TYPE,
-    }
-
-    const draftProjection = {
-      provider: deps.selectedProvider.value,
-      model: modelName.value,
-      apiKey: getPrimaryApiKey(),
-      apiKeys: normalizeApiKeys(providerConfig.value.apiKeys),
-      baseUrl: providerConfig.value.baseUrl || currentDefaultBaseUrl.value || '',
-      enabled: providerConfig.value.enabled,
-      name: providerConfig.value.name || '',
-      apiType: providerConfig.value.apiType,
-    }
-
-    return JSON.stringify(savedProjection) !== JSON.stringify(draftProjection)
+    const draft = source.settings.value?.providers?.[meta.id]
+    const saved = source.persistedSettings.value?.providers?.[meta.id]
+    return buildConnectionSignature(meta, draft) !== buildConnectionSignature(meta, saved)
   })
-
-  const draftStateHint = computed(() =>
-    hasDraftChanges.value ? t('settings.providers.presetPanel.draftChanged') : '',
-  )
 
   /* ---------------- 密钥行 ---------------- */
 
@@ -275,8 +200,16 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
 
   /* ---------------- 草稿 <-> store ---------------- */
 
-  function hydrateDraft(providerId: string): void {
-    const settings = settingsStore.settings
+  /**
+   * 把某个供应商的配置读进表单。
+   *
+   * @param fromPersisted 为 true 时读最近一次保存成功的状态（用于「撤销」），
+   *                      否则读当前草稿，保证切换回来后还能看到刚才的输入。
+   */
+  function hydrateDraft(providerId: string, fromPersisted = false): void {
+    const settings = fromPersisted
+      ? source.persistedSettings.value
+      : source.settings.value
     if (!settings?.providers || !settings.model) {
       return
     }
@@ -305,7 +238,7 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
   }
 
   function initializeProvider(): void {
-    const settings = settingsStore.settings
+    const settings = source.settings.value
     if (!settings?.model) {
       return
     }
@@ -327,13 +260,49 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
   }
 
   /**
+   * API 协议切换时同步根地址。
+   *
+   * DeepSeek 这类供应商的 OpenAI 兼容端点与 Anthropic 兼容端点不同，
+   * 只覆盖「空 / 内置默认 / 上一协议专用」的地址，用户手填的保持不变。
+   */
+  watch(
+    () => [deps.selectedProvider.value, providerConfig.value.apiType] as const,
+    ([providerId, apiType], previous) => {
+      const previousApiType = previous?.[1]
+      if (!previousApiType || apiType === previousApiType) {
+        return
+      }
+
+      const normalize = (value?: string) => String(value || '').trim().replace(/\/+$/, '')
+      const nextBaseUrl = resolveApiTypeBaseUrl(providerId, apiType)
+      const previousBaseUrl = resolveApiTypeBaseUrl(providerId, previousApiType)
+      const currentBaseUrl = normalize(providerConfig.value.baseUrl)
+      const defaultBaseUrl = normalize(currentDefaultBaseUrl.value)
+
+      if (nextBaseUrl) {
+        const isUntouched =
+          !currentBaseUrl || currentBaseUrl === defaultBaseUrl || currentBaseUrl === previousBaseUrl
+        if (isUntouched) {
+          providerConfig.value.baseUrl = nextBaseUrl
+        }
+        return
+      }
+
+      // 换回默认协议时，把之前自动填的地址还原成默认地址
+      if (previousBaseUrl && currentBaseUrl === previousBaseUrl) {
+        providerConfig.value.baseUrl = currentDefaultBaseUrl.value || ''
+      }
+    },
+  )
+
+  /**
    * 草稿 -> settings store（只改内存，不落库）。
    *
    * `providerId` 默认取当前选中的供应商；切换供应商时必须传入旧 id——
    * watch 回调执行时选中项已经变成新的了，不传就会把旧供应商的草稿写进新供应商。
    */
   function syncProviderDraftToStore(providerId: string = deps.selectedProvider.value): void {
-    const providers = settingsStore.settings?.providers
+    const providers = source.settings.value?.providers
     if (!providerId || !providers) {
       return
     }
@@ -356,7 +325,7 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
 
   /** 把当前选中的模型写回全局默认（仅在供应商可用时）。 */
   function syncModelDraftToStore(): void {
-    const settings = settingsStore.settings
+    const settings = source.settings.value
     if (!settings?.model || !deps.selectedProvider.value || !selectedProviderSelectable.value) {
       return
     }
@@ -377,21 +346,63 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
 
   /* ---------------- 落库与测试 ---------------- */
 
-  async function saveProviderConnection(): Promise<void> {
-    const providers = settingsStore.settings?.providers
-    if (!providers?.[deps.selectedProvider.value]) {
-      return
+  /**
+   * 只保存当前供应商的连接信息。
+   *
+   * 用「单供应商 updateProviders」而不是整份 settings 覆盖：
+   * 一处保存不该冲掉其他供应商还没保存的草稿。
+   */
+  async function saveProviderConnection(): Promise<boolean> {
+    const providerId = deps.selectedProvider.value
+    const providers = source.settings.value?.providers
+    if (!providerId || !providers?.[providerId]) {
+      return false
     }
 
+    if (savingProvider.value) {
+      return false
+    }
+
+    savingProvider.value = true
     try {
-      const response = await settingsAPI.update({
-        providers: { [deps.selectedProvider.value]: providers[deps.selectedProvider.value] },
+      const response = await source.api.updateProviders({
+        providers: { [providerId]: providers[providerId] },
       })
-      settingsStore.settings = response
-      settingsStore.persistedSettings = JSON.parse(JSON.stringify(response))
+
+      const saved = response.providers?.[providerId]
+      if (!saved) {
+        return false
+      }
+
+      // 草稿侧只回写这一个供应商，保留其他供应商的未保存编辑
+      providers[providerId] = JSON.parse(JSON.stringify(saved)) as ProviderConfig
+      // 已保存快照整体替换对象，触发订阅者（对话窗口的模型下拉）刷新
+      source.persistedSettings.value = {
+        ...(source.persistedSettings.value || response),
+        providers: {
+          ...(source.persistedSettings.value?.providers || response.providers),
+          [providerId]: JSON.parse(JSON.stringify(saved)),
+        },
+      }
+      return true
     } catch (error: any) {
       toast.error(error?.response?.data?.detail || t('common.saveFailed'))
+      return false
+    } finally {
+      savingProvider.value = false
     }
+  }
+
+  /** 丢弃草稿改动：把最近一次保存成功的连接信息重新读回表单。 */
+  function discardDraft(): void {
+    const providerId = deps.selectedProvider.value
+    if (!providerId) {
+      return
+    }
+    hydrateDraft(providerId, true)
+    // 表单里已是已保存值，再同步一次让 store 中的草稿与之一致
+    syncProviderDraftToStore(providerId)
+    testResult.value = null
   }
 
   async function testConnection(): Promise<void> {
@@ -403,13 +414,13 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     testResult.value = null
 
     try {
-      const response = await settingsAPI.testConnection({
+      const response = await source.api.testConnection({
         provider: deps.selectedProvider.value,
         api_key: getPrimaryApiKey(),
         api_base: providerConfig.value.baseUrl,
         api_type: providerConfig.value.apiType,
         model: modelName.value,
-        ...buildSendableModelConfig(settingsStore.settings?.model),
+        ...buildSendableModelConfig(source.settings.value?.model),
       })
 
       testResult.value = {
@@ -429,41 +440,7 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     }
   }
 
-  /* ---------------- 预设回填 / 新建供应商 ---------------- */
-
-  function applyExternalConfig(payload: ApplyDraftPayload): void {
-    isApplyingExternalConfig.value = true
-    deps.selectedProvider.value = payload.provider
-    const apiKeys = buildEditableApiKeys([payload.apiKey], payload.apiKey)
-    providerConfig.value = {
-      apiKey: apiKeys[0] || '',
-      apiKeys,
-      baseUrl: payload.baseUrl || '',
-      enabled: payload.enabled,
-      name: providerConfig.value.name,
-      apiType: providerConfig.value.apiType,
-    }
-    modelName.value = payload.model
-
-    const settings = settingsStore.settings
-    if (settings?.model) {
-      if (payload.temperature !== undefined) {
-        settings.model.temperature = payload.temperature
-      }
-      if (payload.maxTokens !== undefined) {
-        settings.model.max_tokens = payload.maxTokens
-      }
-      if (payload.maxIterations !== undefined) {
-        settings.model.max_iterations = payload.maxIterations
-      }
-    }
-
-    syncProviderDraftToStore()
-    syncModelDraftToStore()
-    appliedSource.value = { type: payload.source, label: payload.label }
-    testResult.value = null
-    isApplyingExternalConfig.value = false
-  }
+  /* ---------------- 新建供应商 ---------------- */
 
   /**
    * 「添加供应商」选中某个供应商。
@@ -476,7 +453,7 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
    * @returns 是否真的执行了添加（已配置过的返回 false）
    */
   function createProvider(providerId: string): boolean {
-    const providers = settingsStore.settings?.providers
+    const providers = source.settings.value?.providers
     if (!providers) {
       return false
     }
@@ -506,17 +483,40 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
   /**
    * 从左侧栏删掉一个供应商。
    *
-   * 后端启动时就为目录里每个供应商预建了空配置，也没有单独的删除接口，
-   * 所以「删除」= 清空它的密钥与模型清单，并立即落库：
-   * 清空后它不再出现在左栏，也从对话窗口的模型下拉里消失。
+   * 管理员侧后端启动时为目录里每个供应商预建了空配置、也没有删除接口，
+   * 「删除」= 清空它的密钥与模型清单并立即落库：清空后不再出现在左栏，
+   * 也从对话窗口的模型下拉里消失。
+   * 用户侧有真实删除端点（source.api.deleteProvider），直接删除自有配置。
    * 立即落库是因为延迟到「保存」才生效的话，用户不点保存、刷新后它又冒出来了。
    *
    * @returns 是否删除成功（供应商不存在或落库失败返回 false）
    */
   async function deleteProvider(providerId: string): Promise<boolean> {
-    const providers = settingsStore.settings?.providers
+    const providers = source.settings.value?.providers
     if (!providerId || !providers?.[providerId]) {
       return false
+    }
+
+    if (source.api.deleteProvider) {
+      try {
+        await source.api.deleteProvider(providerId)
+      } catch (error: any) {
+        toast.error(error?.response?.data?.detail || t('common.saveFailed'))
+        return false
+      }
+      if (deps.selectedProvider.value === providerId) {
+        providerConfig.value = {
+          apiKey: '',
+          apiKeys: [''],
+          baseUrl: '',
+          enabled: true,
+          name: '',
+          apiType: DEFAULT_API_TYPE,
+        }
+        modelName.value = ''
+        testResult.value = null
+      }
+      return true
     }
 
     const meta = findProviderById(deps.availableProviders.value, providerId)
@@ -546,15 +546,15 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     }
 
     try {
-      const response = await settingsAPI.update({ providers: { [providerId]: cleared } })
+      const response = await source.api.updateProviders({ providers: { [providerId]: cleared } })
       const saved = response.providers?.[providerId]
       if (saved) {
         providers[providerId] = { ...saved }
         // 只回写这一个供应商：用整份响应覆盖会把其他供应商还没保存的草稿冲掉。
         // 整份替换 persistedSettings 而不是改它的字段，是为了触发订阅者（对话窗口的模型下拉）刷新
-        const persisted = settingsStore.persistedSettings
+        const persisted = source.persistedSettings.value
         if (persisted) {
-          settingsStore.persistedSettings = {
+          source.persistedSettings.value = {
             ...persisted,
             providers: {
               ...persisted.providers,
@@ -576,20 +576,14 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     testing,
     testResult,
     isHydrating,
-    isApplyingExternalConfig,
-    appliedSource,
+    isProviderDirty,
+    savingProvider,
     isApiKeyOptional,
     isCustomProvider,
     currentDefaultBaseUrl,
     selectedProviderSelectable,
     selectedProviderStatusText,
     selectedProviderThinkingNote,
-    currentDraftConfig,
-    savedSnapshot,
-    draftSnapshot,
-    appliedSourceText,
-    draftStateHint,
-    hasDraftChanges,
     canTestConnection,
     getPrimaryApiKey,
     addApiKeyField,
@@ -599,8 +593,8 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     syncProviderDraftToStore,
     syncModelDraftToStore,
     saveProviderConnection,
+    discardDraft,
     testConnection,
-    applyExternalConfig,
     createProvider,
     deleteProvider,
   }

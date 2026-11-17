@@ -1,4 +1,5 @@
 import type { AttachmentItem, SpawnTaskState, SubagentTaskDetail } from '@/api/endpoints'
+import type { NativeChatEvent } from '@/types/nativeCaps'
 
 export type ToolCallStatus = 'pending' | 'running' | 'success' | 'error' | 'cancelled'
 
@@ -70,6 +71,13 @@ export interface InterleavedToolBlock {
 
 export type InterleavedRenderBlock = InterleavedTextBlock | InterleavedToolBlock
 
+/** 引用某条历史消息：把它的正文带进下一条用户消息的上下文 */
+export interface MessageQuote {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export interface ChatMessage {
   id: string
   sessionId?: string
@@ -85,4 +93,6 @@ export interface ChatMessage {
   reasoningContent?: string
   isThinking?: boolean
   queued?: boolean
+  /** 供应商原生能力事件（搜索、阅读链接、引用、拒答） */
+  nativeEvents?: NativeChatEvent[]
 }

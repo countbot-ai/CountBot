@@ -102,6 +102,12 @@
               :model-value="activeReasoningLevel"
               @change="(level) => emit('select-reasoning-level', level)"
             />
+            <ChatModeToggle
+              v-if="showModelPicker && canSwitchChatMode"
+              :mode="chatMode"
+              :allowed-modes="allowedChatModes"
+              @change="(mode) => emit('select-chat-mode', mode)"
+            />
           </div>
         </div>
 
@@ -131,8 +137,8 @@
 
     <p class="input-hint">
       {{ $t('chat.pickTeamHint') }} ·
-      {{ props.isMac() ? 'Cmd+Enter' : 'Enter' }} {{ $t('chat.send') }} ·
-      {{ props.isMac() ? 'Enter' : 'Shift+Enter' }} {{ $t('chat.newLine') }}
+      Enter {{ $t('chat.send') }} ·
+      Shift+Enter {{ $t('chat.newLine') }}
     </p>
   </footer>
 </template>
@@ -153,7 +159,9 @@ import {
 import TeamPicker from './TeamPicker.vue'
 import ModelPicker from './ModelPicker.vue'
 import ReasoningLevelSelect from './ReasoningLevelSelect.vue'
+import ChatModeToggle from './ChatModeToggle.vue'
 import type { ModelPickerGroup } from './ModelPicker.vue'
+import type { ChatMode } from '@/api'
 import type { AgentTeam } from '@/store/agentTeams'
 import type { ComposerAttachment } from '@/composables/useChatAttachments'
 
@@ -176,6 +184,10 @@ interface Props {
   /** 当前模型的思考档位；为空数组时不渲染「思考强度」下拉 */
   reasoningLevels?: string[]
   activeReasoningLevel?: string | null
+  /** 对话模式：agent 可调用工具；chat 纯对话 */
+  chatMode?: ChatMode
+  /** 当前用户可用的对话模式；只剩一种时隐藏切换器 */
+  allowedChatModes?: ChatMode[]
 }
 
 const props = defineProps<Props>()
@@ -190,9 +202,12 @@ interface Emits {
   (e: 'remove-attachment', id: string): void
   (e: 'select-model', providerId: string, modelId: string): void
   (e: 'select-reasoning-level', level: string): void
+  (e: 'select-chat-mode', mode: ChatMode): void
 }
 
 const emit = defineEmits<Emits>()
+
+const canSwitchChatMode = computed(() => (props.allowedChatModes?.length ?? 2) > 1)
 
 const isInputFocused = ref(false)
 const localTextareaRef = ref<HTMLTextAreaElement>()

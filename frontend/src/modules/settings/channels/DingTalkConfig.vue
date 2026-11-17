@@ -20,33 +20,32 @@
         @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
       />
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.dingtalk.clientIdHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.dingtalk.clientId') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <input
           v-model="model.client_id"
           type="text"
           :placeholder="t('settings.channels.dingtalk.clientIdPlaceholder')"
-          class="config-input"
+          class="co-input"
           autocomplete="username"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.dingtalk.clientIdHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.dingtalk.clientSecretHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.dingtalk.clientSecret') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.client_secret"
             :placeholder="t('settings.channels.dingtalk.clientSecretPlaceholder')"
-            class="config-input"
+            class="co-input"
             autocomplete="current-password"
             @input="handleChange"
           />
@@ -66,18 +65,16 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.dingtalk.clientSecretHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.dingtalk.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.dingtalk.allowFrom')" :description="t('settings.channels.dingtalk.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.dingtalk.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
@@ -86,8 +83,7 @@
             + {{ t('settings.channels.dingtalk.addUser') }}
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.dingtalk.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -96,6 +92,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 import ChannelOnboardingCard from './ChannelOnboardingCard.vue'
 
 interface Props {

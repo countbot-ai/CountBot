@@ -120,153 +120,166 @@
               </label>
             </div>
 
-            <section class="form-section">
-              <div class="field-grid compact-grid">
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.name') }}</label>
-                  <input
-                    v-model="activeProfile.name"
-                    type="text"
-                    class="config-input"
-                    :placeholder="t('settings.externalTools.placeholders.name')"
-                  >
-                </div>
+            <SettingsCard :title="t('settings.externalTools.sections.basic')">
+              <SettingsRow
+                :label="t('settings.externalTools.fields.name')"
+                wide-control
+              >
+                <input
+                  v-model="activeProfile.name"
+                  type="text"
+                  class="co-input"
+                  :placeholder="t('settings.externalTools.placeholders.name')"
+                >
+              </SettingsRow>
 
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.description') }}</label>
-                  <input
-                    v-model="activeProfile.description"
-                    type="text"
-                    class="config-input"
-                    :placeholder="t('settings.externalTools.placeholders.description')"
-                  >
-                </div>
-              </div>
+              <SettingsRow
+                :label="t('settings.externalTools.fields.description')"
+                wide-control
+              >
+                <input
+                  v-model="activeProfile.description"
+                  type="text"
+                  class="co-input"
+                  :placeholder="t('settings.externalTools.placeholders.description')"
+                >
+              </SettingsRow>
 
-              <div class="field-grid compact-grid">
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.type') }}</label>
-                  <input v-model="activeProfile.type" type="text" class="config-input is-code">
-                </div>
+              <SettingsRow
+                :label="t('settings.externalTools.fields.type')"
+                wide-control
+              >
+                <input v-model="activeProfile.type" type="text" class="co-input is-code">
+              </SettingsRow>
 
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.timeout') }}</label>
-                  <input
-                    :value="activeProfile.timeout ?? ''"
-                    type="number"
-                    class="config-input"
-                    @input="activeProfile.timeout = normalizeOptionalNumber(($event.target as HTMLInputElement).value)"
-                  >
-                </div>
-              </div>
-            </section>
+              <SettingsRow
+                :label="t('settings.externalTools.fields.timeout')"
+                wide-control
+              >
+                <input
+                  :value="activeProfile.timeout ?? ''"
+                  type="number"
+                  class="co-input"
+                  @input="activeProfile.timeout = normalizeOptionalNumber(($event.target as HTMLInputElement).value)"
+                >
+              </SettingsRow>
+            </SettingsCard>
 
-            <section class="form-section">
-              <div class="field-grid compact-grid">
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.sessionMode') }}</label>
-                  <select v-model="activeProfile.session_mode" class="config-input">
-                    <option v-for="option in sessionModeOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </div>
+            <SettingsCard
+              :title="t('settings.externalTools.sections.session')"
+              :description="activeProfile.session_mode === 'native'
+                ? t('settings.externalTools.nativeModeHint')
+                : t('settings.externalTools.historyModeHint')"
+            >
+              <SettingsRow
+                :label="t('settings.externalTools.fields.sessionMode')"
+                wide-control
+              >
+                <select v-model="activeProfile.session_mode" class="co-select">
+                  <option v-for="option in sessionModeOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </SettingsRow>
 
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.historyMessageCount') }}</label>
-                  <input
-                    v-model.number="activeProfile.history_message_count"
-                    type="number"
-                    min="1"
-                    max="50"
-                    class="config-input"
-                    :disabled="activeProfile.session_mode === 'stateless'"
-                  >
-                </div>
-              </div>
+              <SettingsRow
+                :label="t('settings.externalTools.fields.historyMessageCount')"
+                wide-control
+              >
+                <input
+                  v-model.number="activeProfile.history_message_count"
+                  type="number"
+                  min="1"
+                  max="50"
+                  class="co-input"
+                  :disabled="activeProfile.session_mode === 'stateless'"
+                >
+              </SettingsRow>
+            </SettingsCard>
 
-              <p class="field-hint">
-                {{
-                  activeProfile.session_mode === 'native'
-                    ? t('settings.externalTools.nativeModeHint')
-                    : t('settings.externalTools.historyModeHint')
-                }}
-              </p>
-            </section>
-
-            <section class="form-section">
-              <div class="form-field">
-                <label>{{ t('settings.externalTools.fields.command') }}</label>
+            <SettingsCard :title="t('settings.externalTools.sections.execution')">
+              <SettingsRow
+                :label="t('settings.externalTools.fields.command')"
+                :description="t('settings.externalTools.commandHint')"
+                wide-control
+              >
                 <input
                   v-model="activeProfile.command"
                   type="text"
-                  class="config-input is-code"
+                  class="co-input is-code"
                   :placeholder="t('settings.externalTools.placeholders.command')"
                 >
-                <p class="field-hint">{{ t('settings.externalTools.commandHint') }}</p>
-              </div>
+              </SettingsRow>
 
-              <div class="form-field">
-                <label>{{ t('settings.externalTools.fields.args') }}</label>
+              <SettingsRow
+                layout="block"
+                :label="t('settings.externalTools.fields.args')"
+                :description="t('settings.externalTools.argsHint')"
+              >
                 <textarea
                   :value="joinLines(activeProfile.args)"
-                  class="config-textarea is-code"
+                  class="co-textarea is-code"
                   rows="4"
                   :placeholder="ARGS_PLACEHOLDER"
                   @input="updateLines(activeProfile, 'args', ($event.target as HTMLTextAreaElement).value)"
                 ></textarea>
-                <p class="field-hint">{{ t('settings.externalTools.argsHint') }}</p>
-              </div>
+              </SettingsRow>
 
-              <div class="form-field">
-                <label>{{ t('settings.externalTools.fields.workingDir') }}</label>
+              <SettingsRow
+                :label="t('settings.externalTools.fields.workingDir')"
+                :description="t('settings.externalTools.workingDirHint')"
+                wide-control
+              >
                 <input
                   v-model="activeProfile.working_dir"
                   type="text"
-                  class="config-input is-code"
+                  class="co-input is-code"
                   :placeholder="t('settings.externalTools.placeholders.workingDir')"
                 >
-                <p class="field-hint">{{ t('settings.externalTools.workingDirHint') }}</p>
-              </div>
-            </section>
+              </SettingsRow>
+            </SettingsCard>
 
-            <section class="form-section">
-              <div class="field-grid compact-grid">
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.aliases') }}</label>
-                  <textarea
-                    :value="joinLines(activeProfile.aliases)"
-                    class="config-textarea is-code"
-                    rows="3"
-                    :placeholder="t('settings.externalTools.placeholders.aliases')"
-                    @input="updateLines(activeProfile, 'aliases', ($event.target as HTMLTextAreaElement).value)"
-                  ></textarea>
-                </div>
+            <SettingsCard :title="t('settings.externalTools.sections.environment')">
+              <SettingsRow
+                layout="block"
+                :label="t('settings.externalTools.fields.aliases')"
+              >
+                <textarea
+                  :value="joinLines(activeProfile.aliases)"
+                  class="co-textarea is-code"
+                  rows="3"
+                  :placeholder="t('settings.externalTools.placeholders.aliases')"
+                  @input="updateLines(activeProfile, 'aliases', ($event.target as HTMLTextAreaElement).value)"
+                ></textarea>
+              </SettingsRow>
 
-                <div class="form-field">
-                  <label>{{ t('settings.externalTools.fields.inheritEnv') }}</label>
-                  <textarea
-                    :value="joinLines(activeProfile.inherit_env)"
-                    class="config-textarea is-code"
-                    rows="3"
-                    :placeholder="t('settings.externalTools.placeholders.inheritEnv')"
-                    @input="updateLines(activeProfile, 'inherit_env', ($event.target as HTMLTextAreaElement).value)"
-                  ></textarea>
-                </div>
-              </div>
+              <SettingsRow
+                layout="block"
+                :label="t('settings.externalTools.fields.inheritEnv')"
+              >
+                <textarea
+                  :value="joinLines(activeProfile.inherit_env)"
+                  class="co-textarea is-code"
+                  rows="3"
+                  :placeholder="t('settings.externalTools.placeholders.inheritEnv')"
+                  @input="updateLines(activeProfile, 'inherit_env', ($event.target as HTMLTextAreaElement).value)"
+                ></textarea>
+              </SettingsRow>
 
-              <div class="form-field">
-                <label>{{ t('settings.externalTools.fields.env') }}</label>
+              <SettingsRow
+                layout="block"
+                :label="t('settings.externalTools.fields.env')"
+                :description="t('settings.externalTools.envHint')"
+              >
                 <textarea
                   :value="getEnvDraft(activeProfileIndex)"
-                  class="config-textarea is-code"
+                  class="co-textarea is-code"
                   rows="6"
                   :placeholder="ENV_PLACEHOLDER"
                   @input="updateEnv(activeProfile, activeProfileIndex, ($event.target as HTMLTextAreaElement).value)"
                 ></textarea>
-                <p class="field-hint">{{ t('settings.externalTools.envHint') }}</p>
-              </div>
-            </section>
+              </SettingsRow>
+            </SettingsCard>
 
             <details class="advanced-panel">
               <summary>{{ t('settings.externalTools.advanced') }}</summary>
@@ -409,6 +422,7 @@ import { useExternalCodingToolsStore } from '@/store/externalCodingTools'
 import { useToast } from '@/composables/useToast'
 import Modal from '@/components/ui/Modal.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
+import { SettingsCard, SettingsRow } from './ui'
 import type { ExternalCodingToolProfile } from '@/api'
 
 const { t } = useI18n()

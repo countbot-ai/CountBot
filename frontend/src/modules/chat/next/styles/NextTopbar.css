@@ -1,6 +1,4 @@
-/**
- * 顶栏：与正文同底色，只用一条极浅分隔线压住层级。
- */
+/** 顶栏：与正文同底色，仅用一条浅分隔线区分层级 */
 .nc-topbar {
   position: relative;
   z-index: 10;
@@ -49,6 +47,12 @@
 .nc-topbar-button:hover {
   background: var(--nc-hover);
   color: var(--nc-text);
+}
+
+/* 注销是离开型操作，hover 用警示色与其它按钮区分 */
+.nc-topbar-button-danger:hover {
+  background: var(--color-error-bg);
+  color: var(--color-error);
 }
 
 .nc-topbar-title {

@@ -1,26 +1,21 @@
 <template>
-  <!-- 全屏遮罩 -->
-  <div class="config-modal-overlay" @click="$emit('close')">
-    <div class="config-modal" @click.stop>
-      <div class="modal-container">
-        <!-- Header -->
-        <div class="modal-header">
-          <div class="header-content">
-            <div class="header-icon">
-              <Settings :size="24" />
-            </div>
-            <div class="header-text">
-              <h3>{{ $t('chat.sessionConfig.title') }}</h3>
-              <p class="header-subtitle">{{ sessionName }}</p>
-            </div>
-          </div>
-          <button class="close-btn" @click="$emit('close')" :title="$t('common.close')">
-            <X :size="20" />
-          </button>
-        </div>
+  <Modal
+    :model-value="true"
+    size="large"
+    mask-closable
+    @close="$emit('close')"
+  >
+    <template #title>
+      <div class="scm-title">
+        <span class="scm-title-icon">
+          <Settings :size="16" />
+        </span>
+        <span class="scm-title-text">{{ $t('chat.sessionConfig.title') }}</span>
+        <span v-if="sessionName" class="scm-title-sub">{{ sessionName }}</span>
+      </div>
+    </template>
 
-        <!-- Scrollable Content -->
-        <div class="modal-body">
+    <div class="scm-body">
           <!-- 使用自定义配置开关 -->
           <div class="config-toggle" :class="{ active: useCustomConfig }">
             <div class="toggle-header">
@@ -44,8 +39,8 @@
             </div>
           </div>
 
-          <!-- 工作空间：独立于模型/人设开关，留空即跟随全局 -->
-          <section class="config-section workspace-section">
+          <!-- 工作空间：仅管理员可自定义；普通用户由系统按用户自动分配私有目录 -->
+          <section v-if="isAdmin" class="config-section workspace-section">
             <div class="section-header">
               <div class="section-heading">
                 <div class="section-icon">
@@ -104,16 +99,6 @@
                   </div>
                   <h4>{{ $t('chat.sessionConfig.modelSettings') }}</h4>
                 </div>
-                <div class="section-header-actions">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    :icon="LayoutGrid"
-                    @click="showPresetPanel = true"
-                  >
-                    {{ $t('settings.providers.presetPanel.entryTitle') }}
-                  </Button>
-                </div>
               </div>
 
               <div class="form-grid">
@@ -129,9 +114,16 @@
 
                 <div class="form-group">
                   <label>{{ $t('settings.providers.model') }}</label>
-                  <input v-model="modelConfig.model" type="text" class="text-input" placeholder="glm-5" />
+                  <Select
+                    v-model="modelConfig.model"
+                    :options="modelOptions"
+                    :placeholder="$t('chat.modelPicker.placeholder')"
+                    :disabled="modelOptions.length === 0"
+                    :prefix-icon="ProviderIcon"
+                    :prefix-icon-props="currentProviderIconProps"
+                    searchable
+                  />
                 </div>
-
               </div>
 
               <ModelParameterFields
@@ -139,64 +131,13 @@
                 :max-tokens="modelConfig.max_tokens"
                 :max-iterations="modelConfig.max_iterations"
                 :thinking-enabled="modelConfig.thinking_enabled"
+                :stream-enabled="modelConfig.stream_enabled"
                 @update:temperature="modelConfig.temperature = $event"
                 @update:maxTokens="modelConfig.max_tokens = $event"
                 @update:maxIterations="modelConfig.max_iterations = $event"
                 @update:thinkingEnabled="modelConfig.thinking_enabled = $event"
+                @update:streamEnabled="modelConfig.stream_enabled = $event"
               />
-
-              <!-- 高级 API 设置 -->
-              <details class="advanced-config">
-                <summary>
-                  <Lock :size="16" />
-                  <span>{{ $t('chat.sessionConfig.advancedApiSettings') }}</span>
-                  <ChevronDown :size="16" class="chevron" />
-                </summary>
-
-                <div class="advanced-content">
-                  <div class="form-group">
-                    <label>{{ $t('settings.providers.apiKey') }}</label>
-                    <Input
-                      v-model="modelConfig.api_key"
-                      type="password"
-                      :placeholder="$t('chat.sessionConfig.leaveEmptyForGlobal')"
-                      :hint="$t('chat.sessionConfig.apiKeyHint')"
-                    />
-                  </div>
-
-                  <div class="form-group">
-                    <label>{{ $t('settings.providers.baseUrl') }}</label>
-                    <Input
-                      v-model="modelConfig.api_base"
-                      type="text"
-                      :placeholder="$t('chat.sessionConfig.leaveEmptyForGlobal')"
-                      :hint="$t('chat.sessionConfig.apiBaseHint')"
-                    />
-                  </div>
-
-                  <!-- 测试连接按钮 -->
-                  <div class="form-group">
-                    <Button
-                      variant="secondary"
-                      :loading="testing"
-                      @click="handleTestConnection"
-                    >
-                      {{ testing ? $t('settings.providers.testing') : $t('settings.providers.testConnection') }}
-                    </Button>
-                  </div>
-
-                  <!-- 测试结果 -->
-                  <div
-                    v-if="testResult"
-                    class="test-result"
-                    :class="testResult.success ? 'success' : 'error'"
-                  >
-                    <CheckCircle v-if="testResult.success" :size="16" />
-                    <XCircle v-else :size="16" />
-                    <span>{{ testResult.message }}</span>
-                  </div>
-                </div>
-              </details>
             </section>
 
             <!-- 角色配置 -->
@@ -339,37 +280,24 @@
             <h4>{{ $t('chat.sessionConfig.usingGlobalDefaults') }}</h4>
             <p>{{ $t('chat.sessionConfig.usingGlobalDefaultsDesc') }}</p>
           </div>
-        </div>
-
-        <!-- Fixed Footer -->
-        <div class="modal-footer">
-          <button @click="saveConfig" class="btn-primary" :disabled="saving">
-            <Save :size="16" v-if="!saving" />
-            <Loader2 :size="16" class="spin" v-if="saving" />
-            <span>{{ saving ? $t('common.saving') : $t('common.save') }}</span>
-          </button>
-          <button @click="resetToDefaults" class="btn-secondary">
-            <RotateCcw :size="16" />
-            <span>{{ $t('chat.sessionConfig.resetToDefaults') }}</span>
-          </button>
-        </div>
-      </div>
     </div>
 
-    <ProviderPresetPanel
-      v-model="showPresetPanel"
-      :current-config="currentDraftConfig"
-      :available-providers="providers"
-      @apply-config="handleApplyPresetConfig"
-    />
-  </div>
+    <template #footer>
+      <Button variant="secondary" :icon="RotateCcw" @click="resetToDefaults">
+        {{ $t('chat.sessionConfig.resetToDefaults') }}
+      </Button>
+      <Button variant="primary" :icon="Save" :loading="saving" @click="saveConfig">
+        {{ saving ? $t('common.saving') : $t('common.save') }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
-import { 
-  X, Settings, Sparkles, Cpu, User, ChevronDown, Lock, LayoutGrid,
-  Save, RotateCcw, Loader2, Globe, CheckCircle, XCircle,
+import {
+  Settings, Sparkles, Cpu, User, ChevronDown,
+  Save, RotateCcw, Loader2, Globe,
   Heart, Frown, Laugh, CloudLightning,
   Target, Snowflake, MessageSquare, BookOpen, Smile,
   TrendingUp, Gamepad2, Clock, Edit3, Folder, FolderOpen
@@ -377,62 +305,49 @@ import {
 import {
   authAPI,
   chatAPI,
+  meAPI,
   settingsAPI,
   type ProviderMetadata,
+  type ProviderModelEntry,
   type SessionModelConfig,
   type SessionPersonaConfig,
 } from '@/api'
 import { personalitiesApi, type Personality } from '@/api/personalities'
+import {
+  buildProviderOptions,
+  buildProviderOptionsFromMeModels,
+  type ProviderOption as CatalogProviderOption,
+} from '@/composables/useProviderModelCatalog'
+import { useChatModePolicy } from '@/composables/useChatModePolicy'
 import { useI18n } from 'vue-i18n'
-import Input from '@/components/ui/Input.vue'
+import { useUserStore } from '@/store/user'
 import Button from '@/components/ui/Button.vue'
+import Modal from '@/components/ui/Modal.vue'
+import ProviderIcon from '@/components/ui/ProviderIcon.vue'
 import Select from '@/components/ui/Select.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import ModelParameterFields from '@/components/ui/ModelParameterFields.vue'
-import ProviderPresetPanel from '@/modules/settings/ProviderPresetPanel.vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
-import {
-  findFirstSelectableProvider,
-  findProviderById,
-  resolveProviderDefaultApiBase,
-  resolveProviderDefaultModel,
-} from '@/utils/providerRuntime'
 import {
   buildCustomModelEditorConfig,
   buildEffectiveModelConfig,
   buildModelConfigOverrides,
-  MODEL_CONFIG_FALLBACK,
-  buildSendableModelConfig,
 } from '@/utils/modelConfig'
 
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+// 工作空间自定义仅管理员可见/可改；普通用户强制使用各自私有工作区
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin)
 
 type SessionConfigUpdateAction = 'saved' | 'reset'
-type ProviderOption = Pick<ProviderMetadata, 'id' | 'name'> & {
-  defaultApiBase?: string
-  defaultModel?: string
-}
 
 interface PersonalityOption {
   value: string
   label: string
   icon: any
-}
-
-interface PresetApplyPayload {
-  provider: string
-  model: string
-  apiKey: string
-  baseUrl?: string
-  enabled: boolean
-  temperature?: number
-  maxTokens?: number
-  maxIterations?: number
-  source: 'preset' | 'codingplan'
-  label: string
 }
 
 const createDefaultModelConfig = (): SessionModelConfig =>
@@ -483,8 +398,9 @@ const emit = defineEmits<{
 
 const useCustomConfig = ref(true)
 const saving = ref(false)
-const testing = ref(false)
-const testResult = ref<{ success: boolean; message: string } | null>(null)
+// 对话模式不在模型参数表单里，但同样属于会话模型配置；保存时要原样带回
+const { clampChatMode } = useChatModePolicy()
+const chatMode = ref<'agent' | 'chat'>('agent')
 // 工作空间独立于模型/人设开关：留空表示跟随全局
 const workspacePath = ref('')
 const initialWorkspacePath = ref('')
@@ -493,8 +409,7 @@ const effectiveWorkspacePath = ref('')
 const workspaceError = ref('')
 const canPickDirectory = ref(false)
 const workspaceIsCustom = computed(() => !!workspacePath.value.trim())
-const providers = ref<ProviderOption[]>([])
-const showPresetPanel = ref(false)
+const providers = ref<CatalogProviderOption[]>([])
 const personalities = ref<PersonalityOption[]>([])
 const loadingPersonalities = ref(false)
 const showAllPersonalities = ref(false)
@@ -604,28 +519,42 @@ const providerOptions = computed(() =>
   providers.value.map(provider => ({
     value: provider.id,
     label: provider.name,
+    icon: ProviderIcon,
+    iconProps: { providerId: provider.id, size: 16 },
   }))
 )
-const currentDraftConfig = computed(() => ({
-  provider: modelConfig.value.provider,
-  model: modelConfig.value.model,
-  apiKey: modelConfig.value.api_key,
-  baseUrl: modelConfig.value.api_base || '',
-  enabled: true,
-  temperature: modelConfig.value.temperature,
-  maxTokens: modelConfig.value.max_tokens,
-  maxIterations: modelConfig.value.max_iterations,
+// 模型下拉只读出「已配置好」的模型，不再让用户手敲模型名
+const modelOptions = computed(() => {
+  const provider = providers.value.find(item => item.id === modelConfig.value.provider)
+  if (!provider) {
+    return []
+  }
+  return provider.models
+    .filter(model => model.enabled !== false)
+    .map(model => ({
+      value: model.id,
+      label: model.display_name || model.id,
+    }))
+})
+// 与对话窗口一致：模型选中值前面展示该供应商的品牌图标
+const currentProviderIconProps = computed(() => ({
+  providerId: modelConfig.value.provider,
+  size: 16,
 }))
 
 async function loadProviders() {
   try {
-    const providersData = await settingsAPI.getProviders()
-    providers.value = providersData.map(p => ({
-      id: p.id,
-      name: p.name,
-      defaultApiBase: resolveProviderDefaultApiBase(p),
-      defaultModel: resolveProviderDefaultModel(p)
-    }))
+    if (userStore.isAdmin) {
+      const [settings, metadata] = await Promise.all([
+        settingsAPI.get(),
+        settingsAPI.getProviders().catch(() => [] as ProviderMetadata[]),
+      ])
+      providers.value = buildProviderOptions(settings.providers, metadata)
+    } else {
+      // 普通用户无权读全局配置，只暴露管理员共享/自有的模型清单
+      const data = await meAPI.listModels()
+      providers.value = buildProviderOptionsFromMeModels(data)
+    }
     ensureValidProviderSelection()
   } catch (error) {
     console.error('Failed to load providers:', error)
@@ -654,12 +583,12 @@ function applyConfig(model: Partial<SessionModelConfig>, persona: Partial<Sessio
   isHydratingConfig.value = true
   try {
     useCustomConfig.value = enabled
+    chatMode.value = clampChatMode(enabled && model.chat_mode === 'chat' ? 'chat' : 'agent')
     modelConfig.value = buildCustomModelEditorConfig<SessionModelConfig>(
       globalModelDefaults.value,
       enabled ? model : undefined,
     )
     personaConfig.value = normalizePersonaConfig(persona)
-    testResult.value = null
     ensureValidProviderSelection()
   } finally {
     isHydratingConfig.value = false
@@ -671,50 +600,43 @@ function ensureValidProviderSelection() {
     return
   }
 
-  const currentProvider = findProviderById(providers.value, modelConfig.value.provider)
-  if (currentProvider) {
-    return
+  if (!providers.value.some(provider => provider.id === modelConfig.value.provider)) {
+    modelConfig.value.provider = providers.value[0].id
   }
 
-  const fallbackProvider = findFirstSelectableProvider(providers.value)
-  const nextProvider = fallbackProvider || providers.value[0]
-  if (!nextProvider) {
-    return
-  }
-
-  modelConfig.value.provider = nextProvider.id
-  if (!modelConfig.value.api_base) {
-    modelConfig.value.api_base = nextProvider.defaultApiBase || ''
-  }
-  if (
-    !modelConfig.value.model
-    || modelConfig.value.model === MODEL_CONFIG_FALLBACK.model
-  ) {
-    modelConfig.value.model = nextProvider.defaultModel || modelConfig.value.model
-  }
+  ensureCurrentModelPresent()
 }
 
-function handleApplyPresetConfig(payload: PresetApplyPayload) {
-  isHydratingConfig.value = true
-  try {
-    modelConfig.value = buildEffectiveModelConfig<SessionModelConfig>(
-      globalModelDefaults.value,
+/** 当前模型若不在供应商清单里，补一个条目保住会话已有选择，或回落到首个可用模型。 */
+function ensureCurrentModelPresent() {
+  const provider = providers.value.find(item => item.id === modelConfig.value.provider)
+  if (!provider) {
+    return
+  }
+
+  const currentModel = String(modelConfig.value.model || '')
+  if (currentModel && provider.models.some(model => model.id === currentModel)) {
+    return
+  }
+
+  if (currentModel) {
+    provider.models = [
       {
-        ...modelConfig.value,
-        provider: payload.provider,
-        model: payload.model,
-        api_mode: 'chat_completions',
-        api_key: payload.apiKey,
-        api_base: payload.baseUrl || '',
-        temperature: payload.temperature ?? modelConfig.value.temperature,
-        max_tokens: payload.maxTokens ?? modelConfig.value.max_tokens,
-        max_iterations: payload.maxIterations ?? modelConfig.value.max_iterations,
-      },
-    )
-    testResult.value = null
-    ensureValidProviderSelection()
-  } finally {
-    isHydratingConfig.value = false
+        id: currentModel,
+        display_name: currentModel,
+        enabled: true,
+        context_window: null,
+        supports_image: null,
+        source: 'manual',
+      } as ProviderModelEntry,
+      ...provider.models,
+    ]
+    return
+  }
+
+  const firstModel = provider.models.find(model => model.enabled !== false)
+  if (firstModel) {
+    modelConfig.value.model = firstModel.id
   }
 }
 
@@ -739,30 +661,24 @@ watch(() => props.sessionId, async (newSessionId, oldSessionId) => {
   }
 })
 
-watch(() => modelConfig.value.provider, (newProvider, oldProvider) => {
+watch(() => modelConfig.value.provider, (newProvider) => {
   if (!newProvider || providers.value.length === 0 || isHydratingConfig.value) {
     return
   }
 
   const nextProvider = providers.value.find(p => p.id === newProvider)
-  const previousProvider = oldProvider ? providers.value.find(p => p.id === oldProvider) : null
-
   if (!nextProvider) {
     return
   }
 
-  const shouldUpdateApiBase = !modelConfig.value.api_base || (
-    !!previousProvider?.defaultApiBase && modelConfig.value.api_base === previousProvider.defaultApiBase
+  // 切供应商后旧模型通常不在新清单里，回落到新供应商的首个可用模型
+  const currentModel = String(modelConfig.value.model || '')
+  const stillValid = nextProvider.models.some(
+    model => model.id === currentModel && model.enabled !== false,
   )
-  if (shouldUpdateApiBase) {
-    modelConfig.value.api_base = nextProvider.defaultApiBase || ''
-  }
-
-  const shouldUpdateModel = !modelConfig.value.model || (
-    !!previousProvider?.defaultModel && modelConfig.value.model === previousProvider.defaultModel
-  )
-  if (shouldUpdateModel && nextProvider.defaultModel) {
-    modelConfig.value.model = nextProvider.defaultModel
+  if (!stillValid) {
+    const firstModel = nextProvider.models.find(model => model.enabled !== false)
+    modelConfig.value.model = firstModel ? firstModel.id : ''
   }
 })
 
@@ -780,14 +696,15 @@ async function loadConfig() {
   try {
     const config = await chatAPI.getSessionConfig(props.sessionId)
     globalModelDefaults.value = normalizeModelConfig(config.global_defaults.model)
-    // 工作空间与会话模型/人设独立回填
-    workspacePath.value = config.workspace?.path || ''
-    initialWorkspacePath.value = config.workspace?.path || ''
-    globalWorkspacePath.value = config.workspace?.global_path || ''
-    effectiveWorkspacePath.value = config.workspace?.effective_path || ''
-    workspaceError.value = ''
-    // 面板打开后默认开启「使用自定义配置」：已有保存的会话配置就回填，
-    // 否则用全局默认值预填；只有点击保存才会真正写入。
+    // 工作空间与会话模型/人设独立回填；普通用户无工作空间自定义，跳过
+    if (isAdmin.value) {
+      workspacePath.value = config.workspace?.path || ''
+      initialWorkspacePath.value = config.workspace?.path || ''
+      globalWorkspacePath.value = config.workspace?.global_path || ''
+      effectiveWorkspacePath.value = config.workspace?.effective_path || ''
+      workspaceError.value = ''
+    }
+    // 面板打开时默认启用「使用自定义配置」：有保存值则回填，否则预填全局默认
     if (config.use_custom_config) {
       applyConfig(config.model_config, config.persona_config, true)
     } else {
@@ -825,7 +742,7 @@ function useGlobalWorkspace() {
 }
 
 async function saveWorkspaceIfNeeded(): Promise<boolean> {
-  if (!props.sessionId) {
+  if (!props.sessionId || !isAdmin.value) {
     return true
   }
 
@@ -866,15 +783,17 @@ async function saveConfig() {
     // 开关关闭时点击保存 = 提交「使用全局默认配置」
     if (!useCustomConfig.value) {
       await chatAPI.resetSessionConfig(props.sessionId)
-      // 重置会同时清空工作空间；用户显式填写了目录时再补写回去
-      const nextPath = workspacePath.value.trim()
-      if (nextPath) {
-        const result = await chatAPI.updateSessionWorkspace(props.sessionId, nextPath)
-        initialWorkspacePath.value = result.workspace_path || ''
-        effectiveWorkspacePath.value = result.effective_workspace_path
-      } else {
-        initialWorkspacePath.value = ''
-        effectiveWorkspacePath.value = globalWorkspacePath.value
+      // 重置会同时清空工作空间；管理员显式填写了目录时再补写回去
+      if (isAdmin.value) {
+        const nextPath = workspacePath.value.trim()
+        if (nextPath) {
+          const result = await chatAPI.updateSessionWorkspace(props.sessionId, nextPath)
+          initialWorkspacePath.value = result.workspace_path || ''
+          effectiveWorkspacePath.value = result.effective_workspace_path
+        } else {
+          initialWorkspacePath.value = ''
+          effectiveWorkspacePath.value = globalWorkspacePath.value
+        }
       }
       emit('updated', 'reset')
       return
@@ -885,8 +804,11 @@ async function saveConfig() {
       modelConfig.value,
       globalModelDefaults.value,
     )
+    // 会话不再覆盖密钥/地址：供应商凭据只在设置页维护，避免重复配置
+    delete modelOverrides.api_key
+    delete modelOverrides.api_base
     await chatAPI.updateSessionConfig(props.sessionId, {
-      model_config: modelOverrides,
+      model_config: { ...modelOverrides, chat_mode: clampChatMode(chatMode.value) },
       persona_config: {
         ...personaConfig.value,
         max_history_messages: normalizeHistoryLimit(personaConfig.value.max_history_messages),
@@ -927,8 +849,7 @@ async function resetToDefaults() {
 
 function onToggleCustomConfig() {
   if (!useCustomConfig.value) {
-    // 关闭开关只是草稿状态：直接关闭面板会恢复原配置，
-    // 点击保存才会真正重置为全局默认。
+    // 关闭开关仅为草稿状态：直接关闭面板会恢复原配置，保存才重置为全局默认
     return
   }
 
@@ -936,44 +857,12 @@ function onToggleCustomConfig() {
     globalModelDefaults.value,
     modelConfig.value,
   )
-  testResult.value = null
-}
-
-async function handleTestConnection() {
-  testing.value = true
-  testResult.value = null
-
-  try {
-    const response = await settingsAPI.testConnection({
-      provider: modelConfig.value.provider,
-      api_key: modelConfig.value.api_key || undefined,
-      api_base: modelConfig.value.api_base || undefined,
-      model: modelConfig.value.model,
-      ...buildSendableModelConfig(modelConfig.value),
-    })
-    
-    testResult.value = {
-      success: response.success,
-      message: response.success 
-        ? (response.message || t('settings.providers.testSuccess'))
-        : (response.error || response.message || t('settings.providers.testFailed'))
-    }
-  } catch (error: any) {
-    testResult.value = {
-      success: false,
-      message: error.response?.data?.error || error.message || t('settings.providers.testFailed')
-    }
-  } finally {
-    testing.value = false
-  }
 }
 
 // 选择性格
 function selectPersonality(value: string) {
   personaConfig.value.personality = value
-  // 如果有自定义提示词，清空它（因为用户选择了预设性格）
-  // 注释掉这行，让用户自己决定
-  // personaConfig.value.custom_personality = ''
+  // 选择预设性格时保留自定义提示词，交由用户自行清空
 }
 
 // 自定义提示词变化时的处理

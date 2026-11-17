@@ -26,6 +26,7 @@ export function useChatRealtime(options: UseChatRealtimeOptions) {
   const highFrequencyCacheEventTypes = new Set([
     'message_chunk',
     'reasoning_chunk',
+    'native_event',
     'workflow_agent_chunk',
     'tool_progress',
     'task_progress',

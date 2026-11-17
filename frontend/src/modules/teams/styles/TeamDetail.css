@@ -325,29 +325,23 @@
 }
 
 .dialog-content {
-  padding: 24px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.dialog-content h3 {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 0 0 24px 0;
+  padding: 0;
+  max-height: none;
+  overflow: visible;
 }
 
 .form-group {
   margin-bottom: 16px;
 }
 
-/* 标签页样式 */
+/* 标签页样式：与页面整体同一套「幽灵选中」语言 */
 .tabs-nav {
   display: flex;
-  gap: 4px;
-  margin-bottom: 24px;
-  padding: 4px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
+  gap: 2px;
+  margin-bottom: 18px;
+  padding: 3px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
 }
 
 .tab-btn {
@@ -355,27 +349,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-secondary);
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .tab-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
+  color: var(--color-text-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .tab-btn.active {
-  color: var(--color-primary);
-  background: var(--bg-primary);
-  box-shadow: var(--shadow-sm);
+  color: var(--color-text-primary);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-xs);
 }
 
 .tabs-content {
@@ -650,9 +648,9 @@
 
 .form-group label {
   display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
   margin-bottom: 6px;
 }
 
@@ -664,17 +662,29 @@
 .form-textarea,
 .form-select {
   width: 100%;
-  padding: 8px 12px;
-  font-size: 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  padding: 7px 10px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
   font-family: inherit;
+  outline: none;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  border-color: var(--color-border-secondary);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha);
 }
 
 .form-textarea {
   resize: vertical;
+  line-height: 1.6;
 }
 
 .prompt-textarea {
@@ -753,10 +763,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--color-bg-secondary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
 }
 
 .toggle-content {
@@ -764,62 +774,72 @@
 }
 
 .toggle-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
 }
 
 .toggle-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin: 4px 0 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin: 3px 0 0 0;
+  line-height: 1.55;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border-color);
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .btn-primary,
 .btn-secondary {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  transition: all 0.2s;
+  height: 30px;
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .btn-primary {
-  background: var(--text-primary);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: 1px solid transparent;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--text-primary);
+  background: var(--color-primary-hover);
 }
 
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .btn-secondary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-primary);
 }
 
-.btn-secondary:hover {
-  background: var(--bg-tertiary);
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-secondary);
+  color: var(--color-text-primary);
 }
 
 .icon-btn {

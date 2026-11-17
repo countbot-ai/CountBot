@@ -1,10 +1,7 @@
-/**
- * API 端点定义
- * 
- * 包含所有后端 API 的类型定义和调用方法
- */
+/** API 端点定义：包含所有后端 API 的类型定义和调用方法 */
 
 import apiClient from './client'
+import type { NativeCapabilities, NativeChatEvent } from '@/types/nativeCaps'
 
 // ============================================================================
 // 类型定义
@@ -81,6 +78,7 @@ export interface Message {
     content: string
     reasoning_content?: string | null
     attachment_items?: AttachmentItem[]
+    native_events?: NativeChatEvent[]
     created_at: string
     tool_call_count?: number
     special_tool_call_names?: string[]
@@ -150,11 +148,25 @@ export interface ProviderModelEntry {
     enabled: boolean
     context_window?: number | null
     supports_image?: boolean | null
+    /** 该模型的输出模式：空=跟随全局，true=流式，false=非流式 */
+    stream_enabled?: boolean | null
+    /** 真实供应商 ID；共享模型合并为「内置模型」分组时携带，选择时回传后端 */
+    provider_id?: string | null
     /** 该模型可选的思考档位（从低到高）；空数组=用内置建议，用户可自由增删 */
     reasoning_levels?: string[]
     /** 该模型默认思考档位；空=取档位列表首项或不下发档位 */
     reasoning_level?: string | null
+    /** 供应商原生能力开关；不传则保持默认全关 */
+    native_capabilities?: NativeCapabilities
     source: 'builtin' | 'manual' | 'fetched'
+    /** 是否共享给普通用户（仅管理员可写） */
+    shared?: boolean
+    /** 用户可见别名；空则回落到 display_name 或 id */
+    shared_alias?: string | null
+    /** 共享说明，如「由管理员提供」 */
+    shared_note?: string | null
+    /** 共享模型的每用户每日调用上限；空=不限 */
+    user_daily_limit?: number | null
 }
 
 export interface ProviderConfig {
@@ -175,6 +187,8 @@ export interface ModelConfig {
     max_tokens: number
     max_iterations: number
     thinking_enabled: boolean
+    /** 是否以流式方式请求上游模型；关闭后一次性返回，前端仍按 SSE 接收 */
+    stream_enabled: boolean
     /** 思考档位：设置页全局默认与会话级覆盖共用该字段 */
     reasoning_level?: string | null
     supports_image?: boolean | null
@@ -206,6 +220,11 @@ export interface HeartbeatConfig {
     max_greets_per_day?: number
 }
 
+export interface PersonaSessionMemoryConfig {
+    enabled: boolean
+    scope: 'session' | 'persona'
+}
+
 export interface PersonaConfig {
     ai_name: string
     user_name: string
@@ -215,6 +234,7 @@ export interface PersonaConfig {
     custom_personality: string
     max_history_messages: number
     enable_short_context_summary: boolean
+    session_memory?: PersonaSessionMemoryConfig
     heartbeat?: HeartbeatConfig
 }
 
@@ -230,9 +250,14 @@ export interface InjectionConfig {
     auto_memory_summary: boolean
 }
 
+export type ChatMode = 'agent' | 'chat'
+export type ChatModePolicy = 'all' | ChatMode
+
 export interface SessionModelConfig extends ModelConfig {
     api_key: string
     api_base: string
+    /** 会话对话模式：agent 可调用工具；chat 只对话，不注入工具与技能 */
+    chat_mode?: ChatMode
 }
 
 export interface SessionPersonaConfig extends PersonaConfig {}
@@ -360,15 +385,29 @@ export interface UpdateProviderModelRequest {
     enabled?: boolean
     context_window?: number | null
     supports_image?: boolean | null
+    /** 输出模式：空=不修改，true=流式，false=非流式 */
+    stream_enabled?: boolean | null
     /** 思考档位列表；传空数组表示改用内置建议 */
     reasoning_levels?: string[]
     /** 默认思考档位 */
     reasoning_level?: string | null
+    /** 供应商原生能力开关；不传则不修改 */
+    native_capabilities?: NativeCapabilities
     clear_display_name?: boolean
     clear_context_window?: boolean
     clear_supports_image?: boolean
+    /** 清空模型级输出模式，回落到跟随全局 */
+    clear_stream_enabled?: boolean
     /** 清空默认思考档位 */
     clear_reasoning_level?: boolean
+    /** 多用户共享元数据（仅管理员可写） */
+    shared?: boolean
+    shared_alias?: string | null
+    shared_note?: string | null
+    user_daily_limit?: number | null
+    clear_shared_alias?: boolean
+    clear_shared_note?: boolean
+    clear_user_daily_limit?: boolean
 }
 
 export interface ReasoningLevelsResponse {
@@ -443,7 +482,9 @@ export interface SkillInfo {
     autoLoad: boolean
     hasConfig: boolean
     requirements: string[]
-    source?: 'workspace' | 'builtin' | 'openclaw'
+    source?: 'workspace' | 'builtin' | 'openclaw' | 'shared'
+    /** 随应用分发的内置技能（初始化时播种进工作区，非用户自建） */
+    bundled?: boolean
 }
 
 export interface SkillDetail extends SkillInfo {
@@ -709,19 +750,24 @@ export interface SystemInfo {
     uptime_start: string
 }
 
-/**
- * Health Check API
- */
+/** Health Check API */
 export const healthAPI = {
     check: (): Promise<{ status: string }> =>
         apiClient.get('/health'),
 }
 
-/**
- * Auth API
- */
+/** Auth API */
 export const authAPI = {
-    status: (): Promise<{ is_local: boolean; auth_enabled: boolean; authenticated: boolean; remote_access_enabled: boolean }> =>
+    status: (): Promise<{
+        is_local: boolean
+        auth_enabled: boolean
+        authenticated: boolean
+        remote_access_enabled: boolean
+        multiuser_enabled?: boolean
+        registration_open?: boolean
+        approval_mode?: string
+        role?: string | null
+    }> =>
         apiClient.get('/auth/status'),
 
     setup: (data: { username: string; password: string }): Promise<{ success: boolean; token: string }> =>
@@ -730,6 +776,13 @@ export const authAPI = {
     login: (data: { username: string; password: string }): Promise<{ success: boolean; token: string }> =>
         apiClient.post('/auth/login', data),
 
+    register: (data: { username: string; password: string; display_name?: string }): Promise<{
+        success: boolean
+        status?: string
+        message?: string
+    }> =>
+        apiClient.post('/auth/register', data),
+
     logout: (): Promise<{ success: boolean }> =>
         apiClient.post('/auth/logout'),
 
@@ -737,17 +790,222 @@ export const authAPI = {
         apiClient.post('/auth/change-password', data),
 }
 
-/**
- * System Info API
- */
+/** Current user API (/api/me) */
+export interface MeModelItem {
+    ref: string
+    source: 'shared' | 'own'
+    provider: string
+    model: string
+    alias: string
+    note?: string
+    provider_name?: string
+    daily_limit?: number | null
+    context_window?: number | null
+    supports_image?: boolean | null
+    native_capabilities?: NativeCapabilities
+    available: boolean
+}
+
+export interface MeModelsResponse {
+    shared: MeModelItem[]
+    own: MeModelItem[]
+    selected: string | null
+    mode: 'shared' | 'isolated'
+    shared_enabled: boolean
+}
+
+export interface MeProfile {
+    id: string
+    username: string
+    display_name: string
+    role: 'admin' | 'user'
+    status: string
+    is_admin: boolean
+    chat_mode_policy: ChatModePolicy
+    allowed_chat_modes: ChatMode[]
+    mode: string
+    shared_providers: boolean
+    shared_skills_wiki_mcp: boolean
+}
+
+export interface MeMcpServer extends Record<string, unknown> {
+    id: string
+    name: string
+    enabled: boolean
+    transport: 'stdio' | 'streamable_http' | 'sse' | null
+    description: string
+    include_tools: string[]
+    exclude_tools: string[]
+    enable_resources: boolean
+    enable_prompts: boolean
+    command: string
+    args: string[]
+    env: Record<string, string>
+    url: string
+    headers: Record<string, string>
+    timeout: number
+    connect_timeout: number
+    running?: boolean
+    tool_count?: number
+}
+
+export interface MeMcpState {
+    enabled: boolean
+    max_servers: number
+    stdio_allowlist: string[]
+    connected: boolean
+    tool_count: number
+    servers: MeMcpServer[]
+}
+
+export const meAPI = {
+    profile: (): Promise<MeProfile> => apiClient.get('/me'),
+
+    listModels: (): Promise<MeModelsResponse> => apiClient.get('/me/models'),
+
+    getReasoningLevels: (model: string): Promise<{ model: string; levels: string[]; known_levels: string[] }> =>
+        apiClient.get('/me/reasoning-levels', { params: { model } }),
+
+    addModel: (data: {
+        provider: string
+        model: string
+        display_name?: string
+        api_key?: string
+        api_base?: string
+    }): Promise<MeModelsResponse> => apiClient.post('/me/models', data),
+
+    deleteModel: (provider: string, model: string): Promise<MeModelsResponse> =>
+        apiClient.delete('/me/models', { params: { provider, model } }),
+
+    selectModel: (data: { source: string; provider: string; model: string }): Promise<MeModelsResponse> =>
+        apiClient.put('/me/model-selection', data),
+
+    testModel: (data: { source: string; provider: string; model: string }): Promise<{ success: boolean; message: string }> =>
+        apiClient.post('/me/models/test', data),
+
+    getPersona: (): Promise<Record<string, unknown>> => apiClient.get('/me/persona'),
+
+    updatePersona: (data: Record<string, unknown>): Promise<Record<string, unknown>> =>
+        apiClient.put('/me/persona', data),
+
+    getMcp: (): Promise<MeMcpState> => apiClient.get('/me/mcp'),
+
+    updateMcp: (servers: MeMcpServer[]): Promise<MeMcpState> =>
+        apiClient.put('/me/mcp', { servers }),
+
+    testMcpServer: (server: MeMcpServer): Promise<{ success: boolean; message: string }> =>
+        apiClient.post('/me/mcp/test', { server }),
+}
+
+/** Admin API (/api/admin) */
+export interface AdminUserItem {
+    id: string
+    username: string
+    role: 'admin' | 'user'
+    status: 'pending' | 'active' | 'disabled'
+    display_name?: string
+    chat_mode_policy: ChatModePolicy
+    created_at?: string
+    approved_at?: string
+    last_login_at?: string
+    /** 连续登录失败触发的临时锁定剩余秒数；0 表示未锁定 */
+    login_locked?: number
+}
+
+export interface SharedModelItem {
+    ref: string
+    provider: string
+    model: string
+    alias: string
+    note: string
+    daily_limit?: number | null
+    context_window?: number | null
+    supports_image?: boolean | null
+    provider_name: string
+}
+
+export interface SharedModelUsageItem {
+    owner_id: string
+    username: string
+    provider: string
+    model: string
+    today_calls: number
+    total_calls: number
+    today_tokens: number
+}
+
+export interface SharedModelsResponse {
+    enabled: boolean
+    mode: string
+    shared_providers: boolean
+    items: SharedModelItem[]
+    usage: SharedModelUsageItem[]
+}
+
+export const adminAPI = {
+    listUsers: (params?: { q?: string; status?: string; page?: number; page_size?: number }): Promise<{
+        items: AdminUserItem[]
+        total: number
+        page: number
+        page_size: number
+    }> => apiClient.get('/admin/users', { params }),
+
+    createUser: (data: {
+        username: string
+        password: string
+        role?: string
+        status?: string
+        display_name?: string
+        chat_mode_policy?: ChatModePolicy
+    }): Promise<AdminUserItem> => apiClient.post('/admin/users', data),
+
+    updateUser: (id: string, data: { status?: string; role?: string; display_name?: string; chat_mode_policy?: ChatModePolicy }): Promise<AdminUserItem> =>
+        apiClient.patch(`/admin/users/${id}`, data),
+
+    resetPassword: (id: string, newPassword: string): Promise<{ success: boolean; message: string }> =>
+        apiClient.put(`/admin/users/${id}/password`, { new_password: newPassword }),
+
+    unlockUser: (id: string): Promise<{ success: boolean; message: string }> =>
+        apiClient.post(`/admin/users/${id}/unlock`, {}),
+
+    deleteUser: (id: string): Promise<{ success: boolean; message: string }> =>
+        apiClient.delete(`/admin/users/${id}`),
+
+    getMultiuserSettings: (): Promise<{
+        enabled: boolean
+        registration_open: boolean
+        approval: string
+        mode: string
+        shared_providers: boolean
+        shared_skills_wiki_mcp: boolean
+        allow_user_mcp: boolean
+        user_mcp_stdio_allowlist: string[]
+        notify_shared_channels?: string[]
+        allow_local_admin_bypass: boolean
+        max_users: number
+    }> => apiClient.get('/admin/multiuser/settings'),
+
+    updateMultiuserSettings: (data: Record<string, unknown>): Promise<Record<string, unknown>> =>
+        apiClient.put('/admin/multiuser/settings', data),
+
+    getSharedModels: (params?: { include_usage?: boolean }): Promise<SharedModelsResponse> =>
+        apiClient.get('/admin/shared-models', { params }),
+
+    listAuditLogs: (params?: { action?: string; page?: number; page_size?: number }): Promise<{
+        items: Array<Record<string, unknown>>
+        total: number
+        page: number
+        page_size: number
+    }> => apiClient.get('/admin/audit-logs', { params }),
+}
+
+/** System Info API */
 export const systemAPI = {
     getInfo: (): Promise<SystemInfo> =>
         apiClient.get('/system/info'),
 }
 
-/**
- * Chat API
- */
+/** Chat API */
 export const chatAPI = {
     sendMessage: (data: SendMessageRequest): Promise<SendMessageResponse> =>
         apiClient.post('/chat/send', data),
@@ -940,9 +1198,7 @@ function noCacheHeaders() {
     }
 }
 
-/**
- * Settings API
- */
+/** Settings API */
 export const settingsAPI = {
     get: (): Promise<Settings> =>
         apiClient.get('/settings'),
@@ -1008,8 +1264,69 @@ export const settingsAPI = {
 }
 
 /**
- * Tools API
+ * 普通用户自有供应商 API：与管理员 settingsAPI 的供应商部分同形，
+ * 路径前缀 /me/providers。getView 返回 providers + model 局部视图
+ * （model 为全局生成参数，普通用户只读），消费方只读这两段。
  */
+export const meProvidersAPI = {
+    getView: (): Promise<Settings> =>
+        apiClient.get('/me/providers'),
+
+    updateProviders: (data: { providers: Record<string, ProviderConfig> }): Promise<Settings> =>
+        apiClient.put('/me/providers', data),
+
+    deleteProvider: (providerId: string): Promise<Settings> =>
+        apiClient.delete(`/me/providers/${encodeURIComponent(providerId)}`),
+
+    getProviders: (): Promise<ProviderMetadata[]> =>
+        apiClient.get('/me/providers/metadata'),
+
+    getProviderModelCatalog: (providerId: string): Promise<ProviderModelCatalogResponse> =>
+        apiClient.get(`/me/providers/${encodeURIComponent(providerId)}/models/catalog`),
+
+    getReasoningLevels: (model: string): Promise<ReasoningLevelsResponse> =>
+        apiClient.get('/me/reasoning-levels', { params: { model } }),
+
+    addProviderModels: (
+        providerId: string,
+        data: AddProviderModelsRequest,
+    ): Promise<ProviderModelEntry[]> =>
+        apiClient.post(`/me/providers/${encodeURIComponent(providerId)}/models`, data),
+
+    updateProviderModel: (
+        providerId: string,
+        modelId: string,
+        data: UpdateProviderModelRequest,
+    ): Promise<ProviderModelEntry[]> =>
+        apiClient.put(
+            `/me/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+            data,
+        ),
+
+    deleteProviderModel: (providerId: string, modelId: string): Promise<ProviderModelEntry[]> =>
+        apiClient.delete(
+            `/me/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+        ),
+
+    reorderProviderModels: (providerId: string, modelIds: string[]): Promise<ProviderModelEntry[]> =>
+        apiClient.put(
+            `/me/providers/${encodeURIComponent(providerId)}/models/order`,
+            { model_ids: modelIds },
+        ),
+
+    testConnection: (data: TestConnectionRequest): Promise<TestConnectionResponse> =>
+        apiClient.post('/me/providers/test-connection', {
+            ...data,
+            api_key: String(data.api_key || '').trim(),
+            api_base: normalizeOptionalText(data.api_base),
+            model: normalizeOptionalText(data.model),
+        }),
+
+    testProviderConnection: (providerId: string): Promise<ProviderConnectionTestResponse> =>
+        apiClient.post(`/me/providers/${encodeURIComponent(providerId)}/test`),
+}
+
+/** Tools API */
 export const toolsAPI = {
     execute: (data: ExecuteToolRequest): Promise<ExecuteToolResponse> =>
         apiClient.post('/tools/execute', data),
@@ -1052,10 +1369,7 @@ export const toolsAPI = {
         apiClient.delete('/tools/conversations'),
 }
 
-/**
- * Memory API - 简化版
- * 只保留长期记忆功能
- */
+/** Memory API（简化版）：只保留长期记忆功能 */
 export const memoryAPI = {
     getLongTerm: (): Promise<MemoryContent> =>
         apiClient.get('/memory/long-term'),
@@ -1079,9 +1393,44 @@ export const memoryAPI = {
         apiClient.post('/memory/search', data),
 }
 
-/**
- * Skills API
- */
+/** Skills API */
+export interface SharedSkillItem {
+    id: string
+    name: string
+    owner_id?: string | null
+    scope: string
+    visibility: string
+    status: 'draft' | 'pending' | 'approved' | 'rejected' | 'revoked'
+    description: string
+    version: number
+    /** null 表示全站可见 */
+    audience?: string[] | null
+    reject_reason?: string | null
+    approved_at?: string | null
+    created_at?: string | null
+    is_mine: boolean
+    /** 当前用户是否启用了该技能 */
+    enabled: boolean
+}
+
+export const sharedSkillsAPI = {
+    list: (): Promise<SharedSkillItem[]> => apiClient.get('/shared-skills'),
+
+    publishable: (): Promise<string[]> => apiClient.get('/shared-skills/publishable'),
+
+    publish: (data: { name: string; audience?: string[] | null }): Promise<SharedSkillItem> =>
+        apiClient.post('/shared-skills/publish', data),
+
+    review: (id: string, approved: boolean, reason = ''): Promise<SharedSkillItem> =>
+        apiClient.post(`/shared-skills/${id}/review`, { approved, reason }),
+
+    revoke: (id: string, reason = ''): Promise<SharedSkillItem> =>
+        apiClient.post(`/shared-skills/${id}/revoke`, { reason }),
+
+    setState: (id: string, enabled: boolean): Promise<SharedSkillItem> =>
+        apiClient.put(`/shared-skills/${id}/state`, { enabled }),
+}
+
 export const skillsAPI = {
     list: (): Promise<{ skills: SkillInfo[] }> =>
         apiClient.get('/skills'),
@@ -1125,9 +1474,7 @@ export const skillsAPI = {
         apiClient.post('/skills/reload'),
 }
 
-/**
- * Cron API
- */
+/** Cron API */
 export const cronAPI = {
     list: (): Promise<{ jobs: CronJob[] }> =>
         apiClient.get('/cron/jobs'),
@@ -1148,9 +1495,7 @@ export const cronAPI = {
         apiClient.post(`/cron/jobs/${id}/run`),
 }
 
-/**
- * Tasks API
- */
+/** Tasks API */
 export const tasksAPI = {
     list: (): Promise<{ tasks: Task[] }> =>
         apiClient.get('/tasks'),
@@ -1165,9 +1510,7 @@ export const tasksAPI = {
         apiClient.delete(`/tasks/${id}`),
 }
 
-/**
- * Queue & Task API - 队列和任务管理
- */
+/** Queue & Task API - 队列和任务管理 */
 export const queueAPI = {
     getStats: (): Promise<{
         inbound_size: number
@@ -1193,9 +1536,7 @@ export const stopAPI = {
         queueAPI.getActiveTasks(),
 }
 
-/**
- * Settings Export/Import API - 配置导出导入
- */
+/** Settings Export/Import API - 配置导出导入 */
 export interface ExportConfigParams {
     include_api_keys?: boolean
     sections?: string
@@ -1215,9 +1556,7 @@ export interface ImportConfigResponse {
 }
 
 export const configAPI = {
-    /**
-     * 导出配置
-     */
+        /** 导出配置 */
     export: (params: ExportConfigParams = {}): Promise<{
         version: string
         exported_at: string
@@ -1236,9 +1575,7 @@ export const configAPI = {
         return apiClient.get(`/settings/export${query ? '?' + query : ''}`)
     },
 
-    /**
-     * 导入配置
-     */
+        /** 导入配置 */
     import: (data: ImportConfigRequest): Promise<ImportConfigResponse> =>
         apiClient.post('/settings/import', data),
 }

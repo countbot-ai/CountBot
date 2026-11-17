@@ -42,7 +42,8 @@
           />
         </div>
 
-        <div v-if="isSetup" class="field">
+        <!-- 设置管理员与注册均需确认密码，两处提交都会校验 confirmPassword -->
+        <div v-if="isSetup || isRegister" class="field">
           <label for="confirmPassword">确认密码</label>
           <input
             id="confirmPassword"
@@ -54,10 +55,28 @@
           />
         </div>
 
-        <!-- Password requirements (always visible in setup mode) -->
-        <div v-if="isSetup" class="password-rules">
+        <!-- Registration mode: display name is optional -->
+        <div v-if="isRegister" class="field">
+          <label for="displayName">显示名称（可选）</label>
+          <input
+            id="displayName"
+            v-model="displayName"
+            type="text"
+            placeholder="例如：小王"
+            autocomplete="nickname"
+          />
+        </div>
+
+        <!-- Password requirements (always visible in setup/register mode) -->
+        <div v-if="isSetup || isRegister" class="password-rules">
           密码要求：至少 8 位，必须同时包含大写字母、小写字母和数字
         </div>
+
+        <div v-if="isRegister && approvalManual" class="password-rules">
+          当前注册需要管理员审批，提交后请等待管理员通过。
+        </div>
+
+        <div v-if="infoMsg" class="password-rules">{{ infoMsg }}</div>
 
         <div v-if="needsLocalSetup" class="error-box" role="alert">
           管理员尚未在本机完成初始化。请先在 CountBot 所在机器本地打开页面设置管理员账号和密码，然后再进行远程登录。
@@ -68,9 +87,15 @@
 
         <button type="submit" class="submit-btn" :disabled="loading || needsLocalSetup">
           <span v-if="loading" class="spinner"></span>
-          {{ loading ? '请稍候...' : (isSetup ? '设置并登录' : '登录') }}
+          {{ loading ? '请稍候...' : (isSetup ? '设置并登录' : (isRegister ? '注册' : '登录')) }}
         </button>
       </form>
+
+      <!-- 注册 / 登录切换 -->
+      <div v-if="canRegister && !isSetup" class="login-footer">
+        <a v-if="!isRegister" href="#" @click.prevent="switchMode('register')">还没有账号？注册</a>
+        <a v-else href="#" @click.prevent="switchMode('login')">已有账号？去登录</a>
+      </div>
 
       <!-- Footer -->
       <div class="login-footer">
@@ -85,11 +110,17 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
+import { authAPI } from '@/api/endpoints'
 
 const router = useRouter()
 const route = useRoute()
 
 const isSetup = ref(false)
+const isRegister = ref(false)
+const canRegister = ref(false)
+const approvalManual = ref(true)
+const displayName = ref('')
+const infoMsg = ref('')
 const username = ref('')
 const password = ref('')
 const confirmPassword = ref('')
@@ -111,8 +142,16 @@ const hintText = computed(() => {
   if (needsLocalSetup.value) {
     return setupSecret.value ? '初始化入口不可用' : '远程初始化需要专用入口'
   }
-  return isSetup.value ? '首次初始化，请设置管理员账号和密码' : '远程访问需要身份验证'
+  if (isSetup.value) return '首次初始化，请设置管理员账号和密码'
+  if (isRegister.value) return '注册账号后即可使用'
+  return '远程访问需要身份验证'
 })
+
+function switchMode(mode: 'login' | 'register') {
+  isRegister.value = mode === 'register'
+  errorMsg.value = ''
+  infoMsg.value = ''
+}
 
 function getSetupHeaders() {
   return setupSecret.value ? { 'X-Setup-Secret': setupSecret.value } : undefined
@@ -129,6 +168,12 @@ onMounted(async () => {
     }
     isSetup.value = Boolean(data.setup_allowed)
     needsLocalSetup.value = !data.auth_enabled && !data.setup_allowed
+    canRegister.value = Boolean(data.registration_open)
+    approvalManual.value = String(data.approval_mode || 'manual') !== 'auto'
+    if (canRegister.value) {
+      // 仅作为入口提示，是否真的能注册由服务端判定
+      isRegister.value = false
+    }
   } catch {
     // 默认显示登录模式
   }
@@ -136,6 +181,7 @@ onMounted(async () => {
 
 async function handleSubmit() {
   errorMsg.value = ''
+  infoMsg.value = ''
   if (needsLocalSetup.value) {
     errorMsg.value = setupBlockedText.value
     return
@@ -161,6 +207,23 @@ async function handleSubmit() {
       if (data.token) {
         localStorage.setItem('CountBot_token', data.token)
       }
+      router.replace('/')
+    } else if (isRegister.value) {
+      if (password.value !== confirmPassword.value) {
+        errorMsg.value = '两次输入的密码不一致'
+        return
+      }
+      const data = await authAPI.register({
+        username: username.value,
+        password: password.value,
+        display_name: displayName.value || undefined,
+      })
+      if (data?.status === 'pending') {
+        infoMsg.value = '注册成功，请等待管理员审批后登录'
+        isRegister.value = false
+        return
+      }
+      router.replace('/')
     } else {
       const { data } = await axios.post('/api/auth/login', {
         username: username.value,
@@ -169,11 +232,22 @@ async function handleSubmit() {
       if (data.token) {
         localStorage.setItem('CountBot_token', data.token)
       }
+      router.replace('/')
     }
-    router.replace('/')
   } catch (err: any) {
-    const detail = err?.response?.data?.detail
-    errorMsg.value = detail || '操作失败，请重试'
+    // 错误信息已由 transformError 转成统一结构，同时兼容 axios 形态
+    const payload = err?.response?.data ?? err
+    const detail = payload?.detail
+    const code = payload?.code
+    if (code === 'ACCOUNT_PENDING') {
+      infoMsg.value = '账号待管理员审批，请稍后再试'
+    } else {
+      const text =
+        (typeof detail === 'string' ? detail : detail?.detail) ||
+        payload?.message ||
+        '操作失败，请重试'
+      errorMsg.value = text
+    }
   } finally {
     loading.value = false
   }
@@ -183,13 +257,16 @@ async function handleSubmit() {
 <style scoped>
 /* ===== Page layout ===== */
 .login-page {
+  /* 固定铺满视口：父级 overflow:hidden，自身需成为独立滚动容器 */
+  position: fixed;
+  inset: 0;
   display: flex;
-  align-items: center;
   justify-content: center;
-  min-height: 100vh;
   padding: 24px;
   background: var(--bg-secondary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 /* ===== Card ===== */
@@ -201,6 +278,8 @@ async function handleSubmit() {
   border: 1px solid var(--border-color, var(--color-border-primary));
   border-radius: 12px;
   box-shadow: var(--shadow-sm);
+  /* 内容可放下时垂直居中，放不下时保留完整高度 */
+  margin: auto;
 }
 
 /* ===== Brand ===== */

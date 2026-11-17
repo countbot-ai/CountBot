@@ -12,17 +12,17 @@
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
     <template #fields="{ model, handleChange, botKey }">
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.telegram.tokenHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.telegram.token') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.token"
             :placeholder="t('settings.channels.telegram.tokenPlaceholder')"
-            class="config-input"
+            class="co-input"
             @input="handleChange"
           />
           <button type="button" class="toggle-password" @click="toggleSecret(botKey)">
@@ -36,30 +36,26 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.telegram.tokenHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.telegram.proxy') }}</label>
+      <SettingsRow :label="t('settings.channels.telegram.proxy')" :description="t('settings.channels.telegram.proxyHint')" wide-control>
         <input
           v-model="model.proxy"
           type="text"
           :placeholder="t('settings.channels.telegram.proxyPlaceholder')"
-          class="config-input"
+          class="co-input"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.telegram.proxyHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.telegram.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.telegram.allowFrom')" :description="t('settings.channels.telegram.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.telegram.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
@@ -68,8 +64,7 @@
             + {{ t('settings.channels.telegram.addUser') }}
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.telegram.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -78,6 +73,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 
 interface Props {
   channelId: string

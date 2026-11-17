@@ -205,24 +205,28 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-primary);
+  padding: 14px;
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: 10px;
+  background: var(--color-bg-elevated);
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
   text-align: left;
 }
 
 .personality-btn:hover {
-  border-color: var(--color-border-strong);
-  background: var(--bg-hover);
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-secondary);
 }
 
+/* 选中态用很淡的强调底 + 柔光环，不再压一圈近黑实线 */
 .personality-btn.active {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border-secondary);
   background: var(--color-bg-tertiary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-alpha);
 }
 
 .personality-icon {
@@ -240,10 +244,76 @@
 }
 
 .personality-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
+}
+
+.clone-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-primary-light, rgba(59, 130, 246, 0.12));
+  color: var(--color-primary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+/* 卡头克隆入口：比常规按钮矮一档，和标题基线对齐 */
+.clone-entry-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* 克隆人格下的身份锁定提示：说明这些字段由克隆档案接管 */
+.identity-lock-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.identity-lock-note svg {
+  flex-shrink: 0;
+}
+
+.card-edit-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.personality-btn:hover .card-edit-btn,
+.personality-btn.active .card-edit-btn {
+  opacity: 1;
+}
+
+.card-edit-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .personality-desc {
@@ -368,23 +438,26 @@
   justify-content: center;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .preset-btn:hover {
-  border-color: var(--color-border-strong);
-  background: var(--bg-hover);
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-secondary);
 }
 
 .preset-btn.active {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border-secondary);
   background: var(--color-bg-tertiary);
   color: var(--color-primary);
 }

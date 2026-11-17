@@ -1,93 +1,62 @@
 <template>
   <div ref="rootEl" class="memory-editor">
-    <div class="editor-shell">
-      <div class="editor-header">
-        <div class="header-left">
-          <button class="btn-icon" :title="t('common.close')" @click="handleClose">
-            <XIcon :size="20" />
-          </button>
-          <div class="editor-header-copy">
-            <div class="editor-kicker">
-              {{ t('memory.longTermMemory') }}
-            </div>
-            <h2 class="editor-title">{{ title }}</h2>
-          </div>
-        </div>
-        <div class="header-right">
-          <div class="editor-metrics">
-            <span class="editor-metric">
-              <strong>{{ charCount }}</strong>
-              <span>{{ t('memory.characters') }}</span>
-            </span>
-            <span class="editor-metric">
-              <strong>{{ lineCount }}</strong>
-              <span>{{ t('memory.lines') }}</span>
-            </span>
-          </div>
-          <button class="btn-secondary" :disabled="isSaving" @click="handleClose">
-            {{ t('common.cancel') }}
-          </button>
-          <button class="btn-primary" :disabled="isSaving || !hasChanges" @click="handleSave">
-            <SaveIcon :size="18" />
-            <span>{{ isSaving ? t('common.saving') : t('common.save') }}</span>
-          </button>
-        </div>
-      </div>
+    <SettingsCard :title="title" flush>
+      <template #actions>
+        <span class="co-row-value">{{ charCount }} {{ t('memory.characters') }} · {{ lineCount }} {{ t('memory.lines') }}</span>
+        <button class="co-btn co-btn--secondary btn-compact" :disabled="isSaving" @click="handleClose">
+          {{ t('common.cancel') }}
+        </button>
+        <button class="co-btn co-btn--primary btn-compact" :disabled="isSaving || !hasChanges" @click="handleSave">
+          {{ isSaving ? t('common.saving') : t('common.save') }}
+        </button>
+      </template>
 
-      <div v-if="error" class="error-message">
-        <AlertCircleIcon :size="18" />
+      <p v-if="error" class="error-row">
+        <component :is="AlertCircleIcon" :size="14" />
         <span>{{ error }}</span>
-        <button class="btn-text" @click="clearError">{{ t('common.close') }}</button>
-      </div>
+        <button class="link-btn" @click="clearError">{{ t('common.close') }}</button>
+      </p>
 
-      <div class="editor-content">
-        <div class="editor-pane">
-          <div class="pane-header">
-            <div>
-              <h3>{{ t('memory.editor') }}</h3>
-              <p class="pane-description">{{ placeholder }}</p>
-            </div>
-          </div>
+      <div class="editor-grid">
+        <section class="pane">
+          <header class="pane-head">
+            <span class="pane-title">{{ t('memory.editor') }}</span>
+            <span class="pane-hint">Ctrl/⌘ + S</span>
+          </header>
           <textarea
             ref="textareaRef"
             v-model="content"
-            class="editor-textarea"
+            class="pane-textarea"
             :placeholder="placeholder"
             @keydown.ctrl.s.prevent="handleSave"
             @keydown.meta.s.prevent="handleSave"
           />
-          <div class="editor-footer">
-            <span class="char-count">{{ charCount }} {{ t('memory.characters') }}</span>
-            <span class="line-count">{{ lineCount }} {{ t('memory.lines') }}</span>
-          </div>
-        </div>
+        </section>
 
-        <div class="preview-pane">
-          <div class="pane-header">
-            <div>
-              <h3>{{ t('memory.preview') }}</h3>
-              <p class="pane-description">{{ title }}</p>
-            </div>
-          </div>
-          <div class="preview-content" v-html="previewHtml" />
-        </div>
+        <section class="pane pane--preview">
+          <header class="pane-head">
+            <span class="pane-title">{{ t('memory.preview') }}</span>
+          </header>
+          <div class="pane-preview" v-html="previewHtml" />
+        </section>
       </div>
-    </div>
+    </SettingsCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AlertCircle as AlertCircleIcon } from 'lucide-vue-next'
 import { useConfirm } from '@/composables/useConfirm'
 import { useMemoryStore } from '@/store/memory'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useMermaid } from '@/composables/useMermaid'
-import { AlertCircleIcon, SaveIcon, XIcon } from 'lucide-vue-next'
+import { SettingsCard } from '@/modules/settings/ui'
 
 type MemoryTarget = 'long-term'
 
-const props = defineProps<{
+defineProps<{
   target: MemoryTarget
 }>()
 
@@ -107,13 +76,8 @@ const originalContent = ref('')
 const isSaving = ref(false)
 const error = ref<string | null>(null)
 
-const title = computed(() =>
-  t('memory.editLongTerm'),
-)
-
-const placeholder = computed(() =>
-  t('memory.longTermPlaceholder'),
-)
+const title = computed(() => t('memory.editLongTerm'))
+const placeholder = computed(() => t('memory.longTermPlaceholder'))
 
 const hasChanges = computed(() => content.value !== originalContent.value)
 const charCount = computed(() => content.value.length)
@@ -157,7 +121,7 @@ const handleClose = async () => {
       title: t('memory.unsavedChanges'),
       type: 'warning',
       confirmText: t('common.confirm'),
-      cancelText: t('common.cancel')
+      cancelText: t('common.cancel'),
     })
     if (!confirmed) return
   }
@@ -172,6 +136,152 @@ onMounted(() => {
   loadContent()
 })
 </script>
+
 <style scoped>
-@import './styles/MemoryEditor.css';
+.btn-compact {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--font-size-xs);
+}
+
+.error-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px var(--co-row-gutter);
+  border-bottom: 1px solid var(--color-border-primary);
+  font-size: var(--font-size-xs);
+  color: var(--color-error);
+}
+
+.link-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+/* 编辑与预览并排，两栏同高，滚动各自独立 */
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 520px;
+}
+
+.pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.pane--preview {
+  border-left: 1px solid var(--color-border-primary);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 var(--co-row-gutter);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.pane-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.pane-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-disabled);
+}
+
+.pane-textarea {
+  flex: 1;
+  min-height: 0;
+  padding: 12px var(--co-row-gutter);
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  resize: none;
+}
+
+.pane-textarea:focus {
+  outline: none;
+}
+
+.pane-preview {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px var(--co-row-gutter);
+  font-size: var(--font-size-sm);
+  line-height: 1.75;
+  color: var(--color-text-primary);
+}
+
+.pane-preview :deep(> :first-child) {
+  margin-top: 0;
+}
+
+/* 预览区与只读态的正文同一套标题档位 */
+.pane-preview :deep(h1) {
+  margin: 16px 0 6px;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pane-preview :deep(h2) {
+  margin: 14px 0 6px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pane-preview :deep(h3),
+.pane-preview :deep(h4) {
+  margin: 12px 0 4px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pane-preview :deep(p) {
+  margin: 0 0 6px;
+}
+
+.pane-preview :deep(ul),
+.pane-preview :deep(ol) {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+@media (max-width: 900px) {
+  .editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .pane--preview {
+    border-left: none;
+    border-top: 1px solid var(--color-border-primary);
+  }
+
+  .pane-textarea {
+    min-height: 320px;
+  }
+
+  .pane-preview {
+    min-height: 240px;
+  }
+}
 </style>

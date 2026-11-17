@@ -41,11 +41,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  height: 28px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -70,8 +72,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   margin-left: 4px;
   border: 0;
   border-radius: var(--radius-sm);
@@ -93,16 +95,19 @@
 
 /* 主操作：唯一保留强调色的按钮 */
 .create-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  height: 30px;
+  padding: 0 12px;
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--color-primary);
   color: var(--color-text-inverse);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  line-height: 1;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
@@ -113,16 +118,19 @@
 
 /* AI 编译：次级操作，幽灵 + 强调色图标 */
 .compile-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  height: 30px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  line-height: 1;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }

@@ -1,7 +1,4 @@
-/**
- * Vue Router 配置
- * 使用动态导入实现代码分割，提升首屏加载速度
- */
+/** Vue Router 配置：路由使用动态导入做代码分割 */
 
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 
@@ -16,6 +13,12 @@ const routes: RouteRecordRaw[] = [
         path: '/classic',
         name: 'classic-home',
         component: () => import('../modules/chat/ChatWindow.vue'),
+    },
+    {
+        // 设置是独立页面：与主窗口同级，由路由承载当前分区（可直接分享/回退）
+        path: '/settings/:tab?',
+        name: 'settings',
+        component: () => import(/* webpackChunkName: "settings" */ '../modules/settings/SettingsPage.vue'),
     },
     {
         path: '/login',

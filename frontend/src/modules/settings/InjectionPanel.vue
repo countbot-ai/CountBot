@@ -1,222 +1,130 @@
 <template>
-  <div class="injection-config">
-    <div class="section-header">
-      <h3 class="section-title">{{ $t('settings.injection.title') }}</h3>
-      <p class="section-desc">{{ $t('settings.injection.description') }}</p>
-    </div>
+  <SettingsCard flush>
+    <SettingsRow :label="$t('settings.injection.coreRules')" :description="$t('settings.injection.coreRulesDesc')">
+      <SwitchToggle
+        v-model="localConfig.core_rules"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.coreRules')"
+        @change="handleChange"
+      />
+    </SettingsRow>
 
-    <div class="injection-options">
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <ScrollTextIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.coreRules') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.coreRulesDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.core_rules"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.coreRules')"
-            @change="handleChange"
-          />
-        </div>
+    <SettingsRow
+      :label="$t('settings.injection.externalCodingGuidance')"
+      :description="$t('settings.injection.externalCodingGuidanceDesc')"
+    >
+      <SwitchToggle
+        v-model="localConfig.external_coding_guidance"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.externalCodingGuidance')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow :label="$t('settings.injection.skillsSummary')" :description="$t('settings.injection.skillsSummaryDesc')">
+      <SwitchToggle
+        v-model="localConfig.skills_summary"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.skillsSummary')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow :label="$t('settings.injection.skillsAlways')" :description="$t('settings.injection.skillsAlwaysDesc')">
+      <SwitchToggle
+        v-model="localConfig.skills_always"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.skillsAlways')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow :label="$t('settings.injection.agentTeams')" :description="$t('settings.injection.agentTeamsDesc')">
+      <SwitchToggle
+        v-model="localConfig.agent_teams"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.agentTeams')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow
+      :label="$t('settings.injection.dynamicContext')"
+      :description="$t('settings.injection.dynamicContextDesc')"
+    >
+      <SwitchToggle
+        v-model="localConfig.dynamic_context"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.dynamicContext')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow :label="$t('settings.injection.teamReminder')" :description="$t('settings.injection.teamReminderDesc')">
+      <SwitchToggle
+        v-model="localConfig.team_reminder"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.teamReminder')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow
+      :label="$t('settings.injection.autoMemorySummary')"
+      :description="$t('settings.injection.autoMemorySummaryDesc')"
+    >
+      <SwitchToggle
+        v-model="localConfig.auto_memory_summary"
+        :width="40"
+        :height="22"
+        :aria-label="$t('settings.injection.autoMemorySummary')"
+        @change="handleChange"
+      />
+    </SettingsRow>
+
+    <SettingsRow
+      :label="$t('settings.injection.disabledTools')"
+      :description="$t('settings.injection.disabledToolsDesc')"
+      layout="block"
+    >
+      <div class="tools-grid">
+        <label
+          v-for="tool in toolCatalog"
+          :key="tool"
+          class="tool-item"
+          :class="{ 'is-off': isToolDisabled(tool) }"
+        >
+          <input type="checkbox" :checked="!isToolDisabled(tool)" @change="toggleTool(tool)">
+          <span class="tool-name">{{ tool }}</span>
+        </label>
       </div>
+      <p class="tools-warning">
+        <component :is="AlertTriangleIcon" :size="13" />
+        <span>{{ $t('settings.injection.toolsWarning') }}</span>
+      </p>
+    </SettingsRow>
+  </SettingsCard>
 
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <TerminalIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.externalCodingGuidance') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.externalCodingGuidanceDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.external_coding_guidance"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.externalCodingGuidance')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <ListChecksIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.skillsSummary') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.skillsSummaryDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.skills_summary"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.skillsSummary')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <ZapIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.skillsAlways') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.skillsAlwaysDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.skills_always"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.skillsAlways')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <UsersIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.agentTeams') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.agentTeamsDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.agent_teams"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.agentTeams')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <ClockIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.dynamicContext') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.dynamicContextDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.dynamic_context"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.dynamicContext')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <AtSignIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.teamReminder') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.teamReminderDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.team_reminder"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.teamReminder')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <BrainIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.autoMemorySummary') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.autoMemorySummaryDesc') }}</p>
-            </div>
-          </div>
-          <SwitchToggle
-            v-model="localConfig.auto_memory_summary"
-            :width="44"
-            :height="24"
-            :aria-label="$t('settings.injection.autoMemorySummary')"
-            @change="handleChange"
-          />
-        </div>
-      </div>
-
-      <div class="injection-card">
-        <div class="card-header">
-          <div class="header-left">
-            <WrenchIcon :size="20" class="icon" />
-            <div class="header-text">
-              <h4 class="card-title">{{ $t('settings.injection.disabledTools') }}</h4>
-              <p class="card-desc">{{ $t('settings.injection.disabledToolsDesc') }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="tools-body">
-          <div class="tools-grid">
-            <label
-              v-for="tool in toolCatalog"
-              :key="tool"
-              class="tool-item"
-              :class="{ 'is-off': isToolDisabled(tool) }"
-            >
-              <input
-                type="checkbox"
-                :checked="!isToolDisabled(tool)"
-                @change="toggleTool(tool)"
-              >
-              <span class="tool-name">{{ tool }}</span>
-            </label>
-          </div>
-          <p class="tools-warning">
-            <AlertTriangleIcon :size="14" />
-            <span>{{ $t('settings.injection.toolsWarning') }}</span>
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="save-hint">
-      <InfoIcon :size="14" />
-      <span>{{ $t('settings.injection.saveHint') }}</span>
-    </div>
-  </div>
+  <p class="page-note">
+    <component :is="InfoIcon" :size="13" />
+    <span>{{ $t('settings.injection.saveHint') }}</span>
+  </p>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import {
-  ScrollText as ScrollTextIcon,
-  Terminal as TerminalIcon,
-  ListChecks as ListChecksIcon,
-  Zap as ZapIcon,
-  Users as UsersIcon,
-  Clock as ClockIcon,
-  AtSign as AtSignIcon,
-  Brain as BrainIcon,
-  Wrench as WrenchIcon,
-  AlertTriangle as AlertTriangleIcon,
-  Info as InfoIcon
-} from 'lucide-vue-next'
+import { AlertTriangle as AlertTriangleIcon, Info as InfoIcon } from 'lucide-vue-next'
 import { useSettingsStore } from '@/store/settings'
 import type { InjectionConfig } from '@/store/settings'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
+import { SettingsCard, SettingsRow } from './ui'
 
 const settingsStore = useSettingsStore()
 
@@ -229,7 +137,7 @@ const defaults: InjectionConfig = {
   dynamic_context: true,
   team_reminder: true,
   disabled_tools: [],
-  auto_memory_summary: true
+  auto_memory_summary: true,
 }
 
 // 工具名与后端 register_all_tools 的注册清单保持一致
@@ -247,7 +155,7 @@ const toolCatalog = [
   'send_media',
   'spawn',
   'workflow_run',
-  'external_coding_agent'
+  'external_coding_agent',
 ]
 
 const localConfig = ref<InjectionConfig>({ ...defaults })
@@ -281,5 +189,69 @@ const toggleTool = (name: string) => {
 </script>
 
 <style scoped>
-@import './styles/InjectionConfig.css';
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 6px;
+}
+
+.tool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--co-panel);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.tool-item:hover {
+  border-color: var(--color-border-secondary);
+  color: var(--color-text-primary);
+}
+
+.tool-item input {
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.tool-item.is-off {
+  color: var(--color-text-disabled);
+  text-decoration: line-through;
+}
+
+.tool-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tools-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+
+.page-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
 </style>

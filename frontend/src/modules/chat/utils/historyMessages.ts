@@ -141,6 +141,7 @@ export function normalizeHistoryMessages(
     content: message.content,
     attachmentItems: message.attachmentItems || [],
     reasoningContent: message.reasoningContent || undefined,
+    nativeEvents: message.nativeEvents || [],
     timestamp: message.createdAt.includes('+') || message.createdAt.includes('Z')
       ? new Date(message.createdAt)
       : new Date(`${message.createdAt}Z`),

@@ -434,6 +434,14 @@
 
 :deep(.password-input-wrapper) {
   position: relative;
+  /* 撑满控件列，否则宽度由内部 input 的固有宽度决定，会比其他输入框窄、左边界对不齐 */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 给右侧的眼睛按钮留位，避免 placeholder / 已输入内容被按钮压住看不全 */
+:deep(.password-input-wrapper .co-input) {
+  padding-right: 34px;
 }
 
 :deep(.toggle-password) {

@@ -20,32 +20,31 @@
         @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
       />
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.wecom.botIdHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.wecom.botId') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <input
           v-model="model.bot_id"
           type="text"
           :placeholder="t('settings.channels.wecom.botIdPlaceholder')"
-          class="config-input"
+          class="co-input"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.wecom.botIdHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.wecom.secretHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.wecom.secret') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.secret"
             :placeholder="t('settings.channels.wecom.secretPlaceholder')"
-            class="config-input"
+            class="co-input"
             @input="handleChange"
           />
           <button type="button" class="toggle-password" @click="toggleSecret(botKey)">
@@ -59,30 +58,26 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.wecom.secretHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.wecom.websocketUrl') }}</label>
+      <SettingsRow :label="t('settings.channels.wecom.websocketUrl')" :description="t('settings.channels.wecom.websocketUrlHint')" wide-control>
         <input
           v-model="model.websocket_url"
           type="text"
           :placeholder="t('settings.channels.wecom.websocketUrlPlaceholder')"
-          class="config-input"
+          class="co-input"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.wecom.websocketUrlHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.wecom.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.wecom.allowFrom')" :description="t('settings.channels.wecom.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.wecom.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
@@ -91,8 +86,7 @@
             + {{ t('settings.channels.wecom.addUser') }}
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.wecom.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -101,6 +95,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 import ChannelOnboardingCard from './ChannelOnboardingCard.vue'
 
 interface Props {

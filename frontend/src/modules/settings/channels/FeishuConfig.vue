@@ -20,33 +20,32 @@
         @update="(nextChannelId, nextConfig) => emit('update', nextChannelId, nextConfig)"
       />
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.feishu.appIdHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.feishu.appId') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <input
           v-model="model.app_id"
           type="text"
           :placeholder="t('settings.channels.feishu.appIdPlaceholder')"
-          class="config-input"
+          class="co-input"
           autocomplete="username"
           @input="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.feishu.appIdHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">
+      <SettingsRow :description="t('settings.channels.feishu.appSecretHint')" wide-control>
+        <template #label>
           {{ t('settings.channels.feishu.appSecret') }}
           <span class="required">*</span>
-        </label>
+        </template>
         <div class="password-input-wrapper">
           <input
             :type="showSecrets[botKey] ? 'text' : 'password'"
             v-model="model.app_secret"
             :placeholder="t('settings.channels.feishu.appSecretPlaceholder')"
-            class="config-input"
+            class="co-input"
             autocomplete="current-password"
             @input="handleChange"
           />
@@ -66,11 +65,9 @@
             </svg>
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.feishu.appSecretHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.feishu.groupEnabled') }}</label>
+      <SettingsRow :label="t('settings.channels.feishu.groupEnabled')" :description="t('settings.channels.feishu.groupEnabledHint')">
         <SwitchToggle
           v-model="model.group_enabled"
           :width="52"
@@ -78,11 +75,9 @@
           :aria-label="t('settings.channels.feishu.groupEnabled')"
           @change="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.feishu.groupEnabledHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.feishu.groupRequireMention') }}</label>
+      <SettingsRow :label="t('settings.channels.feishu.groupRequireMention')" :description="t('settings.channels.feishu.groupRequireMentionHint')">
         <SwitchToggle
           v-model="model.group_require_mention"
           :width="52"
@@ -90,11 +85,9 @@
           :aria-label="t('settings.channels.feishu.groupRequireMention')"
           @change="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.feishu.groupRequireMentionHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.feishu.groupTopicEnabled') }}</label>
+      <SettingsRow :label="t('settings.channels.feishu.groupTopicEnabled')" :description="t('settings.channels.feishu.groupTopicEnabledHint')">
         <SwitchToggle
           v-model="model.group_topic_enabled"
           :width="52"
@@ -102,18 +95,16 @@
           :aria-label="t('settings.channels.feishu.groupTopicEnabled')"
           @change="handleChange"
         />
-        <p class="config-hint">{{ t('settings.channels.feishu.groupTopicEnabledHint') }}</p>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.feishu.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.feishu.allowFrom')" :description="t('settings.channels.feishu.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.feishu.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
@@ -122,8 +113,7 @@
             + {{ t('settings.channels.feishu.addUser') }}
           </button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.feishu.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -132,6 +122,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 import ChannelOnboardingCard from './ChannelOnboardingCard.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 

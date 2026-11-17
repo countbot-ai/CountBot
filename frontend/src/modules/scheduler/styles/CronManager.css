@@ -52,8 +52,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   margin-right: 4px;
   border: 0;
   border-radius: var(--radius-sm);
@@ -74,16 +74,19 @@
 }
 
 .create-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  height: 30px;
+  padding: 0 12px;
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--color-primary);
   color: var(--color-text-inverse);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  line-height: 1;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
@@ -184,31 +187,45 @@
 }
 
 .retry-btn {
-  padding: 5px 12px;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-tertiary);
+  background: transparent;
   color: var(--color-text-secondary);
+  font-family: inherit;
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .retry-btn:hover {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-secondary);
   color: var(--color-text-primary);
 }
 
 .create-btn-large {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  height: 30px;
+  padding: 0 12px;
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--color-primary);
   color: var(--color-text-inverse);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  line-height: 1;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
@@ -231,15 +248,16 @@
   display: flex;
   flex-direction: column;
   padding: var(--spacing-md);
-  border: 1px solid var(--color-border-primary);
+  border: 0.5px solid var(--color-border-primary);
   border-radius: var(--radius-lg);
-  background: var(--color-bg-primary);
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  background: var(--color-bg-elevated);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
 }
 
 .job-card:hover {
   border-color: var(--color-border-secondary);
-  background: var(--color-bg-secondary);
 }
 
 .job-card.disabled {
@@ -261,6 +279,16 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+}
+
+/* 序号：与技能列表同一套两位数排版 */
+.job-index {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
+  color: var(--color-text-disabled);
+  font-variant-numeric: tabular-nums;
 }
 
 .job-icon {
@@ -556,19 +584,25 @@
 }
 
 .action-btn-compact {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 4px 10px;
-  border: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .action-btn-compact:hover:not(:disabled) {
@@ -577,19 +611,21 @@
 }
 
 .action-btn-compact:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
+/* 每张卡的操作保持在次级层级，主操作只留给页头「新建任务」 */
 .action-btn-compact.primary {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  font-weight: var(--font-weight-medium);
+  border-color: var(--color-border-primary);
+  background: transparent;
+  color: var(--color-text-secondary);
 }
 
 .action-btn-compact.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  color: var(--color-text-inverse);
+  border-color: var(--color-border-secondary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .action-btn-compact.details {

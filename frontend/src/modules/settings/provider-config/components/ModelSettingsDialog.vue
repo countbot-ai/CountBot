@@ -30,6 +30,33 @@
         <Select v-model="draft.supportsImage" :options="imageOptions" />
       </div>
 
+      <div class="form-group">
+        <label class="label">{{ $t('settings.providers.models.streamMode') }}</label>
+        <Select v-model="draft.streamMode" :options="streamModeOptions" />
+        <p class="hint">{{ $t('settings.providers.models.streamModeHint') }}</p>
+      </div>
+
+      <div v-if="showNativeGuide" class="native-guide">
+        <div class="native-guide-copy">
+          <p class="native-guide-title">
+            {{ $t('settings.providers.models.native.guideTitle') }}
+          </p>
+          <p class="native-guide-desc">
+            {{ $t('settings.providers.models.native.guideDesc') }}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" @click="nativePickerExpanded = true">
+          {{ $t('settings.providers.models.native.guideAction') }}
+        </Button>
+      </div>
+
+      <NativeCapabilityPicker
+        v-model="draft.nativeCapabilities"
+        v-model:expanded="nativePickerExpanded"
+        :supported="nativeSupported"
+        :custom-endpoint="customEndpoint"
+      />
+
       <!-- 思考档位：用户可自由增删，未收录内置表的自定义模型同样可填 -->
       <div class="form-group">
         <div class="reasoning-head">
@@ -98,6 +125,45 @@
         />
         <p class="hint">{{ $t('settings.providers.models.reasoningLevelDefaultHint') }}</p>
       </div>
+
+      <!-- 多用户共享：仅管理员可见可改；用户配置一律私有，共享动作只由管理员发起 -->
+      <div v-if="canShare" class="form-group">
+        <div class="share-head">
+          <div class="share-title">
+            <label class="label">{{ $t('settings.providers.models.share') }}</label>
+            <SwitchToggle
+              v-model="draft.shared"
+              :aria-label="$t('settings.providers.models.share')"
+            />
+          </div>
+          <p class="hint">{{ $t('settings.providers.models.shareHint') }}</p>
+        </div>
+
+        <template v-if="draft.shared">
+          <label class="label">{{ $t('settings.providers.models.shareAlias') }}</label>
+          <Input
+            v-model="draft.sharedAlias"
+            type="text"
+            :placeholder="$t('settings.providers.models.shareAliasPlaceholder')"
+          />
+          <p class="hint">{{ $t('settings.providers.models.shareAliasHint') }}</p>
+
+          <label class="label">{{ $t('settings.providers.models.shareNote') }}</label>
+          <Input
+            v-model="draft.sharedNote"
+            type="text"
+            :placeholder="$t('settings.providers.models.shareNotePlaceholder')"
+          />
+
+          <label class="label">{{ $t('settings.providers.models.shareDailyLimit') }}</label>
+          <Input
+            v-model="draft.userDailyLimit"
+            type="number"
+            :placeholder="$t('settings.providers.models.shareDailyLimitPlaceholder')"
+          />
+          <p class="hint">{{ $t('settings.providers.models.shareDailyLimitHint') }}</p>
+        </template>
+      </div>
     </div>
 
     <template #footer>
@@ -116,16 +182,35 @@ import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import ComboBox from '@/components/ui/ComboBox.vue'
 import Button from '@/components/ui/Button.vue'
-import { settingsAPI } from '@/api'
-import { CONTEXT_WINDOW_PRESET_VALUES, formatContextLength } from '@/utils/modelConfig'
+import SwitchToggle from '@/components/ui/SwitchToggle.vue'
+import NativeCapabilityPicker from './NativeCapabilityPicker.vue'
+import { settingsAPI, type ReasoningLevelsResponse } from '@/api'
+import { CONTEXT_WINDOW_PRESET_VALUES, formatContextLength, isOfficialDeepSeekApiBase, supportsNativeCapabilities } from '@/utils/modelConfig'
+import {
+  DEFAULT_NATIVE_CAPABILITIES,
+  normalizeNativeCapabilities,
+} from '@/types/nativeCaps'
 import type { ModelEditorDraft, ModelUpdatePayload, ProviderModel } from '../types'
 
 interface Props {
   model: ProviderModel | null
   imageOptions: Array<{ value: string; label: string }>
+  /** 当前供应商 ID，用于判断原生能力是否可用 */
+  providerId?: string
+  /** 当前供应商 API 地址，仅用于官方地址的能力引导 */
+  apiBase?: string
+  /** 是否展示共享区块；用户侧配置一律私有 */
+  canShare?: boolean
+  /** 档位建议的取数入口；缺省为管理员全局端点 */
+  fetchReasoningLevels?: (model: string) => Promise<ReasoningLevelsResponse>
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  providerId: '',
+  apiBase: '',
+  canShare: true,
+  fetchReasoningLevels: undefined,
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -141,9 +226,47 @@ const draft = ref<ModelEditorDraft>({
   displayName: '',
   contextWindow: '',
   supportsImage: 'auto',
+  streamMode: 'inherit',
   reasoningLevels: [],
   reasoningLevel: '',
+  shared: false,
+  sharedAlias: '',
+  sharedNote: '',
+  userDailyLimit: '',
+  nativeCapabilities: { ...DEFAULT_NATIVE_CAPABILITIES },
 })
+
+/** 是否生效由勾选决定。 */
+const nativeSupported = computed(() =>
+  supportsNativeCapabilities(props.providerId || props.model?.provider_id),
+)
+
+/** 自定义/中转地址按 DeepSeek 原生语义发送。 */
+const customEndpoint = computed(
+  () => Boolean(props.apiBase) && !isOfficialDeepSeekApiBase(props.apiBase),
+)
+
+const nativePickerExpanded = ref(false)
+
+const nativeCapabilityCount = computed(() => {
+  const caps = normalizeNativeCapabilities(draft.value.nativeCapabilities)
+  return [
+    caps.web_search,
+    caps.read_url,
+    caps.safety_check,
+    caps.asr,
+    caps.tts,
+    caps.document_parsing !== 'off',
+  ].filter(Boolean).length
+})
+
+/** 官方地址且未勾选时给出引导。 */
+const showNativeGuide = computed(
+  () =>
+    nativeSupported.value
+    && isOfficialDeepSeekApiBase(props.apiBase)
+    && nativeCapabilityCount.value === 0,
+)
 
 /** 内置建议档位与常用档位全集（仅作参考，不构成限制） */
 const builtinLevels = ref<string[]>([])
@@ -164,6 +287,13 @@ const contextWindowOptions = computed(() =>
 const levelOptions = computed(() =>
   draft.value.reasoningLevels.map(level => ({ value: level, label: level })),
 )
+
+/** 输出模式：默认跟随全局，个别模型或中转可单独强制 */
+const streamModeOptions = computed(() => [
+  { value: 'inherit', label: t('settings.providers.models.streamModeInherit') },
+  { value: 'stream', label: t('settings.providers.models.streamModeStreaming') },
+  { value: 'non-stream', label: t('settings.providers.models.streamModeNonStreaming') },
+])
 
 /** 内置建议里还没被勾选的，作为「点一下即添加」的候选 */
 const addableLevels = computed(() =>
@@ -194,12 +324,24 @@ watch(
       contextWindow: model?.context_window ? String(model.context_window) : '',
       supportsImage:
         model?.supports_image === true ? 'on' : model?.supports_image === false ? 'off' : 'auto',
+      streamMode:
+        model?.stream_enabled === true
+          ? 'stream'
+          : model?.stream_enabled === false
+            ? 'non-stream'
+            : 'inherit',
       reasoningLevels: customLevels,
       reasoningLevel: (model?.reasoning_level || '').trim().toLowerCase(),
+      shared: Boolean(model?.shared),
+      sharedAlias: (model?.shared_alias || '').trim(),
+      sharedNote: (model?.shared_note || '').trim(),
+      userDailyLimit: model?.user_daily_limit ? String(model.user_daily_limit) : '',
+      nativeCapabilities: normalizeNativeCapabilities(model?.native_capabilities),
     }
     levelsEdited.value = false
     levelInput.value = ''
     levelError.value = ''
+    nativePickerExpanded.value = false
     builtinLevels.value = []
     knownLevels.value = []
 
@@ -208,7 +350,9 @@ watch(
       return
     }
     try {
-      const response = await settingsAPI.getReasoningLevels(modelId)
+      const fetchLevels = props.fetchReasoningLevels
+        ?? ((target: string) => settingsAPI.getReasoningLevels(target))
+      const response = await fetchLevels(modelId)
       // 请求返回时模型可能已切换，丢弃过期结果
       if (props.model?.id !== modelId) {
         return
@@ -298,6 +442,14 @@ function submit(): void {
     clearReasoningLevel = false
   }
 
+  // 关闭共享时一并清空别名 / 说明 / 限额，避免留下「不共享但占着别名」的脏数据
+  const sharedAlias = current.shared ? current.sharedAlias.trim() : ''
+  const sharedNote = current.shared ? current.sharedNote.trim() : ''
+  const limitRaw = current.shared ? current.userDailyLimit.trim() : ''
+  const parsedLimit = limitRaw ? Number(limitRaw) : NaN
+  const dailyLimit =
+    Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : null
+
   emit('save', {
     display_name: displayName || null,
     clear_display_name: !displayName,
@@ -306,9 +458,20 @@ function submit(): void {
     supports_image:
       current.supportsImage === 'on' ? true : current.supportsImage === 'off' ? false : null,
     clear_supports_image: current.supportsImage === 'auto',
+    stream_enabled:
+      current.streamMode === 'stream' ? true : current.streamMode === 'non-stream' ? false : null,
+    clear_stream_enabled: current.streamMode === 'inherit',
     reasoning_levels: levels,
     reasoning_level: reasoningLevel,
     clear_reasoning_level: clearReasoningLevel,
+    shared: current.shared,
+    shared_alias: sharedAlias || null,
+    clear_shared_alias: !sharedAlias,
+    shared_note: sharedNote || null,
+    clear_shared_note: !sharedNote,
+    user_daily_limit: dailyLimit,
+    clear_user_daily_limit: dailyLimit === null,
+    native_capabilities: normalizeNativeCapabilities(current.nativeCapabilities),
   })
 }
 </script>

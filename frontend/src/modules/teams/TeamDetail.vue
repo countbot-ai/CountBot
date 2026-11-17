@@ -102,10 +102,13 @@
     </div>
 
     <!-- 编辑团队信息对话框 - 标签页形式 -->
-    <Modal :model-value="showEditTeamDialog" @close="closeEditTeamDialog" size="large">
+    <Modal
+      :model-value="showEditTeamDialog"
+      title="编辑团队信息"
+      size="large"
+      @close="closeEditTeamDialog"
+    >
       <div class="dialog-content">
-        <h3>编辑团队信息</h3>
-
         <!-- 标签页导航 -->
         <div class="tabs-nav">
           <button
@@ -117,6 +120,7 @@
             <span>基本信息</span>
           </button>
           <button
+            v-if="userStore.isAdmin"
             class="tab-btn"
             :class="{ active: activeTab === 'model' }"
             @click="activeTab = 'model'"
@@ -180,8 +184,8 @@
             </div>
           </div>
 
-          <!-- 模型配置标签页 -->
-          <div v-show="activeTab === 'model'" class="tab-panel">
+          <!-- 模型配置标签页：团队模型属于管理员能力，普通用户沿用当前对话模型 -->
+          <div v-if="userStore.isAdmin" v-show="activeTab === 'model'" class="tab-panel">
             <!-- 使用自定义配置开关 -->
             <div class="config-toggle" :class="{ active: useCustomModel }">
               <div class="toggle-header">
@@ -209,16 +213,7 @@
               <div class="model-config-toolbar">
                 <div class="model-config-copy">
                   <h4>模型设置</h4>
-                  <p>支持从模型预设快速填充团队专属配置</p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  :icon="LayoutGridIcon"
-                  @click="openPresetPanel"
-                >
-                  模型预设
-                </Button>
               </div>
 
               <div class="form-grid">
@@ -244,10 +239,12 @@
                 :max-tokens="modelConfig.max_tokens ?? 0"
                 :max-iterations="modelConfig.max_iterations ?? 0"
                 :thinking-enabled="modelConfig.thinking_enabled ?? true"
+                :stream-enabled="modelConfig.stream_enabled ?? true"
                 @update:temperature="modelConfig.temperature = $event"
                 @update:maxTokens="modelConfig.max_tokens = $event"
                 @update:maxIterations="modelConfig.max_iterations = $event"
                 @update:thinkingEnabled="modelConfig.thinking_enabled = $event"
+                @update:streamEnabled="modelConfig.stream_enabled = $event"
               />
 
               <!-- 高级 API 设置 -->
@@ -311,38 +308,27 @@
               <div class="empty-text">
                 <h4>使用全局默认配置</h4>
                 <p>启用自定义配置以为此团队设置专属的模型和 API</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  :icon="LayoutGridIcon"
-                  @click="openPresetPanel"
-                >
-                  使用模型预设
-                </Button>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="dialog-actions">
-          <button class="btn-secondary" @click="closeEditTeamDialog">取消</button>
-          <button class="btn-primary" @click="saveTeamInfo">保存</button>
-        </div>
       </div>
+
+      <template #footer>
+        <button class="co-btn co-btn--secondary" @click="closeEditTeamDialog">取消</button>
+        <button class="co-btn co-btn--primary" @click="saveTeamInfo">保存</button>
+      </template>
     </Modal>
 
-    <ProviderPresetPanel
-      v-model="showPresetPanel"
-      :current-config="currentDraftConfig"
-      :available-providers="providers"
-      @apply-config="handleApplyPresetConfig"
-    />
-
     <!-- 编辑成员对话框 -->
-    <Modal :model-value="showEditMemberDialog" @close="closeMemberDialog" size="large">
+    <Modal
+      :model-value="showEditMemberDialog"
+      :title="editingMemberIndex === null ? '添加成员' : '编辑成员'"
+      size="large"
+      @close="closeMemberDialog"
+    >
       <div class="dialog-content">
-        <h3>{{ editingMemberIndex === null ? '添加成员' : '编辑成员' }}</h3>
-
         <div class="form-group">
           <label>成员 ID <span class="required">*</span></label>
           <input v-model="memberForm.id" type="text" class="form-input" placeholder="例如：analyst" />
@@ -464,11 +450,12 @@
           </p>
         </div>
 
-        <div class="dialog-actions">
-          <button class="btn-secondary" @click="closeMemberDialog">取消</button>
-          <button class="btn-primary" @click="saveMember" :disabled="!canSaveMember">保存</button>
-        </div>
       </div>
+
+      <template #footer>
+        <button class="co-btn co-btn--secondary" @click="closeMemberDialog">取消</button>
+        <button class="co-btn co-btn--primary" @click="saveMember" :disabled="!canSaveMember">保存</button>
+      </template>
     </Modal>
 
   </div>
@@ -485,7 +472,6 @@ import {
   Info as InfoIcon, 
   Network as NetworkIcon, 
   Cpu as CpuIcon,
-  LayoutGrid as LayoutGridIcon,
   Sparkles as SparklesIcon,
   ChevronDown as ChevronDownIcon,
   Lock as LockIcon,
@@ -496,16 +482,15 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useAgentTeamsStore, type AgentTeam } from '@/store/agentTeams'
+import { useUserStore } from '@/store/user'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { Modal } from '@/components/ui'
-import Button from '@/components/ui/Button.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import ModelParameterFields from '@/components/ui/ModelParameterFields.vue'
-import ProviderPresetPanel from '@/modules/settings/ProviderPresetPanel.vue'
 import Select from '@/components/ui/Select.vue'
 import DependencyGraph from './DependencyGraph.vue'
-import { settingsAPI } from '@/api'
+import { useModelCatalog } from '@/composables/useModelCatalog'
 import { agentTeamsApi, type TeamModelConfig } from '@/api/agentTeams'
 import {
   findFirstSelectableProvider,
@@ -525,25 +510,15 @@ interface Props {
   team: AgentTeam
 }
 
-interface PresetApplyPayload {
-  provider: string
-  model: string
-  apiKey: string
-  baseUrl?: string
-  enabled: boolean
-  temperature?: number
-  maxTokens?: number
-  maxIterations?: number
-  source: 'preset' | 'codingplan'
-  label: string
-}
-
 const props = defineProps<Props>()
 const emit = defineEmits(['back', 'updated'])
 const { t } = useI18n()
 
 const teamsStore = useAgentTeamsStore()
+const userStore = useUserStore()
 const toast = useToast()
+// 供应商目录与连通性测试按身份分流，普通用户不走管理员接口
+const modelCatalog = useModelCatalog()
 const { confirm } = useConfirm()
 
 const modeLabelMap: Record<string, string> = {
@@ -575,7 +550,6 @@ const testing = ref(false)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
 const providers = ref<Array<{ id: string; name: string; defaultApiBase?: string; defaultModel?: string }>>([])
 const isHydratingConfig = ref(false)
-const showPresetPanel = ref(false)
 
 const createDefaultModelConfig = (): TeamModelConfig =>
   buildCustomModelEditorConfig<TeamModelConfig>()
@@ -588,17 +562,6 @@ const providerOptions = computed(() =>
     label: provider.name,
   }))
 )
-const currentDraftConfig = computed(() => ({
-  provider: modelConfig.value.provider || '',
-  model: modelConfig.value.model || '',
-  apiKey: modelConfig.value.api_key || '',
-  baseUrl: modelConfig.value.api_base || '',
-  enabled: true,
-  temperature: modelConfig.value.temperature,
-  maxTokens: modelConfig.value.max_tokens,
-  maxIterations: modelConfig.value.max_iterations,
-}))
-
 // 成员编辑
 const showEditMemberDialog = ref(false)
 const editingMemberIndex = ref<number | null>(null)
@@ -738,7 +701,7 @@ const getAvailableDependencies = () => {
         return false
       }
     }
-    // 如果是新建模式，排除与当前 ID 相同的成员（虽然不太可能）
+    // 新建模式排除与当前 ID 相同的成员
     if (agent.id === currentId) {
       return false
     }
@@ -842,7 +805,7 @@ const saveMember = () => {
 // 加载服务商列表
 async function loadProviders() {
   try {
-    const providersData = await settingsAPI.getProviders()
+    const providersData = await modelCatalog.listProviders()
     providers.value = providersData.map(p => ({
       id: p.id,
       name: p.name,
@@ -857,7 +820,7 @@ async function loadProviders() {
 
 // 加载团队模型配置
 async function loadTeamModelConfig() {
-  if (!props.team.id) return
+  if (!props.team.id || !userStore.isAdmin) return
   
   try {
     const config = await agentTeamsApi.getConfig(props.team.id)
@@ -918,40 +881,9 @@ function ensureValidTeamProviderSelection() {
   }
 }
 
-function openPresetPanel() {
-  testResult.value = null
-  showPresetPanel.value = true
-}
-
-function handleApplyPresetConfig(payload: PresetApplyPayload) {
-  isHydratingConfig.value = true
-  try {
-    useCustomModel.value = true
-    modelConfig.value = buildEffectiveModelConfig<TeamModelConfig>(
-      globalModelDefaults.value,
-      {
-        ...modelConfig.value,
-        provider: payload.provider,
-        model: payload.model,
-        api_mode: 'chat_completions',
-        api_key: payload.apiKey,
-        api_base: payload.baseUrl || '',
-        temperature: payload.temperature ?? modelConfig.value.temperature,
-        max_tokens: payload.maxTokens ?? modelConfig.value.max_tokens,
-        max_iterations: payload.maxIterations ?? modelConfig.value.max_iterations,
-      },
-    )
-    testResult.value = null
-    ensureValidTeamProviderSelection()
-  } finally {
-    isHydratingConfig.value = false
-  }
-}
-
 // 切换自定义模型
 function onToggleCustomModel() {
-  // 只是切换开关状态，不立即保存
-  // 实际的保存会在用户点击"保存"按钮时进行
+  // 仅切换开关状态，保存由用户点击“保存”按钮触发
   if (!useCustomModel.value) {
     // 关闭时，清空测试结果
     testResult.value = null
@@ -971,7 +903,7 @@ async function handleTestConnection() {
   testResult.value = null
 
   try {
-    const response = await settingsAPI.testConnection({
+    const response = await modelCatalog.testConnection({
       provider: modelConfig.value.provider || 'zhipu',
       api_key: modelConfig.value.api_key || undefined,
       api_base: modelConfig.value.api_base || undefined,
@@ -1041,18 +973,20 @@ const saveTeamInfo = async () => {
       is_active: props.team.is_active,
     })
     
-    // 保存模型配置
-    if (useCustomModel.value) {
-      await agentTeamsApi.updateConfig(
-        props.team.id,
-        buildModelConfigOverrides<TeamModelConfig>(
-          modelConfig.value,
-          globalModelDefaults.value,
-        ),
-      )
-    } else if (props.team.use_custom_model) {
-      // 如果之前启用了自定义模型，现在关闭了，需要重置
-      await agentTeamsApi.resetConfig(props.team.id)
+    // 保存模型配置（仅管理员）
+    if (userStore.isAdmin) {
+      if (useCustomModel.value) {
+        await agentTeamsApi.updateConfig(
+          props.team.id,
+          buildModelConfigOverrides<TeamModelConfig>(
+            modelConfig.value,
+            globalModelDefaults.value,
+          ),
+        )
+      } else if (props.team.use_custom_model) {
+        // 如果之前启用了自定义模型，现在关闭了，需要重置
+        await agentTeamsApi.resetConfig(props.team.id)
+      }
     }
     
     toast.success('团队信息已更新')

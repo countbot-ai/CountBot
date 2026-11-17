@@ -8,10 +8,12 @@
 import { computed, ref } from 'vue'
 import { settingsAPI } from '@/api'
 import type {
+    MeModelItem,
     ProviderMetadata,
     ProviderModelCatalogEntry,
     ProviderModelEntry,
 } from '@/api'
+import type { ProviderConfigSource } from '@/modules/settings/provider-config/source'
 
 export interface ProviderOption {
     id: string
@@ -21,7 +23,7 @@ export interface ProviderOption {
     models: ProviderModelEntry[]
 }
 
-export function useProviderModelCatalog() {
+export function useProviderModelCatalog(source?: ProviderConfigSource) {
     const catalogLoading = ref(false)
     const catalogError = ref<string | null>(null)
     const fetchedModels = ref<ProviderModelCatalogEntry[]>([])
@@ -35,7 +37,10 @@ export function useProviderModelCatalog() {
         catalogError.value = null
 
         try {
-            const response = await settingsAPI.getProviderModelCatalog(providerId)
+            // 注入数据源时走对应身份的端点；缺省为管理员全局目录
+            const response = source
+                ? await source.api.fetchModelCatalog(providerId)
+                : await settingsAPI.getProviderModelCatalog(providerId)
             if (!response.success) {
                 catalogError.value = response.error || ''
                 fetchedModels.value = []
@@ -103,6 +108,63 @@ export function buildSelectableModelGroups(options: ProviderOption[]) {
             models: provider.models.filter(model => model.enabled !== false),
         }))
         .filter(group => group.models.length > 0)
+}
+
+/** 将 /api/me/models 的分组结果转为下拉选项（普通用户视角）。 */
+export function buildProviderOptionsFromMeModels(
+    data: { shared?: MeModelItem[]; own?: MeModelItem[] },
+): ProviderOption[] {
+    // 共享模型合并为一个「内置模型」分组，条目保留真实供应商 ID 供选择时使用
+    const builtinGroup: ProviderOption = {
+        id: '__builtin_models__',
+        name: '',
+        apiType: 'openai-chat-completions',
+        enabled: true,
+        models: [],
+    }
+    const byProvider = new Map<string, ProviderOption>()
+    for (const item of [...(data.shared || []), ...(data.own || [])]) {
+        if (!item?.provider || !item?.model || item.available === false) continue
+        if (item.source === 'shared') {
+            if (!builtinGroup.name) {
+                builtinGroup.name = item.provider_name || item.provider
+            }
+            if (!builtinGroup.models.some(model => model.id === item.model)) {
+                builtinGroup.models.push({
+                    id: item.model,
+                    display_name: item.alias || item.model,
+                    enabled: true,
+                    context_window: item.context_window ?? null,
+                    provider_id: item.provider,
+                } as ProviderModelEntry)
+            }
+            continue
+        }
+        let option = byProvider.get(item.provider)
+        if (!option) {
+            option = {
+                id: item.provider,
+                name: item.provider_name || item.provider,
+                apiType: 'openai-chat-completions',
+                enabled: true,
+                models: [],
+            }
+            byProvider.set(item.provider, option)
+        }
+        if (!option.models.some(model => model.id === item.model)) {
+            option.models.push({
+                id: item.model,
+                display_name: item.alias || item.model,
+                enabled: true,
+                context_window: item.context_window ?? null,
+                native_capabilities: item.native_capabilities,
+            } as ProviderModelEntry)
+        }
+    }
+    if (builtinGroup.models.length > 0) {
+        return [builtinGroup, ...byProvider.values()]
+    }
+    return [...byProvider.values()]
 }
 
 export function useSelectableModelGroups(

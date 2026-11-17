@@ -1,157 +1,63 @@
 /* ============================================================
- * SessionConfigPanel - 会话配置弹窗
+ * SessionConfigPanel - 会话配置弹窗（内容区）
+ * 外壳（遮罩 / 容器 / 头部 / 底部）由 ui/Modal 提供，此处只管内容
+ * 视觉对齐设计系统：微明度分层 + terracotta 强调色 + 克制圆角阴影
  * ============================================================ */
 
-/* ========== Modal Overlay ========== */
-.config-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--modal-overlay);
-  backdrop-filter: blur(4px);
-  z-index: 9999;
+/* ========== 弹窗标题（Modal title slot） ========== */
+.scm-title {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 20px;
-  animation: fadeIn 0.2s var(--ease-snappy);
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* ========== Modal Container ========== */
-.config-modal {
-  width: 100%;
-  max-width: 800px;
-  max-height: 90vh;
-  background: var(--bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
-  animation: slideUp 0.3s var(--ease-snappy);
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.modal-container {
-  display: flex;
-  flex-direction: column;
-  max-height: 90vh;
-}
-
-/* ========== Header ========== */
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24px;
-  border-bottom: 1px solid var(--color-border-primary);
-  background: var(--bg-secondary);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  flex-shrink: 0;
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex: 1;
+  gap: 10px;
   min-width: 0;
 }
 
-.header-icon {
-  display: flex;
+.scm-title-icon {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
-.header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.header-text h3 {
-  margin: 0;
-  font-size: var(--font-size-xl);
+.scm-title-text {
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
-.header-subtitle {
-  margin: 4px 0 0 0;
-  font-size: var(--font-size-base);
-  color: var(--text-tertiary);
+.scm-title-sub {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-tertiary);
 }
 
-.close-btn {
+/* ========== 内容区 ========== */
+.scm-body {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast) var(--ease-snappy);
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.close-btn:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
-}
-
-/* ========== Scrollable Body ========== */
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 24px;
-}
-
-/* ========== Fixed Footer ========== */
-.modal-footer {
-  display: flex;
-  gap: 12px;
-  padding: 20px 24px;
-  border-top: 1px solid var(--color-border-primary);
-  background: var(--bg-secondary);
-  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
-  flex-shrink: 0;
-}
-
-/* ========== Toggle Switch ========== */
+/* ========== 使用自定义配置开关 ========== */
 .config-toggle {
-  margin-bottom: 24px;
-  padding: 20px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  background: linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-secondary));
   border: 1px solid var(--color-border-primary);
-  box-shadow: var(--shadow-xs);
-  transition: all var(--transition-base);
+  border-radius: var(--radius-lg);
+  transition: background var(--transition-base), border-color var(--transition-base);
 }
 
 .config-toggle.active {
-  border-color: var(--color-border-strong);
-  background: var(--color-primary-light);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--color-border-secondary);
 }
 
 .toggle-header {
@@ -164,57 +70,59 @@
 .toggle-label {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   cursor: pointer;
   flex: 1;
+  min-width: 0;
 }
 
 .toggle-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   flex: 1;
+  min-width: 0;
 }
 
 .toggle-text {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
 .toggle-hint {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
+  line-height: 1.5;
 }
 
+/* 软标签：中性提示，不抢强调色（强调色只留给开关状态） */
 .config-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--color-bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
 }
 
-/* ========== Config Sections ========== */
+/* ========== 分组卡片 ========== */
 .config-sections {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .config-section {
-  padding: 20px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
+  padding: 18px;
+  background: linear-gradient(180deg, var(--color-bg-elevated), var(--color-bg-secondary));
   border: 1px solid var(--color-border-primary);
-  box-shadow: var(--shadow-xs);
+  border-radius: var(--radius-lg);
 }
 
 .section-header {
@@ -222,14 +130,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
 .section-heading {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .section-header-actions {
@@ -242,21 +150,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius-md);
   background: var(--color-bg-tertiary);
-  color: var(--color-primary);
+  color: var(--text-secondary);
 }
 
 .section-header h4 {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
-/* ========== Form Elements ========== */
+/* ========== 表单 ========== */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -266,55 +174,7 @@
 
 .form-group {
   margin-bottom: 16px;
-}
-
-.history-settings-card {
-  margin-top: 20px;
-  padding: 18px;
-  background: var(--bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-lg);
-}
-
-.history-settings-header {
-  margin-bottom: 16px;
-}
-
-.history-settings-header h5 {
-  margin: 0 0 6px 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-}
-
-.history-settings-header p {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-  color: var(--text-tertiary);
-  text-wrap: pretty; /* 规则 8 */
-}
-
-.history-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.history-toggle-group {
-  display: flex;
-  align-items: stretch;
-}
-
-.history-toggle-label {
-  width: 100%;
-  min-height: 100%;
-  padding: 14px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-md);
-  gap: 14px;
-  justify-content: space-between;
+  min-width: 0;
 }
 
 .form-group.full-width {
@@ -328,25 +188,9 @@
 .form-group label {
   display: block;
   margin-bottom: 8px;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
-}
-
-.slider-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.slider-value {
-  padding: 2px 8px;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-primary);
-  font-variant-numeric: tabular-nums; /* 规则 6 */
 }
 
 /* 规则 2：输入框聚焦双环咬合 */
@@ -378,84 +222,61 @@
   min-height: 100px;
 }
 
-.select-wrapper {
-  position: relative;
+/* ========== 上下文历史卡片 ========== */
+.history-settings-card {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
 }
 
-.select-input {
-  width: 100%;
-  padding: 10px 40px 10px 14px;
+.history-settings-header {
+  margin-bottom: 14px;
+}
+
+.history-settings-header h5 {
+  margin: 0 0 6px 0;
   font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-md);
-  box-shadow: none;
-  cursor: pointer;
-  transition: all var(--transition-fast) var(--ease-snappy);
-  appearance: none;
 }
 
-.select-input:focus {
-  outline: none;
-  border-color: var(--color-border-strong);
-  box-shadow:
-    0 0 0 1px var(--color-border-strong),
-    0 0 0 5px var(--color-border-primary);
-}
-
-.select-icon {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
-.range-input {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--color-bg-tertiary);
-  outline: none;
-  -webkit-appearance: none;
-}
-
-.range-input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-}
-
-.range-input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  cursor: pointer;
-  border: none;
-  box-shadow: var(--shadow-sm);
-}
-
-.range-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
+.history-settings-header p {
+  margin: 0;
   font-size: var(--font-size-xs);
+  line-height: 1.5;
   color: var(--text-tertiary);
+  text-wrap: pretty;
 }
 
-/* ========== Personality Grid ========== */
+.history-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.history-toggle-group {
+  display: flex;
+  align-items: stretch;
+}
+
+.history-toggle-label {
+  width: 100%;
+  min-height: 100%;
+  padding: 12px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  gap: 14px;
+  justify-content: space-between;
+}
+
+/* ========== 性格选择 ========== */
 .personality-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 10px;
 }
 
 .loading-personalities {
@@ -469,11 +290,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 18px 12px;
-  background: var(--bg-primary);
+  gap: 8px;
+  padding: 14px 10px;
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition-fast) var(--ease-snappy);
   font-size: var(--font-size-sm);
@@ -482,24 +303,23 @@
 }
 
 .personality-option:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border-secondary);
   background: var(--color-bg-tertiary);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
+/* 选中靠「抬升 + 描边加粗 + 文字加粗」表达，不用强调色 */
 .personality-option.selected {
   border-color: var(--color-border-strong);
-  background: var(--color-primary-light);
-  box-shadow: 0 0 0 3px var(--color-border-primary);
+  background: var(--color-bg-tertiary);
 }
 
 .personality-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-md);
   background: var(--color-bg-tertiary);
   color: var(--text-secondary);
@@ -507,20 +327,20 @@
 }
 
 .personality-option:hover .personality-icon {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  background: var(--color-bg-elevated);
+  color: var(--text-primary);
 }
 
 .personality-option.selected .personality-icon {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  background: var(--color-bg-elevated);
+  color: var(--text-primary);
 }
 
 .personality-label {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .personality-option:hover .personality-label {
@@ -528,7 +348,7 @@
 }
 
 .personality-option.selected .personality-label {
-  color: var(--color-primary);
+  color: var(--text-primary);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -538,111 +358,30 @@
   justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 10px;
+  padding: 9px;
   margin-top: 8px;
-  background: var(--color-bg-tertiary);
+  background: transparent;
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-fast) var(--ease-snappy);
 }
 
 .expand-btn:hover {
-  background: var(--hover-bg);
-  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-secondary);
   color: var(--text-primary);
 }
 
-/* ========== Advanced Config ========== */
-.advanced-config {
-  margin-top: 16px;
-  padding: 16px;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-primary);
-}
-
-.advanced-config summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-secondary);
-  list-style: none;
-  user-select: none;
-}
-
-.advanced-config summary::-webkit-details-marker {
-  display: none;
-}
-
-.advanced-config summary .chevron {
-  margin-left: auto;
-  transition: transform var(--transition-base) var(--ease-snappy);
-}
-
-.advanced-config[open] summary .chevron {
-  transform: rotate(180deg);
-}
-
-.advanced-content {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border-primary);
-}
-
-/* ========== Test Result ========== */
-.test-result {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-}
-
-.test-result.success {
-  background: var(--color-success-light);
-  color: var(--color-success);
-  border: 1px solid color-mix(in srgb, var(--color-success) 24%, transparent);
-}
-
-.test-result.error {
-  background: var(--color-error-light);
-  color: var(--color-error);
-  border: 1px solid color-mix(in srgb, var(--color-error) 24%, transparent);
-}
-
-.test-result span {
-  flex: 1;
-  word-break: break-word;
-}
-
-/* ========== Hint Text ========== */
+/* ========== 提示文本 ========== */
 .hint {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   margin: 4px 0 0 0;
   line-height: 1.4;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.checkbox-input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-primary);
 }
 
 .hint.warning {
@@ -658,55 +397,6 @@
   margin-top: 8px;
 }
 
-/* ========== Buttons ========== */
-.btn-primary,
-.btn-secondary {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 20px;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all var(--transition-fast) var(--ease-snappy);
-}
-
-.btn-primary {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  box-shadow: var(--shadow-sm);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-primary:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: var(--color-bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--color-border-secondary);
-}
-
-.btn-secondary:hover {
-  background: var(--hover-bg);
-  border-color: var(--color-border-strong);
-}
-
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -716,13 +406,13 @@
   to { transform: rotate(360deg); }
 }
 
-/* ========== Empty State ========== */
+/* ========== 空态（使用全局默认） ========== */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 48px 20px;
   text-align: center;
 }
 
@@ -730,38 +420,34 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 96px;
-  height: 96px;
-  margin-bottom: 20px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  width: 72px;
+  height: 72px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--text-secondary);
 }
 
 .empty-state h4 {
-  margin: 0 0 8px 0;
-  font-size: var(--font-size-xl);
+  margin: 0 0 6px 0;
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
 .empty-state p {
   margin: 0;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   color: var(--text-tertiary);
-  max-width: 300px;
-  text-wrap: pretty; /* 规则 8 */
+  max-width: 320px;
+  text-wrap: pretty;
 }
 
-/* ========== Workspace ========== */
-.workspace-section {
-  margin: 20px 0;
-}
-
+/* ========== 工作空间（仅管理员） ========== */
 .workspace-path-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .workspace-path-row .text-input {
@@ -783,12 +469,13 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--color-primary);
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
   cursor: pointer;
 }
 
 .link-btn:hover {
+  color: var(--text-primary);
   text-decoration: underline;
 }
 
@@ -798,54 +485,29 @@
   word-break: break-all;
 }
 
+/* ========== 响应式 ========== */
 @media (max-width: 768px) {
-  .workspace-path-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-/* ========== Responsive ========== */
-@media (max-width: 768px) {
-  .config-modal-overlay {
-    padding: 0;
-  }
-
-  .config-modal {
-    max-width: 100%;
-    max-height: 100vh;
-    border-radius: 0;
-  }
-
-  .modal-header {
-    padding: 16px;
-    border-radius: 0;
-  }
-
-  .header-icon {
-    width: 40px;
-    height: 40px;
-  }
-
-  .header-text h3 {
-    font-size: var(--font-size-lg);
-  }
-
-  .modal-body {
-    padding: 16px;
-  }
-
-  .modal-footer {
-    padding: 16px;
-    border-radius: 0;
-    flex-direction: column;
-  }
-
   .form-grid {
     grid-template-columns: 1fr;
   }
 
   .personality-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .workspace-path-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .config-toggle,
+  .personality-option,
+  .personality-icon,
+  .expand-btn,
+  .text-input,
+  .textarea-input {
+    transition: none !important;
   }
 }

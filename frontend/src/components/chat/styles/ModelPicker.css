@@ -4,6 +4,8 @@
     position: relative;
     display: inline-flex;
     min-width: 0;
+    /* 模型名优先展示，空间不足时让工作空间等次要信息先收缩 */
+    flex-shrink: 0;
 }
 
 .model-picker-trigger {
@@ -244,6 +246,18 @@
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--text-secondary);
+}
+
+.model-picker-item-native {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
 .model-picker-check {

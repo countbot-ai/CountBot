@@ -1,0 +1,398 @@
+/**
+ * 第 2 栏：会话列表 / 功能面板的统一容器。
+ * 宽度由 --nc-list-w 决定，收起时归零，内部保持固定宽度避免折叠过程中内容重排。
+ */
+.nc-list-pane {
+  --nc-list-w: 276px;
+
+  position: relative;
+  z-index: 20;
+  flex: 0 0 auto;
+  width: var(--nc-list-w);
+  height: 100%;
+  background: var(--nc-sidebar-bg);
+  border-right: 1px solid var(--nc-sidebar-border);
+  overflow: hidden;
+  transition: width var(--transition-base) var(--ease-snappy);
+}
+
+/* 桌面端收起：宽度归零，靠 overflow 裁掉固定宽度的内容 */
+@media (min-width: 861px) {
+  .nc-list-pane:not(.is-open) {
+    width: 0;
+    border-right-color: transparent;
+  }
+}
+
+.nc-list-inner {
+  display: flex;
+  flex-direction: column;
+  width: var(--nc-list-w);
+  height: 100%;
+}
+
+.nc-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 48px;
+  flex-shrink: 0;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--nc-sidebar-border);
+}
+
+.nc-list-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--nc-text);
+  white-space: nowrap;
+}
+
+.nc-list-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nc-list-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.nc-list-icon:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-list-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px;
+}
+
+.nc-list-content--panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ---------- 搜索 + 新建（同一个输入框，右侧内置新建入口） ---------- */
+
+.nc-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  border: 1px solid var(--nc-border);
+  border-radius: 6px;
+  background: var(--nc-surface);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.nc-search:hover {
+  border-color: var(--nc-border-strong);
+}
+
+/* 聚焦只加深边框并留一圈很淡的柔光，不做双环，避免视觉挤压 */
+.nc-search:focus-within {
+  border-color: var(--nc-border-strong);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha);
+}
+
+.nc-search-divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 2px 0 6px;
+  flex-shrink: 0;
+  background: var(--nc-border);
+}
+
+/* 新建会话：内置在搜索框右端，避免出现两个长得一样的输入框 */
+.nc-search-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.nc-search-action:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.nc-search-icon {
+  flex-shrink: 0;
+  color: var(--nc-text-3);
+}
+
+.nc-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin-left: 6px;
+  border: none;
+  background: transparent;
+  color: var(--nc-text);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.nc-search-input::placeholder {
+  color: var(--nc-text-3);
+}
+
+/* 焦点景深由外层容器统一表达，输入框本身不再叠第二圈 */
+.nc-search-input:focus-visible {
+  box-shadow: none;
+}
+
+.nc-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+}
+
+.nc-search-clear:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+/* ---------- 会话列表 ---------- */
+
+.nc-session-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+  padding-bottom: 2px;
+}
+
+.nc-session-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nc-session-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* 行容器承接背景，保证右侧操作按钮与行同底色、无割裂 */
+.nc-session-row {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 6px;
+  transition: background var(--transition-fast);
+}
+
+.nc-session-row:hover,
+.nc-session-row:focus-within {
+  background: var(--nc-hover);
+}
+
+.nc-session-row.is-active {
+  background: var(--nc-active);
+}
+
+.nc-session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-2);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.nc-session-row:hover .nc-session-item {
+  color: var(--nc-text);
+}
+
+.nc-session-item.is-active {
+  color: var(--nc-text);
+  font-weight: 500;
+}
+
+/* 悬停时让出时间，给齿轮 / 重命名两个图标（避免与时间挤在一起） */
+.nc-session-row:hover .nc-session-time,
+.nc-session-row:focus-within .nc-session-time {
+  opacity: 0;
+}
+
+.nc-session-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+.nc-session-row:hover .nc-session-actions,
+.nc-session-row:focus-within .nc-session-actions {
+  display: flex;
+}
+
+.nc-session-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nc-text-3);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.nc-session-action:hover {
+  background: var(--nc-surface);
+  color: var(--nc-text);
+}
+
+/* 删除为不可逆操作：仅悬停时以危险色提示，静态保持中性避免视觉噪音 */
+.nc-session-action--danger:hover {
+  background: var(--nc-surface);
+  color: var(--color-error);
+}
+
+.nc-session-rename-input {
+  width: 100%;
+  height: 30px;
+  margin: 2px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--nc-border-strong);
+  border-radius: 6px;
+  background: var(--nc-surface);
+  color: var(--nc-text);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--nc-border-strong),
+    0 0 0 3px var(--nc-border);
+}
+
+.nc-session-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-session-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--nc-text-3);
+}
+
+.nc-session-empty,
+.nc-session-loading {
+  padding: 16px 8px;
+  color: var(--nc-text-3);
+  font-size: 12px;
+}
+
+.nc-show-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-top: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nc-text-3);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.nc-show-more:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+/* ---------- 移动端：第 2 栏改为抽屉，覆盖在主内容之上 ---------- */
+
+@media (max-width: 860px) {
+  .nc-list-pane {
+    --nc-list-w: min(280px, calc(100vw - 52px));
+
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 52px;
+    z-index: 60;
+    width: var(--nc-list-w);
+    border-right: 1px solid var(--nc-sidebar-border);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(calc(-100% - 52px));
+    /* 移动端只做位移，宽度始终是抽屉宽度 */
+    transition: transform var(--transition-base) var(--ease-snappy);
+  }
+
+  .nc-list-pane.is-open {
+    transform: translateX(0);
+  }
+}

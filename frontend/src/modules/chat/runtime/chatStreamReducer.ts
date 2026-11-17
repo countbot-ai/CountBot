@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatMessageBlock, ChatToolCall, WorkflowAgentState } from '@/types/chat'
+import type { NativeChatEvent } from '@/types/nativeCaps'
 
 interface SpawnTaskLink {
   messageId: string
@@ -30,6 +31,7 @@ export type ChatStreamAction =
     }
   | { type: 'reasoning_chunk'; payload: StreamRealtimeMessage; now: number }
   | { type: 'message_chunk'; payload: StreamRealtimeMessage; now: number }
+  | { type: 'native_event'; payload: StreamRealtimeMessage; now: number }
   | { type: 'tool_call'; payload: StreamRealtimeMessage; now: number }
   | { type: 'tool_progress'; payload: StreamRealtimeMessage }
   | { type: 'tool_result'; payload: StreamRealtimeMessage }
@@ -82,6 +84,8 @@ export function mapRealtimeMessageToAction(
       return { type: 'reasoning_chunk', payload: message, now }
     case 'message_chunk':
       return { type: 'message_chunk', payload: message, now }
+    case 'native_event':
+      return { type: 'native_event', payload: message, now }
     case 'tool_call':
       return { type: 'tool_call', payload: message, now }
     case 'tool_progress':
@@ -127,6 +131,8 @@ export function chatStreamReducer(
       return reduceReasoningChunk(state, action.payload, action.now)
     case 'message_chunk':
       return reduceMessageChunk(state, action.payload, action.now)
+    case 'native_event':
+      return reduceNativeEvent(state, action.payload, action.now)
     case 'tool_call':
       return reduceToolCall(state, action.payload, action.now)
     case 'tool_progress':
@@ -151,6 +157,47 @@ export function chatStreamReducer(
       return reduceAddThinkingMessage(state, action.now)
     default:
       return state
+  }
+}
+
+function reduceNativeEvent(
+  state: ChatStreamRuntimeState,
+  message: StreamRealtimeMessage,
+  now: number
+): ChatStreamRuntimeState {
+  const event = (message.event || message) as NativeChatEvent
+  if (!event || !event.kind || event.kind === 'history_blocks') {
+    return state
+  }
+
+  const currentIndex = findMessageIndex(state.messages, state.currentStreamingMessageId)
+  if (currentIndex === -1) {
+    const newMessage: ChatMessage = {
+      id: `temp-native-${now}`,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      toolCalls: [],
+      nativeEvents: [event],
+    }
+    return {
+      ...state,
+      messages: [...state.messages, newMessage],
+      isStreaming: true,
+      currentStreamingMessageId: newMessage.id,
+    }
+  }
+
+  const currentMessage = state.messages[currentIndex]
+  const updatedMessage: ChatMessage = {
+    ...currentMessage,
+    nativeEvents: [...(currentMessage.nativeEvents || []), event],
+  }
+  return {
+    ...state,
+    messages: replaceMessage(state.messages, currentIndex, updatedMessage),
+    isStreaming: true,
+    currentStreamingMessageId: updatedMessage.id,
   }
 }
 

@@ -1,78 +1,223 @@
 /**
- * 供应商导航列。
- * 宽容器为「图标 + 名称 + 模型数」列表，窄容器收成纯图标条，
- * 保证小屏下右栏详情仍然可见可操作。
- *
- * 分成两层：外层列铺满整列高度（底纹 + 分隔线），内层 nav 钉在滚动视口上，
- * 既不会在下方留空白，滚动右侧配置时左栏内容也不会跟着走。
+ * 服务商轨道（左栏）。
+ * 收起时是 64px 图标轨道，展开后是带名称与搜索的窄侧栏；
+ * 背景与设置页主侧栏同层，让两级导航连成一块，而不是浮着一张卡片。
  */
 
 .provider-nav-column {
-  min-width: 0;
-  border-right: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-2xl) 0 0 var(--radius-2xl);
-  background: var(--color-bg-secondary);
-}
-
-.provider-nav {
-  position: sticky;
-  top: 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: 100dvh;
-  overflow-y: auto;
-  padding: 10px 8px;
+  min-height: 0;
+  height: 100%;
+  background: var(--color-bg-secondary);
+  box-shadow: inset -1px 0 0 var(--color-border-primary);
+  overflow: hidden;
 }
 
-.provider-nav-header {
+/* ---------- 顶部：添加 ---------- */
+
+.provider-nav-head {
   display: flex;
   align-items: center;
-  height: 24px;
-  padding: 0 4px;
-  margin-bottom: 8px;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 10px 0 6px;
+}
+
+.is-expanded .provider-nav-head {
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 8px;
 }
 
 .provider-nav-title {
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.provider-nav-list {
+.provider-nav-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.provider-nav-add-btn:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.provider-nav-add-btn.is-icon-only {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 9px;
+}
+
+/* ---------- 搜索 ---------- */
+
+.provider-nav-search {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 30px;
+  margin: 0 10px 6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+  box-shadow: inset 0 0 0 1px var(--color-border-primary);
+  transition: box-shadow var(--transition-fast);
+}
+
+.provider-nav-search:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-strong),
+    0 0 0 3px var(--color-border-primary);
+}
+
+.provider-nav-search-icon {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.provider-nav-search-input {
+  flex: 1;
   min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.provider-nav-search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.provider-nav-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.provider-nav-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.provider-nav-search-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 6px;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.provider-nav-search-trigger:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+/* ---------- 列表 ---------- */
+
+.provider-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.is-expanded .provider-nav-scroll {
+  padding: 4px 8px 8px;
+}
+
+.provider-nav-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 4px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.provider-nav-group-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--color-text-disabled);
 }
 
 .provider-nav-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
+  justify-content: center;
+  gap: 10px;
+  width: 42px;
   min-width: 0;
-  height: 38px;
-  padding: 0 8px;
-  border: 1px solid transparent;
+  min-height: 42px;
+  margin: 0 auto;
+  padding: 4px;
   border-radius: 10px;
-  background: transparent;
   color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition:
+    background 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.provider-nav-item:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
+.provider-nav-item + .provider-nav-item {
+  margin-top: 2px;
 }
 
 .provider-nav-item:hover {
@@ -80,34 +225,69 @@
 }
 
 .provider-nav-item.is-selected {
-  border-color: var(--color-border-secondary);
-  background: var(--color-bg-elevated);
+  background: var(--color-primary-alpha);
+  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
-/* 图标由 ProviderIcon 直接渲染，这里只负责状态点的定位 */
-.provider-nav-icon {
+.provider-nav-item:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-border-strong),
+    0 0 0 3px var(--color-border-primary);
+}
+
+.is-expanded .provider-nav-item {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+}
+
+.is-expanded .provider-nav-item.is-selected {
+  box-shadow: none;
+}
+
+/* 展开态：选中项在左缘留一条强调线 */
+.is-expanded .provider-nav-item.is-selected::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -1px;
+  width: 2px;
+  height: 16px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+/* 品牌图标 + 可用状态点 */
+.provider-nav-logo {
   position: relative;
-}
-
-.provider-nav-icon.is-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border: 1px dashed var(--color-border-secondary);
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
-  background: transparent;
-  color: var(--text-tertiary);
+  background: var(--color-bg-elevated);
+  box-shadow: 0 1px 2px var(--color-shadow);
+}
+
+.is-expanded .provider-nav-logo {
+  background: var(--color-bg-elevated);
+}
+
+.provider-nav-item.is-selected .provider-nav-logo {
+  background: var(--color-primary-light);
 }
 
 .provider-nav-dot {
   position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 6px;
-  height: 6px;
+  right: -1px;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--color-text-disabled);
   box-shadow: 0 0 0 2px var(--color-bg-secondary);
@@ -144,61 +324,101 @@
 
 .provider-nav-meta {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.provider-nav-current {
+/* ---------- 行尾状态 ---------- */
+
+.provider-nav-trailing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  color: var(--color-accent);
-  background: var(--color-accent-alpha);
 }
 
-/* 草稿里刚加、还没保存成功的供应商 */
+.provider-nav-current {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-accent-alpha);
+  color: var(--color-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .provider-nav-draft {
-  flex-shrink: 0;
   padding: 1px 6px;
   border: 1px dashed var(--color-border-secondary);
   border-radius: 999px;
+  color: var(--color-text-tertiary);
   font-size: 10px;
-  color: var(--text-tertiary);
+  line-height: 14px;
+  white-space: nowrap;
 }
 
-.provider-nav-add {
-  margin-top: 4px;
+.provider-nav-dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
 }
 
-.provider-nav-add .provider-nav-name {
-  color: var(--text-secondary);
-  font-weight: 400;
+/* ---------- 空态 ---------- */
+
+.provider-nav-empty {
+  margin: 4px 4px 0;
+  padding: 14px 10px;
+  border-radius: 10px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.55;
 }
 
-/* 删除按钮：平时不占位，行 hover / 键盘聚焦时出现在行尾，顶掉右侧徽标。
-   用 opacity 而不是 display 隐藏，键盘 Tab 才够得着它 */
+.provider-nav-empty-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.provider-nav-empty-hint {
+  margin: 4px 0 0;
+}
+
+/* 收起态不展示空态文案，避免图标轨道里塞一段文字 */
+.provider-nav-column:not(.is-expanded) .provider-nav-empty {
+  display: none;
+}
+
+/* ---------- 删除按钮 ---------- */
+
 .provider-nav-remove {
   position: absolute;
-  top: 50%;
-  right: 5px;
+  top: 0;
+  right: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  transform: translateY(-50%);
   border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-tertiary);
+  border-radius: 6px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-tertiary);
+  box-shadow: 0 0 0 1px var(--color-border-primary);
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transition: background var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+  transition:
+    opacity var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .provider-nav-item:hover .provider-nav-remove,
@@ -207,51 +427,78 @@
   pointer-events: auto;
 }
 
+.provider-nav-remove:hover {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.is-expanded .provider-nav-remove {
+  top: 50%;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  background: transparent;
+  box-shadow: none;
+}
+
+.is-expanded .provider-nav-remove:hover {
+  background: var(--color-error-light);
+}
+
 /* 徽标与删除按钮共用行尾，hover 时让位，避免行宽来回跳 */
-.provider-nav-item:hover .provider-nav-current,
-.provider-nav-item:hover .provider-nav-draft {
+.is-expanded .provider-nav-item:hover .provider-nav-trailing {
   visibility: hidden;
 }
 
-.provider-nav-remove:hover {
-  background: var(--color-danger-light, var(--color-bg-tertiary));
-  color: var(--color-danger);
+@media (hover: none) {
+  .provider-nav-remove {
+    opacity: 0.65;
+    pointer-events: auto;
+  }
 }
 
-.provider-nav-add:hover .provider-nav-icon.is-add {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+/* ---------- 底部：展开 / 收起 ---------- */
+
+.provider-nav-foot {
+  flex-shrink: 0;
+  padding: 6px 0 10px;
+}
+
+.is-expanded .provider-nav-foot {
+  padding: 6px 8px 10px;
 }
 
 .provider-nav-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 100%;
-  margin-top: 8px;
-  padding: 6px;
+  gap: 6px;
+  width: 36px;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
-  color: var(--text-tertiary);
-  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: inherit;
+  font-size: 11.5px;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.is-expanded .provider-nav-toggle {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0 8px;
 }
 
 .provider-nav-toggle:hover {
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
-}
-
-.provider-nav-toggle.is-active .provider-nav-toggle-caret {
-  transform: rotate(180deg);
-}
-
-.provider-nav-toggle-caret {
-  flex-shrink: 0;
-  transition: transform var(--transition-fast);
 }
 
 .provider-nav-toggle-label {
@@ -261,60 +508,10 @@
   white-space: nowrap;
 }
 
-/* ---------- 窄容器：图标条 ---------- */
-
-@container (max-width: 759px) {
-  .provider-nav {
-    padding: 8px 6px;
-  }
-
-  .provider-nav-header {
-    display: none;
-  }
-
-  .provider-nav-item {
-    justify-content: center;
-    gap: 0;
-    height: 34px;
-    padding: 0;
-  }
-
-  .provider-nav-copy,
-  .provider-nav-current,
-  .provider-nav-draft {
-    display: none;
-  }
-
-  /* 图标条只有 34px 宽：删除收成右上角小徽标，格子主体保留给「点击切换」。
-     整格覆盖会把选中入口完全挡死——hover 后所有点击都落到删除按钮上 */
-  .provider-nav-remove {
-    top: 1px;
-    right: 1px;
-    width: 18px;
-    height: 18px;
-    transform: none;
-    border-radius: 6px;
-    background: var(--color-bg-elevated);
-    box-shadow: 0 0 0 1px var(--color-border-primary);
-  }
-
-  .provider-nav-remove svg {
-    width: 11px;
-    height: 11px;
-  }
-
-  .provider-nav-dot {
-    box-shadow: 0 0 0 2px var(--color-bg-secondary);
-  }
-
+@media (prefers-reduced-motion: reduce) {
+  .provider-nav-item,
+  .provider-nav-remove,
   .provider-nav-toggle {
-    width: 30px;
-    height: 30px;
-    margin: 8px auto 0;
-    padding: 0;
-  }
-
-  .provider-nav-toggle-label {
-    display: none;
+    transition: none;
   }
 }

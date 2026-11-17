@@ -3,6 +3,7 @@
     v-model="internalShow"
     :title="title"
     :size="size"
+    :z-index="10100"
     :mask-closable="false"
     :closable="!loading"
   >

@@ -20,6 +20,28 @@
           </button>
         </div>
 
+        <!-- 用户身份与注销置于顶部：身份信息与退出属于会话级操作，应与导航同级可见 -->
+        <div v-if="authInfo && !authInfo.is_local && authInfo.authenticated" class="auth-section">
+          <div class="auth-user">
+            <div class="auth-user-icon">
+              <component :is="UserIcon" :size="16" />
+            </div>
+            <div class="auth-user-info">
+              <span class="auth-user-name">{{ authInfo.display_name || authInfo.username || ($t('sidebar.remoteAccess') || '远程访问') }}</span>
+              <span class="auth-user-status">{{ $t('sidebar.authenticated') || '已认证' }}</span>
+            </div>
+            <button
+              class="logout-btn"
+              :title="$t('sidebar.logout') || '注销'"
+              @click="handleLogout"
+            >
+              <component :is="LogOutIcon" :size="16" />
+              <span>{{ $t('sidebar.logout') || '注销' }}</span>
+            </button>
+          </div>
+          <div class="auth-divider" />
+        </div>
+
         <div class="sidebar-body">
           <!-- 加载状态 -->
           <div v-if="loading" class="loading-state">
@@ -148,23 +170,7 @@
             </div>
           </div>
 
-          <!-- 用户信息 & 注销（仅远程登录时显示） -->
-          <div v-if="authInfo && !authInfo.is_local && authInfo.authenticated" class="auth-section">
-            <div class="auth-divider" />
-            <div class="auth-user">
-              <div class="auth-user-icon">
-                <component :is="UserIcon" :size="16" />
-              </div>
-              <div class="auth-user-info">
-                <span class="auth-user-label">{{ $t('sidebar.remoteAccess') || '远程访问' }}</span>
-                <span class="auth-user-status">{{ $t('sidebar.authenticated') || '已认证' }}</span>
-              </div>
-            </div>
-            <button class="logout-btn" @click="handleLogout">
-              <component :is="LogOutIcon" :size="16" />
-              <span>{{ $t('sidebar.logout') || '注销' }}</span>
-            </button>
-          </div>
+          <!-- 用户信息与注销已移至侧栏顶部，此处不再重复 -->
         </div>
       </div>
     </aside>
@@ -212,7 +218,14 @@ const info = ref<SystemInfo>({
   uptime_start: '',
 })
 
-const authInfo = ref<{ is_local: boolean; auth_enabled: boolean; authenticated: boolean } | null>(null)
+const authInfo = ref<{
+  is_local: boolean
+  auth_enabled: boolean
+  authenticated: boolean
+  username?: string | null
+  display_name?: string | null
+  role?: string | null
+} | null>(null)
 
 async function fetchInfo() {
   loading.value = true
@@ -249,7 +262,7 @@ async function handleLogout() {
 
 function openApiUrl() {
   const url = info.value.api_url || `${window.location.protocol}//${window.location.host}`
-  // 桌面 pywebview 环境下 window.open 可能被拦截，用 a 标签兜底
+  // 桌面 pywebview 环境可能拦截 window.open，改用 a 标签打开
   const a = document.createElement('a')
   a.href = url
   a.target = '_blank'

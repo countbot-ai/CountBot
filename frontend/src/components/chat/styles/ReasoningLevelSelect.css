@@ -4,6 +4,8 @@
     position: relative;
     display: inline-flex;
     min-width: 0;
+    /* 思考档位保持完整展示，避免被右侧工作空间挤压 */
+    flex-shrink: 0;
 }
 
 .reasoning-select-trigger {
@@ -83,6 +85,20 @@
 
 .reasoning-select-option.is-active {
     background: var(--color-accent-alpha);
+}
+
+.reasoning-select-option.is-off {
+    margin-top: 4px;
+    border-top: 1px solid var(--color-border-secondary);
+    border-radius: 0 0 8px 8px;
+    padding-top: 8px;
+}
+
+.reasoning-select-option.is-off:first-child {
+    margin-top: 0;
+    border-top: none;
+    border-radius: 8px;
+    padding-top: 6px;
 }
 
 .reasoning-select-option-name {

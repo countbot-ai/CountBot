@@ -1,9 +1,34 @@
 
 .channels-config {
-  padding: var(--spacing-md);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  gap: 12px;
+}
+
+/* 工具条：状态统计在左，操作按钮在右 */
+.channels-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-elevated);
+}
+
+.icon-action {
+  width: 32px;
+  padding: 0;
 }
 
 .section-header {
@@ -183,52 +208,58 @@
 }
 
 .tutorial-link {
-  height: 36px;
-  padding: 0 14px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  color: var(--text-primary);
-  text-decoration: none;
-  transition: all 0.2s;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
   flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 500;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .tutorial-link:hover {
-  background: var(--bg-hover);
-  color: var(--color-primary);
-  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-secondary);
+  color: var(--color-text-primary);
 }
 
+/* 刷新：与其它页面的图标按钮同一语言，不加边框与底色 */
 .refresh-button {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  min-width: 36px !important;
-  min-height: 36px !important;
-  background: var(--bg-secondary) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--text-secondary) !important;
-  box-shadow: none !important;
-  transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  padding: 0;
   flex-shrink: 0;
+  border: none !important;
+  border-radius: var(--radius-sm);
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--color-text-tertiary) !important;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .refresh-button:hover {
-  background: var(--bg-hover) !important;
-  color: var(--color-primary) !important;
-  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-tertiary) !important;
+  color: var(--color-text-primary) !important;
+  border: none !important;
   box-shadow: none !important;
 }
 
@@ -365,77 +396,37 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* 网格布局 */
+/* 单列列表：整块容器 + 行间发丝分割，避免一屏散落的卡片 */
 .channels-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-
-/* 卡片样式 */
-.channel-card {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  display: block;
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
   overflow: hidden;
-  transition: all 0.2s ease;
-  position: relative;
 }
 
-.channel-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
+.channel-card {
+  min-width: 0;
   background: transparent;
-  transition: all 0.2s;
+  border: 0;
+  border-radius: 0;
+  transition: background var(--transition-fast);
 }
 
-.channel-card.is-running::before {
-  background: linear-gradient(90deg, var(--color-success), var(--color-success));
-}
-
-.channel-card.is-enabled::before {
-  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+.channel-card + .channel-card {
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .channel-card:hover {
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-sm);
+  background: var(--color-bg-secondary);
 }
 
 .channel-card.is-expanded {
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.channel-card.is-recommended::after {
-  content: '✓';
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 100%);
-  color: white;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-sm);
-  z-index: 1;
+  background: var(--color-bg-secondary);
 }
 
 .channel-card.is-planned {
   opacity: 0.65;
-}
-
-.channel-card.is-planned::before {
-  background: linear-gradient(90deg, var(--text-tertiary), var(--text-secondary));
 }
 
 .channel-card.is-planned:hover {
@@ -443,51 +434,42 @@
 }
 
 /* 卡片头部 */
-.card-header {
+.channel-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 12px 16px;
   cursor: pointer;
   user-select: none;
 }
 
 .channel-icon-box {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: transform 0.2s;
-}
-
-.channel-card:hover .channel-icon-box {
-  transform: scale(1.05);
+  overflow: hidden;
 }
 
 .icon-inner {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.icon-inner svg {
+/* v-html 注入的 svg 不带 scoped 属性，必须用 :deep 才能控制尺寸 */
+.icon-inner :deep(svg) {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 1px 2px var(--color-shadow));
+  display: block;
 }
-
-/* 渠道图标背景 - 使用中性色 */
-.icon-telegram { background: var(--bg-tertiary); }
-.icon-discord { background: var(--bg-tertiary); }
-.icon-qq { background: var(--bg-tertiary); }
-.icon-wechat { background: var(--bg-tertiary); }
-.icon-dingtalk { background: var(--bg-tertiary); }
-.icon-feishu { background: var(--bg-tertiary); }
 
 /* 渠道元信息 */
 .channel-meta {
@@ -498,38 +480,39 @@
 .channel-name {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .channel-name h4 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   margin: 0;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .channel-desc {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
   margin: 0;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
+  line-height: 1.5;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 徽章样式 */
 .badge {
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: var(--font-weight-medium);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  line-height: 1;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .badge-success {
@@ -539,12 +522,12 @@
 
 .badge-primary {
   background: var(--color-bg-tertiary);
-  color: var(--color-primary);
+  color: var(--color-text-primary);
 }
 
 .badge-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
 }
 
 .pulse-dot {
@@ -566,31 +549,29 @@
 
 /* 展开按钮 */
 .expand-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  min-width: 32px !important;
-  min-height: 32px !important;
-  border: 1px solid transparent !important;
-  background: var(--bg-secondary) !important;
-  color: var(--text-secondary) !important;
-  box-shadow: none !important;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
   flex-shrink: 0;
 }
 
 .expand-btn:hover {
-  background: var(--bg-hover) !important;
-  color: var(--text-primary) !important;
-  border-color: var(--color-border-primary) !important;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .expand-btn svg {
-  transition: transform 0.2s;
+  transition: transform var(--transition-fast);
 }
 
 .expand-btn.is-expanded svg {
@@ -598,14 +579,14 @@
 }
 
 /* 卡片主体 */
-.card-body {
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+.channel-body {
+  border-top: 1px solid var(--color-border-primary);
+  background: var(--color-bg-secondary);
   overflow: hidden;
 }
 
-.card-body-inner {
-  padding: 16px;
+.channel-body-inner {
+  padding: 14px 16px 16px;
 }
 
 /* 计划中渠道提示 */
@@ -989,14 +970,14 @@
     flex-shrink: 0;
   }
 
-  .card-header {
-    padding: 14px;
+  .channel-head {
+    padding: 12px;
     gap: 10px;
   }
 
   .channel-icon-box {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
   }
 
   .icon-inner {
@@ -1067,14 +1048,14 @@
     border-radius: 10px;
   }
 
-  .card-header {
-    padding: 12px;
+  .channel-head {
+    padding: 10px 12px;
   }
 
   .channel-icon-box {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
   }
 
   .icon-inner {
@@ -1094,4 +1075,27 @@
     font-size: 10px;
     padding: 2px 6px;
   }
+}
+
+/* ---------- 状态色：统一用主色与灰阶，仅在文案上区分状态 ---------- */
+
+.status-dot.running,
+.pulse-dot {
+  background: var(--color-accent);
+  box-shadow: none;
+  animation: none;
+}
+
+.badge-success {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.badge-success .pulse-dot {
+  background: var(--color-accent);
+}
+
+.header-icon-wrapper.success {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
 }

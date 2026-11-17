@@ -1,6 +1,4 @@
-/**
- * Skills 状态管理
- */
+/** Skills 状态管理 */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -13,7 +11,9 @@ export interface Skill {
     autoLoad: boolean
     hasConfig: boolean
     requirements: string[]
-    source?: 'workspace' | 'builtin' | 'openclaw'
+    source?: 'workspace' | 'builtin' | 'openclaw' | 'shared'
+    /** 随应用分发的内置技能（初始化时播种进工作区，非用户自建） */
+    bundled?: boolean
 }
 
 export interface SkillDetail extends Skill {
@@ -47,9 +47,7 @@ export const useSkillsStore = defineStore('skills', () => {
 
     // Actions
 
-    /**
-     * 加载技能列表
-     */
+    /** 加载技能列表 */
     async function loadSkills() {
         loading.value = true
         error.value = null
@@ -72,9 +70,7 @@ export const useSkillsStore = defineStore('skills', () => {
         }
     }
 
-    /**
-     * 获取技能详情
-     */
+    /** 获取技能详情 */
     async function getSkill(name: string): Promise<SkillDetail> {
         try {
             const response = await skillsAPI.get(name)
@@ -89,7 +85,8 @@ export const useSkillsStore = defineStore('skills', () => {
                     autoLoad: response.autoLoad,
                     hasConfig: response.hasConfig,
                     requirements: response.requirements,
-                    source: response.source
+                    source: response.source,
+                    bundled: response.bundled
                 }
             }
 
@@ -100,9 +97,7 @@ export const useSkillsStore = defineStore('skills', () => {
         }
     }
 
-    /**
-     * 创建技能
-     */
+    /** 创建技能 */
     async function createSkill(data: CreateSkillRequest): Promise<SkillDetail> {
         loading.value = true
         error.value = null
@@ -129,9 +124,7 @@ export const useSkillsStore = defineStore('skills', () => {
         }
     }
 
-    /**
-     * 更新技能
-     */
+    /** 更新技能 */
     async function updateSkill(name: string, data: UpdateSkillRequest): Promise<SkillDetail> {
         loading.value = true
         error.value = null
@@ -161,9 +154,7 @@ export const useSkillsStore = defineStore('skills', () => {
         }
     }
 
-    /**
-     * 删除技能
-     */
+    /** 删除技能 */
     async function deleteSkill(name: string): Promise<void> {
         loading.value = true
         error.value = null
@@ -183,9 +174,7 @@ export const useSkillsStore = defineStore('skills', () => {
         }
     }
 
-    /**
-     * 切换技能启用状态
-     */
+    /** 切换技能启用状态 */
     async function toggleSkill(name: string, enabled: boolean) {
         toggling.value = true
         error.value = null
@@ -204,9 +193,7 @@ export const useSkillsStore = defineStore('skills', () => {
         }
     }
 
-    /**
-     * 重新加载所有技能（热重载）
-     */
+    /** 重新加载所有技能（热重载） */
     async function reloadSkills() {
         loading.value = true
         error.value = null

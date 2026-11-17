@@ -32,6 +32,10 @@
           :default-expanded="false"
           embedded
         />
+        <NativeActivity
+          v-if="message.role === 'assistant' && (message.nativeEvents?.length || 0) > 0"
+          :events="message.nativeEvents || []"
+        />
         <InterleavedMessage
           :blocks="interleavedBlocks"
           :is-replaying="isReplaying"
@@ -40,6 +44,10 @@
 
       <!-- 传统模式：工具 / 工作流 / 正文依次排列 -->
       <div v-else key="traditional-mode" class="message-main">
+        <NativeActivity
+          v-if="message.role === 'assistant' && (message.nativeEvents?.length || 0) > 0"
+          :events="message.nativeEvents || []"
+        />
         <!-- 普通工具调用：一条时直接排开，多条才给一个可折叠的分组标题 -->
         <div v-if="shouldShowToolCallsSection" class="tool-calls">
           <div v-if="showToolCallsHead" class="tool-calls-head" @click="toggleToolCalls">
@@ -260,7 +268,13 @@
           v-else-if="message.role !== 'assistant' && message.content"
           class="message-content"
         >
-          {{ message.content }}
+          <div v-if="quotedContent.quote" class="message-quote">
+            <div class="message-quote-head">
+              {{ $t('chat.quote.label') }} · {{ quotedContent.quoteRole === 'assistant' ? $t('chat.quote.assistant') : $t('chat.quote.self') }}
+            </div>
+            <div class="message-quote-text">{{ quotedContent.quote }}</div>
+          </div>
+          <EmojiText :text="quotedContent.body" />
         </div>
       </div>
 
@@ -292,6 +306,15 @@
             />
           </button>
           <button
+            v-if="message.role === 'assistant' && canReadAloud"
+            class="action-btn"
+            :class="{ 'is-copied': speaking }"
+            :title="speaking ? $t('chat.native.stopReading') : $t('chat.native.readAloud')"
+            @click="handleReadAloud"
+          >
+            <component :is="speaking ? SquareIcon : VolumeIcon" :size="14" />
+          </button>
+          <button
             v-if="message.role === 'assistant'"
             class="action-btn"
             :class="{ 'is-copied': copied }"
@@ -300,6 +323,27 @@
           >
             <component
               :is="copied ? CheckIcon : CopyIcon"
+              :size="14"
+            />
+          </button>
+          <button
+            v-if="message.role === 'user'"
+            class="action-btn"
+            :title="$t('chat.resend')"
+            @click="handleResend"
+          >
+            <component
+              :is="RefreshIcon"
+              :size="14"
+            />
+          </button>
+          <button
+            class="action-btn"
+            :title="$t('chat.quoteMessage')"
+            @click="handleQuote"
+          >
+            <component
+              :is="QuoteIcon"
               :size="14"
             />
           </button>
@@ -351,6 +395,8 @@ import {
   Play as PlayIcon,
   Square as SquareIcon,
   Trash2 as TrashIcon,
+  Volume2 as VolumeIcon,
+  Quote as QuoteIcon,
   Users as UsersIcon,
   Loader2 as Loader2Icon,
   LayoutGrid as LayoutGridIcon,
@@ -362,31 +408,41 @@ import { useMermaid } from '@/composables/useMermaid'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useReadAloud } from '@/composables/useReadAloud'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { chatAPI } from '@/api'
 import ToolCallCard from '@/components/chat/ToolCallCard.vue'
 import ReasoningBlock from '@/components/chat/ReasoningBlock.vue'
+import NativeActivity from './NativeActivity.vue'
 import WorkflowComparePanel from '@/components/chat/WorkflowComparePanel.vue'
 import WorkflowListPanel from '@/components/chat/WorkflowListPanel.vue'
 import WorkflowFullscreenModal from '@/components/chat/WorkflowFullscreenModal.vue'
 import SpawnTaskPanel from '@/components/chat/SpawnTaskPanel.vue'
 import InterleavedMessage from '@/components/chat/InterleavedMessage.vue'
 import MessageAttachment from '@/components/chat/MessageAttachment.vue'
+import { EmojiText } from '@/modules/emoji'
 import { normalizeHistoryToolCall } from '@/modules/chat/utils/historyMessages'
+import { splitQuotedContent } from '@/modules/chat/utils/messageQuote'
 import { splitReasoningSections } from '@/utils/reasoningSections'
 import { useChatStore } from '@/store/chat'
-import type { ChatMessage, ChatToolCall, InterleavedRenderBlock, WorkflowAgentState } from '@/types/chat'
+import type { ChatMessage, ChatToolCall, InterleavedRenderBlock, MessageQuote, WorkflowAgentState } from '@/types/chat'
 
 interface Props {
   message: ChatMessage
   /** 本条消息是否正在实时流式输出（用于逐字晕开动画） */
   isStreaming?: boolean
+  /** 当前模型是否启用语音朗读 */
+  ttsEnabled?: boolean
+  ttsProviderId?: string
+  ttsModelId?: string
 }
 
 interface Emits {
   (e: 'regenerate', messageId: string): void
   (e: 'replay-start', messageId: string): void
   (e: 'delete', messageId: string): void
+  (e: 'resend', messageId: string): void
+  (e: 'quote', quote: MessageQuote): void
 }
 
 const props = defineProps<Props>()
@@ -396,7 +452,16 @@ const { renderMarkdown } = useMarkdown()
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+const { speaking, speak, stop: stopSpeaking } = useReadAloud()
 const chatStore = useChatStore()
+
+const canReadAloud = computed(
+  () =>
+    Boolean(props.ttsEnabled)
+    && Boolean(props.ttsProviderId)
+    && Boolean(props.ttsModelId)
+    && Boolean(displayContent.value.trim()),
+)
 
 const HISTORY_TOOL_PAGE_SIZE = 20
 const HISTORY_TOOL_PREVIEW_LIMIT = 1200
@@ -469,10 +534,7 @@ const shouldShowToolCallsSection = computed(() => {
   return true
 })
 
-/**
- * 只有一条工具调用时，分组标题是纯冗余：那一行本身就说明了一切。
- * 需要在历史里按需拉取详情时仍保留标题，因为标题是加载入口。
- */
+/** 仅一条工具调用时隐藏分组标题；需按需拉取历史详情时保留 */
 const showToolCallsHead = computed(() => {
   return totalToolCallCount.value > 1 || shouldFetchHistoryToolCalls.value
 })
@@ -569,7 +631,7 @@ watch(
 )
 
 // ---- Workflow Run Panel State ----
-// 存储每个 workflow_run toolCall 的面板展开状态（undefined = 自动，true/false = 用户手动）
+// 每个 workflow_run 面板的展开状态（undefined = 自动，true/false = 手动）
 const wfPanelExpanded = ref<Record<string, boolean>>({})
 // 存储每个 workflow_run 面板的并排对比模式状态
 const wfCompareMode = ref<Record<string, boolean>>({})
@@ -581,11 +643,7 @@ const fullscreenWorkflowAgents = ref<Record<string, any>>({})
 // 存储每个 spawn toolCall 的面板展开状态
 const spawnPanelExpanded = ref<Record<string, boolean>>({})
 
-/**
- * 判断 workflow 面板是否展开
- * - 用户手动切换过：使用手动状态
- * - 否则：运行中自动展开，完成后折叠
- */
+/** 判断 workflow 面板是否展开：手动状态优先，否则运行中展开 */
 const isWfPanelOpen = (tcId: string, status?: string): boolean => {
   if (wfPanelExpanded.value[tcId] !== undefined) return wfPanelExpanded.value[tcId]
   if (historyToolCallsLoaded.value && inlineToolCalls.value.length === 0 && hasHistoryWorkflowTool.value) {
@@ -599,9 +657,7 @@ const toggleWorkflowPanel = (tcId: string, status?: string) => {
   wfPanelExpanded.value = { ...wfPanelExpanded.value, [tcId]: !cur }
 }
 
-/**
- * 打开全屏模态框
- */
+/** 打开全屏模态框 */
 const openFullscreen = (toolCall: ChatToolCall) => {
   fullscreenWorkflowAgents.value = toolCall.workflowAgents || {}
   showFullscreenModal.value = true
@@ -685,7 +741,7 @@ onMounted(() => {
   initAvatars()
 })
 
-// 字面量 `<!--` 会被 esbuild 依赖扫描识别为 HTML 注释，故以 \x3C / \x3E 转义，语义等价。
+// 字面量 `<!--` 会被 esbuild 识别为 HTML 注释，故以 \x3C / \x3E 转义
 const WORKFLOW_META_RE = /\n?\n?\x3C!--WORKFLOW_EXEC:[\s\S]*?:WORKFLOW_EXEC--\x3E$/u
 const PIPELINE_WORKFLOW_HEADER = '# Pipeline Workflow Results'
 
@@ -751,6 +807,9 @@ const displayContent = computed(() => {
   return props.message.content || ''
 })
 
+/** 用户消息可能以引用前缀开头，拆出来单独渲染成引用卡片 */
+const quotedContent = computed(() => splitQuotedContent(displayContent.value || ''))
+
 const hasWorkflowResult = computed(() => {
   return hasHistoryWorkflowTool.value || effectiveToolCalls.value.some(
     toolCall => toolCall.name === 'workflow_run'
@@ -775,9 +834,7 @@ const embeddedReasoningContent = computed(() => {
     .join('\n\n---\n\n')
 })
 
-// 工作流结果折叠后真正要展示的正文；思考过程在下方会单独走 ReasoningBlock。
-// 没有可拆分的正文时（例如流式过程中只收到 `## Reasoning`），正文保持为空，
-// 避免把思考过程再原样渲染一遍。
+// 工作流折叠后展示的正文；无可拆分正文时保持为空，思考过程单独渲染
 const workflowBodyContent = computed(() => {
   const sections = workflowReasoningSections.value
   if (!sections) return displayContent.value
@@ -794,10 +851,7 @@ const renderedContent = computed(() => {
 
 useMermaid(rootEl, [renderedContent, replayContent, () => effectiveToolCalls.value], { deep: true })
 
-// ---- 规则 4 - 流式打字：对正在输出的尾部字符做逐字晕开 ----
-// v-html 是全量重渲染，无法在模板层拆字；这里在 DOM 更新后把最后一个
-// 文本节点的尾部 N 个字符包成 span.stream-char，由 CSS 完成
-// 90ms blur(6px)→清晰、相邻字 30ms 错开的波浪晕开。
+// 规则 4 - 流式打字：DOM 更新后将尾部字符包成 span.stream-char，由 CSS 晕开
 const TYPEWRITER_TAIL = 12
 
 const clearStreamChars = (host: HTMLElement) => {
@@ -856,10 +910,7 @@ watch(
   { flush: 'post' }
 )
 
-/**
- * 判断是否使用交织模式展示
- * 条件：有内容、有工具调用、且没有 workflow_run 或 spawn
- */
+/** 判断是否使用交织模式：有内容、有工具调用且无 workflow_run/spawn */
 const useInterleavedMode = computed(() => {
   if (!displayContent.value || inlineToolCalls.value.length === 0) {
     return false
@@ -873,15 +924,7 @@ const useInterleavedMode = computed(() => {
   return !hasSpecialTools
 })
 
-/**
- * 交织渲染块：把正文与工具调用按发生顺序摊平，让「正文 → 工具 → 正文」按真实
- * 执行顺序呈现，而不是把所有正文堆在一起、所有工具堆在另一处。
- *
- * - 实时消息带有 message.blocks（流式过程中记录的顺序），直接按记录还原；
- * - 历史消息与旧缓存没有顺序记录，按「工具在前、正文在后」兜底——助手正文是整轮
- *   结束后的结论，工具调用必然发生在它之前；
- * - 重放沿用原有叙事：先逐个露出工具调用，再逐字输出正文。
- */
+/** 交织渲染：按发生顺序混合正文与工具调用，无顺序记录时工具在前 */
 const interleavedBlocks = computed<InterleavedRenderBlock[]>(() => {
   if (isReplaying.value) {
     const replayBlocks: InterleavedRenderBlock[] = inlineToolCalls.value
@@ -945,23 +988,17 @@ const visibleToolCalls = computed(() => {
   return all.slice(0, replayToolIndex.value)
 })
 
-/**
- * 分离出 workflow_run 工具调用
- */
+/** 分离出 workflow_run 工具调用 */
 const workflowToolCalls = computed(() => {
   return visibleToolCalls.value.filter(tc => tc.name === 'workflow_run')
 })
 
-/**
- * 分离出普通工具调用（排除 workflow_run 和 spawn）
- */
+/** 分离出普通工具调用（排除 workflow_run 与 spawn） */
 const regularToolCalls = computed(() => {
   return visibleToolCalls.value.filter(tc => tc.name !== 'workflow_run' && tc.name !== 'spawn')
 })
 
-/**
- * 分离出 spawn 工具调用
- */
+/** 分离出 spawn 工具调用 */
 const spawnToolCalls = computed(() => {
   return visibleToolCalls.value.filter(tc => tc.name === 'spawn')
 })
@@ -978,17 +1015,13 @@ const shouldFuseReasoningReply = computed(() => {
   )
 })
 
-/**
- * 获取普通工具调用是否显示结果（用于重放）
- */
+/** 普通工具调用是否显示结果（用于重放） */
 const shouldShowToolResult = (toolCallId: string): boolean => {
   if (!isReplaying.value) return true // 非重放时始终显示
   return replayToolResultVisible.value[toolCallId] ?? false
 }
 
-/**
- * 获取 spawn 面板中可见的工具调用数量（用于重放）
- */
+/** spawn 面板中可见的工具调用数量（用于重放） */
 const getSpawnVisibleCount = (toolCallId: string): number | undefined => {
   if (!isReplaying.value) return undefined
   return replaySpawnVisibleCounts.value[toolCallId]
@@ -1004,6 +1037,19 @@ const handleRegenerate = () => {
   emit('regenerate', props.message.id)
 }
 
+const handleResend = () => {
+  emit('resend', props.message.id)
+}
+
+const handleQuote = () => {
+  emit('quote', {
+    id: props.message.id,
+    role: props.message.role,
+    // 只引用正文：用户消息自带的引用前缀不跟着继续套娃
+    content: quotedContent.value.body,
+  })
+}
+
 const handleDelete = async () => {
   const confirmed = await confirm({
     title: t('common.confirmDelete'),
@@ -1014,6 +1060,23 @@ const handleDelete = async () => {
   })
   if (confirmed) {
     emit('delete', props.message.id)
+  }
+}
+
+const handleReadAloud = async () => {
+  if (speaking.value) {
+    stopSpeaking()
+    return
+  }
+  try {
+    await speak(
+      displayContent.value,
+      props.ttsProviderId || '',
+      props.ttsModelId || '',
+    )
+  } catch (error: any) {
+    console.error('Failed to read aloud:', error)
+    toast.error(error?.response?.data?.detail || t('chat.native.readAloudFailed'))
   }
 }
 
@@ -1122,9 +1185,7 @@ const showToolCallsSequentially = () => {
   }
 }
 
-/**
- * 查找最近的可滚动祖先元素（message-list-container）。
- */
+/** 查找最近的可滚动祖先元素 */
 const findScrollContainer = (): HTMLElement | null => {
   let el: HTMLElement | null = rootEl.value ?? null
   while (el) {
@@ -1134,9 +1195,7 @@ const findScrollContainer = (): HTMLElement | null => {
   return null
 }
 
-/**
- * 将目标元素滚动到可滚动容器的视口内。
- */
+/** 将目标元素滚动到容器可视区域内 */
 const scrollElementIntoContainer = (target: HTMLElement) => {
   const container = findScrollContainer()
   if (!container) {
@@ -1158,10 +1217,7 @@ const scrollElementIntoContainer = (target: HTMLElement) => {
   }
 }
 
-/**
- * 逐个展示 workflow_run 面板中的子 Agent（每 500ms 一个），完成后调用 onComplete。
- * 每次新 Agent 出现后自动追踪滚动到最新条目。
- */
+/** 逐个展示 workflow 子 Agent，每 500ms 一个，完成后回调 */
 const animateWorkflowAgents = (tc: any, onComplete: () => void) => {
   if (!isReplaying.value) return
   const agents = Object.values(tc.workflowAgents || {})
@@ -1182,10 +1238,7 @@ const animateWorkflowAgents = (tc: any, onComplete: () => void) => {
   }
 }
 
-/**
- * 逐个展示 spawn 面板中的子代理工具调用（每 400ms 一个），完成后调用 onComplete。
- * 前言部分始终显示，工具调用逐个出现，所有工具调用完成后显示总结部分
- */
+/** 逐个展示 spawn 面板中的子代理工具调用（每 400ms 一个），完成后调用 onComplete */
 const animateSpawnToolCalls = (tc: any, onComplete: () => void) => {
   if (!isReplaying.value) return
   const toolCalls = tc.spawn_task?.tool_call_records || []
@@ -1202,8 +1255,7 @@ const animateSpawnToolCalls = (tc: any, onComplete: () => void) => {
     })
     replayTimer = window.setTimeout(() => animateSpawnToolCalls(tc, onComplete), 400)
   } else {
-    // 所有工具调用显示完毕，继续下一个工具调用
-    // 总结部分会通过 showEpilogue computed 自动显示
+    // 全部展示完毕，总结部分由 showEpilogue 自动显示
     onComplete()
   }
 }
@@ -1252,9 +1304,7 @@ const stopReplay = () => {
   }
 }
 
-/**
- * 交织模式重放：先逐个显示工具调用，然后显示文字内容
- */
+/** 交织模式重放：先逐个显示工具调用，再显示文字内容 */
 const startInterleavedReplay = () => {
   if (!isReplaying.value) return
   
@@ -1269,9 +1319,7 @@ const startInterleavedReplay = () => {
   }
 }
 
-/**
- * 交织模式：逐个显示工具调用
- */
+/** 交织模式：逐个显示工具调用 */
 const showInterleavedTools = () => {
   if (!isReplaying.value) return
   

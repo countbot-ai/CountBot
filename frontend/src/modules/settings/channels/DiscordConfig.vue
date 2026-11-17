@@ -1,17 +1,14 @@
 <template>
   <div class="discord-config">
-    <div class="config-section">
-      <div class="config-label config-label-switch">
-        <span>{{ t('settings.channels.discord.enabled') }}</span>
-        <SwitchToggle
-          v-model="localConfig.enabled"
-          :width="52"
-          :height="28"
-          :aria-label="t('settings.channels.discord.enabled')"
-          @change="handleChange"
-        />
-      </div>
-    </div>
+    <SettingsRow :label="t('settings.channels.discord.enabled')">
+      <SwitchToggle
+        v-model="localConfig.enabled"
+        :width="52"
+        :height="28"
+        :aria-label="t('settings.channels.discord.enabled')"
+        @change="handleChange"
+      />
+    </SettingsRow>
 
     <details class="advanced-group">
       <summary class="advanced-summary">
@@ -24,27 +21,21 @@
       </div>
     </details>
 
-    <div class="config-section">
-      <label class="config-label">
+    <SettingsRow :description="t('settings.channels.discord.tokenHint')" wide-control>
+      <template #label>
         {{ t('settings.channels.discord.token') }}
         <span class="required">*</span>
-      </label>
+      </template>
       <input
         type="password"
         v-model="localConfig.token"
         @input="handleChange"
         :placeholder="t('settings.channels.discord.tokenPlaceholder')"
-        class="config-input"
+        class="co-input"
       />
-      <p class="config-hint">
-        {{ t('settings.channels.discord.tokenHint') }}
-      </p>
-    </div>
+    </SettingsRow>
 
-    <div class="config-section">
-      <label class="config-label">
-        {{ t('settings.channels.discord.allowFrom') }}
-      </label>
+    <SettingsRow :label="t('settings.channels.discord.allowFrom')" :description="t('settings.channels.discord.allowFromHint')" layout="block">
       <div class="allow-list">
         <div
           v-for="(_, index) in localConfig.allow_from"
@@ -56,7 +47,7 @@
             v-model="localConfig.allow_from[index]"
             @input="handleChange"
             :placeholder="t('settings.channels.discord.userIdPlaceholder')"
-            class="config-input"
+            class="co-input"
           />
           <button
             @click="removeAllowUser(index)"
@@ -74,10 +65,7 @@
           + {{ t('settings.channels.discord.addUser') }}
         </button>
       </div>
-      <p class="config-hint">
-        {{ t('settings.channels.discord.allowFromHint') }}
-      </p>
-    </div>
+    </SettingsRow>
 
     <div class="config-actions">
       <button type="button" @click="handleTest" :disabled="!localConfig.token || testing" class="test-button">
@@ -92,6 +80,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import ChannelRouteConfig from './ChannelRouteConfig.vue'
+import { SettingsRow } from '../ui'
 
 const { t } = useI18n()
 

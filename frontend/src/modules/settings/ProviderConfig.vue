@@ -1,144 +1,186 @@
 <template>
-  <div class="provider-config">
-    <div class="section-header">
-      <h3 class="section-title">{{ $t('settings.providers.title') }}</h3>
-
-      <div class="section-actions">
-        <Button
-          variant="outline"
-          size="sm"
-          :icon="LayoutGridIcon"
-          @click="showPresetPanel = true"
-        >
-          {{ $t('settings.providers.presetPanel.open') }}
-        </Button>
-      </div>
-    </div>
-
-    <!-- 已保存 / 当前草稿对照 -->
-    <section class="state-grid">
-      <div class="state-card">
-        <div class="state-head">
-          <span class="state-label">{{ $t('settings.providers.presetPanel.savedSnapshot') }}</span>
-        </div>
-        <div class="state-stack">
-          <span class="state-provider">{{ savedSnapshot.provider }}</span>
-          <strong class="state-model">{{ savedSnapshot.model }}</strong>
-        </div>
-      </div>
-
-      <div class="state-card" :class="{ 'is-dirty': hasDraftChanges }">
-        <div class="state-head">
-          <span class="state-label">{{ $t('settings.providers.presetPanel.currentDraft') }}</span>
-          <span v-if="draftStateHint" class="state-flag">{{ draftStateHint }}</span>
-        </div>
-        <div class="state-stack">
-          <span class="state-provider">{{ draftSnapshot.provider }}</span>
-          <strong class="state-model">{{ draftSnapshot.model }}</strong>
-        </div>
-      </div>
-    </section>
-
+  <div class="provider-config" :class="{ 'is-rail-expanded': railExpanded }">
     <div class="provider-workspace">
       <ProviderNavList
         :items="navigationProviders"
         :selected-id="selectedProvider"
-        :title="$t('settings.providers.selectProvider')"
-        :add-label="$t('settings.providers.addProvider')"
+        :title="$t('settings.providers.sidebar.title')"
+        :add-label="$t('settings.providers.sidebar.add')"
         :remove-label="$t('settings.providers.removeProvider')"
-        :current-label="$t('settings.providers.currentModel')"
-        :show-all="showAllProviders"
-        :hidden-count="hiddenProviderCount"
-        :expand-label="$t('settings.providers.filter.showAll', { count: hiddenProviderCount })"
-        :collapse-label="$t('settings.providers.filter.showConfiguredOnly')"
+        :current-label="$t('settings.providers.currentBadge')"
+        :expanded="railExpanded"
         @select="selectProvider"
         @add="showAddProvider = true"
         @remove="handleRemoveProvider"
-        @toggle-show-all="showAllProviders = !showAllProviders"
+        @toggle-expanded="railExpanded = !railExpanded"
       />
 
       <section v-if="selectedProvider" class="provider-detail">
         <header class="provider-detail-header">
-          <div class="provider-detail-title">
-            <ProviderIcon
-              class="provider-detail-icon"
-              :provider-id="selectedProvider"
-              :size="22"
+            <div class="provider-detail-identity">
+              <span class="provider-detail-logo">
+                <ProviderIcon :provider-id="selectedProvider" :size="22" />
+              </span>
+              <div class="provider-detail-copy">
+                <div class="provider-detail-title-row">
+                  <h4>{{ selectedProviderDisplayName }}</h4>
+                  <span class="status-pill" :class="selectedProviderSelectable ? 'ready' : 'warning'">
+                    {{ selectedProviderStatusText }}
+                  </span>
+                  <span v-if="isCustomProvider" class="provider-type-chip">
+                    {{ $t('settings.providers.detail.customTag') }}
+                  </span>
+                </div>
+                <p class="provider-detail-sub">
+                  <span>{{ selectedProvider }}</span>
+                  <span v-if="endpointLabel" class="provider-detail-sub-sep">·</span>
+                  <span v-if="endpointLabel">{{ endpointLabel }}</span>
+                </p>
+              </div>
+            </div>
+
+            <div class="provider-detail-actions">
+              <button
+                type="button"
+                class="provider-test-btn"
+                :disabled="providerTesting"
+                @click="testProvider"
+              >
+                <Loader2Icon v-if="providerTesting" :size="14" class="provider-test-spin" />
+                <PlugZapIcon v-else :size="14" />
+                <span>{{ providerTesting
+                  ? $t('settings.providers.detail.testing')
+                  : $t('settings.providers.detail.test') }}</span>
+              </button>
+
+              <label class="provider-enabled">
+                <span>{{ $t('settings.providers.enabled') }}</span>
+                <SwitchToggle
+                  v-model="providerConfig.enabled"
+                  :width="38"
+                  :height="22"
+                  :aria-label="$t('settings.providers.enabled')"
+                />
+              </label>
+            </div>
+          </header>
+
+        <div class="provider-detail-scroll">
+          <Transition name="provider-result">
+            <div
+              v-if="providerTestResult"
+              class="provider-test-result"
+              :class="providerTestResult.success ? 'is-success' : 'is-error'"
+            >
+              <component
+                :is="providerTestResult.success ? CheckCircleIcon : XCircleIcon"
+                :size="15"
+              />
+              <span class="provider-test-result-text">
+                {{ providerTestResult.success
+                  ? $t('settings.providers.detail.testSuccess', {
+                      latency: providerTestResult.latencyMs ?? 0,
+                      count: providerTestResult.modelCount ?? 0,
+                    })
+                  : $t('settings.providers.detail.testFailed', {
+                      error: providerTestResult.error,
+                    }) }}
+              </span>
+              <button
+                type="button"
+                class="provider-test-result-close"
+                :aria-label="$t('common.close')"
+                @click="clearProviderTestResult"
+              >
+                <XIcon :size="12" />
+              </button>
+            </div>
+          </Transition>
+
+          <section class="provider-card">
+            <header class="provider-card-head">
+              <div>
+                <h5 class="provider-card-title">{{ $t('settings.providers.connection.title') }}</h5>
+                <p class="provider-card-desc">{{ $t('settings.providers.connection.desc') }}</p>
+              </div>
+            </header>
+
+            <div class="provider-card-body">
+              <ProviderConnectionPanel
+                v-model:name="providerConfig.name"
+                v-model:base-url="providerConfig.baseUrl"
+                v-model:api-type="providerConfig.apiType"
+                v-model:api-keys="providerConfig.apiKeys"
+                :api-type-options="apiTypeOptions"
+                :is-api-key-optional="isApiKeyOptional"
+                :is-custom-provider="isCustomProvider"
+                :default-base-url="currentDefaultBaseUrl"
+                :provider-name="selectedProviderDisplayName"
+                :thinking-note="selectedProviderThinkingNote"
+              />
+            </div>
+          </section>
+
+          <section class="provider-card provider-card--models">
+            <ProviderModelList
+              :key="selectedProvider"
+              :models="providerModels"
+              :testing-model-id="testingModelId"
+              :catalog-loading="catalogLoading"
+              :source-label="sourceLabel"
+              :context-label="contextLabel"
+              @request-add="showAddModelDialog = true"
+              @fetch-models="openFetchDialog"
+              @test-model="testModel"
+              @edit-model="openModelEditor"
+              @delete-model="deleteModel"
+              @toggle-model="toggleModel"
+              @reorder-model="reorderModel"
             />
-            <h4>{{ selectedProviderMeta?.name || selectedProvider }}</h4>
-            <span class="status-pill" :class="selectedProviderSelectable ? 'ready' : 'warning'">
-              {{ selectedProviderStatusText }}
-            </span>
-            <span v-if="appliedSourceText" class="status-pill neutral">
-              {{ appliedSourceText }}
-            </span>
+          </section>
+        </div>
+
+        <footer class="provider-savebar">
+          <span class="provider-savebar-state" :class="{ 'is-dirty': isProviderDirty }">
+            <span class="provider-savebar-dot" />
+            {{ isProviderDirty
+              ? $t('settings.providers.saveBar.unsaved')
+              : $t('settings.providers.saveBar.saved') }}
+          </span>
+
+          <div class="provider-savebar-actions">
+            <button
+              type="button"
+              class="co-btn co-btn--ghost"
+              :disabled="!isProviderDirty || savingProvider"
+              @click="handleDiscardProvider"
+            >
+              {{ $t('settings.providers.saveBar.discard') }}
+            </button>
+            <button
+              type="button"
+              class="co-btn co-btn--primary"
+              :disabled="!isProviderDirty || savingProvider"
+              @click="handleSaveProvider"
+            >
+              <Loader2Icon v-if="savingProvider" :size="14" class="provider-test-spin" />
+              <span>{{ savingProvider
+                ? $t('common.saving')
+                : $t('settings.providers.saveBar.save') }}</span>
+            </button>
           </div>
-
-          <label class="provider-enabled">
-            <SwitchToggle
-              v-model="providerConfig.enabled"
-              :width="44"
-              :height="26"
-              :aria-label="$t('settings.providers.enabled')"
-            />
-            <span>{{ $t('settings.providers.enabled') }}</span>
-          </label>
-        </header>
-
-        <ProviderConnectionPanel
-          v-model:name="providerConfig.name"
-          v-model:base-url="providerConfig.baseUrl"
-          v-model:api-type="providerConfig.apiType"
-          v-model:api-keys="providerConfig.apiKeys"
-          :api-type-options="apiTypeOptions"
-          :is-api-key-optional="isApiKeyOptional"
-          :is-custom-provider="isCustomProvider"
-          :default-base-url="currentDefaultBaseUrl"
-          :provider-name="selectedProviderMeta?.name || ''"
-          :thinking-note="selectedProviderThinkingNote"
-        />
-
-        <ProviderModelList
-          :key="selectedProvider"
-          :models="providerModels"
-          :testing-model-id="testingModelId"
-          :provider-testing="providerTesting"
-          :catalog-loading="catalogLoading"
-          :source-label="sourceLabel"
-          :context-label="contextLabel"
-          @request-add="showAddModelDialog = true"
-          @fetch-models="openFetchDialog"
-          @test-provider="testProvider"
-          @test-model="testModel"
-          @edit-model="openModelEditor"
-          @delete-model="deleteModel"
-          @toggle-model="toggleModel"
-          @move-model="moveModel"
-        />
-
-        <div class="action-row">
-          <Button
-            variant="secondary"
-            :loading="testing"
-            :disabled="!canTestConnection"
-            @click="testConnection"
-          >
-            {{ testing ? $t('settings.providers.testing') : $t('settings.providers.testConnection') }}
-          </Button>
-        </div>
-
-        <div
-          v-if="testResult"
-          class="test-result"
-          :class="testResult.success ? 'success' : 'error'"
-        >
-          <component :is="testResult.success ? CheckCircleIcon : XCircleIcon" :size="16" />
-          <span>{{ testResult.message }}</span>
-        </div>
+        </footer>
       </section>
 
       <section v-else class="provider-detail is-empty">
-        <p>{{ $t('settings.providers.noProvider') }}</p>
+        <span class="provider-empty-icon">
+          <ServerIcon :size="20" />
+        </span>
+        <p class="provider-empty-title">{{ $t('settings.providers.noProvider') }}</p>
+        <p class="provider-empty-desc">{{ $t('settings.providers.sidebar.emptyHint') }}</p>
+        <Button variant="primary" size="sm" :icon="PlusIcon" @click="showAddProvider = true">
+          {{ $t('settings.providers.sidebar.add') }}
+        </Button>
       </section>
     </div>
 
@@ -155,6 +197,10 @@
     <ModelSettingsDialog
       :model="editingModel"
       :image-options="imageCapabilityOptions"
+      :provider-id="selectedProvider"
+      :api-base="draft.providerConfig.value.baseUrl"
+      :can-share="canShare"
+      :fetch-reasoning-levels="fetchLevels"
       @close="closeModelEditor"
       @save="saveModelEditor"
     />
@@ -162,6 +208,8 @@
     <AddModelDialog
       v-model:show="showAddModelDialog"
       :submitting="addingModel"
+      :provider-id="selectedProvider"
+      :api-base="draft.providerConfig.value.baseUrl"
       @confirm="handleAddModel"
     />
 
@@ -170,27 +218,23 @@
       :providers="addableProviders"
       @select="handleAddProvider"
     />
-
-    <ProviderPresetPanel
-      v-model="showPresetPanel"
-      :current-config="currentDraftConfig"
-      :available-providers="availableProviders"
-      @apply-config="applyExternalConfig"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircle as CheckCircleIcon,
-  LayoutGrid as LayoutGridIcon,
+  Loader2 as Loader2Icon,
+  PlugZap as PlugZapIcon,
+  Plus as PlusIcon,
+  Server as ServerIcon,
+  X as XIcon,
   XCircle as XCircleIcon,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/Button.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
-import ProviderPresetPanel from './ProviderPresetPanel.vue'
 import FetchModelsDialog from './FetchModelsDialog.vue'
 import ProviderNavList from './provider-config/components/ProviderNavList.vue'
 import ProviderConnectionPanel from './provider-config/components/ProviderConnectionPanel.vue'
@@ -204,28 +248,72 @@ import { useProviderModels } from './provider-config/useProviderModels'
 import ProviderIcon from '@/components/ui/ProviderIcon.vue'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
-import { useSettingsStore } from '@/store/settings'
+import {
+  createAdminSource,
+  createUserSource,
+  type ProviderConfigSource,
+} from './provider-config/source'
+import type { ReasoningLevelsResponse } from '@/api'
+import type { ModelUpdatePayload } from './provider-config/types'
+import { resolveProviderLabel } from './provider-config/constants'
 
-const { t } = useI18n()
+const props = withDefaults(
+  defineProps<{
+    /** admin=全局设置；user=普通用户自有配置（/api/me/providers） */
+    scope?: 'admin' | 'user'
+  }>(),
+  { scope: 'admin' },
+)
+
+const { t, te } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
-const settingsStore = useSettingsStore()
 
-const showPresetPanel = ref(false)
+/** 用户侧配置一律私有：共享区块只在管理员视角出现 */
+const canShare = computed(() => props.scope === 'admin')
+
+const source: ProviderConfigSource = props.scope === 'user' ? createUserSource() : createAdminSource()
+
+const fetchLevels = (model: string): Promise<ReasoningLevelsResponse> =>
+  source.api.getReasoningLevels(model)
+
 const showAddProvider = ref(false)
 const showAddModelDialog = ref(false)
 const addingModel = ref(false)
+
+/** 服务商轨道展开偏好：默认展开，并记住用户上次的选择 */
+const RAIL_EXPANDED_STORAGE_KEY = 'CountBot-provider-rail-expanded'
+
+function readRailExpandedPreference(): boolean {
+  try {
+    const stored = window.localStorage.getItem(RAIL_EXPANDED_STORAGE_KEY)
+    return stored === null ? true : stored === '1'
+  } catch {
+    return true
+  }
+}
+
+const railExpanded = ref(readRailExpandedPreference())
+
+watch(railExpanded, expanded => {
+  try {
+    window.localStorage.setItem(RAIL_EXPANDED_STORAGE_KEY, expanded ? '1' : '0')
+  } catch {
+    // 隐私模式等不可写场景：只在本次会话内生效
+  }
+})
 
 /* ------------------------------------------------------------------ */
 /* 三个职责模块：清单导航 / 连接草稿 / 模型清单                          */
 /* ------------------------------------------------------------------ */
 
-const catalog = useProviderCatalog()
+const catalog = useProviderCatalog(source)
 
 const draft = useProviderDraft({
   selectedProvider: catalog.selectedProvider,
   selectedProviderMeta: catalog.selectedProviderMeta,
   availableProviders: catalog.availableProviders,
+  source,
 })
 
 const models = useProviderModels({
@@ -235,15 +323,13 @@ const models = useProviderModels({
   getPrimaryApiKey: draft.getPrimaryApiKey,
   apiBase: computed(() => draft.providerConfig.value.baseUrl),
   apiType: computed(() => draft.providerConfig.value.apiType),
+  source,
 })
 
 const {
-  availableProviders,
   selectedProvider,
-  showAllProviders,
   selectedProviderMeta,
   navigationProviders,
-  hiddenProviderCount,
   addableProviders,
   loadProviders,
   selectProvider,
@@ -253,30 +339,21 @@ const {
 
 const {
   providerConfig,
-  modelName,
-  testing,
-  testResult,
-  isHydrating,
-  isApplyingExternalConfig,
+  isProviderDirty,
+  savingProvider,
   isApiKeyOptional,
   isCustomProvider,
   currentDefaultBaseUrl,
   selectedProviderSelectable,
   selectedProviderStatusText,
   selectedProviderThinkingNote,
-  currentDraftConfig,
-  savedSnapshot,
-  draftSnapshot,
-  appliedSourceText,
-  draftStateHint,
-  hasDraftChanges,
-  canTestConnection,
+  isHydrating,
   hydrateDraft,
   initializeProvider,
   syncProviderDraftToStore,
   syncModelDraftToStore,
-  testConnection,
-  applyExternalConfig,
+  saveProviderConnection,
+  discardDraft,
   createProvider,
   deleteProvider,
 } = draft
@@ -287,6 +364,7 @@ const {
   editingModel,
   testingModelId,
   providerTesting,
+  providerTestResult,
   catalogLoading,
   catalogError,
   fetchedModels,
@@ -298,16 +376,17 @@ const {
   openFetchDialog,
   deleteModel,
   toggleModel,
-  moveModel,
+  reorderModel,
   openModelEditor,
   closeModelEditor,
   saveModelEditor,
   testModel,
   testProvider,
+  clearProviderTestResult,
 } = models
 
 /* ------------------------------------------------------------------ */
-/* 下拉选项                                                            */
+/* 下拉选项与头部摘要                                                  */
 /* ------------------------------------------------------------------ */
 
 const apiTypeOptions = computed(() => [
@@ -331,18 +410,69 @@ const imageCapabilityOptions = computed(() => [
   { value: 'off', label: t('settings.providers.models.supportsImageOff') },
 ])
 
+/** 头部副标题只展示接口主机名，避免长 URL 撑破布局 */
+const endpointLabel = computed(() => {
+  const raw = (providerConfig.value.baseUrl || currentDefaultBaseUrl.value || '').trim()
+  if (!raw) {
+    return ''
+  }
+  try {
+    return new URL(raw).host
+  } catch {
+    return raw
+  }
+})
+
+/** 用户自定义名称优先，否则按当前语言展示供应商本地化名称 */
+const selectedProviderDisplayName = computed(() => {
+  const customName = providerConfig.value.name.trim()
+  if (customName) {
+    return customName
+  }
+  return resolveProviderLabel(
+    selectedProvider.value,
+    t,
+    te,
+    selectedProviderMeta.value?.name || selectedProvider.value,
+  )
+})
+
+/* 测试结果自动淡出：成功提示 3.5s 后自熄，失败保留给用户处理 */
+let testResultTimer: number | undefined
+watch(providerTestResult, result => {
+  if (testResultTimer) {
+    window.clearTimeout(testResultTimer)
+    testResultTimer = undefined
+  }
+  if (result?.success) {
+    testResultTimer = window.setTimeout(() => {
+      clearProviderTestResult()
+    }, 3500)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (testResultTimer) {
+    window.clearTimeout(testResultTimer)
+  }
+})
+
 /* ------------------------------------------------------------------ */
 /* 动作                                                                */
 /* ------------------------------------------------------------------ */
 
 /** 添加模型：成功后关窗，失败留给弹窗让用户改 ID 重试 */
-async function handleAddModel(modelId: string, contextWindow: number | null): Promise<void> {
+async function handleAddModel(
+  modelId: string,
+  contextWindow: number | null,
+  nativeCapabilities?: ModelUpdatePayload['native_capabilities'],
+): Promise<void> {
   if (addingModel.value) {
     return
   }
   addingModel.value = true
   try {
-    const saved = await commitNewModel(modelId, contextWindow)
+    const saved = await commitNewModel(modelId, contextWindow, nativeCapabilities)
     if (saved) {
       showAddModelDialog.value = false
     }
@@ -356,7 +486,61 @@ function handleAddProvider(providerId: string): void {
   if (createProvider(providerId)) {
     // 立刻在左栏出现（带「未保存」），保存成功后标记自动失效
     markProviderAdded(providerId)
-    toast.success(t('settings.providers.addedHint', { provider: providerId }))
+    toast.success(
+      t('settings.providers.addedHint', {
+        provider: resolveProviderLabel(providerId, t, te, providerId),
+      }),
+    )
+  }
+}
+
+/** 保存当前供应商的连接配置 */
+async function handleSaveProvider(): Promise<void> {
+  if (!selectedProvider.value || savingProvider.value) {
+    return
+  }
+  syncProviderDraftToStore()
+  syncModelDraftToStore()
+
+  const saved = await saveProviderConnection()
+  if (saved) {
+    clearProviderTestResult()
+    toast.success(t('settings.saveSuccess'), t('common.success'))
+  }
+}
+
+/** 撤销当前供应商的草稿改动；刚添加还没保存的直接取消添加 */
+function handleDiscardProvider(): void {
+  const providerId = selectedProvider.value
+  if (!providerId) {
+    return
+  }
+
+  const item = navigationProviders.value.find(entry => entry.id === providerId)
+  clearProviderTestResult()
+
+  if (!item?.pendingSave) {
+    discardDraft()
+    return
+  }
+
+  // 刚添加还没落库：把草稿从清单里摘掉，并退回到下一个已接入的供应商
+  unmarkProviderAdded(providerId)
+  const providers = source.settings.value?.providers
+  if (providers) {
+    delete providers[providerId]
+  }
+  const next = navigationProviders.value.find(entry => entry.id !== providerId)
+  selectedProvider.value = next?.id || ''
+  if (!next) {
+    providerConfig.value = {
+      apiKey: '',
+      apiKeys: [''],
+      baseUrl: '',
+      enabled: true,
+      name: '',
+      apiType: 'openai-chat-completions',
+    }
   }
 }
 
@@ -407,7 +591,7 @@ function validateBeforeSave(): string | null {
     return null
   }
   return t('settings.providers.models.emptySaveWarning', {
-    provider: selectedProviderMeta.value?.name || selectedProvider.value,
+    provider: selectedProviderDisplayName.value,
   })
 }
 
@@ -423,8 +607,9 @@ watch(selectedProvider, (newProvider, oldProvider) => {
   }
 
   showFetchDialog.value = false
+  clearProviderTestResult()
 
-  if (isHydrating.value || isApplyingExternalConfig.value) {
+  if (isHydrating.value) {
     return
   }
 
@@ -439,7 +624,6 @@ watch(selectedProvider, (newProvider, oldProvider) => {
   isHydrating.value = false
   syncProviderDraftToStore()
   syncModelDraftToStore()
-  testResult.value = null
 })
 
 watch(providerConfig, () => {
@@ -448,7 +632,8 @@ watch(providerConfig, () => {
   }
   syncProviderDraftToStore()
   syncModelDraftToStore()
-  testResult.value = null
+  // 连接信息改过之后，上一次的测试结果就不再可信
+  clearProviderTestResult()
 }, { deep: true })
 
 watch(providerModels, list => {
@@ -456,18 +641,18 @@ watch(providerModels, list => {
     return
   }
   // 当前选中的模型被删除或隐藏时，回落到第一个可用模型
-  const current = modelName.value
+  const current = draft.modelName.value
   if (current && list.some(model => model.id === current && model.enabled !== false)) {
     return
   }
   const fallback = list.find(model => model.enabled !== false)
   if (fallback) {
-    modelName.value = fallback.id
+    draft.modelName.value = fallback.id
     syncModelDraftToStore()
   }
 }, { deep: true })
 
-watch(() => settingsStore.settings, newSettings => {
+watch(() => source.settings.value, newSettings => {
   if (newSettings && !selectedProvider.value) {
     initializeProvider()
   }
@@ -475,6 +660,17 @@ watch(() => settingsStore.settings, newSettings => {
 
 onMounted(async () => {
   try {
+    // 用户视图按需拉取：settings 就绪后 initializeProvider 才有数据可用
+    if (props.scope === 'user' && source.refresh) {
+      await source.refresh()
+      // model.provider 可能指向共享供应商（只读、不在自有清单），
+      // 清空后让初始化回落到第一个自有供应商，避免草稿落在不可编辑的配置上
+      const view = source.settings.value
+      if (view?.model?.provider && !view.providers?.[view.model.provider]) {
+        view.model.provider = ''
+        view.model.model = ''
+      }
+    }
     await loadProviders()
   } catch {
     toast.error(t('common.error'))

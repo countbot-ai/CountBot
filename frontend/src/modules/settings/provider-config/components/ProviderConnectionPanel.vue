@@ -9,63 +9,100 @@
       />
     </div>
 
-    <div class="form-group form-group-wide">
-      <label class="label">
-        {{ $t('settings.providers.baseUrl') }}
-        <span v-if="defaultBaseUrl" class="label-hint">({{ $t('common.optional') }})</span>
-        <span v-else-if="isCustomProvider" class="label-hint required-hint">*</span>
-      </label>
-      <Input
-        v-model="baseUrl"
-        type="text"
-        :placeholder="baseUrlPlaceholder"
-      />
-      <p class="hint">{{ $t('settings.providers.baseUrlHint') }}</p>
-    </div>
-
-    <div class="form-group form-group-wide">
+    <div class="form-group">
       <label class="label">{{ $t('settings.providers.apiType.label') }}</label>
       <Select v-model="apiType" :options="apiTypeOptions" />
       <p class="hint">{{ $t('settings.providers.apiType.hint') }}</p>
     </div>
 
     <div class="form-group form-group-wide">
-      <label class="label">{{ $t('settings.providers.apiKey') }}</label>
+      <label class="label">
+        {{ $t('settings.providers.baseUrl') }}
+        <span v-if="defaultBaseUrl" class="label-hint">({{ $t('common.optional') }})</span>
+        <span v-else-if="isCustomProvider" class="label-hint required-hint">*</span>
+      </label>
+      <div class="input-with-action">
+        <Input
+          v-model="baseUrl"
+          type="text"
+          :placeholder="baseUrlPlaceholder"
+        />
+        <button
+          v-if="canRestoreDefault"
+          type="button"
+          class="input-action"
+          :title="$t('settings.providers.connection.resetBaseUrl')"
+          @click="useDefaultBaseUrl"
+        >
+          <RotateCcwIcon :size="13" />
+          <span>{{ $t('settings.providers.connection.resetBaseUrl') }}</span>
+        </button>
+      </div>
+      <p class="hint">{{ $t('settings.providers.baseUrlHint') }}</p>
+    </div>
+
+    <div class="form-group form-group-wide">
+      <div class="label-row">
+        <label class="label">{{ $t('settings.providers.apiKey') }}</label>
+        <span v-if="isApiKeyOptional" class="label-tag">
+          {{ $t('common.optional') }}
+        </span>
+      </div>
+
       <div class="api-key-list">
         <div v-for="(_, index) in apiKeys" :key="index" class="api-key-row">
+          <span class="api-key-tag" :class="{ 'is-primary': index === 0 }">
+            {{ index === 0
+              ? $t('settings.providers.connection.primaryKey')
+              : $t('settings.providers.connection.keyLabel', { index: index + 1 }) }}
+          </span>
           <Input
             v-model="apiKeys[index]"
             type="password"
             :placeholder="apiKeyPlaceholder"
-          />
+          >
+            <template #prefix>
+              <KeyRoundIcon :size="14" />
+            </template>
+          </Input>
           <button
             v-if="apiKeys.length > 1"
             type="button"
             class="api-key-remove"
-            :title="$t('common.remove')"
-            :aria-label="$t('common.remove')"
+            :title="$t('settings.providers.connection.removeKey')"
+            :aria-label="$t('settings.providers.connection.removeKey')"
             @click="removeApiKey(index)"
           >
             <XIcon :size="14" />
           </button>
         </div>
       </div>
+
       <div class="api-key-actions">
-        <Button variant="outline" size="sm" :icon="PlusIcon" @click="addApiKey">
-          {{ $t('common.add') }}
+        <Button variant="ghost" size="sm" :icon="PlusIcon" @click="addApiKey">
+          {{ $t('settings.providers.connection.addKey') }}
         </Button>
         <p class="hint api-key-hint">{{ $t('settings.providers.apiKeysHint') }}</p>
       </div>
     </div>
   </div>
 
-  <p v-if="thinkingNote" class="hint provider-capability-note">{{ thinkingNote }}</p>
+  <p v-if="thinkingNote" class="provider-capability-note">
+    <InfoIcon :size="13" class="provider-capability-icon" />
+    <span>{{ thinkingNote }}</span>
+  </p>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus as PlusIcon, X as XIcon } from 'lucide-vue-next'
+import {
+  Info as InfoIcon,
+  KeyRound as KeyRoundIcon,
+  Plus as PlusIcon,
+  RotateCcw as RotateCcwIcon,
+  X as XIcon,
+} from 'lucide-vue-next'
 import Input from '@/components/ui/Input.vue'
 import Select from '@/components/ui/Select.vue'
 import Button from '@/components/ui/Button.vue'
@@ -114,6 +151,17 @@ const apiKeyPlaceholder = computed(() =>
     ? t('settings.providers.apiKeyOptionalPlaceholder')
     : t('settings.providers.apiKeyPlaceholder'),
 )
+
+/** 填了与默认地址不同的地址时，才给「恢复默认」入口 */
+const canRestoreDefault = computed(() => {
+  const current = baseUrl.value.trim().replace(/\/+$/, '')
+  const fallback = (props.defaultBaseUrl || '').trim().replace(/\/+$/, '')
+  return Boolean(fallback) && current !== fallback
+})
+
+function useDefaultBaseUrl(): void {
+  baseUrl.value = props.defaultBaseUrl || ''
+}
 
 function addApiKey(): void {
   apiKeys.value = [...apiKeys.value, '']

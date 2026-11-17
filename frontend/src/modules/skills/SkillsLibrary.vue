@@ -1,647 +1,270 @@
 <template>
   <div class="skills-library">
-    <div class="skills-header">
-      <div class="top-tabs">
+    <div class="skills-toolbar">
+      <div class="filter-tabs">
         <button
-          class="top-tab"
-          :class="{ active: activeTopTab === 'library' }"
-          @click="activeTopTab = 'library'"
+          class="filter-tab"
+          :class="{ active: filterStatus === 'all' }"
+          @click="filterStatus = 'all'"
         >
-          <component
-            :is="PackageIcon"
-            :size="16"
-          />
-          {{ $t('skills.libraryTab') }}
+          {{ $t('skills.all') }}
+          <span class="filter-count">{{ skills.length }}</span>
         </button>
         <button
-          class="top-tab"
-          :class="{ active: activeTopTab === 'countbotGuide' }"
-          @click="activeTopTab = 'countbotGuide'"
+          class="filter-tab"
+          :class="{ active: filterStatus === 'enabled' }"
+          @click="filterStatus = 'enabled'"
         >
-          <component
-            :is="PlusIcon"
-            :size="16"
-          />
-          {{ $t('skills.countbotGuideTab') }}
+          {{ $t('skills.enabled') }}
+          <span class="filter-count">{{ enabledCount }}</span>
         </button>
         <button
-          class="top-tab"
-          :class="{ active: activeTopTab === 'openclawGuide' }"
-          @click="activeTopTab = 'openclawGuide'"
+          class="filter-tab"
+          :class="{ active: filterStatus === 'disabled' }"
+          @click="filterStatus = 'disabled'"
         >
-          <component
-            :is="BookOpenIcon"
-            :size="16"
-          />
-          {{ $t('skills.openclawGuideTab') }}
+          {{ $t('skills.disabled') }}
+          <span class="filter-count">{{ disabledCount }}</span>
+        </button>
+        <button
+          class="filter-tab"
+          :class="{ active: filterStatus === 'autoLoad' }"
+          @click="filterStatus = 'autoLoad'"
+        >
+          {{ $t('skills.autoLoad') }}
+          <span class="filter-count">{{ autoLoadCount }}</span>
         </button>
       </div>
 
-      <div class="header-actions">
-        <button
-          v-if="activeTopTab === 'library'"
-          class="create-btn"
-          @click="handleCreateSkill"
-        >
-          <component
-            :is="PlusIcon"
-            :size="16"
+      <div class="toolbar-actions">
+        <div class="search-box">
+          <component :is="SearchIcon" :size="14" class="search-icon" />
+          <input
+            v-model="searchQuery"
+            class="search-input"
+            type="text"
+            :placeholder="$t('skills.searchPlaceholder')"
+            :aria-label="$t('skills.searchLabel')"
+            @keyup.escape="searchQuery = ''"
           />
-          {{ $t('skills.createSkill') }}
-        </button>
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="search-clear-btn"
+            :title="$t('skills.clearSearch')"
+            :aria-label="$t('skills.clearSearch')"
+            @click="searchQuery = ''"
+          >
+            <component :is="XIcon" :size="13" />
+          </button>
+        </div>
+
+        <div class="view-toggle" role="group" :aria-label="$t('skills.viewMode')">
+          <button
+            class="view-toggle-btn"
+            :class="{ active: viewMode === 'card' }"
+            :title="$t('skills.cardView')"
+            :aria-label="$t('skills.cardView')"
+            @click="setViewMode('card')"
+          >
+            <component :is="LayoutGridIcon" :size="15" />
+          </button>
+          <button
+            class="view-toggle-btn"
+            :class="{ active: viewMode === 'list' }"
+            :title="$t('skills.listView')"
+            :aria-label="$t('skills.listView')"
+            @click="setViewMode('list')"
+          >
+            <component :is="ListIcon" :size="15" />
+          </button>
+        </div>
+
         <button
-          class="refresh-btn"
+          class="icon-btn"
           :disabled="loading"
+          :title="$t('common.refresh')"
+          :aria-label="$t('common.refresh')"
           @click="handleRefresh"
         >
-          <component
-            :is="RefreshIcon"
-            :size="16"
-            :class="{ 'spin': loading }"
-          />
+          <component :is="RefreshIcon" :size="16" :class="{ spin: loading }" />
+        </button>
+
+        <button class="primary-btn" @click="handleCreateSkill">
+          <component :is="PlusIcon" :size="15" />
+          {{ $t('skills.createSkill') }}
         </button>
       </div>
     </div>
 
-    <template v-if="activeTopTab === 'library'">
-      <div
-        v-if="!loading && skills.length > 0"
-        class="stats-bar"
-      >
-        <div class="stat">
-          <component
-            :is="PackageIcon"
-            :size="16"
-          />
-          {{ $t('skills.totalSkills', { count: skills.length }) }}
-        </div>
-        <div class="stat">
-          <component
-            :is="CheckCircleIcon"
-            :size="16"
-          />
-          {{ $t('skills.enabledSkills', { count: enabledCount }) }}
-        </div>
-        <div class="stat">
-          <component
-            :is="ZapIcon"
-            :size="16"
-          />
-          {{ $t('skills.autoLoadSkills', { count: autoLoadCount }) }}
-        </div>
-        <div class="stat">
-          <component
-            :is="BookOpenIcon"
-            :size="16"
-          />
-          {{ $t('skills.openclawSkills', { count: openclawCount }) }}
-        </div>
-      </div>
+    <!-- Loading State -->
+    <div v-if="loading" class="loading-state">
+      <component :is="LoaderIcon" :size="28" class="spin" />
+      <p>{{ $t('common.loading') }}</p>
+    </div>
 
-      <!-- Filter Bar -->
-      <div
-        v-if="!loading && skills.length > 0"
-        class="filter-bar"
-      >
-        <div class="filter-controls">
-          <div class="filter-tabs">
-            <button
-              class="filter-tab"
-              :class="{ active: filterStatus === 'all' }"
-              @click="filterStatus = 'all'"
-            >
-              <component
-                :is="PackageIcon"
-                :size="16"
-              />
-              {{ $t('skills.all') }} ({{ skills.length }})
-            </button>
-            <button
-              class="filter-tab"
-              :class="{ active: filterStatus === 'enabled' }"
-              @click="filterStatus = 'enabled'"
-            >
-              <component
-                :is="CheckCircleIcon"
-                :size="16"
-              />
-              {{ $t('skills.enabled') }} ({{ enabledCount }})
-            </button>
-            <button
-              class="filter-tab"
-              :class="{ active: filterStatus === 'disabled' }"
-              @click="filterStatus = 'disabled'"
-            >
-              <component
-                :is="XCircleIcon"
-                :size="16"
-              />
-              {{ $t('skills.disabled') }} ({{ disabledCount }})
-            </button>
-            <button
-              class="filter-tab"
-              :class="{ active: filterStatus === 'autoLoad' }"
-              @click="filterStatus = 'autoLoad'"
-            >
-              <component
-                :is="ZapIcon"
-                :size="16"
-              />
-              {{ $t('skills.autoLoad') }} ({{ autoLoadCount }})
-            </button>
-          </div>
+    <!-- Error State -->
+    <div v-else-if="error" class="error-state">
+      <component :is="AlertCircleIcon" :size="28" />
+      <p>{{ error }}</p>
+      <button class="secondary-btn" @click="handleRefresh">
+        {{ $t('common.retry') }}
+      </button>
+    </div>
 
-          <div class="search-box">
-            <component
-              :is="SearchIcon"
-              :size="16"
-            />
-            <input
-              v-model="searchQuery"
-              class="search-input"
-              type="search"
-              :placeholder="$t('skills.searchPlaceholder')"
-              :aria-label="$t('skills.searchLabel')"
-              @keyup.escape="searchQuery = ''"
-            >
-            <button
-              v-if="searchQuery"
-              type="button"
-              class="search-clear-btn"
-              @click="searchQuery = ''"
-            >
-              {{ $t('skills.clearSearch') }}
-            </button>
-          </div>
-        </div>
-
-        <p class="filter-summary">
-          {{ filteredSummary }}
-        </p>
-      </div>
-
-      <!-- Loading State -->
-      <div
-        v-if="loading"
-        class="loading-state"
-      >
-        <component
-          :is="LoaderIcon"
-          :size="32"
-          class="spin"
-        />
-        <p>{{ $t('common.loading') }}</p>
-      </div>
-
-      <!-- Error State -->
-      <div
-        v-else-if="error"
-        class="error-state"
-      >
-        <component
-          :is="AlertCircleIcon"
-          :size="32"
-        />
-        <p>{{ error }}</p>
-        <button
-          class="retry-btn"
-          @click="handleRefresh"
-        >
-          {{ $t('common.retry') }}
-        </button>
-      </div>
-
-      <!-- Skills Grid -->
-      <div
-        v-else-if="filteredSkills.length > 0"
-        class="skills-grid"
-      >
-        <div
-          v-for="skill in filteredSkills"
+    <!-- Skills Grid / List -->
+    <div v-else-if="filteredSkills.length > 0" class="skills-scroll">
+      <div v-if="viewMode === 'card'" class="skills-grid">
+        <article
+          v-for="(skill, index) in filteredSkills"
           :key="skill.name"
           class="skill-card"
-          :class="{ 'disabled': !skill.enabled }"
+          :class="{ 'is-disabled': !skill.enabled }"
         >
-          <!-- Card Header -->
-          <div class="card-header">
+          <header class="card-head">
             <div class="skill-info">
-              <component
-                :is="BookOpenIcon"
-                :size="20"
-                class="skill-icon"
-              />
-              <h3 class="skill-name">
-                {{ skill.name }}
-              </h3>
+              <span class="card-index">{{ padIndex(index) }}</span>
+              <component :is="BookOpenIcon" :size="18" class="skill-icon" />
+              <h3 class="skill-name">{{ skill.name }}</h3>
             </div>
             <div class="skill-badges">
-              <span
-                class="source-badge card-source-badge"
-                :class="skill.source"
-              >
+              <span class="source-badge" :class="skill.source">
                 {{ getSourceLabel(skill.source) }}
               </span>
-              <span
-                v-if="skill.autoLoad"
-                class="badge auto-load"
-                :title="$t('skills.autoLoadTooltip')"
-              >
-                <component
-                  :is="ZapIcon"
-                  :size="12"
-                />
+              <span v-if="skill.autoLoad" class="auto-badge" :title="$t('skills.autoLoadTooltip')">
+                <component :is="ZapIcon" :size="11" />
                 {{ $t('skills.autoLoad') }}
               </span>
             </div>
-          </div>
+          </header>
 
-          <!-- Card Body -->
           <div class="card-body">
             <p class="skill-description">
               {{ skill.description || $t('skills.noDescription') }}
             </p>
 
-            <p
-              v-if="skill.source === 'openclaw'"
-              class="card-note"
-            >
+            <p v-if="skill.source === 'openclaw'" class="card-note">
               {{ $t('skills.openclawImportHint') }}
             </p>
 
-            <!-- Requirements -->
-            <div
-              v-if="skill.requirements && skill.requirements.length > 0"
-              class="requirements"
-            >
-              <component
-                :is="AlertCircleIcon"
-                :size="14"
-              />
-              <span class="requirements-label">{{ $t('skills.requirements') }}:</span>
-              <div class="requirements-list">
-                <span
-                  v-for="req in skill.requirements"
-                  :key="req"
-                  class="requirement-tag"
-                >
-                  {{ req }}
-                </span>
-              </div>
+            <div v-if="skill.requirements && skill.requirements.length > 0" class="requirements">
+              <component :is="AlertCircleIcon" :size="13" />
+              <span class="requirements-label">{{ $t('skills.requirements') }}</span>
+              <span v-for="req in skill.requirements" :key="req" class="requirement-tag">
+                {{ req }}
+              </span>
             </div>
           </div>
 
-          <!-- Card Footer -->
-          <div class="card-footer">
-            <button
-              class="view-btn"
-              @click.stop="handleViewSkill(skill.name)"
-            >
-              <component
-                :is="EyeIcon"
-                :size="16"
-              />
+          <footer class="card-foot">
+            <button class="text-btn" @click.stop="handleViewSkill(skill.name)">
+              <component :is="EyeIcon" :size="15" />
               {{ $t('skills.viewDetails') }}
             </button>
-            <button
-              v-if="skill.hasConfig && skill.source !== 'openclaw'"
-              class="config-btn-small"
-              @click.stop="handleQuickEditConfig(skill.name)"
-              :title="$t('skills.editConfig')"
-            >
-              <component
-                :is="SettingsIcon"
-                :size="16"
-              />
+            <div class="card-foot-actions">
+              <button
+                v-if="skill.hasConfig && skill.source !== 'openclaw' && skill.source !== 'shared'"
+                class="icon-btn icon-btn--sm"
+                :title="$t('skills.editConfig')"
+                :aria-label="$t('skills.editConfig')"
+                @click.stop="handleQuickEditConfig(skill.name)"
+              >
+                <component :is="SettingsIcon" :size="15" />
+              </button>
+              <button
+                v-if="userStore.isAdmin && isShareable(skill)"
+                class="icon-btn icon-btn--sm share-toggle-btn"
+                :class="{ 'is-shared': isSkillShared(skill.name) }"
+                :disabled="sharing"
+                :title="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享，所有普通用户可见'"
+                :aria-label="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享'"
+                @click.stop="handleShareSkill(skill)"
+              >
+                <component :is="isSkillShared(skill.name) ? GlobeIcon : ShareIcon" :size="15" />
+              </button>
+              <button
+                class="toggle-btn"
+                :class="{ 'is-on': skill.enabled }"
+                @click.stop="handleToggleSkill(skill.name, !skill.enabled)"
+              >
+                <span class="toggle-track"><span class="toggle-thumb" /></span>
+                {{ getToggleLabel(skill) }}
+              </button>
+            </div>
+          </footer>
+        </article>
+      </div>
+
+      <div v-else class="skills-rows">
+        <div
+          v-for="(skill, index) in filteredSkills"
+          :key="skill.name"
+          class="skill-row"
+          :class="{ 'is-disabled': !skill.enabled }"
+        >
+          <span class="row-index">{{ padIndex(index) }}</span>
+          <div class="row-name-cell">
+            <span class="row-name">{{ skill.name }}</span>
+            <span class="source-badge" :class="skill.source">
+              {{ getSourceLabel(skill.source) }}
+            </span>
+            <span v-if="skill.autoLoad" class="auto-badge" :title="$t('skills.autoLoadTooltip')">
+              <component :is="ZapIcon" :size="11" />
+              {{ $t('skills.autoLoad') }}
+            </span>
+          </div>
+          <p class="row-desc">
+            {{ skill.description || $t('skills.noDescription') }}
+          </p>
+          <div class="row-actions">
+            <button class="text-btn" @click.stop="handleViewSkill(skill.name)">
+              <component :is="EyeIcon" :size="15" />
+              {{ $t('skills.viewDetails') }}
             </button>
+            <!-- 配置 / 共享图标都用固定槽位，缺失时用占位保持后续操作对齐 -->
+            <button
+              v-if="skill.hasConfig && skill.source !== 'openclaw' && skill.source !== 'shared'"
+              class="icon-btn icon-btn--sm"
+              :title="$t('skills.editConfig')"
+              :aria-label="$t('skills.editConfig')"
+              @click.stop="handleQuickEditConfig(skill.name)"
+            >
+              <component :is="SettingsIcon" :size="15" />
+            </button>
+            <span v-else class="action-slot" aria-hidden="true" />
+            <button
+              v-if="userStore.isAdmin && isShareable(skill)"
+              class="icon-btn icon-btn--sm share-toggle-btn"
+              :class="{ 'is-shared': isSkillShared(skill.name) }"
+              :disabled="sharing"
+              :title="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享，所有普通用户可见'"
+              :aria-label="isSkillShared(skill.name) ? '取消全局共享' : '设为全局共享'"
+              @click.stop="handleShareSkill(skill)"
+            >
+              <component :is="isSkillShared(skill.name) ? GlobeIcon : ShareIcon" :size="15" />
+            </button>
+            <span v-else class="action-slot" aria-hidden="true" />
             <button
               class="toggle-btn"
-              :class="{ 'enabled': skill.enabled }"
+              :class="{ 'is-on': skill.enabled }"
               @click.stop="handleToggleSkill(skill.name, !skill.enabled)"
             >
-              <component
-                :is="skill.enabled ? ToggleRightIcon : ToggleLeftIcon"
-                :size="16"
-              />
+              <span class="toggle-track"><span class="toggle-thumb" /></span>
               {{ getToggleLabel(skill) }}
             </button>
           </div>
         </div>
       </div>
-
-      <!-- Empty State -->
-      <div
-        v-else
-        class="empty-state"
-      >
-        <component
-          :is="hasSkills ? SearchIcon : PackageIcon"
-          :size="48"
-        />
-        <h3>{{ emptyStateTitle }}</h3>
-        <p>{{ emptyStateDescription }}</p>
-        <div
-          v-if="hasActiveFilters"
-          class="empty-state-actions"
-        >
-          <button
-            type="button"
-            class="retry-btn"
-            @click="resetFilters"
-          >
-            {{ $t('skills.resetFilters') }}
-          </button>
-        </div>
-      </div>
-    </template>
-
-    <div
-      v-else-if="activeTopTab === 'countbotGuide'"
-      class="guide-view"
-    >
-      <div class="guide-hero">
-        <h3>{{ $t('skills.countbotGuideTitle') }}</h3>
-        <p>{{ $t('skills.countbotGuideDescription') }}</p>
-        <div class="guide-badges guide-hero-badges">
-          <span class="requirement-tag">{{ $t('skills.countbotHeroBadgeLocal') }}</span>
-          <span class="requirement-tag">{{ $t('skills.countbotHeroBadgeSpec') }}</span>
-          <span class="requirement-tag">{{ $t('skills.countbotHeroBadgeBoundary') }}</span>
-        </div>
-      </div>
-
-      <div class="guide-grid">
-        <section class="guide-card full-width guide-install-card">
-          <div class="guide-section-head">
-            <h4>{{ $t('skills.countbotInstallTitle') }}</h4>
-            <p>{{ $t('skills.countbotInstallDesc') }}</p>
-          </div>
-
-          <div class="guide-methods-grid">
-            <article class="guide-method preferred">
-              <span class="guide-method-tag">{{ $t('skills.countbotMethod1Tag') }}</span>
-              <h5>{{ $t('skills.countbotMethod1Title') }}</h5>
-              <p>{{ $t('skills.countbotMethod1Desc') }}</p>
-              <code class="path-block">Skills → {{ $t('skills.createSkill') }}</code>
-            </article>
-
-            <article class="guide-method">
-              <span class="guide-method-tag">{{ $t('skills.countbotMethod2Tag') }}</span>
-              <h5>{{ $t('skills.countbotMethod2Title') }}</h5>
-              <p>{{ $t('skills.countbotMethod2Desc') }}</p>
-              <code class="path-block">workspace/skills/&lt;skill-name&gt;/</code>
-            </article>
-
-            <article class="guide-method">
-              <span class="guide-method-tag">{{ $t('skills.countbotMethod3Tag') }}</span>
-              <h5>{{ $t('skills.countbotMethod3Title') }}</h5>
-              <p>{{ $t('skills.countbotMethod3Desc') }}</p>
-              <pre class="guide-command compact">python3 skills/find-skills/scripts/skillhub_tool.py search "{{ $t('skills.skillhubKeywordExample') }}" --limit 3 --json
-
-python3 skills/find-skills/scripts/skillhub_tool.py install &lt;slug&gt; --json</pre>
-              <div class="guide-badges">
-                <span class="requirement-tag">SkillHub</span>
-                <span class="requirement-tag">--limit</span>
-                <span class="requirement-tag">--json</span>
-              </div>
-              <p class="guide-note inline-guide-note">{{ $t('skills.countbotMethod3Hint') }}</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="guide-card">
-          <h4>{{ $t('skills.countbotStructureTitle') }}</h4>
-          <p>{{ $t('skills.countbotStructureDesc') }}</p>
-          <div class="guide-structure">
-            <code>skills/</code>
-            <code>└── &lt;skill-name&gt;/</code>
-            <code>&nbsp;&nbsp;&nbsp;&nbsp;└── SKILL.md</code>
-          </div>
-          <p class="guide-note">{{ $t('skills.countbotStructureHint') }}</p>
-        </section>
-
-        <section class="guide-card">
-          <h4>{{ $t('skills.countbotBestPracticeTitle') }}</h4>
-          <ul class="guide-list">
-            <li>{{ $t('skills.countbotBestPracticePoint1') }}</li>
-            <li>{{ $t('skills.countbotBestPracticePoint2') }}</li>
-            <li>{{ $t('skills.countbotBestPracticePoint3') }}</li>
-          </ul>
-        </section>
-
-        <section class="guide-card full-width">
-          <h4>{{ $t('skills.countbotWorkflowTitle') }}</h4>
-          <ol class="guide-steps">
-            <li>{{ $t('skills.countbotWorkflowStep1') }}</li>
-            <li>{{ $t('skills.countbotWorkflowStep2') }}</li>
-            <li>{{ $t('skills.countbotWorkflowStep3') }}</li>
-            <li>{{ $t('skills.countbotWorkflowStep4') }}</li>
-          </ol>
-        </section>
-
-        <section class="guide-card full-width">
-          <h4>{{ $t('skills.countbotTipsTitle') }}</h4>
-          <ul class="guide-list">
-            <li>{{ $t('skills.countbotTipsPoint1') }}</li>
-            <li>{{ $t('skills.countbotTipsPoint2') }}</li>
-            <li>{{ $t('skills.countbotTipsPoint3') }}</li>
-          </ul>
-        </section>
-      </div>
     </div>
 
-    <div
-      v-else
-      class="guide-view"
-    >
-      <div class="guide-hero">
-        <h3>{{ $t('skills.openclawGuideTitle') }}</h3>
-        <p>{{ $t('skills.openclawGuideDescription') }}</p>
-      </div>
-
-      <div class="guide-grid">
-        <section class="guide-card full-width">
-          <div class="guide-section-head">
-            <div class="guide-step-header">
-              <span class="guide-step-badge">1</span>
-              <h4>{{ $t('skills.openclawPrepareTitle') }}</h4>
-            </div>
-            <p>{{ $t('skills.openclawPrepareDesc') }}</p>
-          </div>
-
-          <div class="guide-badges">
-            <span class="requirement-tag">{{ $t('skills.openclawEnvOs') }}</span>
-            <span class="requirement-tag">{{ $t('skills.openclawEnvNode') }}</span>
-            <span class="requirement-tag">{{ $t('skills.openclawEnvNpm') }}</span>
-          </div>
-
-          <h5 class="guide-subtitle">{{ $t('skills.openclawVerifyTitle') }}</h5>
-          <pre class="guide-command">node -v
-npm -v</pre>
-        </section>
-
-        <section class="guide-card full-width">
-          <div class="guide-section-head">
-            <div class="guide-step-header">
-              <span class="guide-step-badge">2</span>
-              <h4>{{ $t('skills.openclawNpmFixTitle') }}</h4>
-            </div>
-            <p>{{ $t('skills.openclawNpmFixDesc') }}</p>
-          </div>
-
-          <div class="npm-fix-steps">
-            <div class="npm-step">
-              <span class="npm-step-num">1</span>
-              <div class="npm-step-body">
-                <p class="npm-step-label">{{ $t('skills.openclawNpmFixStep1Label') }}</p>
-                <pre class="guide-command compact">del %USERPROFILE%\.npmrc</pre>
-              </div>
-            </div>
-            <div class="npm-step">
-              <span class="npm-step-num">2</span>
-              <div class="npm-step-body">
-                <p class="npm-step-label">{{ $t('skills.openclawNpmFixStep2Label') }}</p>
-                <pre class="guide-command compact">npm config set registry https://registry.npmmirror.com</pre>
-              </div>
-            </div>
-            <div class="npm-step">
-              <span class="npm-step-num">3</span>
-              <div class="npm-step-body">
-                <p class="npm-step-label">{{ $t('skills.openclawNpmFixStep3Label') }}</p>
-                <pre class="guide-command compact">npm config get registry</pre>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="guide-card full-width guide-install-card">
-          <div class="guide-section-head">
-            <div class="guide-step-header">
-              <span class="guide-step-badge">3</span>
-              <h4>{{ $t('skills.openclawStandardTitle') }}</h4>
-            </div>
-            <p>{{ $t('skills.openclawStandardDesc') }}</p>
-          </div>
-
-          <div class="guide-methods-grid">
-            <article class="guide-method preferred">
-              <span class="guide-method-tag">{{ $t('skills.openclawWebTag') }}</span>
-              <h5>{{ $t('skills.openclawWebTitle') }}</h5>
-              <ol class="guide-steps compact">
-                <li>{{ $t('skills.openclawWebStep1') }}</li>
-                <li>{{ $t('skills.openclawWebStep2') }}</li>
-                <li>{{ $t('skills.openclawWebStep3') }}</li>
-                <li>{{ $t('skills.openclawWebStep4') }}</li>
-              </ol>
-              <code class="path-block">C:\Users\&lt;username&gt;\.clawhub\skills</code>
-              <code class="path-block">~/.clawhub/skills</code>
-              <p class="guide-note inline-guide-note">{{ $t('skills.openclawWebNote') }}</p>
-            </article>
-
-            <article class="guide-method">
-              <span class="guide-method-tag">{{ $t('skills.openclawCliTag') }}</span>
-              <h5>{{ $t('skills.openclawCliTitle') }}</h5>
-              <p>{{ $t('skills.openclawCliDesc') }}</p>
-              <pre class="guide-command compact">npm install -g clawhub
-
-npx clawhub@latest install &lt;skill-name&gt;</pre>
-            </article>
-          </div>
-        </section>
-
-        <section class="guide-card">
-          <h4>{{ $t('skills.guideCompatibilityTitle') }}</h4>
-          <p>{{ $t('skills.guideCompatibilityDesc') }}</p>
-          <ul class="guide-list">
-            <li>{{ $t('skills.guideCompatibilityPoint1') }}</li>
-            <li>{{ $t('skills.guideCompatibilityPoint2') }}</li>
-            <li>{{ $t('skills.guideCompatibilityPoint3') }}</li>
-          </ul>
-        </section>
-
-        <section class="guide-card">
-          <h4>{{ $t('skills.guidePriorityTitle') }}</h4>
-          <ul class="guide-list">
-            <li>{{ $t('skills.guidePriorityPoint1') }}</li>
-            <li>{{ $t('skills.guidePriorityPoint2') }}</li>
-            <li>{{ $t('skills.guidePriorityPoint3') }}</li>
-          </ul>
-        </section>
-
-        <section class="guide-card full-width">
-          <h4>{{ $t('skills.guideWorkflowTitle') }}</h4>
-          <ol class="guide-steps">
-            <li>{{ $t('skills.guideWorkflowStep1') }}</li>
-            <li>{{ $t('skills.guideWorkflowStep2') }}</li>
-            <li>{{ $t('skills.guideWorkflowStep3') }}</li>
-            <li>{{ $t('skills.guideWorkflowStep4') }}</li>
-          </ol>
-        </section>
-
-        <section class="guide-card full-width">
-          <h4>{{ $t('skills.openclawCommandsTitle') }}</h4>
-          <div class="command-list">
-            <article class="command-item">
-              <code>clawhub list</code>
-              <p>{{ $t('skills.openclawCommandList') }}</p>
-            </article>
-            <article class="command-item">
-              <code>clawhub search &lt;keyword&gt;</code>
-              <p>{{ $t('skills.openclawCommandSearch') }}</p>
-            </article>
-            <article class="command-item">
-              <code>clawhub install &lt;skill-name&gt;</code>
-              <p>{{ $t('skills.openclawCommandInstall') }}</p>
-            </article>
-            <article class="command-item">
-              <code>clawhub uninstall &lt;skill-name&gt;</code>
-              <p>{{ $t('skills.openclawCommandUninstall') }}</p>
-            </article>
-            <article class="command-item">
-              <code>clawhub run &lt;skill-name&gt; &lt;args&gt;</code>
-              <p>{{ $t('skills.openclawCommandRun') }}</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="guide-card full-width">
-          <div class="guide-section-head">
-            <h4>{{ $t('skills.openclawTroubleshootingTitle') }}</h4>
-            <p>{{ $t('skills.openclawTroubleshootingDesc') }}</p>
-          </div>
-
-          <div class="error-grid">
-            <article class="error-card">
-              <h5>{{ $t('skills.openclawError1Title') }}</h5>
-              <p>{{ $t('skills.openclawError1Body') }}</p>
-            </article>
-            <article class="error-card">
-              <h5>{{ $t('skills.openclawError2Title') }}</h5>
-              <p>{{ $t('skills.openclawError2Body') }}</p>
-            </article>
-            <article class="error-card">
-              <h5>{{ $t('skills.openclawError3Title') }}</h5>
-              <p>{{ $t('skills.openclawError3Body') }}</p>
-            </article>
-            <article class="error-card">
-              <h5>{{ $t('skills.openclawError4Title') }}</h5>
-              <p>{{ $t('skills.openclawError4Body') }}</p>
-            </article>
-            <article class="error-card">
-              <h5>{{ $t('skills.openclawError5Title') }}</h5>
-              <p>{{ $t('skills.openclawError5Body') }}</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="guide-card full-width">
-          <h4>{{ $t('skills.openclawAlternativeTitle') }}</h4>
-          <p>{{ $t('skills.openclawAlternativeDesc') }}</p>
-          <ul class="guide-list">
-            <li>{{ $t('skills.openclawAlternativePoint1') }}</li>
-            <li>{{ $t('skills.openclawAlternativePoint2') }}</li>
-            <li>{{ $t('skills.openclawAlternativePoint3') }}</li>
-          </ul>
-        </section>
-      </div>
+    <!-- Empty State -->
+    <div v-else class="empty-state">
+      <component :is="hasSkills ? SearchIcon : PackageIcon" :size="36" />
+      <h3>{{ emptyStateTitle }}</h3>
+      <p>{{ emptyStateDescription }}</p>
+      <button v-if="hasActiveFilters" type="button" class="secondary-btn" @click="resetFilters">
+        {{ $t('skills.resetFilters') }}
+      </button>
     </div>
 
     <!-- Skill Detail Modal -->
@@ -651,7 +274,6 @@ npx clawhub@latest install &lt;skill-name&gt;</pre>
       @update:model-value="(val) => !val && handleCloseModal()"
     >
       <div v-if="selectedSkill" class="skill-detail">
-        <!-- Skill Info -->
         <div class="detail-section">
           <h4 class="section-title">
             {{ $t('skills.information') }}
@@ -664,10 +286,7 @@ npx clawhub@latest install &lt;skill-name&gt;</pre>
             <div class="info-item">
               <span class="info-label">{{ $t('skills.source') }}</span>
               <span class="info-value">
-                <span
-                  class="source-badge"
-                  :class="selectedSkill.source"
-                >
+                <span class="source-badge" :class="selectedSkill.source">
                   {{ getSourceLabel(selectedSkill.source) }}
                 </span>
               </span>
@@ -683,27 +302,18 @@ npx clawhub@latest install &lt;skill-name&gt;</pre>
             </div>
             <div class="info-item">
               <span class="info-label">{{ $t('skills.autoLoad') }}</span>
-              <span
-                class="info-value"
-                :class="{ 'highlight': selectedSkill.autoLoad }"
-              >
+              <span class="info-value" :class="{ 'highlight': selectedSkill.autoLoad }">
                 {{ selectedSkill.autoLoad ? $t('common.yes') : $t('common.no') }}
               </span>
             </div>
           </div>
-          <div
-            v-if="selectedSkill.description"
-            class="info-item full-width"
-          >
+          <div v-if="selectedSkill.description" class="info-item full-width">
             <span class="info-label">{{ $t('skills.description') }}</span>
             <p class="info-value description-text">
               {{ selectedSkill.description }}
             </p>
           </div>
-          <p
-            v-if="selectedSkill.source === 'openclaw'"
-            class="guide-note inline-guide-note"
-          >
+          <p v-if="selectedSkill.source === 'openclaw'" class="guide-note inline-guide-note">
             {{ $t('skills.openclawDetailHint') }}
           </p>
           <div
@@ -712,22 +322,14 @@ npx clawhub@latest install &lt;skill-name&gt;</pre>
           >
             <span class="info-label">{{ $t('skills.requirements') }}</span>
             <div class="requirements-list">
-              <span
-                v-for="req in selectedSkill.requirements"
-                :key="req"
-                class="requirement-tag"
-              >
-                <component
-                  :is="PackageIcon"
-                  :size="12"
-                />
+              <span v-for="req in selectedSkill.requirements" :key="req" class="requirement-tag">
+                <component :is="PackageIcon" :size="12" />
                 {{ req }}
               </span>
             </div>
           </div>
         </div>
 
-        <!-- Skill Content -->
         <div class="detail-section">
           <h4 class="section-title">
             {{ $t('skills.content') }}
@@ -737,51 +339,45 @@ npx clawhub@latest install &lt;skill-name&gt;</pre>
           </div>
         </div>
 
-        <!-- Actions -->
         <div class="detail-actions">
           <button
-            v-if="hasConfig && selectedSkill.source !== 'openclaw'"
-            class="action-btn config-btn"
+            v-if="hasConfig && selectedSkill.source !== 'openclaw' && selectedSkill.source !== 'shared'"
+            class="secondary-btn"
             @click="handleEditConfig"
           >
-            <component
-              :is="SettingsIcon"
-              :size="16"
-            />
+            <component :is="SettingsIcon" :size="15" />
             {{ $t('skills.editConfig') }}
           </button>
           <button
             v-if="selectedSkill.source === 'workspace'"
-            class="action-btn"
+            class="secondary-btn"
             @click="handleEditSkill"
           >
-            <component
-              :is="EditIcon"
-              :size="16"
-            />
+            <component :is="EditIcon" :size="15" />
             {{ $t('common.edit') }}
           </button>
           <button
+            v-if="canShareSelected"
+            class="secondary-btn share-btn"
+            :class="{ 'is-shared': isSkillShared(selectedSkill.name) }"
+            :disabled="sharing"
+            @click="handleShareSkill(selectedSkill)"
+          >
+            <component :is="isSkillShared(selectedSkill.name) ? GlobeIcon : ShareIcon" :size="15" />
+            {{ sharing ? '处理中…' : (isSkillShared(selectedSkill.name) ? '取消全局共享' : '设为全局共享') }}
+          </button>
+          <button
             v-if="selectedSkill.source === 'workspace'"
-            class="action-btn danger"
+            class="secondary-btn secondary-btn--danger"
             @click="handleDeleteSkill"
           >
-            <component
-              :is="TrashIcon"
-              :size="16"
-            />
+            <component :is="TrashIcon" :size="15" />
             {{ $t('common.delete') }}
           </button>
-          <button
-            class="action-btn primary"
-            @click="handleToggleSkillFromModal(!selectedSkill.enabled)"
-          >
+          <button class="primary-btn" @click="handleToggleSkillFromModal(!selectedSkill.enabled)">
             {{ getToggleLabel(selectedSkill) }}
           </button>
-          <button
-            class="action-btn"
-            @click="handleCloseModal"
-          >
+          <button class="secondary-btn" @click="handleCloseModal">
             {{ $t('common.close') }}
           </button>
         </div>
@@ -829,18 +425,21 @@ import {
   Package as PackageIcon,
   Search as SearchIcon,
   BookOpen as BookOpenIcon,
-  CheckCircle as CheckCircleIcon,
-  XCircle as XCircleIcon,
   Zap as ZapIcon,
   Eye as EyeIcon,
-  ToggleLeft as ToggleLeftIcon,
-  ToggleRight as ToggleRightIcon,
   Plus as PlusIcon,
   Trash as TrashIcon,
   Edit as EditIcon,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  Share2 as ShareIcon,
+  Globe as GlobeIcon,
+  LayoutGrid as LayoutGridIcon,
+  List as ListIcon,
+  X as XIcon,
 } from 'lucide-vue-next'
 import { useSkillsStore, type Skill, type SkillDetail } from '@/store/skills'
+import { useUserStore } from '@/store/user'
+import { sharedSkillsAPI } from '@/api'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import Modal from '@/components/ui/Modal.vue'
@@ -851,19 +450,37 @@ import type { CreateSkillRequest, UpdateSkillRequest } from '@/api'
 
 const { t } = useI18n()
 const skillsStore = useSkillsStore()
+const userStore = useUserStore()
 const toast = useToast()
 const { confirm } = useConfirm()
 
 // State
+const sharing = ref(false)
+/** 共享技能的启停走登记接口，不能用只接受 workspace 来源的技能开关。 */
+const sharedSkillIds = ref<Record<string, string>>({})
+/** 管理员视角：技能名 -> 当前共享登记（approved 表示已全局共享） */
+const sharedRegistry = ref<Record<string, { id: string; status: string }>>({})
 const selectedSkill = ref<SkillDetail | null>(null)
-const loadingSkillDetail = ref(false)
 const showEditor = ref(false)
 const showDetailModal = ref(false)
 const showConfigEditor = ref(false)
 const editorSkill = ref<SkillDetail | null>(null)
-const activeTopTab = ref<'library' | 'countbotGuide' | 'openclawGuide'>('library')
 const filterStatus = ref<SkillFilterStatus>('all')
 const searchQuery = ref('')
+
+/** 视图偏好：卡片 / 列表，按浏览器记忆 */
+const VIEW_KEY = 'skillsViewMode'
+const viewMode = ref<'card' | 'list'>(
+  typeof localStorage !== 'undefined' && localStorage.getItem(VIEW_KEY) === 'card' ? 'card' : 'list',
+)
+
+const setViewMode = (mode: 'card' | 'list') => {
+  viewMode.value = mode
+  localStorage.setItem(VIEW_KEY, mode)
+}
+
+/** 序号统一两位，列表看起来更整齐 */
+const padIndex = (index: number) => String(index + 1).padStart(2, '0')
 
 // Computed
 const skills = computed(() => skillsStore.skills)
@@ -871,20 +488,52 @@ const loading = computed(() => skillsStore.loading)
 const error = computed(() => skillsStore.error)
 const hasConfig = computed(() => Boolean(selectedSkill.value?.hasConfig))
 
-const enabledCount = computed(() => 
+/** 共享只能由管理员发起；工作区与内置技能都可发布为全局共享。 */
+const canShareSelected = computed(
+  () =>
+    userStore.isAdmin &&
+    (selectedSkill.value?.source === 'workspace' ||
+      selectedSkill.value?.source === 'builtin'),
+)
+
+function isShareable(skill: Pick<Skill, 'source'>): boolean {
+  return skill.source === 'workspace' || skill.source === 'builtin'
+}
+
+function isSkillShared(name: string): boolean {
+  return sharedRegistry.value[name]?.status === 'approved'
+}
+
+async function handleShareSkill(skill: Pick<Skill, 'name'> | null) {
+  if (!skill) return
+  sharing.value = true
+  try {
+    if (isSkillShared(skill.name)) {
+      const row = sharedRegistry.value[skill.name]
+      await sharedSkillsAPI.revoke(row.id, '')
+      toast.success(`「${skill.name}」已取消共享`)
+    } else {
+      await sharedSkillsAPI.publish({ name: skill.name, audience: null })
+      toast.success(`「${skill.name}」已全局共享`)
+    }
+    await loadSharedRegistry()
+  } catch (err: any) {
+    toast.error(err?.message || '操作失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+const enabledCount = computed(() =>
   skills.value.filter(s => s.enabled).length
 )
 
-const disabledCount = computed(() => 
+const disabledCount = computed(() =>
   skills.value.filter(s => !s.enabled).length
 )
 
-const autoLoadCount = computed(() => 
+const autoLoadCount = computed(() =>
   skills.value.filter(s => s.autoLoad).length
-)
-
-const openclawCount = computed(() =>
-  skills.value.filter(s => s.source === 'openclaw').length
 )
 
 const normalizedSearchQuery = computed(() => searchQuery.value.trim())
@@ -895,22 +544,9 @@ const filteredSkills = computed(() =>
 
 const hasSkills = computed(() => skills.value.length > 0)
 
-const hasActiveSearch = computed(() => normalizedSearchQuery.value.length > 0)
-
 const hasActiveFilters = computed(() =>
-  filterStatus.value !== 'all' || hasActiveSearch.value
+  filterStatus.value !== 'all' || normalizedSearchQuery.value.length > 0
 )
-
-const filteredSummary = computed(() => {
-  if (!hasActiveFilters.value) {
-    return t('skills.showingAllSkills', { count: skills.value.length })
-  }
-
-  return t('skills.showingResults', {
-    count: filteredSkills.value.length,
-    total: skills.value.length
-  })
-})
 
 const emptyStateTitle = computed(() =>
   hasSkills.value ? t('skills.noSearchResults') : t('skills.noSkills')
@@ -921,7 +557,7 @@ const emptyStateDescription = computed(() => {
     return t('skills.noSkillsDesc')
   }
 
-  if (hasActiveSearch.value) {
+  if (normalizedSearchQuery.value.length > 0) {
     return t('skills.noSearchResultsDesc')
   }
 
@@ -947,6 +583,8 @@ const getSourceLabel = (source?: Skill['source']) => {
       return t('skills.builtin')
     case 'openclaw':
       return t('skills.openclaw')
+    case 'shared':
+      return '共享'
     default:
       return t('skills.workspace')
   }
@@ -974,10 +612,48 @@ const resetFilters = () => {
   searchQuery.value = ''
 }
 
+async function loadSharedSkillIds() {
+  if (userStore.isAdmin) return
+  try {
+    const rows = await sharedSkillsAPI.list()
+    sharedSkillIds.value = Object.fromEntries(
+      rows
+        .filter((row) => row.status === 'approved')
+        .map((row) => [row.name, row.id]),
+    )
+  } catch {
+    sharedSkillIds.value = {}
+  }
+}
+
+async function loadPublishableNames() {
+  if (!userStore.isAdmin) return
+  await loadSharedRegistry()
+}
+
+async function loadSharedRegistry() {
+  if (!userStore.isAdmin) return
+  try {
+    const rows = await sharedSkillsAPI.list()
+    const map: Record<string, { id: string; status: string }> = {}
+    for (const row of rows) {
+      // 同名多次发布只保留最新记录，已批准优先，避免撤回后仍显示为共享
+      const existing = map[row.name]
+      if (!existing || row.status === 'approved') {
+        map[row.name] = { id: row.id, status: row.status }
+      }
+    }
+    sharedRegistry.value = map
+  } catch {
+    sharedRegistry.value = {}
+  }
+}
+
 const handleRefresh = async () => {
   try {
     // 先执行热重载，然后刷新列表
     await skillsStore.reloadSkills()
+    await Promise.all([loadSharedSkillIds(), loadPublishableNames()])
     toast.success(t('skills.reloadSuccess'))
   } catch (err: any) {
     toast.error(t('skills.loadError'))
@@ -985,14 +661,11 @@ const handleRefresh = async () => {
 }
 
 const handleViewSkill = async (name: string) => {
-  loadingSkillDetail.value = true
   try {
     selectedSkill.value = await skillsStore.getSkill(name)
     showDetailModal.value = true
   } catch (err: any) {
     toast.error(t('skills.loadDetailError'))
-  } finally {
-    loadingSkillDetail.value = false
   }
 }
 
@@ -1014,7 +687,7 @@ const handleSaveSkill = async (data: CreateSkillRequest | UpdateSkillRequest) =>
       const updateData = data as UpdateSkillRequest
       await skillsStore.updateSkill(editorSkill.value.name, updateData)
       toast.success(t('skills.updateSuccess', { name: editorSkill.value.name }))
-      
+
       // 如果当前正在查看这个技能，更新详情
       if (selectedSkill.value && selectedSkill.value.name === editorSkill.value.name) {
         selectedSkill.value = await skillsStore.getSkill(editorSkill.value.name)
@@ -1025,7 +698,7 @@ const handleSaveSkill = async (data: CreateSkillRequest | UpdateSkillRequest) =>
       await skillsStore.createSkill(createData)
       toast.success(t('skills.createSuccess', { name: createData.name }))
     }
-    
+
     showEditor.value = false
     await handleRefresh()
   } catch (err: any) {
@@ -1035,9 +708,9 @@ const handleSaveSkill = async (data: CreateSkillRequest | UpdateSkillRequest) =>
 
 const handleDeleteSkill = async () => {
   if (!selectedSkill.value) return
-  
+
   const name = selectedSkill.value.name
-  
+
   // 只允许删除工作空间技能
   if (selectedSkill.value.source === 'builtin') {
     toast.warning(t('skills.cannotDeleteBuiltin'))
@@ -1048,7 +721,7 @@ const handleDeleteSkill = async () => {
     toast.warning(t('skills.cannotDeleteOpenclaw'))
     return
   }
-  
+
   await confirm({
     title: t('common.confirmDelete'),
     message: t('skills.deleteConfirm', { name }),
@@ -1074,14 +747,25 @@ const handleCloseEditor = () => {
 }
 
 const handleToggleSkill = async (name: string, enabled: boolean) => {
+  const isShared = skills.value.find((skill) => skill.name === name)?.source === 'shared'
+  const sharedId = sharedSkillIds.value[name]
+  if (isShared && !sharedId) {
+    toast.error(t('skills.toggleError'))
+    return
+  }
   try {
-    await skillsStore.toggleSkill(name, enabled)
+    if (isShared) {
+      await sharedSkillsAPI.setState(sharedId, enabled)
+      await skillsStore.reloadSkills()
+    } else {
+      await skillsStore.toggleSkill(name, enabled)
+    }
     if (selectedSkill.value?.name === name) {
       await refreshSelectedSkill(name)
     }
     toast.success(
-      enabled 
-        ? t('skills.enableSuccess', { name }) 
+      enabled
+        ? t('skills.enableSuccess', { name })
         : t('skills.disableSuccess', { name })
     )
   } catch (err: any) {
@@ -1091,7 +775,7 @@ const handleToggleSkill = async (name: string, enabled: boolean) => {
 
 const handleToggleSkillFromModal = async (enabled: boolean) => {
   if (!selectedSkill.value) return
-  
+
   const name = selectedSkill.value.name
   await handleToggleSkill(name, enabled)
 }
@@ -1106,7 +790,7 @@ const handleQuickEditConfig = async (skillName: string) => {
   try {
     // 加载技能详情
     selectedSkill.value = await skillsStore.getSkill(skillName)
-    
+
     // 只打开配置编辑器，不打开详情模态框
     showDetailModal.value = false
     showConfigEditor.value = true
@@ -1136,8 +820,7 @@ onMounted(() => {
   handleRefresh()
 })
 </script>
+
 <style scoped>
 @import './styles/SkillsLibrary.css';
 </style>
-
-

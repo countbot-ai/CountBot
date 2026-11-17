@@ -12,23 +12,24 @@
     @test="(nextChannelId, nextConfig, accountId) => emit('test', nextChannelId, nextConfig, accountId)"
   >
     <template #fields="{ model, handleChange }">
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.xiaozhi.endpoint') }} <span class="required">*</span></label>
+      <SettingsRow wide-control>
+        <template #label>{{ t('settings.channels.xiaozhi.endpoint') }} <span class="required">*</span></template>
         <input
           v-model="model.endpoint"
           type="text"
           :placeholder="t('settings.channels.xiaozhi.endpointPlaceholder')"
-          class="config-input"
+          class="co-input"
           @input="handleChange"
         />
-        <p class="config-hint">
-          <strong>{{ t('settings.channels.xiaozhi.endpointNoticeLabel') }}</strong>{{ t('settings.channels.xiaozhi.endpointHint') }}
-          <br>{{ t('settings.channels.xiaozhi.endpointGuide') }}
-        </p>
-      </div>
+        <template #below>
+          <p class="co-row-desc">
+            <strong>{{ t('settings.channels.xiaozhi.endpointNoticeLabel') }}</strong>{{ t('settings.channels.xiaozhi.endpointHint') }}
+            <br>{{ t('settings.channels.xiaozhi.endpointGuide') }}
+          </p>
+        </template>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.xiaozhi.mode') }}</label>
+      <SettingsRow :label="t('settings.channels.xiaozhi.mode')" layout="block">
         <div class="mode-cards">
           <div
             class="mode-card"
@@ -70,25 +71,23 @@
           </svg>
           <span><strong>{{ t('settings.channels.xiaozhi.timeoutNoticeTitle') }}</strong>{{ t('settings.channels.xiaozhi.timeoutNotice') }}</span>
         </div>
-      </div>
+      </SettingsRow>
 
-      <div class="config-section">
-        <label class="config-label">{{ t('settings.channels.xiaozhi.allowFrom') }}</label>
+      <SettingsRow :label="t('settings.channels.xiaozhi.allowFrom')" :description="t('settings.channels.xiaozhi.allowFromHint')" layout="block">
         <div class="allow-list">
           <div v-for="(_, index) in model.allow_from" :key="index" class="allow-item">
             <input
               v-model="model.allow_from[index]"
               type="text"
               :placeholder="t('settings.channels.xiaozhi.userIdPlaceholder')"
-              class="config-input"
+              class="co-input"
               @input="handleChange"
             />
             <button type="button" class="remove-button" @click="model.allow_from.splice(index, 1); handleChange()">×</button>
           </div>
           <button type="button" class="add-button" @click="model.allow_from.push(''); handleChange()">+ {{ t('settings.channels.xiaozhi.addUser') }}</button>
         </div>
-        <p class="config-hint">{{ t('settings.channels.xiaozhi.allowFromHint') }}</p>
-      </div>
+      </SettingsRow>
     </template>
   </MultiBotChannelEditor>
 </template>
@@ -96,6 +95,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import MultiBotChannelEditor from './MultiBotChannelEditor.vue'
+import { SettingsRow } from '../ui'
 
 interface Props {
   channelId: string

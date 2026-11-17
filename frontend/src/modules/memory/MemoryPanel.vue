@@ -55,10 +55,8 @@ defineExpose({
 
 <style scoped>
 .memory-panel {
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
-
-
 </style>
