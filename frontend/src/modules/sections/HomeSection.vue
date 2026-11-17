@@ -8,24 +8,7 @@
 
       <div class="hs-head-actions">
         <template v-if="section === 'persona'">
-          <div class="hs-segmented">
-            <button
-              class="hs-segmented-item"
-              :class="{ 'is-active': personaTab === 'config' }"
-              @click="personaTab = 'config'"
-            >
-              {{ $t('settings.persona.basicConfig') }}
-            </button>
-            <button
-              class="hs-segmented-item"
-              :class="{ 'is-active': personaTab === 'editor' }"
-              @click="personaTab = 'editor'"
-            >
-              {{ $t('settings.persona.personalityEditor') }}
-            </button>
-          </div>
           <button
-            v-if="personaTab === 'config'"
             class="hs-btn hs-btn--primary"
             :disabled="personaSaving"
             @click="savePersona"
@@ -71,8 +54,7 @@
         <MultiAgentConfig v-if="section === 'multiagent'" />
         <ChannelsConfig v-else-if="section === 'channels'" />
         <template v-else-if="section === 'persona'">
-          <PersonaConfig v-if="personaTab === 'config'" ref="personaRef" />
-          <PersonalityEditor v-else />
+          <PersonaConfig ref="personaRef" />
         </template>
       </div>
     </div>
@@ -95,7 +77,6 @@ const WikiPanel = defineAsyncComponent(() => import('@/modules/wiki/WikiPanel.vu
 const MultiAgentConfig = defineAsyncComponent(() => import('@/modules/settings/MultiAgentConfig.vue'))
 const ChannelsConfig = defineAsyncComponent(() => import('@/modules/settings/ChannelsConfig.vue'))
 const PersonaConfig = defineAsyncComponent(() => import('@/modules/settings/PersonaConfig.vue'))
-const PersonalityEditor = defineAsyncComponent(() => import('@/modules/settings/PersonalityEditor.vue'))
 
 type Section = Exclude<ChatSection, 'sessions'>
 
@@ -159,7 +140,6 @@ onMounted(async () => {
 
 // ---------- 性格 ----------
 
-const personaTab = ref<'config' | 'editor'>('config')
 const personaSaving = ref(false)
 const personaRef = ref<{ saveConfig?: () => Promise<boolean> } | null>(null)
 

@@ -85,44 +85,6 @@
   flex-shrink: 0;
 }
 
-/* ---------- 分段控件 ---------- */
-
-.hs-segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-secondary);
-}
-
-.hs-segmented-item {
-  height: 26px;
-  padding: 0 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-family: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.hs-segmented-item:hover {
-  color: var(--color-text-primary);
-}
-
-.hs-segmented-item.is-active {
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  box-shadow: var(--shadow-xs);
-}
-
 /* ---------- 按钮 ---------- */
 
 .hs-btn {

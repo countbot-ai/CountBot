@@ -1286,8 +1286,6 @@
     "persona": {
       "title": "Persona Settings",
       "description": "Configure AI name, user address, and AI personality",
-      "basicConfig": "Basic Configuration",
-      "personalityEditor": "Personality Editor",
       "basicInfo": "Basic Information",
       "aiName": "AI Name",
       "aiNamePlaceholder": "e.g., Assistant, Jarvis, Friday",
