@@ -532,8 +532,8 @@ function firstSearchSnippet(session: SessionPanelItem): string {
 
 function formatSearchSnippet(snippet: string): string {
   return String(snippet || '')
-    .replaceAll('<<', '【')
-    .replaceAll('>>', '】')
+    .split('<<').join('【')
+    .split('>>').join('】')
 }
 
 // 正在总结的会话 ID

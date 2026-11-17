@@ -126,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { Maximize as MaximizeIcon, Layout as LayoutIcon, AlertTriangle as AlertTriangleIcon } from 'lucide-vue-next'
 
 interface Agent {
@@ -280,9 +280,7 @@ const nodes = computed<GraphNode[]>(() => {
   })
   
   // 计算每层的位置
-  const maxLevel = Math.max(...Array.from(levels.values()))
   const containerWidth = 800
-  const containerHeight = 600
   
   nodesByLevel.forEach((nodesInLevel, level) => {
     const levelWidth = nodesInLevel.length * horizontalSpacing

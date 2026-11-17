@@ -23,7 +23,7 @@ export function useMcp() {
     })
 
     const serverStatusMap = computed(() => {
-        const map: Record<string, { running: boolean; transport: string; tool_count: number | null; tools?: string[]; error?: string }> = {}
+        const map: Record<string, { running: boolean; transport: string; tool_count: number | null; tools?: string[]; error?: string | null }> = {}
         if (overview.value?.servers) {
             for (const s of overview.value.servers) {
                 map[s.id] = { running: s.running, transport: s.transport, tool_count: s.tool_count, tools: s.tools, error: s.last_error }

@@ -99,7 +99,7 @@ const handleDragOver = (event: DragEvent) => {
   }
 }
 
-const handleDragLeave = (event: DragEvent) => {
+const handleDragLeave = (_event: DragEvent) => {
   if (props.disabled) return
   
   dragCounter.value--

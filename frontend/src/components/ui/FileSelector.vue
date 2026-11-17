@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { Paperclip as PaperclipIcon, File as FileIcon, X as XIcon } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 

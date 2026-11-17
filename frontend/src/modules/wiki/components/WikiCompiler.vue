@@ -77,7 +77,7 @@ import { ref } from 'vue'
 import { X as XIcon, Sparkles as SparklesIcon, Loader2 as LoaderIcon, Check as CheckIcon, Edit as EditIcon } from 'lucide-vue-next'
 import { wikiApi } from '../services/wikiApi'
 
-const props = defineProps<{
+defineProps<{
   modelValue: boolean
 }>()
 

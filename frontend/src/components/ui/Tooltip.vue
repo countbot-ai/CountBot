@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 
 type Placement = 'top' | 'bottom' | 'left' | 'right'
 type Theme = 'dark' | 'light'

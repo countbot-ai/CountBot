@@ -84,12 +84,6 @@ export function useLazyImage(src: string, options: IntersectionObserverInit = {}
 
     // Load image when visible
     onMounted(() => {
-        const unwatch = () => {
-            if (isVisible.value) {
-                loadImage()
-            }
-        }
-
         // Watch for visibility changes
         const interval = setInterval(() => {
             if (isVisible.value) {

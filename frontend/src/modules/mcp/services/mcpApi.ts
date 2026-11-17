@@ -52,7 +52,7 @@ export const mcpApi = {
         return res.data ?? res
     },
 
-    getServerStatus: async (serverId: string): Promise<{ success: boolean; server_id?: string; connected?: boolean; transport?: string; tool_count?: number; message?: string }> => {
+    getServerStatus: async (serverId: string): Promise<{ success: boolean; server_id?: string; connected?: boolean; transport?: string; tool_count?: number; tools?: string[]; message?: string }> => {
         const res = await apiClient.get(`/mcp/status/${serverId}`)
         return res.data ?? res
     },

@@ -105,7 +105,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Eye as EyeIcon, EyeOff as EyeOffIcon, X as XIcon } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
 
 interface Props {
   modelValue?: string | number

@@ -193,16 +193,16 @@ interface Props {
 const props = defineProps<Props>()
 
 interface Emits {
-  (e: 'input', value: string): void
-  (e: 'send'): void
-  (e: 'stop'): void
-  (e: 'keydown', event: KeyboardEvent): void
-  (e: 'team-select', team: AgentTeam): void
-  (e: 'files-selected', files: File[]): void
-  (e: 'remove-attachment', id: string): void
-  (e: 'select-model', providerId: string, modelId: string): void
-  (e: 'select-reasoning-level', level: string): void
-  (e: 'select-chat-mode', mode: ChatMode): void
+  input: [value: string]
+  send: []
+  stop: []
+  keydown: [event: KeyboardEvent]
+  'team-select': [team: AgentTeam]
+  'files-selected': [files: File[]]
+  'remove-attachment': [id: string]
+  'select-model': [providerId: string, modelId: string]
+  'select-reasoning-level': [level: string]
+  'select-chat-mode': [mode: ChatMode]
 }
 
 const emit = defineEmits<Emits>()

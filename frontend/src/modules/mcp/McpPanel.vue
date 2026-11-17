@@ -218,7 +218,6 @@ const {
   startEdit,
   cancelEdit,
   commitEditLocally,
-  removeServer,
   importConfig,
   exportConfig,
   reconnect,
@@ -271,11 +270,7 @@ function handleToggleExpand(server: McpServerConfig) {
   }
 }
 
-function handleEdit(server: McpServerConfig) {
-  startEdit(server)
-}
-
-async function handleSaveEdit(server: McpServerConfig) {
+async function handleSaveEdit(_server: McpServerConfig) {
   commitEditLocally()
   try {
     await saveRegistry(registry.value)

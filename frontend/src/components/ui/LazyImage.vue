@@ -50,7 +50,7 @@ const props = withDefaults(defineProps<Props>(), {
   threshold: 0.01
 })
 
-const { elementRef, isVisible, isLoaded: lazyLoaded, hasError: lazyError, currentSrc } = useLazyImage(
+const { elementRef, isVisible, currentSrc } = useLazyImage(
   props.src,
   {
     rootMargin: props.rootMargin,

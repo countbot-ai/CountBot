@@ -265,6 +265,7 @@
     <!-- Delete Confirmation -->
     <ConfirmDialog
       v-if="deletingEntry"
+      :show="true"
       title="删除 Wiki 条目"
       :message="`确定要删除「${deletingEntry.title}」吗？此操作不可恢复。`"
       @confirm="handleDelete"
@@ -306,7 +307,6 @@ const wiki = useWiki()
 const {
   entries,
   loading,
-  saving,
   error,
   searchQuery,
   filterTag,
@@ -422,7 +422,7 @@ const handleDelete = async () => {
   }
 }
 
-const useCompileResult = (result: any) => {
+const useCompileResult = () => {
   editingEntry.value = null
   showCompileDialog.value = false
   showEditorModal.value = true

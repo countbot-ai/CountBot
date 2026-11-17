@@ -17,3 +17,15 @@ interface ImportMeta {
 }
 
 declare const __APP_VERSION__: string
+
+interface Window {
+  pywebview?: {
+    api?: {
+      select_directory?: () => Promise<string | null>
+    }
+  }
+}
+
+interface HTMLInputElement {
+  directory?: boolean
+}

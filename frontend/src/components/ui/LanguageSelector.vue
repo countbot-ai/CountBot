@@ -11,13 +11,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Globe2 as Globe2Icon } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 const { locale } = useI18n()
-
-const currentLanguageLabel = computed(() => locale.value === 'zh-CN' ? '中文' : 'EN')
 
 const toggleLanguage = () => {
   locale.value = locale.value === 'zh-CN' ? 'en-US' : 'zh-CN'

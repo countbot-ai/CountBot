@@ -318,7 +318,7 @@ function parseExpression(expr: string) {
     return
   }
   parseError.value = ''
-  const [min, hour, day, month, weekday] = parts
+  const [min, hour, day, , weekday] = parts
 
   // Try to detect frequency
   if (min.startsWith('*/') && hour === '*' && day === '*' && weekday === '*') {
