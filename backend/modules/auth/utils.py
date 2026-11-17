@@ -110,8 +110,7 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
         return hmac.compare_digest(_b64encode(derived), expected_b64)
 
-    # Backward compatibility for legacy SHA-256 hashes. These should be rotated
-    # on the next successful password change or bootstrap.
+    # Legacy SHA-256 hashes are upgraded on the next password change or bootstrap.
     if ":" in stored_hash:
         salt, expected_hash = stored_hash.split(":", 1)
         actual_hash = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
@@ -150,7 +149,14 @@ def _parse_session_value(raw_value: str) -> Optional[dict]:
     except (TypeError, ValueError):
         return None
 
-    return {"username": username, "created_at": created_at}
+    payload = {"username": username, "created_at": created_at}
+
+    # 多用户引入后新增；旧 token 没有该字段，保持可解析（向后兼容）。
+    user_id = data.get("user_id")
+    if isinstance(user_id, str) and user_id:
+        payload["user_id"] = user_id
+
+    return payload
 
 
 def _is_expired(session_data: dict, now: Optional[float] = None) -> bool:
@@ -180,13 +186,16 @@ def _cleanup_expired() -> None:
             db.commit()
 
 
-def create_session(username: str) -> str:
-    """Create a new persistent session token."""
+def create_session(username: str, user_id: Optional[str] = None) -> str:
+    """Create a new persistent session token, optionally bound to ``user_id``."""
     from backend.database import SessionLocal
     from backend.models.setting import Setting
 
     token = secrets.token_urlsafe(32)
-    payload = json.dumps({"username": username, "created_at": time.time()})
+    payload_data = {"username": username, "created_at": time.time()}
+    if user_id:
+        payload_data["user_id"] = user_id
+    payload = json.dumps(payload_data)
 
     with SessionLocal() as db:
         db.merge(Setting(key=_session_key(token), value=payload))
@@ -197,8 +206,8 @@ def create_session(username: str) -> str:
     return token
 
 
-def validate_session(token: str) -> Optional[str]:
-    """Validate a session token and return the username when valid."""
+def read_session(token: str) -> Optional[dict]:
+    """返回会话完整 payload，含可选的 user_id。"""
     if not token:
         return None
 
@@ -216,7 +225,15 @@ def validate_session(token: str) -> Optional[str]:
             db.commit()
             return None
 
-        return session_data["username"]
+        return session_data
+
+
+def validate_session(token: str) -> Optional[str]:
+    """Validate a session token and return the username when valid."""
+    session_data = read_session(token)
+    if session_data is None:
+        return None
+    return session_data["username"]
 
 
 def revoke_session(token: str) -> bool:
@@ -257,6 +274,38 @@ def revoke_all_sessions(username: Optional[str] = None) -> int:
                 continue
 
             if username is None or session_data["username"] == username:
+                db.delete(setting)
+                removed += 1
+
+        if removed:
+            db.commit()
+
+    return removed
+
+
+def revoke_sessions_for_user_id(user_id: str) -> int:
+    """Revoke all sessions bound to one user_id; legacy tokens go through revoke_all_sessions."""
+    if not user_id:
+        return 0
+
+    from backend.database import SessionLocal
+    from backend.models.setting import Setting
+
+    removed = 0
+    now = time.time()
+
+    with SessionLocal() as db:
+        result = db.execute(
+            select(Setting).where(Setting.key.like(f"{_AUTH_SESSION_PREFIX}%"))
+        )
+        for setting in result.scalars().all():
+            session_data = _parse_session_value(setting.value)
+            if session_data is None or _is_expired(session_data, now):
+                db.delete(setting)
+                removed += 1
+                continue
+
+            if session_data.get("user_id") == user_id:
                 db.delete(setting)
                 removed += 1
 

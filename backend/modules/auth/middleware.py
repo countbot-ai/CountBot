@@ -127,6 +127,13 @@ def _is_local_request(request: Request) -> bool:
     return is_direct_local_client(client_ip, request.headers.keys())
 
 
+async def _local_bypass_allowed() -> bool:
+    """本机直连是否可跳过鉴权；多用户模式下恒为 False。"""
+    from backend.modules.multiuser.settings import local_admin_bypass_allowed
+
+    return await local_admin_bypass_allowed()
+
+
 class RemoteAuthMiddleware(BaseHTTPMiddleware):
     """Protect non-local HTTP requests with cookie or bearer-token auth."""
 
@@ -141,7 +148,7 @@ class RemoteAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
 
-        if _is_local_request(request):
+        if _is_local_request(request) and await _local_bypass_allowed():
             return await call_next(request)
 
         if not any(path.startswith(prefix) for prefix in _PROTECTED_PATH_PREFIXES):

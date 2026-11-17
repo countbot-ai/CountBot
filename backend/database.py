@@ -1,5 +1,6 @@
 """数据库连接配置"""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Tuple
@@ -18,13 +19,7 @@ DATABASE_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"
 SYNC_DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 # ======================================================================
-# SQLite 并发参数
-#
-# 默认的 rollback journal 模式下，一个读事务（SHARED 锁）就会挡住所有写操作；
-# 而本项目的对话/定时任务会在流式响应期间长时间持有请求级 DB 会话，
-# 一旦期间有读事务未结束，其它写请求全部报 "database is locked"（且长时间不恢复）。
-# 因此统一改用 WAL：读不挡写、写不挡读；再给每个连接加 busy_timeout，
-# 把短暂的写-写竞争变成「等待重试」而不是直接失败。
+# SQLite 并发参数：改用 WAL 读写互不阻塞，并设置 busy_timeout 等待写锁
 # ======================================================================
 
 SQLITE_JOURNAL_MODE = "WAL"
@@ -77,6 +72,16 @@ class CompatibilityTableMigration:
 
 _SCHEMA_COMPATIBILITY_MIGRATIONS = (
     CompatibilityTableMigration(
+        table_name="users",
+        columns=(
+            # 普通用户可用对话模式：all / chat / agent
+            CompatibilityColumnMigration(
+                name="chat_mode_policy",
+                ddl="chat_mode_policy VARCHAR DEFAULT 'all'",
+            ),
+        ),
+    ),
+    CompatibilityTableMigration(
         table_name="sessions",
         columns=(
             CompatibilityColumnMigration(
@@ -120,6 +125,16 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="workspace_path",
                 ddl="workspace_path TEXT",
             ),
+            # 多用户归属：NULL = 管理员 / 历史数据
+            CompatibilityColumnMigration(
+                name="owner_id",
+                ddl="owner_id VARCHAR",
+            ),
+            # 标题来源：default / generated / custom / channel
+            CompatibilityColumnMigration(
+                name="title_source",
+                ddl="title_source VARCHAR DEFAULT 'default'",
+            ),
         ),
     ),
     CompatibilityTableMigration(
@@ -132,6 +147,10 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
             CompatibilityColumnMigration(
                 name="use_custom_model",
                 ddl="use_custom_model BOOLEAN DEFAULT 0",
+            ),
+            CompatibilityColumnMigration(
+                name="owner_id",
+                ddl="owner_id VARCHAR",
             ),
         ),
     ),
@@ -182,6 +201,16 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="context_history",
                 ddl="context_history TEXT",
             ),
+            # 多用户归属：NULL = 管理员 / 历史数据
+            CompatibilityColumnMigration(
+                name="owner_id",
+                ddl="owner_id VARCHAR",
+            ),
+            # 用户通知渠道（纯出站）；管理员任务不使用该列
+            CompatibilityColumnMigration(
+                name="notify_channel_id",
+                ddl="notify_channel_id VARCHAR",
+            ),
         ),
     ),
     CompatibilityTableMigration(
@@ -192,16 +221,65 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
     CompatibilityTableMigration(
         table_name="tasks",
         # 与 ToolConversation 一样只加 nullable 列，保持旧任务记录可读。
-        columns=(CompatibilityColumnMigration("outcome_projection", "outcome_projection TEXT"),),
+        columns=(
+            CompatibilityColumnMigration("outcome_projection", "outcome_projection TEXT"),
+            # 多用户归属：NULL = 管理员 / 历史数据
+            CompatibilityColumnMigration("owner_id", "owner_id VARCHAR"),
+        ),
+    ),
+    CompatibilityTableMigration(
+        table_name="model_usage",
+        columns=(
+            # 用量归属与来源（shared = 用管理员的共享模型，own = 用户自有模型）
+            CompatibilityColumnMigration("owner_id", "owner_id VARCHAR"),
+            CompatibilityColumnMigration("model_ref_source", "model_ref_source VARCHAR"),
+        ),
+    ),
+    CompatibilityTableMigration(
+        table_name="personalities",
+        columns=(
+            # NULL = 内置 / 管理员
+            CompatibilityColumnMigration("owner_id", "owner_id VARCHAR"),
+            # 克隆人格扩展字段；默认 NULL，普通语气预设不受影响
+            CompatibilityColumnMigration("mental_models", "mental_models JSON"),
+            CompatibilityColumnMigration("heuristics", "heuristics JSON"),
+            CompatibilityColumnMigration("expression_dna", "expression_dna JSON"),
+            CompatibilityColumnMigration("core_values", "core_values JSON"),
+            CompatibilityColumnMigration("anti_patterns", "anti_patterns JSON"),
+            CompatibilityColumnMigration("tensions", "tensions JSON"),
+            CompatibilityColumnMigration("honesty_boundaries", "honesty_boundaries JSON"),
+            CompatibilityColumnMigration("memory_anchors", "memory_anchors JSON"),
+            # 需要事实时优先查证的方向
+            CompatibilityColumnMigration("research_dimensions", "research_dimensions JSON"),
+            CompatibilityColumnMigration("response_profile", "response_profile JSON"),
+            CompatibilityColumnMigration("source_type", "source_type VARCHAR(20)"),
+            CompatibilityColumnMigration("source_stats", "source_stats JSON"),
+            # 克隆产物文档：记忆、人格、拼接档案
+            CompatibilityColumnMigration("memory_doc", "memory_doc TEXT"),
+            CompatibilityColumnMigration("persona_doc", "persona_doc TEXT"),
+            CompatibilityColumnMigration("combined_doc", "combined_doc TEXT"),
+        ),
     ),
 )
 
+
+# ======================================================================
+# 连接池：容量需覆盖最大并发生成数、定时任务与后台维护
+# ======================================================================
+
+POOL_SIZE = int(os.getenv("COUNTBOT_DB_POOL_SIZE", "20"))
+MAX_OVERFLOW = int(os.getenv("COUNTBOT_DB_MAX_OVERFLOW", "30"))
+POOL_TIMEOUT_SECONDS = int(os.getenv("COUNTBOT_DB_POOL_TIMEOUT", "30"))
 
 # 异步引擎
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
+    pool_size=POOL_SIZE,
+    max_overflow=MAX_OVERFLOW,
+    pool_timeout=POOL_TIMEOUT_SECONDS,
+    pool_pre_ping=True,
 )
 register_sqlite_pragmas(engine)
 
@@ -247,10 +325,7 @@ async def get_db() -> AsyncSession:
 
 
 def get_db_session_factory():
-    """获取数据库会话工厂
-    
-    用于需要创建多个独立会话的场景，如 Cron 调度器
-    """
+    """获取数据库会话工厂，用于需要多个独立会话的场景。"""
     return AsyncSessionLocal
 
 
@@ -288,14 +363,40 @@ def _apply_schema_compatibility_migrations(
 async def init_db() -> None:
     """初始化数据库"""
     # 导入所有模型以确保表被创建
-    from backend.models import AgentTeam, CronJob, Message, Personality, Session, Setting, Task, ToolConversation  # noqa: F401
+    from backend.models import (  # noqa: F401
+        AgentTeam,
+        AuditLog,
+        CronJob,
+        Message,
+        ModelUsage,
+        Personality,
+        PersonalityVersion,
+        PersonaSessionNote,
+        Session,
+        Setting,
+        SkillRegistry,
+        Task,
+        ToolConversation,
+        User,
+        UserConfig,
+        UserNotificationChannel,
+        UserSkillState,
+    )
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_apply_schema_compatibility_migrations)
-    
+
     # 初始化性格数据
     await init_personalities()
+
+    # 迁移/补齐管理员账号（多用户身份底座）
+    try:
+        from backend.modules.multiuser.bootstrap import ensure_admin_user
+
+        await ensure_admin_user()
+    except Exception as exc:  # 迁移失败不阻塞启动
+        logger.warning(f"Failed to ensure admin user: {exc}")
 
 
 async def init_personalities() -> None:

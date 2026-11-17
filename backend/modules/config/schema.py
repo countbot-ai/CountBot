@@ -4,12 +4,11 @@ from typing import ClassVar, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.modules.native_caps.types import NativeCapabilities
+
 
 class ModelEntry(BaseModel):
-    """供应商下的单个模型条目。
-
-    供应商持有模型清单，全局 ModelConfig 只记录「当前选中哪一个」。
-    """
+    """供应商下的单个模型条目；全局 ModelConfig 只记录当前选中项。"""
 
     id: str = Field(..., description="模型 ID（供应商内唯一）")
     display_name: Optional[str] = Field(None, description="展示名称，空则用 id")
@@ -20,6 +19,13 @@ class ModelEntry(BaseModel):
     supports_image: Optional[bool] = Field(
         None,
         description="图片输入能力：None=按模型名自动判断，True=强制开启，False=关闭",
+    )
+    stream_enabled: Optional[bool] = Field(
+        None,
+        description=(
+            "该模型的输出模式：None=跟随全局设置，True=流式，False=非流式；"
+            "用于个别不支持 SSE 的模型或中转"
+        ),
     )
     reasoning_levels: List[str] = Field(
         default_factory=list,
@@ -36,6 +42,24 @@ class ModelEntry(BaseModel):
         "manual",
         description="来源：内置预设 / 手工填写 / 从上游 /models 拉取",
     )
+    native_capabilities: NativeCapabilities = Field(
+        default_factory=NativeCapabilities,
+        description="该模型启用的供应商原生能力；全部关闭时保持原有请求逻辑",
+    )
+
+    # ===== 多用户共享元数据：服务端解析，API Key / api_base 不下发普通用户 =====
+    shared: bool = Field(False, description="是否共享给普通用户")
+    shared_alias: Optional[str] = Field(
+        None, description="用户可见别名；为空时回落到 display_name 或 id"
+    )
+    shared_note: Optional[str] = Field(None, description="共享说明，如「由管理员提供」")
+    user_daily_limit: Optional[int] = Field(
+        None, ge=1, description="共享模型的每用户每日调用上限；空=不限"
+    )
+
+    def resolved_alias(self) -> str:
+        """用户端展示名。"""
+        return (self.shared_alias or self.display_name or self.id or "").strip()
 
 
 class ProviderConfig(BaseModel):
@@ -125,6 +149,13 @@ class ModelConfig(BaseModel):
     # 0 = 不限制（默认）；1~150 为一次请求内的工具调用总数上限。
     max_iterations: int = Field(default=0, ge=0, le=150)
     thinking_enabled: bool = Field(default=True, description="是否启用模型思考模式")
+    stream_enabled: bool = Field(
+        default=True,
+        description=(
+            "是否以流式方式请求上游模型；关闭后上游一次性返回，"
+            "前端仍按原有 SSE 通道接收完整结果"
+        ),
+    )
     reasoning_level: Optional[str] = Field(
         default=None,
         description=(
@@ -146,6 +177,13 @@ class ModelConfig(BaseModel):
 class WorkspaceConfig(BaseModel):
     """工作空间配置"""
     path: str = ""
+    users_root: str = Field(
+        "",
+        description=(
+            "普通用户数据根目录；留空时取「全局工作空间的父目录 / users」，"
+            "与管理员工作空间平级。可指向其他磁盘或挂载点。"
+        ),
+    )
     
     def __init__(self, **data):
         """初始化，设置默认工作空间路径"""
@@ -199,6 +237,19 @@ class HeartbeatConfig(BaseModel):
     max_greets_per_day: int = Field(default=2, ge=1, le=5, description="每天最多问候次数")
 
 
+class PersonaSessionMemoryConfig(BaseModel):
+    """克隆人格的对话记忆：跨会话摘要的写入与注入范围。"""
+
+    enabled: bool = Field(
+        default=True,
+        description="是否记录并注入克隆人格的对话摘要；关闭后不再后台总结，也不再注入任何历史摘要",
+    )
+    scope: Literal["session", "persona"] = Field(
+        default="session",
+        description="注入范围：session 只注入当前会话的摘要；persona 额外注入同一人格的其他会话摘要（带来源标注）",
+    )
+
+
 class PersonaConfig(BaseModel):
     """用户信息和AI人设配置"""
     ai_name: str = Field(default="小C", description="AI的名字")
@@ -217,15 +268,15 @@ class PersonaConfig(BaseModel):
         default=False,
         description="是否启用短期上下文摘要缓存；默认关闭，关闭后即使限制历史条数，也只发送最近窗口原始消息",
     )
+    session_memory: PersonaSessionMemoryConfig = Field(
+        default_factory=PersonaSessionMemoryConfig,
+        description="克隆人格的对话记忆开关与注入范围",
+    )
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig, description="主动问候配置")
 
 
 class CompactionConfig(BaseModel):
-    """上下文压缩配置。
-
-    默认值面向「自动压缩在接近窗口上限前介入」：阈值取窗口的一半，尾部保留量按
-    窗口比例夹取，使大窗口模型不保留过量原文。
-    """
+    """上下文压缩配置；默认在接近窗口上限前触发，避免保留过量原文。"""
 
     enabled: bool = Field(default=True, description="是否启用自动上下文压缩")
     threshold_percent: float = Field(
@@ -287,6 +338,21 @@ class CompactionConfig(BaseModel):
     )
 
 
+class TitleGenerationConfig(BaseModel):
+    """会话标题自动生成配置：首条消息后异步补标题，失败保持默认名。"""
+
+    enabled: bool = Field(
+        default=True,
+        description="是否根据首条消息自动生成会话标题",
+    )
+    timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+        description="标题生成请求的超时时间（秒）",
+    )
+
+
 class SecurityConfig(BaseModel):
     """安全配置"""
     # 危险命令检测
@@ -307,10 +373,7 @@ class SecurityConfig(BaseModel):
     # 输出限制
     max_output_length: int = Field(default=10000, ge=100, le=1000000, description="最大输出长度（字符）")
     
-    # 工作空间限制
-    # 安全默认值必须为 True：False 等于允许 AI 生成的命令以 CountBot 进程
-    # 用户身份读写宿主机任意路径（见安全修复 2026-10-23，CWE-78）。
-    # 明确需要全盘访问的部署方可在配置文件中显式设为 false。
+    # 工作空间限制：默认必须为 True，否则命令可读写任意路径（CWE-78）
     restrict_to_workspace: bool = Field(default=True, description="是否限制命令在工作空间内执行")
 
 
@@ -330,6 +393,8 @@ class ChannelAccountConfig(BaseModel):
     enabled: bool = False
     display_name: str = Field(default="", description="机器人名称")
     account_id: str = Field(default="default", description="机器人账号 ID")
+    # 账号归属：None 表示管理员账号，普通用户账号记录其 owner_id
+    owner_id: Optional[str] = Field(default=None, description="账号归属用户")
     allow_from: List[str] = Field(default_factory=list)
     routing_mode: str = Field(
         default="ai",
@@ -576,6 +641,9 @@ class AppConfig(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     compaction: CompactionConfig = Field(default_factory=CompactionConfig)
+    title_generation: TitleGenerationConfig = Field(
+        default_factory=TitleGenerationConfig
+    )
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)
     mcp: McpConfig = Field(default_factory=McpConfig)
@@ -609,20 +677,11 @@ class AppConfig(BaseModel):
         self._migrate_provider_models()
 
     def _migrate_provider_models(self) -> None:
-        """把改造前的单模型配置迁移成供应商模型清单。
-
-        存量配置里没有 api_type / models 两个字段，这里在加载时就地补齐，
-        避免每个读 provider 的地方各自兜底：
-        - api_type 为空时按 provider_id 推断（与 factory.resolve_api_type 一致）
-        - provider.model 有值但清单为空时补一条 manual 条目
-        - 全局选中模型所属供应商的清单里没有它时也补一条，保证下拉能显示当前项
-        """
+        """把旧版单模型配置迁移为供应商模型清单，缺失的 api_type / models 就地补齐。"""
         from backend.modules.providers.factory import resolve_api_type
 
         for provider_id, provider_config in self.providers.items():
-            # 读盘时 api_type 已被 Literal 默认值填成 chat-completions，
-            # 因此需要靠 explicit 标记区分「用户选的」和「schema 默认的」：
-            # 只有非默认值才视为用户显式选择，否则按 provider_id 推断。
+            # api_type 默认值会被填成 chat-completions，需用 explicit 标记区分用户显式选择
             provider_config.api_type = resolve_api_type(
                 provider_id,
                 provider_config.api_type,
@@ -639,3 +698,29 @@ class AppConfig(BaseModel):
         if selected_provider is not None and selected_model:
             if selected_provider.find_model(selected_model) is None:
                 selected_provider.ensure_model(selected_model, source="manual")
+
+
+def resolve_stream_enabled(
+    config: AppConfig,
+    provider_name: Optional[str] = None,
+    model_id: Optional[str] = None,
+    *,
+    explicit: Optional[bool] = None,
+) -> bool:
+    """输出模式优先级：显式指定 > 模型条目 > 全局默认。
+
+    模型条目里的 stream_enabled 是「该模型是否支持/允许流式」的硬约束，
+    显式传入的会话/团队覆盖优先于它，保证单次请求可以临时改道。
+    """
+    if explicit is not None:
+        return bool(explicit)
+
+    provider = config.providers.get((provider_name or config.model.provider or "").strip())
+    entry = (
+        provider.find_model((model_id or config.model.model or "").strip())
+        if provider is not None
+        else None
+    )
+    if entry is not None and entry.stream_enabled is not None:
+        return bool(entry.stream_enabled)
+    return bool(config.model.stream_enabled)
