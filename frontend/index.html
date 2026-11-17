@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light" data-palette="cool">
 
 <head>
     <meta charset="UTF-8" />
@@ -7,6 +7,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="CountBot" />
     <title>CountBot</title>
+    <script>
+        try {
+            const root = document.documentElement
+            const palette = localStorage.getItem('CountBot-palette')
+            const theme = localStorage.getItem('CountBot-theme')
+            const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            root.dataset.palette = ['warm', 'cool', 'forest', 'sakura'].indexOf(palette) !== -1 ? palette : 'cool'
+            root.dataset.theme = theme === 'auto' ? (systemDark ? 'dark' : 'light') : (theme === 'dark' ? 'dark' : 'light')
+        } catch (error) {}
+    </script>
 </head>
 
 <body>

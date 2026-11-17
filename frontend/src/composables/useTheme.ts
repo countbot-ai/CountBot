@@ -153,9 +153,7 @@ export function useTheme() {
      */
     function initTheme() {
         const storedPalette = getStoredThemePalette()
-        if (storedPalette) {
-            themePalette.value = storedPalette
-        }
+        themePalette.value = storedPalette || 'cool'
         document.documentElement.setAttribute('data-palette', themePalette.value)
 
         const stored = getStoredTheme()
@@ -163,7 +161,7 @@ export function useTheme() {
         if (stored) {
             setThemeMode(stored)
         } else {
-            // 默认使用浅色主题
+            // 默认使用浅色 + 冷色
             setThemeMode('light')
         }
     }

@@ -1,8 +1,9 @@
 /**
  * 扩展色调 - 冷色 / 森绿 / 樱花
  *
- * 暖色仍是 variables.css + themes/light.css + themes/dark.css 的默认值；
- * 本文件只在 <html data-palette="..."> 时覆盖核心令牌，不改任何组件样式。
+ * 基础暖色令牌保留在 variables.css + themes/light.css + themes/dark.css；
+ * 页面默认使用冷色（index.html 预置 data-palette="cool"），
+ * 本文件在切换色调时覆盖核心令牌，不改任何组件样式。
  * 三种预设卡片固定为浅色外观；同时保留深色令牌，供「跟随系统」在
  * 当前色调下解析系统深色时使用。
  */
