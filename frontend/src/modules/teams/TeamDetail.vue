@@ -4,7 +4,7 @@
     <div class="detail-header">
       <button class="btn-back" @click="$emit('back')">
         <component :is="ArrowLeftIcon" :size="16" />
-        返回团队列表
+        {{ $t('teams.detail.backToList') }}
       </button>
       
       <div class="team-info-section">
@@ -13,7 +13,7 @@
           <div class="team-badges">
             <span class="badge badge-mode">{{ modeLabelMap[team.mode] }}</span>
             <span v-if="team.mode === 'council'" class="badge badge-review" :class="team.cross_review ? 'badge-cross' : 'badge-independent'">
-              {{ team.cross_review ? '交叉模式' : '独立模式' }}
+              {{ team.cross_review ? $t('teams.detail.crossMode') : $t('teams.detail.independentMode') }}
             </span>
           </div>
           <button class="icon-btn" @click="showEditTeamDialog = true">
@@ -27,15 +27,15 @@
     <!-- 成员列表 -->
     <div class="members-section">
       <div class="section-header">
-        <h3>团队成员 ({{ localAgents.length }})</h3>
+        <h3>{{ $t('teams.detail.membersTitle', { n: localAgents.length }) }}</h3>
         <div class="section-actions">
           <button v-if="team.mode === 'graph' && localAgents.length > 0" class="btn-secondary" @click="showGraph = !showGraph">
             <component :is="NetworkIcon" :size="16" />
-            {{ showGraph ? '隐藏依赖图' : '查看依赖图' }}
+            {{ showGraph ? $t('teams.detail.hideGraph') : $t('teams.detail.showGraph') }}
           </button>
           <button class="btn-primary" @click="addMember">
             <component :is="PlusIcon" :size="16" />
-            添加成员
+            {{ $t('teams.detail.addMember') }}
           </button>
         </div>
       </div>
@@ -47,7 +47,7 @@
 
       <div v-if="localAgents.length === 0" class="empty-members">
         <component :is="UsersIcon" :size="48" class="empty-icon" />
-        <p>暂无成员，点击上方按钮添加</p>
+        <p>{{ $t('teams.detail.emptyMembers') }}</p>
       </div>
 
       <div v-else class="members-list">
@@ -73,27 +73,27 @@
               <span class="detail-value">{{ agent.id }}</span>
             </div>
             <div v-if="team.mode === 'council'" class="detail-item">
-              <span class="detail-label">视角:</span>
+              <span class="detail-label">{{ $t('teams.detail.perspectiveLabel') }}</span>
               <span class="detail-value">{{ agent.perspective || '-' }}</span>
             </div>
             <div v-else class="detail-item">
-              <span class="detail-label">任务:</span>
+              <span class="detail-label">{{ $t('teams.detail.taskLabel') }}</span>
               <span class="detail-value">{{ agent.task || '-' }}</span>
             </div>
             <div v-if="team.mode === 'graph' && agent.depends_on?.length" class="detail-item">
-              <span class="detail-label">依赖:</span>
+              <span class="detail-label">{{ $t('teams.detail.dependsLabel') }}</span>
               <span class="detail-value">{{ agent.depends_on.join(', ') }}</span>
             </div>
             <div v-if="agent.condition" class="detail-item full-width">
-              <span class="detail-label">执行条件:</span>
+              <span class="detail-label">{{ $t('teams.detail.conditionLabel') }}</span>
               <div class="condition-badge">
-                <span class="condition-type">{{ agent.condition.type === 'output_contains' ? '包含' : '不包含' }}</span>
+                <span class="condition-type">{{ agent.condition.type === 'output_contains' ? $t('teams.detail.conditionContains') : $t('teams.detail.conditionNotContains') }}</span>
                 <span class="condition-node">{{ agent.condition.node }}</span>
                 <span class="condition-text">"{{ agent.condition.text }}"</span>
               </div>
             </div>
             <div v-if="agent.system_prompt" class="detail-item full-width">
-              <span class="detail-label">系统提示词:</span>
+              <span class="detail-label">{{ $t('teams.detail.systemPromptLabel') }}</span>
               <div class="prompt-preview">{{ agent.system_prompt }}</div>
             </div>
           </div>
@@ -104,7 +104,7 @@
     <!-- 编辑团队信息对话框 - 标签页形式 -->
     <Modal
       :model-value="showEditTeamDialog"
-      title="编辑团队信息"
+      :title="$t('teams.detail.editTitle')"
       size="large"
       @close="closeEditTeamDialog"
     >
@@ -117,7 +117,7 @@
             @click="activeTab = 'basic'"
           >
             <component :is="InfoIcon" :size="16" />
-            <span>基本信息</span>
+            <span>{{ $t('teams.detail.tabBasic') }}</span>
           </button>
           <button
             v-if="userStore.isAdmin"
@@ -126,7 +126,7 @@
             @click="activeTab = 'model'"
           >
             <component :is="CpuIcon" :size="16" />
-            <span>模型配置</span>
+            <span>{{ $t('teams.detail.tabModel') }}</span>
           </button>
         </div>
 
@@ -135,35 +135,35 @@
           <!-- 基本信息标签页 -->
           <div v-show="activeTab === 'basic'" class="tab-panel">
             <div class="form-group">
-              <label>团队名称 <span class="required">*</span></label>
+              <label>{{ $t('teams.detail.teamName') }} <span class="required">*</span></label>
               <input v-model="teamForm.name" type="text" class="form-input" />
             </div>
 
             <div class="form-group">
-              <label>团队描述</label>
+              <label>{{ $t('teams.detail.teamDescription') }}</label>
               <textarea v-model="teamForm.description" class="form-textarea" rows="3" />
             </div>
 
             <div class="form-group">
-              <label>协作模式 <span class="required">*</span></label>
+              <label>{{ $t('teams.detail.collaborationMode') }} <span class="required">*</span></label>
               <select v-model="teamForm.mode" class="form-select">
-                <option value="pipeline">流水线 (Pipeline)</option>
-                <option value="graph">依赖图 (Graph)</option>
-                <option value="council">多视角 (Council)</option>
+                <option value="pipeline">{{ $t('teams.detail.modePipeline') }}</option>
+                <option value="graph">{{ $t('teams.detail.modeGraph') }}</option>
+                <option value="council">{{ $t('teams.detail.modeCouncil') }}</option>
               </select>
             </div>
 
             <div v-if="teamForm.mode === 'council'" class="form-group">
               <div class="toggle-wrapper">
                 <div class="toggle-content">
-                  <span class="toggle-title">启用交叉评审</span>
-                  <p class="toggle-hint">关闭后，成员将独立分析，不互相评审</p>
+                  <span class="toggle-title">{{ $t('teams.detail.crossReview') }}</span>
+                  <p class="toggle-hint">{{ $t('teams.detail.crossReviewHint') }}</p>
                 </div>
                 <SwitchToggle
                   v-model="teamForm.cross_review"
                   :width="44"
                   :height="24"
-                  aria-label="启用交叉评审"
+                  :aria-label="$t('teams.detail.crossReview')"
                 />
               </div>
             </div>
@@ -171,14 +171,14 @@
             <div class="form-group">
               <div class="toggle-wrapper">
                 <div class="toggle-content">
-                  <span class="toggle-title">启用技能系统</span>
-                  <p class="toggle-hint">开启后，子 Agent 可以使用技能（如图片生成、天气查询等）</p>
+                  <span class="toggle-title">{{ $t('teams.detail.skills') }}</span>
+                  <p class="toggle-hint">{{ $t('teams.detail.skillsHint') }}</p>
                 </div>
                 <SwitchToggle
                   v-model="teamForm.enable_skills"
                   :width="44"
                   :height="24"
-                  aria-label="启用技能系统"
+                  :aria-label="$t('teams.detail.skills')"
                 />
               </div>
             </div>
@@ -194,17 +194,17 @@
                     v-model="useCustomModel"
                     :width="48"
                     :height="28"
-                    aria-label="为此团队使用自定义模型"
+                    :aria-label="$t('teams.detail.customModel')"
                     @change="onToggleCustomModel"
                   />
                   <div class="toggle-content-large">
-                    <span class="toggle-text">为此团队使用自定义模型</span>
-                    <span class="toggle-hint">团队成员将使用此配置的模型和 API</span>
+                    <span class="toggle-text">{{ $t('teams.detail.customModel') }}</span>
+                    <span class="toggle-hint">{{ $t('teams.detail.customModelHint') }}</span>
                   </div>
                 </label>
                 <div v-if="useCustomModel" class="config-badge">
                   <component :is="SparklesIcon" :size="14" />
-                  <span>自定义</span>
+                  <span>{{ $t('teams.detail.custom') }}</span>
                 </div>
               </div>
             </div>
@@ -212,7 +212,7 @@
             <div v-if="useCustomModel" class="model-config-section">
               <div class="model-config-toolbar">
                 <div class="model-config-copy">
-                  <h4>模型设置</h4>
+                  <h4>{{ $t('teams.detail.modelSettings') }}</h4>
                 </div>
               </div>
 
@@ -306,8 +306,8 @@
             <div v-else class="empty-state-inline">
               <component :is="GlobeIcon" :size="32" class="empty-icon" />
               <div class="empty-text">
-                <h4>使用全局默认配置</h4>
-                <p>启用自定义配置以为此团队设置专属的模型和 API</p>
+                <h4>{{ $t('teams.detail.globalDefault') }}</h4>
+                <p>{{ $t('teams.detail.globalDefaultHint') }}</p>
               </div>
             </div>
           </div>
@@ -316,44 +316,44 @@
       </div>
 
       <template #footer>
-        <button class="co-btn co-btn--secondary" @click="closeEditTeamDialog">取消</button>
-        <button class="co-btn co-btn--primary" @click="saveTeamInfo">保存</button>
+        <button class="co-btn co-btn--secondary" @click="closeEditTeamDialog">{{ $t('common.cancel') }}</button>
+        <button class="co-btn co-btn--primary" @click="saveTeamInfo">{{ $t('common.save') }}</button>
       </template>
     </Modal>
 
     <!-- 编辑成员对话框 -->
     <Modal
       :model-value="showEditMemberDialog"
-      :title="editingMemberIndex === null ? '添加成员' : '编辑成员'"
+      :title="editingMemberIndex === null ? $t('teams.detail.addMemberTitle') : $t('teams.detail.editMemberTitle')"
       size="large"
       @close="closeMemberDialog"
     >
       <div class="dialog-content">
         <div class="form-group">
-          <label>成员 ID <span class="required">*</span></label>
-          <input v-model="memberForm.id" type="text" class="form-input" placeholder="例如：analyst" />
-          <p class="form-hint">唯一标识符，用于依赖关系引用</p>
+          <label>{{ $t('teams.detail.memberId') }} <span class="required">*</span></label>
+          <input v-model="memberForm.id" type="text" class="form-input" :placeholder="$t('teams.detail.memberIdPlaceholder')" />
+          <p class="form-hint">{{ $t('teams.detail.memberIdHint') }}</p>
         </div>
 
         <div v-if="team.mode === 'council'" class="form-group">
-          <label>视角 (Perspective) <span class="required">*</span></label>
-          <input v-model="memberForm.perspective" type="text" class="form-input" placeholder="例如：技术架构师，关注可扩展性" />
-          <p class="form-hint">描述这个成员的分析视角</p>
+          <label>{{ $t('teams.detail.perspective') }} <span class="required">*</span></label>
+          <input v-model="memberForm.perspective" type="text" class="form-input" :placeholder="$t('teams.detail.perspectivePlaceholder')" />
+          <p class="form-hint">{{ $t('teams.detail.perspectiveHint') }}</p>
         </div>
 
         <div v-else class="form-group">
-          <label>角色 (Role) <span class="required">*</span></label>
-          <input v-model="memberForm.role" type="text" class="form-input" placeholder="例如：需求分析师" />
+          <label>{{ $t('teams.detail.role') }} <span class="required">*</span></label>
+          <input v-model="memberForm.role" type="text" class="form-input" :placeholder="$t('teams.detail.rolePlaceholder')" />
         </div>
 
         <div v-if="team.mode !== 'council'" class="form-group">
-          <label>任务 (Task)</label>
-          <textarea v-model="memberForm.task" class="form-textarea" rows="3" placeholder="描述这个成员的具体任务..." />
-          <p class="form-hint">`task` 会作为实际执行任务传给子 Agent；如果未填写系统提示词，系统也会基于角色和任务自动生成默认系统提示。</p>
+          <label>{{ $t('teams.detail.task') }}</label>
+          <textarea v-model="memberForm.task" class="form-textarea" rows="3" :placeholder="$t('teams.detail.taskPlaceholder')" />
+          <p class="form-hint">{{ $t('teams.detail.taskHint') }}</p>
         </div>
 
         <div v-if="team.mode === 'graph'" class="form-group">
-          <label>依赖 (Depends On)</label>
+          <label>{{ $t('teams.detail.dependsOn') }}</label>
           
           <div class="dependency-selector">
             <div v-if="getSelectedDependencies().length > 0" class="selected-tags">
@@ -363,73 +363,73 @@
               </span>
             </div>
             <select class="form-select" @change="addDependency($event)" :disabled="getAvailableDependencies().length === 0">
-              <option value="">{{ getAvailableDependencies().length === 0 ? '没有可选的依赖节点' : '选择依赖节点...' }}</option>
+              <option value="">{{ getAvailableDependencies().length === 0 ? $t('teams.detail.noDependencies') : $t('teams.detail.selectDependencies') }}</option>
               <option v-for="agent in getAvailableDependencies()" :key="agent.id" :value="agent.id">
-                {{ agent.id }} - {{ agent.role || agent.perspective || '未命名' }}
+                {{ agent.id }} - {{ agent.role || agent.perspective || $t('teams.detail.unnamed') }}
               </option>
             </select>
           </div>
-          <p class="form-hint">选择此成员需要等待哪些成员完成后才能执行</p>
+          <p class="form-hint">{{ $t('teams.detail.dependsHint') }}</p>
         </div>
 
         <!-- 条件配置（Graph模式下始终显示） -->
         <div v-if="team.mode === 'graph'" class="form-group">
-          <label>执行条件（可选）</label>
+          <label>{{ $t('teams.detail.conditionOptional') }}</label>
           
           <!-- 没有依赖时显示提示 -->
           <div v-if="!memberForm.depends_on_str.trim()" class="condition-disabled-hint">
             <component :is="InfoIcon" :size="16" />
-            <span>请先选择依赖节点，然后可以配置基于依赖输出的执行条件</span>
+            <span>{{ $t('teams.detail.selectDependenciesFirst') }}</span>
           </div>
           
           <!-- 有依赖时显示配置 -->
           <div v-else class="condition-config">
             <div class="toggle-wrapper">
               <div class="toggle-content">
-                <span class="toggle-title">启用条件执行</span>
-                <p class="toggle-hint">根据依赖节点的输出决定是否执行此节点</p>
+                <span class="toggle-title">{{ $t('teams.detail.enableCondition') }}</span>
+                <p class="toggle-hint">{{ $t('teams.detail.conditionHint') }}</p>
               </div>
               <SwitchToggle
                 v-model="memberForm.enable_condition"
                 :width="44"
                 :height="24"
-                aria-label="启用条件执行"
+                :aria-label="$t('teams.detail.enableCondition')"
               />
             </div>
 
             <div v-if="memberForm.enable_condition" class="condition-form">
               <div class="form-row">
                 <div class="form-col">
-                  <label>条件类型</label>
+                  <label>{{ $t('teams.detail.conditionType') }}</label>
                   <select v-model="memberForm.condition_type" class="form-select">
-                    <option value="output_contains">输出包含</option>
-                    <option value="output_not_contains">输出不包含</option>
+                    <option value="output_contains">{{ $t('teams.detail.outputContains') }}</option>
+                    <option value="output_not_contains">{{ $t('teams.detail.outputNotContains') }}</option>
                   </select>
                 </div>
                 <div class="form-col">
-                  <label>检查节点</label>
+                  <label>{{ $t('teams.detail.checkNode') }}</label>
                   <select v-model="memberForm.condition_node" class="form-select">
-                    <option value="">选择节点...</option>
+                    <option value="">{{ $t('teams.detail.selectNode') }}</option>
                     <option v-for="nodeId in getAllUpstreamNodes()" :key="nodeId" :value="nodeId">
-                      {{ nodeId }} - {{ getAgentById(nodeId)?.role || getAgentById(nodeId)?.perspective || '未命名' }}
+                      {{ nodeId }} - {{ getAgentById(nodeId)?.role || getAgentById(nodeId)?.perspective || $t('teams.detail.unnamed') }}
                     </option>
                   </select>
-                  <p class="form-hint">可以选择任何上游节点（包括间接依赖）</p>
+                  <p class="form-hint">{{ $t('teams.detail.anyUpstream') }}</p>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-col full">
-                  <label>匹配文本</label>
+                  <label>{{ $t('teams.detail.matchText') }}</label>
                   <input 
                     v-model="memberForm.condition_text" 
                     type="text" 
                     class="form-input" 
-                    placeholder="例如：测试通过、成功、无问题" 
+                    :placeholder="$t('teams.detail.matchPlaceholder')" 
                   />
                   <p class="form-hint">
                     {{ memberForm.condition_type === 'output_contains' 
-                      ? '当依赖节点输出包含此文本时，执行当前节点' 
-                      : '当依赖节点输出不包含此文本时，执行当前节点' }}
+                      ? $t('teams.detail.matchContainsHint') 
+                      : $t('teams.detail.matchNotContainsHint') }}
                   </p>
                 </div>
               </div>
@@ -438,23 +438,23 @@
         </div>
 
         <div class="form-group">
-          <label>系统提示词 (System Prompt)</label>
+          <label>{{ $t('teams.detail.systemPromptFull') }}</label>
           <textarea 
             v-model="memberForm.system_prompt" 
             class="form-textarea prompt-textarea" 
             rows="8" 
-            placeholder="为这个智能体定义持久的系统级指令，例如：&#10;&#10;你是一位资深的技术架构师，拥有15年的大型系统设计经验。你的职责是：&#10;1. 评估技术方案的可行性和可扩展性&#10;2. 识别潜在的技术风险和瓶颈&#10;3. 提供具体的技术建议和最佳实践&#10;&#10;请始终保持专业、客观，并提供可操作的建议。"
+            :placeholder="$t('teams.detail.systemPromptPlaceholder')"
           />
           <p class="form-hint">
-            `system_prompt` 会直接作为系统消息注入；如果这里留空，系统会自动用角色和任务生成默认系统提示。填写后会覆盖默认系统提示，但不会替代上面的 `task`。
+            {{ $t('teams.detail.systemPromptHint') }}
           </p>
         </div>
 
       </div>
 
       <template #footer>
-        <button class="co-btn co-btn--secondary" @click="closeMemberDialog">取消</button>
-        <button class="co-btn co-btn--primary" @click="saveMember" :disabled="!canSaveMember">保存</button>
+        <button class="co-btn co-btn--secondary" @click="closeMemberDialog">{{ $t('common.cancel') }}</button>
+        <button class="co-btn co-btn--primary" @click="saveMember" :disabled="!canSaveMember">{{ $t('common.save') }}</button>
       </template>
     </Modal>
 
@@ -522,9 +522,9 @@ const modelCatalog = useModelCatalog()
 const { confirm } = useConfirm()
 
 const modeLabelMap: Record<string, string> = {
-  pipeline: '流水线',
-  graph: '依赖图',
-  council: '多视角',
+  pipeline: t('teams.detail.modePipeline'),
+  graph: t('teams.detail.modeGraph'),
+  council: t('teams.detail.modeCouncil'),
 }
 
 // 本地成员列表（可编辑）
@@ -738,10 +738,10 @@ const removeDependency = (depId: string) => {
 
 const removeMember = async (index: number) => {
   const confirmed = await confirm({
-    title: '确认删除',
-    message: '确定要删除这个成员吗？',
+    title: t('teams.detail.confirmDelete'),
+    message: t('teams.detail.confirmDeleteMessage'),
     type: 'danger',
-    confirmText: '删除',
+    confirmText: t('common.delete'),
     confirmVariant: 'danger'
   })
   if (!confirmed) return
@@ -989,11 +989,11 @@ const saveTeamInfo = async () => {
       }
     }
     
-    toast.success('团队信息已更新')
+    toast.success(t('teams.detail.teamUpdated'))
     closeEditTeamDialog()
     emit('updated')
   } catch (err: any) {
-    toast.error(err.message || '保存失败')
+    toast.error(err.message || t('teams.detail.saveFailed'))
   }
 }
 
@@ -1008,15 +1008,14 @@ const saveChanges = async () => {
       agents: localAgents.value,
       is_active: props.team.is_active,
     })
-    toast.success('成员已更新')
+    toast.success(t('teams.detail.memberUpdated'))
     emit('updated')
   } catch (err: any) {
-    toast.error(err.message || '保存失败')
+    toast.error(err.message || t('teams.detail.saveFailed'))
   }
 }
 </script>
 <style scoped>
 @import './styles/TeamDetail.css';
 </style>
-
 
