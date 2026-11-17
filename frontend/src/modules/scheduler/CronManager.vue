@@ -366,14 +366,14 @@
               <div class="session-actions">
                 <button
                   class="session-action-btn"
-                  :disabled="loadingSession.has(job.id)"
+                  :disabled="loadingSession.has(job.id) || isJobRunning(job)"
                   @click="handleCleanupSession(job.id)"
                 >
                   {{ $t('cron.cleanupSession', { keep: 10 }) }}
                 </button>
                 <button
                   class="session-action-btn danger"
-                  :disabled="loadingSession.has(job.id)"
+                  :disabled="loadingSession.has(job.id) || isJobRunning(job)"
                   @click="handleResetSession(job.id)"
                 >
                   {{ $t('cron.resetSession') }}

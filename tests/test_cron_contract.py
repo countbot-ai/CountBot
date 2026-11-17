@@ -1,6 +1,7 @@
 """Cron 推送、参数边界与更新语义回归测试。"""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -68,6 +69,33 @@ def test_request_bounds_reject_out_of_range(payload):
     base.update(payload)
     with pytest.raises(ValidationError):
         CreateCronJobRequest(**base)
+
+
+@pytest.mark.asyncio
+async def test_delete_job_with_persisted_running_status_is_rejected():
+    from backend.api.cron.jobs import delete_cron_job
+
+    service = SimpleNamespace(
+        scheduler=SimpleNamespace(is_job_active=lambda job_id: False),
+        get_job=AsyncMock(return_value=SimpleNamespace(last_status="running")),
+        delete_job=AsyncMock(return_value=True),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await delete_cron_job("running-job", service)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_running_job_is_rejected():
+    from backend.api.cron.jobs import delete_cron_job
+
+    service = SimpleNamespace(
+        scheduler=SimpleNamespace(is_job_active=lambda job_id: True),
+        delete_job=AsyncMock(return_value=True),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await delete_cron_job("running-job", service)
+    assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio

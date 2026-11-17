@@ -160,7 +160,7 @@
       <div class="preview-header">
         <component :is="parseError ? AlertCircleIcon : ClockIcon" :size="14" />
         <span class="preview-label">{{ parseError ? $t('cron.builder.invalidExpr') : $t('cron.builder.preview') }}</span>
-        <code class="preview-expr">{{ modelValue || '—' }}</code>
+        <code class="preview-expr">{{ (parseError && mode === 'advanced' ? rawExpression : modelValue) || '—' }}</code>
       </div>
       <p v-if="!parseError && description" class="preview-desc">{{ description }}</p>
       <p v-if="parseError" class="preview-error">{{ parseError }}</p>
@@ -339,7 +339,7 @@ function validateCronFields(parts: string[]): string {
       return /^\d+$/.test(value) && Number(value) >= minimum && Number(value) <= maximum
     })
   })
-  return invalid ? t('cron.errors.scheduleInvalid') : ''
+  return invalid ? t('cron.errors.scheduleInvalidFields') : ''
 }
 
 // Parse existing expression into simple mode fields
@@ -347,7 +347,7 @@ function parseExpression(expr: string) {
   if (!expr) return
   const parts = expr.trim().split(/\s+/)
   if (parts.length !== 5) {
-    parseError.value = t('cron.errors.scheduleInvalid')
+    parseError.value = t('cron.errors.scheduleInvalidParts')
     return
   }
   const fieldError = validateCronFields(parts)
@@ -392,13 +392,15 @@ function onFrequencyChange() {
 }
 
 function onRawInput() {
-  const parts = rawExpression.value.trim().split(/\s+/)
-  if (!rawExpression.value.trim()) {
+  const value = rawExpression.value.trim()
+  emit('update:modelValue', value)
+  if (!value) {
     parseError.value = ''
     return
   }
+  const parts = value.split(/\s+/)
   if (parts.length !== 5) {
-    parseError.value = t('cron.errors.scheduleInvalid')
+    parseError.value = t('cron.errors.scheduleInvalidParts')
     return
   }
   const fieldError = validateCronFields(parts)
@@ -407,8 +409,7 @@ function onRawInput() {
     return
   }
   parseError.value = ''
-  emit('update:modelValue', rawExpression.value.trim())
-  parseExpression(rawExpression.value.trim())
+  parseExpression(value)
 }
 
 function applyPreset(value: string) {

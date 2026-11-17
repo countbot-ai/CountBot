@@ -2518,10 +2518,12 @@
     "errors": {
       "nameRequired": "请输入任务名称",
       "scheduleRequired": "请输入 Cron 表达式",
-      "scheduleInvalid": "Cron 表达式格式不正确（应为5个部分）",
+      "scheduleInvalid": "Cron 表达式无效",
       "messageRequired": "请输入执行消息",
       "channelRequired": "请选择推送渠道",
-      "chatRequired": "请选择推送会话"
+      "chatRequired": "请选择推送会话",
+      "scheduleInvalidFields": "Cron 表达式字段超出允许范围",
+      "scheduleInvalidParts": "Cron 表达式应为 5 个部分"
     },
     "deliverToChannel": "推送响应到渠道",
     "deliverToChannelHint": "启用后，AI 的响应将发送到指定的渠道（如飞书、Telegram等）",
@@ -2559,7 +2561,6 @@
     "executionStatus": "执行状态",
     "lastStatus": "最近状态",
     "lastError": "最近错误",
-    "lastResponse": "最近响应",
     "statistics": "统计信息",
     "runCount": "执行次数",
     "errorCount": "错误次数",
@@ -2581,7 +2582,6 @@
     "viewError": "查看错误",
     "showDetails": "查看详情",
     "hideDetails": "隐藏详情",
-    "noDetailsAvailable": "暂无详情",
     "loadDetailError": "加载详情失败",
     "advancedOptions": "高级选项",
     "enableRetry": "启用自动重试",

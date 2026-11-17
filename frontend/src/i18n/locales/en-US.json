@@ -2518,10 +2518,12 @@
     "errors": {
       "nameRequired": "Please enter a job name",
       "scheduleRequired": "Please enter a cron expression",
-      "scheduleInvalid": "Invalid cron expression format (should have 5 parts)",
+      "scheduleInvalid": "Invalid cron expression",
       "messageRequired": "Please enter a message",
       "channelRequired": "Please select a delivery channel",
-      "chatRequired": "Please select a delivery chat"
+      "chatRequired": "Please select a delivery chat",
+      "scheduleInvalidFields": "Cron expression field is outside the allowed range",
+      "scheduleInvalidParts": "Cron expression must have 5 fields"
     },
     "deliverToChannel": "Deliver response to channel",
     "deliverToChannelHint": "When enabled, AI responses will be sent to the specified channel (Feishu, Telegram, etc.)",
@@ -2559,7 +2561,6 @@
     "executionStatus": "Execution Status",
     "lastStatus": "Last Status",
     "lastError": "Last Error",
-    "lastResponse": "Last Response",
     "statistics": "Statistics",
     "runCount": "Run Count",
     "errorCount": "Error Count",
@@ -2581,7 +2582,6 @@
     "viewError": "View Error",
     "showDetails": "Show Details",
     "hideDetails": "Hide Details",
-    "noDetailsAvailable": "No details available",
     "loadDetailError": "Failed to load details",
     "advancedOptions": "Advanced Options",
     "enableRetry": "Enable Auto Retry",

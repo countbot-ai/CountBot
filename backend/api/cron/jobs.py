@@ -12,6 +12,7 @@ from backend.modules.multiuser.permissions import require_active_user
 from backend.api.cron._common import (
     BUILTIN_PREFIX,
     build_job_info,
+    is_job_running,
     validate_channel_push_for_user,
     validate_model_for_user,
     get_cron_service,
@@ -255,6 +256,18 @@ async def delete_cron_job(
             )
 
         if cron_service.scheduler and cron_service.scheduler.is_job_active(job_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="任务正在执行，暂不能删除"
+            )
+
+        job = await cron_service.get_job(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cron job '{job_id}' not found"
+            )
+        if is_job_running(job, cron_service.scheduler):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="任务正在执行，暂不能删除"
