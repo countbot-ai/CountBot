@@ -304,6 +304,13 @@ class CronScheduler:
                         job.next_run = service.calculate_next_run(job.schedule)
                     except Exception:
                         pass
+                if job.deliver_response and job.channel == "web":
+                    await self._finalize_web_delivery(
+                        job,
+                        "error",
+                        error=job.last_error,
+                        manual=manual,
+                    )
                 await self._safe_commit(db)
                 await self._broadcast_status(job, "error", manual=manual)
         except Exception as e:
@@ -321,6 +328,13 @@ class CronScheduler:
                 job.last_error = error[:1000]
                 job.last_finished_at = _now_shanghai()
                 job.error_count = (job.error_count or 0) + 1
+                if job.deliver_response and job.channel == "web":
+                    await self._finalize_web_delivery(
+                        job,
+                        "error",
+                        error=job.last_error,
+                        manual=manual,
+                    )
                 await self._safe_commit(db)
                 await self._broadcast_status(job, "error", manual=manual)
         except Exception as e:
@@ -336,6 +350,7 @@ class CronScheduler:
         job.last_run = started_at
         job.last_finished_at = None
         job.last_error = None
+        job.last_response = None
         job.last_delivery_status = None
         job.last_delivery_error = None
         job.updated_at = started_at
@@ -364,10 +379,18 @@ class CronScheduler:
                 job.last_error = None
                 job.last_response = response[:10000] if response else None
                 job.last_finished_at = _now_shanghai()
-                job.last_delivery_status = (
-                    "ok" if job.deliver_response and job.channel and job.chat_id else "skipped"
-                )
-                job.last_delivery_error = None
+                if job.deliver_response and job.channel == "web":
+                    await self._finalize_web_delivery(
+                        job,
+                        "ok",
+                        response=job.last_response,
+                        manual=manual,
+                    )
+                else:
+                    job.last_delivery_status = (
+                        "ok" if job.deliver_response and job.channel and job.chat_id else "skipped"
+                    )
+                    job.last_delivery_error = None
                 job.run_count = (job.run_count or 0) + 1
                 job.retry_count = 0
                 
@@ -447,9 +470,75 @@ class CronScheduler:
                     except Exception:
                         job.enabled = False
                         job.last_error = f"Failed to calculate next run: {e}"
-            
+
+            if (
+                job.last_status == "error"
+                and job.deliver_response
+                and job.channel == "web"
+            ):
+                await self._finalize_web_delivery(
+                    job,
+                    "error",
+                    error=job.last_error,
+                    manual=manual,
+                )
+
             await self._safe_commit(service.db)
             await self._broadcast_status(job, job.last_status or "error", manual=manual)
+
+    async def _finalize_web_delivery(
+        self,
+        job,
+        status: str,
+        response: Optional[str] = None,
+        error: Optional[str] = None,
+        manual: bool = False,
+    ) -> int:
+        """发送网页站内通知，并按是否有在线连接记录推送结果。"""
+        delivered = await self._broadcast_web_result(
+            job,
+            status,
+            response=response,
+            error=error,
+            manual=manual,
+        )
+        if delivered:
+            job.last_delivery_status = "ok"
+            job.last_delivery_error = None
+        else:
+            job.last_delivery_status = "failed"
+            job.last_delivery_error = "当前没有在线的网页连接，通知未送达"
+        return delivered
+
+    async def _broadcast_web_result(
+        self,
+        job,
+        status: str,
+        response: Optional[str] = None,
+        error: Optional[str] = None,
+        manual: bool = False,
+    ) -> int:
+        """通过 WebSocket 向任务归属者推送网页通知。"""
+        try:
+            from backend.ws.connection import connection_manager
+            from backend.ws.task_notifications import CronJobResultMessage
+
+            return await connection_manager.broadcast_to_owner(
+                getattr(job, "owner_id", None),
+                CronJobResultMessage(
+                    job_id=job.id,
+                    job_name=job.name,
+                    status=status,
+                    channel=job.channel,
+                    response=response[:10000] if response else None,
+                    error=error[:1000] if error else None,
+                    delivery_status=job.last_delivery_status,
+                    is_manual=manual,
+                ),
+            )
+        except Exception as e:
+            logger.debug(f"Failed to broadcast web result for {job.id}: {e}")
+            return 0
 
     async def _broadcast_status(self, job, status: str, manual: bool = False) -> None:
         """通过 WebSocket 按任务归属广播状态，普通用户只收到自己的任务。"""
@@ -463,6 +552,7 @@ class CronScheduler:
                     job_id=job.id,
                     job_name=job.name,
                     status=status,
+                    channel=job.channel,
                     delivery_status=job.last_delivery_status,
                     error=job.last_delivery_error or job.last_error,
                     is_manual=manual,

@@ -137,7 +137,7 @@
           <!-- Channel Info (if applicable) -->
           <div v-if="job.deliver_response && job.channel" class="channel-info-compact">
             <component :is="SendIcon" :size="12" />
-            <span>{{ job.channel }}</span>
+            <span>{{ channelLabel(job.channel) }}</span>
             <span v-if="job.account_id" class="chat-id-compact">{{ job.account_id }}</span>
             <span v-if="job.chat_id" class="chat-id-compact">{{ truncateText(job.chat_id, 20) }}</span>
           </div>
@@ -651,6 +651,12 @@ const calculateSuccessRate = (job: CronJob): number => {
   if (job.run_count === 0) return 0
   const successCount = job.run_count - job.error_count
   return Math.round((successCount / job.run_count) * 100)
+}
+
+const channelLabel = (channel?: string | null): string => {
+  if (!channel) return ''
+  if (channel === 'web') return t('cron.webChannelName')
+  return channel
 }
 
 const parseCronExpression = (cron: string): string => {

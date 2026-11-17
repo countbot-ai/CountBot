@@ -2664,7 +2664,34 @@
     "sessionCleanupError": "Failed to clean up session",
     "sessionResetError": "Failed to reset session",
     "sessionCleanupSuccess": "Cleaned {count} messages, kept {keep}",
-    "sessionResetSuccess": "Session reset, deleted {count} messages"
+    "sessionResetSuccess": "Session reset, deleted {count} messages",
+    "webChannelName": "Web notification",
+    "webChannelHint": "Show an in-app notification and play a chime when the task finishes; click to open a Markdown execution detail. Delivery requires the web app to be open.",
+    "webNotify": {
+      "kicker": "Scheduled task",
+      "successTitle": "\"{name}\" completed",
+      "failedTitle": "\"{name}\" failed",
+      "viewDetail": "View execution details"
+    },
+    "result": {
+      "title": "Execution details",
+      "statusOk": "Completed",
+      "statusOkHint": "The task finished. Here is the AI response.",
+      "statusError": "Failed",
+      "statusErrorHint": "The task did not finish. Check the error below.",
+      "schedule": "Schedule",
+      "finishedAt": "Finished at",
+      "delivery": "Web notification",
+      "deliveryOk": "Delivered",
+      "deliveryFailed": "Not delivered",
+      "deliverySkipped": "Not required",
+      "loading": "Loading execution details...",
+      "loadFailed": "Failed to load execution details",
+      "error": "Error",
+      "response": "Result",
+      "empty": "This run returned no content",
+      "close": "Close"
+    }
   },
   "tasks": {
     "title": "Background Tasks",

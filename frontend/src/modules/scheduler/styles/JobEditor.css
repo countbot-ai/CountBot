@@ -215,3 +215,9 @@
     transform: rotate(360deg);
   }
 }
+
+
+.web-channel-hint {
+  margin-top: var(--spacing-xs);
+  color: var(--color-text-secondary);
+}

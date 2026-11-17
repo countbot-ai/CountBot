@@ -101,8 +101,23 @@ class CronJobStatusMessage(ServerMessage):
     job_id: str
     job_name: str
     status: str  # running, ok, error, retrying, skipped
+    channel: Optional[str] = None
     delivery_status: Optional[str] = None  # ok, failed, skipped
     error: Optional[str] = None
+    is_manual: bool = False
+
+
+class CronJobResultMessage(ServerMessage):
+    """网页站内推送：任务执行完成的完整结果，供前端弹出通知并打开详情。"""
+
+    type: str = "cron_job_result"
+    job_id: str
+    job_name: str
+    status: str  # ok, error
+    channel: Optional[str] = None
+    response: Optional[str] = None
+    error: Optional[str] = None
+    delivery_status: Optional[str] = None
     is_manual: bool = False
 
 

@@ -24,13 +24,12 @@ def _request(**overrides):
 
 
 @pytest.mark.asyncio
-async def test_web_push_is_rejected_even_for_admin():
-    with pytest.raises(HTTPException) as exc:
-        await validate_channel_push_for_user(
-            SimpleNamespace(is_admin=True),
-            _request(channel="web"),
-        )
-    assert exc.value.status_code == 400
+async def test_web_push_is_allowed_without_chat_id():
+    # 网页推送由 WebSocket 站内通知承接，不需要 chat_id
+    await validate_channel_push_for_user(
+        SimpleNamespace(is_admin=True),
+        _request(channel="web", chat_id=""),
+    )
 
 
 @pytest.mark.asyncio

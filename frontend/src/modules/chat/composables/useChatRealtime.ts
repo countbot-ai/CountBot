@@ -1,5 +1,6 @@
 import type { WebSocketMessage, UseWebSocketOptions } from '@/composables/useWebSocket'
 import { useCronStore } from '@/store/cron'
+import { emitCronResultNotification } from '@/modules/scheduler/cronNotifications'
 import { t } from '@/i18n'
 
 interface ToastLike {
@@ -130,7 +131,7 @@ export function useChatRealtime(options: UseChatRealtimeOptions) {
       }
 
       if (message.type === 'cron_job_status') {
-        // 定时任务状态：同步到面板，并在失败时给出告警
+        // 定时任务状态：同步到面板；网页渠道由 cron_job_result 统一弹通知
         cronStore.applyStatusEvent({
           job_id: String(message.job_id || ''),
           status: String(message.status || ''),
@@ -138,20 +139,43 @@ export function useChatRealtime(options: UseChatRealtimeOptions) {
           error: message.error ?? null,
         })
 
-        if (message.status === 'error') {
-          const jobName = message.job_name || message.job_id || ''
-          if (message.delivery_status === 'failed') {
-            options.toast.error(
-              t('cron.pushFailedToast', { name: jobName, error: message.error || '-' })
-            )
-          } else {
-            options.toast.error(
-              t('cron.runFailedToast', { name: jobName, error: message.error || '-' })
-            )
+        if (message.channel !== 'web') {
+          if (message.status === 'error') {
+            const jobName = message.job_name || message.job_id || ''
+            if (message.delivery_status === 'failed') {
+              options.toast.error(
+                t('cron.pushFailedToast', { name: jobName, error: message.error || '-' })
+              )
+            } else {
+              options.toast.error(
+                t('cron.runFailedToast', { name: jobName, error: message.error || '-' })
+              )
+            }
+          } else if (message.status === 'ok' && message.is_manual) {
+            options.toast.success(t('cron.runSuccessToast', { name: message.job_name || '' }))
           }
-        } else if (message.status === 'ok' && message.is_manual) {
-          options.toast.success(t('cron.runSuccessToast', { name: message.job_name || '' }))
         }
+        return
+      }
+
+      if (message.type === 'cron_job_result') {
+        // 网页站内推送：通知中心负责弹窗、提示音和 Markdown 详情
+        cronStore.applyStatusEvent({
+          job_id: String(message.job_id || ''),
+          status: String(message.status || ''),
+          delivery_status: message.delivery_status ?? null,
+          error: message.error ?? null,
+        })
+        emitCronResultNotification({
+          jobId: String(message.job_id || ''),
+          jobName: String(message.job_name || ''),
+          status: String(message.status || 'ok'),
+          channel: message.channel ?? null,
+          response: message.response ?? null,
+          error: message.error ?? null,
+          deliveryStatus: message.delivery_status ?? null,
+          isManual: Boolean(message.is_manual),
+        })
         return
       }
 

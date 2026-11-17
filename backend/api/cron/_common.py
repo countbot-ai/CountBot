@@ -55,7 +55,7 @@ PUSH_ONLY_CHANNELS = {"serverchan"}
 
 
 async def validate_channel_push_for_user(user, request) -> None:
-    """校验推送目标：网页与空目标不可作为推送渠道。"""
+    """校验推送目标：网页走站内通知，真实渠道必须完整可投递。"""
     if not getattr(request, "deliver_response", False):
         return
 
@@ -64,7 +64,8 @@ async def validate_channel_push_for_user(user, request) -> None:
     if not channel:
         raise HTTPException(status_code=400, detail="请选择推送渠道")
     if channel == "web":
-        raise HTTPException(status_code=400, detail="网页不能作为推送渠道，请选择真实渠道")
+        # 网页推送由 WebSocket 站内通知承接，不需要 chat_id
+        return
     if channel not in PUSH_ONLY_CHANNELS and not chat_id:
         raise HTTPException(status_code=400, detail="请选择推送会话")
 

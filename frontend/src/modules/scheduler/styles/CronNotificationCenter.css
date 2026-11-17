@@ -1,0 +1,166 @@
+.cron-notice-stack {
+  position: fixed;
+  top: 76px;
+  right: 24px;
+  z-index: 10020;
+  display: flex;
+  width: min(390px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.cron-notice {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px 16px 13px 18px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 92%, transparent);
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: cron-notice-in 220ms ease-out both;
+}
+
+.cron-notice:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.cron-notice-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--color-success);
+}
+
+.cron-notice.is-error .cron-notice-accent {
+  background: var(--color-error);
+}
+
+.cron-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 13%, transparent);
+}
+
+.cron-notice.is-error .cron-notice-icon {
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 13%, transparent);
+}
+
+.cron-notice-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.cron-notice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cron-notice-kicker {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cron-notice-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.cron-notice-close:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-tertiary);
+}
+
+.cron-notice-title {
+  margin: 2px 0 3px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.cron-notice-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0 0 9px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cron-notice-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cron-notice-action:hover {
+  text-decoration: underline;
+}
+
+.cron-notice-enter-active,
+.cron-notice-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.cron-notice-enter-from,
+.cron-notice-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+}
+
+@keyframes cron-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .cron-notice-stack {
+    top: auto;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    width: auto;
+  }
+}

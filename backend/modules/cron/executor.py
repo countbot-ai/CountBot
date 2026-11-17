@@ -443,7 +443,8 @@ class CronExecutor:
     ) -> None:
         """把响应推送到渠道，任一步失败都抛出 CronDeliveryError。"""
         if channel == "web":
-            raise CronDeliveryError("推送失败：网页不是推送渠道，请重新选择渠道")
+            # 网页推送由调度器通过 WebSocket 站内通知承接
+            return
         if not channel or not chat_id:
             raise CronDeliveryError("推送失败：任务未配置推送渠道或聊天 ID")
         if not response:

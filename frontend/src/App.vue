@@ -3,6 +3,7 @@
     <router-view />
     <Toast />
     <GlobalConfirmDialog />
+    <CronNotificationCenter />
   </div>
 </template>
 
@@ -11,6 +12,7 @@ import { onMounted, ref, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Toast from '@/components/ui/Toast.vue'
 import GlobalConfirmDialog from '@/components/GlobalConfirmDialog.vue'
+import CronNotificationCenter from '@/modules/scheduler/CronNotificationCenter.vue'
 import { useTheme } from '@/composables/useTheme'
 import { useUserStore } from '@/store/user'
 

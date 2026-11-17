@@ -2664,7 +2664,34 @@
     "sessionCleanupError": "清理会话失败",
     "sessionResetError": "重置会话失败",
     "sessionCleanupSuccess": "已清理 {count} 条会话消息，保留 {keep} 条",
-    "sessionResetSuccess": "已重置会话，删除 {count} 条消息"
+    "sessionResetSuccess": "已重置会话，删除 {count} 条消息",
+    "webChannelName": "网页站内通知",
+    "webChannelHint": "任务完成后在网页内弹出通知并播放提示音，点击可查看 Markdown 执行详情；关闭网页后无法接收",
+    "webNotify": {
+      "kicker": "定时任务",
+      "successTitle": "「{name}」执行完成",
+      "failedTitle": "「{name}」执行失败",
+      "viewDetail": "查看执行详情"
+    },
+    "result": {
+      "title": "执行详情",
+      "statusOk": "执行成功",
+      "statusOkHint": "任务已完成，以下是本次 AI 响应",
+      "statusError": "执行失败",
+      "statusErrorHint": "任务未完成，请检查失败原因",
+      "schedule": "执行计划",
+      "finishedAt": "完成时间",
+      "delivery": "网页通知",
+      "deliveryOk": "已送达",
+      "deliveryFailed": "未送达",
+      "deliverySkipped": "无需推送",
+      "loading": "正在加载执行详情...",
+      "loadFailed": "加载执行详情失败",
+      "error": "失败原因",
+      "response": "执行结果",
+      "empty": "本次执行没有返回内容",
+      "close": "关闭"
+    }
   },
   "tasks": {
     "title": "后台任务",

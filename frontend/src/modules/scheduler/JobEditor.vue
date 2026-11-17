@@ -112,7 +112,11 @@
           {{ errors.channel }}
         </p>
 
-        <template v-if="formData.channel">
+        <p v-if="formData.channel === 'web'" class="form-hint web-channel-hint">
+          {{ $t('cron.webChannelHint') }}
+        </p>
+
+        <template v-if="formData.channel && formData.channel !== 'web'">
           <label class="form-label" style="margin-top: var(--spacing-md)">
             {{ $t('cron.accountId') }}
           </label>
@@ -362,7 +366,7 @@ import Modal from '@/components/ui/Modal.vue'
 import Input from '@/components/ui/Input.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import CronBuilder from './CronBuilder.vue'
-import { useChannelsStore } from '@/store/channels'
+import { useChannelsStore, type DeliveryTarget } from '@/store/channels'
 import { useSettingsStore } from '@/store/settings'
 import { cronAPI, meAPI } from '@/api'
 import type { CronJob, ProviderMetadata } from '@/api'
@@ -388,11 +392,22 @@ const emit = defineEmits<Emits>()
 const { t, te } = useI18n()
 const channelsStore = useChannelsStore()
 
-// 推送目标：直接复用「设置 - 渠道」里已配置好的渠道/账号/历史会话
+// 推送目标：网页站内通知 + 「设置 - 渠道」里已配置好的真实渠道
 const deliveryTargets = computed(() => channelsStore.deliveryTargets)
-const deliverableTargets = computed(() =>
-  deliveryTargets.value.filter((target) => target.channel !== 'web')
-)
+const webTarget = computed<DeliveryTarget>(() => ({
+  channel: 'web',
+  name: t('cron.webChannelName'),
+  icon: '',
+  enabled: true,
+  configured: true,
+  running: true,
+  accounts: [],
+  chats: [],
+}))
+const deliverableTargets = computed(() => [
+  webTarget.value,
+  ...deliveryTargets.value.filter((target) => target.channel !== 'web'),
+])
 
 const channelOptions = computed(() => {
   const options = deliverableTargets.value.map((target) => ({
@@ -413,10 +428,10 @@ const channelOptions = computed(() => {
   return options
 })
 
-// 新任务必须有真实推送目标；历史真实渠道允许保留原值
+// 网页站内通知始终可用；历史真实渠道允许保留原值
 const canDeliver = computed(() =>
   deliverableTargets.value.length > 0 ||
-  Boolean(props.job?.channel && props.job.channel !== 'web')
+  Boolean(props.job?.channel)
 )
 
 const selectedTarget = computed(() =>
@@ -471,8 +486,8 @@ const formData = reactive({
   schedule: props.job?.schedule || '',
   message: props.job?.message || '',
   enabled: props.job?.enabled ?? true,
-  deliverResponse: props.job?.channel === 'web' ? false : (props.job?.deliver_response ?? false),
-  channel: props.job?.channel === 'web' ? '' : (props.job?.channel || ''),
+  deliverResponse: props.job?.deliver_response ?? false,
+  channel: props.job?.channel || '',
   accountId: props.job?.account_id || 'default',
   chatId: props.job?.chat_id || '',
   modelProvider: props.job?.model_provider || '',
@@ -494,9 +509,15 @@ const errors = reactive({
 
 // Server酱等只推送渠道没有会话目标，chat_id 用渠道名占位即可，无需用户填写
 const PUSH_ONLY_CHANNELS = ['serverchan']
-const channelNeedsChatId = computed(() => !PUSH_ONLY_CHANNELS.includes(formData.channel))
+const channelNeedsChatId = computed(
+  () => formData.channel !== 'web' && !PUSH_ONLY_CHANNELS.includes(formData.channel)
+)
 
 const syncChatIdWithChannel = () => {
+  if (formData.channel === 'web') {
+    formData.chatId = ''
+    return
+  }
   if (!channelNeedsChatId.value) {
     formData.chatId = formData.channel
     return
@@ -715,7 +736,11 @@ const handleSave = async () => {
     }
 
     // 关闭推送时显式清空目标，避免后端保留旧渠道
-    if (formData.deliverResponse) {
+    if (formData.deliverResponse && formData.channel === 'web') {
+      data.channel = 'web'
+      data.account_id = null
+      data.chat_id = null
+    } else if (formData.deliverResponse) {
       data.channel = formData.channel
       data.account_id = formData.accountId.trim() || 'default'
       data.chat_id = channelNeedsChatId.value
