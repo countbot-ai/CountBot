@@ -1,1 +1,5 @@
-2026-10-24|web-chat|用户环境存在已知限制：子代理/多智能体团队在独立沙箱执行 exec 时会被 "Brokered program policy check unavailable"（exit code 13）拦截，主代理的 exec 正常；工作目录含 skills/temp/wiki/memory 等 9 个条目，环境为 Darwin arm64、Python 3.11.3。
+# Memory
+
+## archived
+
+- [auto.b436bf9690ff] 用户环境存在已知限制：子代理/多智能体团队在独立沙箱执行 exec 时会被 "Brokered program policy check unavailable"（exit code 13）拦截，主代理的 exec 正常；工作目录含 skills/temp/wiki/memory 等 9 个条目，环境为 Darwin arm64、Python 3.11.3。 | 2026-10-24 | web-chat
