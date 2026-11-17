@@ -105,6 +105,22 @@ export const personalitiesApi = {
         return response.json()
     },
 
+    /** 复制性格 */
+    async duplicate(id: string, data: { id: string; name?: string }): Promise<Personality> {
+        const response = await fetch(`${API_BASE}/${id}/duplicate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        })
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}))
+            throw new Error(extractErrorMessage(error, 'Failed to duplicate personality'))
+        }
+        return response.json()
+    },
+
     /** 更新性格 */
     async update(id: string, data: PersonalityUpdate): Promise<Personality> {
         const response = await fetch(`${API_BASE}/${id}`, {

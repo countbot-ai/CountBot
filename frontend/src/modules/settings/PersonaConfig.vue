@@ -87,27 +87,39 @@
               </div>
               <div class="personality-desc">{{ personalityDescription(p) }}</div>
             </div>
-            <div v-if="!p.is_builtin || userStore.isAdmin" class="personality-actions">
-              <Tooltip :content="$t('settings.persona.editTooltip')" :delay="120">
+            <div class="personality-actions">
+              <Tooltip :content="$t('settings.persona.copyTooltip')" :delay="120">
                 <button
                   type="button"
                   class="card-action-btn"
-                  :aria-label="$t('settings.persona.editTooltip')"
-                  @click.stop="openPersonalityEditor(p.id)"
+                  :aria-label="$t('settings.persona.copyTooltip')"
+                  @click.stop="duplicatePersonality(p)"
                 >
-                  <component :is="Edit3" :size="14" />
+                  <component :is="CopyIcon" :size="14" />
                 </button>
               </Tooltip>
-              <Tooltip :content="$t('settings.persona.deleteTooltip')" :delay="120">
-                <button
-                  type="button"
-                  class="card-action-btn danger"
-                  :aria-label="$t('settings.persona.deleteTooltip')"
-                  @click.stop="deletePersonality(p)"
-                >
-                  <component :is="Trash2" :size="14" />
-                </button>
-              </Tooltip>
+              <template v-if="!p.is_builtin || userStore.isAdmin">
+                <Tooltip :content="$t('settings.persona.editTooltip')" :delay="120">
+                  <button
+                    type="button"
+                    class="card-action-btn"
+                    :aria-label="$t('settings.persona.editTooltip')"
+                    @click.stop="openPersonalityEditor(p.id)"
+                  >
+                    <component :is="Edit3" :size="14" />
+                  </button>
+                </Tooltip>
+                <Tooltip :content="$t('settings.persona.deleteTooltip')" :delay="120">
+                  <button
+                    type="button"
+                    class="card-action-btn danger"
+                    :aria-label="$t('settings.persona.deleteTooltip')"
+                    @click.stop="deletePersonality(p)"
+                  >
+                    <component :is="Trash2" :size="14" />
+                  </button>
+                </Tooltip>
+              </template>
             </div>
             <div v-if="localPersona.personality === p.id" class="check-icon">
               <component :is="CheckIcon" :size="16" />
@@ -297,6 +309,7 @@ import {
   Gamepad2,
   BookOpen,
   Edit3,
+  Copy as CopyIcon,
   Heart,
   CloudLightning,
   Plus,
@@ -539,6 +552,22 @@ async function savePersonality(personality: Personality) {
   } catch (error: any) {
     console.error('Failed to save personality:', error)
     toast.error(error.message || t('settings.persona.saveFailed'))
+  }
+}
+
+/** 复制性格，基于内置或已有性格生成一份自定义副本 */
+async function duplicatePersonality(personality: Personality) {
+  try {
+    const sourceName = personalityLabel(personality)
+    await personalitiesApi.duplicate(personality.id, {
+      id: generatePersonalityId(),
+      name: t('settings.persona.copyName', { name: sourceName }),
+    })
+    toast.success(t('settings.persona.copySuccess'))
+    await loadPersonalities()
+  } catch (error: any) {
+    console.error('Failed to duplicate personality:', error)
+    toast.error(error.message || t('settings.persona.copyFailed'))
   }
 }
 

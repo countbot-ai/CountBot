@@ -49,6 +49,12 @@ class PersonalityCreate(BaseModel):
     icon: str = Field(default="Smile", max_length=50)
 
 
+class PersonalityDuplicate(BaseModel):
+    """复制性格请求"""
+    id: str = Field(..., min_length=1, max_length=50, pattern="^[a-z0-9_-]+$")
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
 class PersonalityUpdate(BaseModel):
     """更新性格请求"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -131,6 +137,48 @@ async def create_personality(
     await db.refresh(personality)
     
     return personality.to_dict()
+
+
+@router.post("/{personality_id}/duplicate")
+async def duplicate_personality(
+    personality_id: str,
+    data: PersonalityDuplicate,
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
+):
+    """复制性格，常用于基于内置性格创建自定义版本"""
+    result = await db.execute(
+        select(Personality).where(Personality.id == personality_id, _visible_filter(user))
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="性格不存在")
+
+    # 副本 ID 只在自己作用域内校验唯一性
+    scope = owner_scope(user)
+    existing_query = select(Personality).where(Personality.id == data.id)
+    if scope:
+        existing_query = existing_query.where(Personality.owner_id == scope)
+    if (await db.execute(existing_query)).scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="性格 ID 已存在")
+
+    duplicate = Personality(
+        id=data.id,
+        name=data.name or f"{source.name} (副本)",
+        description=source.description,
+        traits=list(source.traits or []),
+        speaking_style=source.speaking_style,
+        icon=source.icon,
+        is_builtin=False,
+        is_active=True,
+        owner_id=scope,
+    )
+
+    db.add(duplicate)
+    await db.commit()
+    await db.refresh(duplicate)
+
+    return duplicate.to_dict()
 
 
 @router.put("/{personality_id}")
