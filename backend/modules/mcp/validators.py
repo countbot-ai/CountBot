@@ -32,14 +32,7 @@ class McpConfigValidator:
     }
 
     def validate_server(self, config: McpServerConfig) -> List[str]:
-        """验证服务器配置
-
-        Args:
-            config: 服务器配置
-
-        Returns:
-            错误列表，空列表表示验证通过
-        """
+        """验证服务器配置"""
         errors = []
 
         if not config.name or not config.name.strip():
@@ -223,10 +216,7 @@ class McpConfigValidator:
         return errors
 
     def _is_valid_tool_name(self, name: str) -> bool:
-        """验证工具名称格式
-
-        工具名称应该是有效的标识符或通配符
-        """
+        """验证工具名称格式：工具名称应该是有效的标识符或通配符"""
         if name == "*":
             return True
 
@@ -235,14 +225,7 @@ class McpConfigValidator:
         return bool(re.match(pattern, name))
 
     def validate_registry(self, servers: List[McpServerConfig]) -> List[str]:
-        """验证整个注册表
-
-        Args:
-            servers: 服务器配置列表
-
-        Returns:
-            错误列表
-        """
+        """验证整个注册表"""
         errors = []
 
         ids = []

@@ -34,12 +34,7 @@ _SANITIZE_RE = re.compile(r"_+")
 
 
 def _qualify_name(server_name: str, local_name: str) -> str:
-    """构造 MCP 工具名：``mcp__server__tool``。
-
-    双下划线作分隔符，使 server 与 tool 中的单下划线不会造成歧义——
-    用单下划线拼接时 ``mcp_a_b`` 无法判断是「server=a, tool=b」还是
-    「server=a_b」。两侧各自只压掉多余下划线，不合并分隔符。
-    """
+    """构造 MCP 工具名 mcp__server__tool，用双下划线避免名称下划线歧义。"""
     server_part = _SANITIZE_RE.sub("_", re.sub(r"[^a-zA-Z0-9_-]", "_", server_name)).strip("_")
     tool_part = _SANITIZE_RE.sub("_", re.sub(r"[^a-zA-Z0-9_-]", "_", local_name)).strip("_")
     return f"mcp__{server_part}__{tool_part}"
@@ -113,7 +108,7 @@ def _normalize_schema_for_openai(schema: dict) -> dict:
 
 
 def _mcp_error_text(exc: BaseException, label: str) -> str:
-    """Render an MCP exception without using the text as outcome authority."""
+    """把 MCP 异常渲染成可读文本；文本只用于展示，不作为结果判定依据。"""
 
     if type(exc).__name__ == "McpError":
         err = getattr(exc, "error", None)
@@ -124,11 +119,7 @@ def _mcp_error_text(exc: BaseException, label: str) -> str:
 
 
 async def _execute_once(coro_factory, timeout: int):
-    """Perform exactly one MCP SDK operation invocation.
-
-    A second call to ``coro_factory`` is a new physical execution and must enter
-    the registry's canonical attempt boundary instead of being hidden here.
-    """
+    """只执行一次 MCP SDK 调用，重试统一交给注册表处理。"""
 
     return await asyncio.wait_for(coro_factory(), timeout=timeout)
 

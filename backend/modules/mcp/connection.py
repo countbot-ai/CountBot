@@ -23,11 +23,7 @@ from backend.modules.mcp.wrappers import (
 
 
 def _iter_exception_tree(exc: BaseException):
-    """递归展开异常树（含 ExceptionGroup 与 __cause__）。
-
-    MCP SDK 会把传输层的 httpx 异常包进 TaskGroup 的 ExceptionGroup，
-    直接读最外层异常拿不到 HTTP 状态码，必须递归展开。
-    """
+    """递归展开异常树，穿透 MCP SDK 的 ExceptionGroup 取真实 HTTP 状态码。"""
     yield exc
     if isinstance(exc, BaseExceptionGroup):
         for sub in exc.exceptions:
@@ -51,14 +47,7 @@ def _extract_auth_status_codes(exc: BaseException) -> set[int]:
 
 
 def _authed_http_client_factory(config: McpServerConfig, observed: list[int]):
-    """为 SSE 传输构造带凭证、显式禁止跟随重定向的 httpx 客户端工厂。
-
-    redirect:manual：Authorization 等凭证头不允许在 302/307 时发往其他
-    源，防止 token 泄漏。SDK 2.x 默认已关闭重定向（转由传输层做同源内
-    跟随），此处显式固化，避免未来 httpx/SDK 默认值变化引入泄漏面。
-
-    observed：本次连接尝试的状态码记录器（闭包写入）。
-    """
+    """为 SSE 传输构造带凭证且禁止跟随重定向的 httpx 客户端工厂。"""
     import httpx
     from mcp.shared._httpx_utils import (
         MCP_DEFAULT_SSE_READ_TIMEOUT,
@@ -89,12 +78,7 @@ async def _establish_mcp_session(
     transport_type: str,
     connect_timeout: int,
 ):
-    """建立传输与 MCP 会话，返回 (AsyncExitStack, ClientSession)。
-
-    401/403 恰好重试一次：首次 401 可能来自凭证刚被轮换的竞态，重试可
-    自愈；两次都 401/403 才判定为配置错误并给出分类日志。每次尝试使用
-    全新的 AsyncExitStack，失败路径完整清理，避免连接池泄漏。
-    """
+    """建立传输与 MCP 会话并返回 (AsyncExitStack, ClientSession)，401/403 重试一次。"""
     from mcp import ClientSession
     from mcp.client.sse import sse_client
     from mcp.client.stdio import stdio_client
@@ -104,9 +88,9 @@ async def _establish_mcp_session(
     last_exc: BaseException | None = None
     for attempt in (1, 2):
         stack = AsyncExitStack()
-        # 本次尝试的 401/403 观测：SDK 会把非 2xx 吞成 JSONRPCError，
-        # 状态码只能从 httpx 的 response hook 拿到
+        # 记录 401/403：SDK 会转成 JSONRPCError，状态码只能从 response hook 取
         observed_codes: list[int] = []
+        observed_statuses: list[int] = []
         try:
             await stack.__aenter__()
             if transport_type == "stdio":
@@ -132,22 +116,27 @@ async def _establish_mcp_session(
                     )
                 )
             elif transport_type == "streamable_http":
-                http_client = None
-                if config.headers:
-                    # 传入的 client 由调用方负责关闭，SDK 不会代为释放；
-                    # 注册进 stack 才能随连接一起退出，否则每次连接都遗留
-                    # 一个连接池。redirect:manual + 401/403 观测见下方 hook。
-                    async def _record(response) -> None:
-                        if response.status_code in (401, 403):
-                            observed_codes.append(response.status_code)
+                # 自建 httpx client：SDK 默认跟随重定向会把凭证带到目标地址，此处固定禁用
+                from mcp.shared._httpx_utils import (
+                    MCP_DEFAULT_SSE_READ_TIMEOUT,
+                    MCP_DEFAULT_TIMEOUT,
+                )
 
-                    http_client = await stack.enter_async_context(
-                        httpx.AsyncClient(
-                            headers=config.headers,
-                            follow_redirects=False,
-                            event_hooks={"response": [_record]},
-                        )
+                async def _record(response) -> None:
+                    observed_statuses.append(response.status_code)
+                    if response.status_code in (401, 403):
+                        observed_codes.append(response.status_code)
+
+                http_client = await stack.enter_async_context(
+                    httpx.AsyncClient(
+                        headers=config.headers or None,
+                        follow_redirects=False,
+                        timeout=httpx.Timeout(
+                            MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT
+                        ),
+                        event_hooks={"response": [_record]},
                     )
+                )
                 result = await stack.enter_async_context(
                     streamable_http_client(url=config.url, http_client=http_client)
                 )
@@ -155,18 +144,18 @@ async def _establish_mcp_session(
             else:
                 raise ValueError(f"unknown transport '{transport_type}'")
 
-            session = await asyncio.wait_for(
-                stack.enter_async_context(ClientSession(read, write)),
-                timeout=connect_timeout,
-            )
-            await asyncio.wait_for(session.initialize(), timeout=connect_timeout)
+            # 进入/退出 AsyncExitStack 必须发生在同一个 task：
+            # asyncio.wait_for 会把协程放进新 task，导致 anyio cancel scope 跨 task 退出。
+            async with asyncio.timeout(connect_timeout):
+                session = await stack.enter_async_context(ClientSession(read, write))
+                await session.initialize()
             return stack, session
-        except Exception as exc:
+        except BaseException as exc:
             last_exc = exc
             codes = _extract_auth_status_codes(exc) | set(observed_codes)
             try:
                 await stack.__aexit__(type(exc), exc, exc.__traceback__)
-            except Exception:
+            except BaseException:
                 pass
             if codes & {401, 403} and attempt == 1:
                 logger.warning(
@@ -178,7 +167,16 @@ async def _establish_mcp_session(
                     f"MCP server '{name}': 认证被拒绝({sorted(codes)})，重试后仍失败，"
                     f"请检查 headers/env 凭证配置"
                 )
+                auth_error = RuntimeError(f"认证被拒绝({sorted(codes)})")
+                auth_error.auth_codes = codes  # type: ignore[attr-defined]
+                raise auth_error from exc
             # 将观测到的状态码附加到异常，供调用方生成分类错误消息
+            if isinstance(exc, asyncio.CancelledError) and observed_statuses:
+                http_error = RuntimeError(
+                    f"HTTP {sorted(set(observed_statuses))}"
+                )
+                http_error.auth_codes = codes  # type: ignore[attr-defined]
+                raise http_error from exc
             exc.auth_codes = codes  # type: ignore[attr-defined]
             raise
     raise last_exc  # pragma: no cover - 循环内必然 return 或 raise
@@ -263,9 +261,7 @@ async def connect_mcp_server(
                     f"Available: {available_raw[:20]}"
                 )
 
-        # 资源统一用一个通用工具暴露，而不是每个 resource 一个工具：
-        # 服务器常提供几十个 resource，逐个注册会让工具面迅速膨胀，
-        # 挤占模型对内置工具的选择注意力。
+        # 资源统一用一个通用工具暴露，避免逐个注册导致工具列表膨胀
         if config.enable_resources:
             try:
                 resources_result = await session.list_resources()

@@ -29,6 +29,15 @@ class WikiService:
         # 缓存版本号，用于缓存失效
         self._cache_version = 0
 
+    @property
+    def concepts_dir(self) -> Path:
+        """可写条目目录（API 层写文件时使用）。"""
+        return self._concepts_dir
+
+    @property
+    def wiki_dir(self) -> Path:
+        return self._wiki_dir
+
     def force_sync(self) -> dict:
         """强制同步索引，返回同步统计信息"""
         stats = {"added": 0, "updated": 0, "deleted": 0}

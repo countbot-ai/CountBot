@@ -87,8 +87,7 @@ class ChunkedBM25Index:
     # ---------- 检索 ----------
 
     #: 超采样倍数：BM25Index.search 只返回按分数排序的前 N 块，
-    #: 若直接取 top_k，同一文档的高分块会把名额占满（实测凑齐 10 个不同文档
-    #: 平均需要扫过 25.3 个块）。超采样后在内存中按文档截断，代价可忽略。
+    #: 若直接取 top_k，同一文档的高分块会把名额占满。超采样后在内存中按文档截断。
     OVERSAMPLE_FACTOR = 5
 
     def search(self, query: str, top_k: int = 10, min_score_ratio: float = 0.3,

@@ -36,6 +36,7 @@ def build_message_context(
     *,
     reasoning_content: Optional[str] = None,
     attachment_items: Optional[Sequence[dict[str, Any]]] = None,
+    native_events: Optional[Sequence[dict[str, Any]]] = None,
 ) -> Optional[str]:
     payload: dict[str, Any] = {}
 
@@ -47,6 +48,10 @@ def build_message_context(
     if items:
         payload["attachment_items"] = items
         payload["attachments"] = [str(item["path"]).strip() for item in items if str(item.get("path") or "").strip()]
+
+    events = [event for event in (native_events or []) if isinstance(event, dict)]
+    if events:
+        payload["native_events"] = events
 
     if not payload:
         return None
@@ -62,6 +67,32 @@ def extract_reasoning_content_from_message_context(raw: Optional[str]) -> Option
 
     reasoning_text = str(reasoning_content).strip()
     return reasoning_text or None
+
+
+def extract_native_events_from_message_context(raw: Optional[str]) -> list[dict[str, Any]]:
+    payload = parse_message_context(raw)
+    events = payload.get("native_events")
+    if not isinstance(events, list):
+        return []
+    return [event for event in events if isinstance(event, dict)]
+
+
+def extract_native_history_context(raw: Optional[str]) -> dict[str, Any]:
+    """把持久化的 history_blocks 还原成 Provider 需要的 assistant 字段。"""
+    history: dict[str, Any] = {}
+    for event in extract_native_events_from_message_context(raw):
+        if event.get("kind") != "history_blocks":
+            continue
+        protocol = str(event.get("protocol") or "").strip()
+        if protocol == "anthropic-messages":
+            blocks = event.get("blocks")
+            if isinstance(blocks, list) and blocks:
+                history["anthropic_content_blocks"] = blocks
+        elif protocol == "openai-chat-completions":
+            calls = event.get("server_tool_calls")
+            if isinstance(calls, list) and calls:
+                history["server_tool_calls"] = calls
+    return history
 
 
 def normalize_assistant_persistence_payload(

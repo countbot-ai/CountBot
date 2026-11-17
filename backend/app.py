@@ -63,6 +63,8 @@ def _create_shared_components(config, config_loader=None):
         logger.warning(f"共享组件启动时已回退到默认工作空间: {workspace}")
 
     logger.info("Creating LLM provider...")
+    from backend.modules.config.schema import resolve_stream_enabled
+
     provider = create_provider(
         api_key=runtime_state.api_key or None,
         api_keys=runtime_state.api_keys or None,
@@ -73,6 +75,7 @@ def _create_shared_components(config, config_loader=None):
         max_retries=3,
         provider_id=provider_id,
         api_type=runtime_state.api_type,
+        stream_enabled=resolve_stream_enabled(config),
     )
 
     logger.info("Creating memory and skills directories...")
@@ -81,8 +84,7 @@ def _create_shared_components(config, config_loader=None):
 
     seed_bundled_workspace_resources(workspace)
 
-    # Skills 目录始终从 workspace/skills 加载
-    # 确保用户修改 workspace 路径后，skills 也在新路径下
+    # 技能目录始终从 workspace/skills 加载，随工作区路径变化
     skills_dir = workspace / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,6 +159,7 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     from backend.database import init_db, get_db_session_factory
     from backend.modules.config.loader import config_loader
+    from backend.modules.config.schema import resolve_stream_enabled
     from backend.modules.channels.manager import ChannelManager
     from backend.modules.messaging.enterprise_queue import EnterpriseMessageQueue
     from backend.modules.messaging.rate_limiter import RateLimiter
@@ -227,11 +230,11 @@ async def lifespan(app: FastAPI):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        stream_enabled=resolve_stream_enabled(config),
         reasoning_level=config.model.reasoning_level,
         max_history_messages=config.persona.max_history_messages,
         memory_store=shared["memory"],
     )
-    app.state.message_handler = message_handler
     logger.info("Message handler created")
 
     # 创建渠道管理器
@@ -240,6 +243,13 @@ async def lifespan(app: FastAPI):
     app.state.channel_manager = channel_manager
     set_channel_manager(channel_manager)
     message_handler.set_channel_manager(channel_manager)
+
+    # 按机器人账号归属路由：管理员消息走全局处理器，普通用户走各自的运行时
+    from backend.modules.channels.handler_router import ChannelHandlerRouter
+
+    handler_router = ChannelHandlerRouter(message_handler)
+    app.state.message_handler = handler_router
+    app.state.admin_message_handler = message_handler
     shared_tool_params = shared.get("tool_params")
     if isinstance(shared_tool_params, dict):
         shared_tool_params["channel_manager"] = channel_manager
@@ -296,7 +306,7 @@ async def lifespan(app: FastAPI):
         app.state.background_tasks.append(task)
         logger.info(f"Started {len(channel_manager.enabled_channels)} channel(s) in background")
     
-    task = asyncio.create_task(message_handler.start_processing())
+    task = asyncio.create_task(handler_router.start_processing())
     app.state.background_tasks.append(task)
     logger.info("Started message handler in background")
 
@@ -317,6 +327,7 @@ async def lifespan(app: FastAPI):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        stream_enabled=resolve_stream_enabled(config),
         reasoning_level=config.model.reasoning_level,
     )
     logger.info("Cron agent created")
@@ -447,10 +458,7 @@ def get_tool_registry():
 
 
 def get_shared_provider():
-    """返回全局共享 LLM provider，供 Wiki 的 ask/compile 等调用方使用。
-
-    lifespan 启动前（app.state.shared 尚未创建）返回 None，由调用方自行降级。
-    """
+    """返回全局共享 LLM provider，供 Wiki 的 ask/compile 调用；启动前返回 None。"""
     try:
         return app.state.shared.get("provider")
     except AttributeError:
@@ -479,6 +487,7 @@ from backend.api.settings import router as settings_router
 from backend.api.tools import router as tools_router
 from backend.api.memory import router as memory_router
 from backend.api.skills import router as skills_router
+from backend.api.shared_skills import router as shared_skills_router
 from backend.api.cron import router as cron_router
 from backend.api.tasks import router as tasks_router
 from backend.api.system import router as system_router
@@ -489,6 +498,11 @@ from backend.api.personalities import router as personalities_router
 from backend.api.agent_teams import router as agent_teams_router
 from backend.api.mcp import router as mcp_router
 from backend.api.wiki import router as wiki_router
+from backend.api.admin import router as admin_router
+from backend.api.persona_clone import router as persona_clone_router
+from backend.api.me import router as me_router
+from backend.api.persona_evolution import router as persona_evolution_router
+from backend.api.native_caps import router as native_caps_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
@@ -496,6 +510,7 @@ app.include_router(settings_router)
 app.include_router(tools_router)
 app.include_router(memory_router)
 app.include_router(skills_router)
+app.include_router(shared_skills_router)
 app.include_router(cron_router)
 app.include_router(tasks_router)
 app.include_router(system_router)
@@ -505,6 +520,17 @@ app.include_router(personalities_router)
 app.include_router(agent_teams_router)
 app.include_router(mcp_router)
 app.include_router(wiki_router)
+# 管理员专属：用户管理与多用户策略，端点内部强制 require_admin
+app.include_router(admin_router)
+app.include_router(persona_clone_router)
+# 普通用户自助接口：/api/me（脱敏视图 + 通知渠道）
+app.include_router(me_router)
+# 普通用户自有供应商配置：/api/me/providers，与管理员 /api/settings/providers 共用清单规则
+from backend.api.me_providers import router as me_providers_router
+
+app.include_router(me_providers_router)
+app.include_router(persona_evolution_router)
+app.include_router(native_caps_router)
 
 
 # WebSocket 端点
@@ -521,31 +547,56 @@ async def websocket_endpoint(websocket: WebSocket):
     from backend.modules.tools.setup import register_all_tools
 
     from backend.modules.auth.middleware import AUTH_COOKIE_NAME, is_direct_local_client
-    from backend.modules.auth.utils import validate_session as validate_ws_session
     from backend.modules.auth.router import get_password_hash as get_ws_password_hash
+    from backend.modules.multiuser.identity import anonymous_admin, resolve_session_user
+    from backend.modules.multiuser.settings import load_settings
 
     client_ip = websocket.client.host if websocket.client and websocket.client.host else None
     is_local = is_direct_local_client(client_ip, websocket.headers.keys())
 
-    if not is_local:
+    token = websocket.cookies.get(AUTH_COOKIE_NAME)
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    settings = await load_settings()
+    user = await resolve_session_user(token, require_active=True) if token else None
+    # 显式会话优先于本机旁路：带普通用户 cookie 的连接不能被判成管理员。
+    # 多用户模式下本机旁路恒定关闭，回环连接同样要带有效会话。
+    if user is None and settings.allow_local_admin_bypass and not settings.enabled and is_local:
+        user = anonymous_admin()
+
+    if user is None:
         auth_enabled = bool(await get_ws_password_hash())
         if not auth_enabled:
-            # 先完成握手再关闭：握手前 close 只会让浏览器拿到 403/1006，
-            # 前端无法区分“未认证”和“网络故障”，会无意义地反复重连。
+            # 先完成握手再关闭，避免前端把未认证与网络故障混淆后反复重连
             await websocket.accept()
             await websocket.close(code=4003, reason="Authentication setup required")
             return
+        await websocket.accept()
+        await websocket.close(code=4001, reason="Authentication required")
+        return
 
-        token = websocket.cookies.get(AUTH_COOKIE_NAME)
-        if not token:
-            auth_header = websocket.headers.get("authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
+    # 普通用户：直接使用其独立运行时（独立模型 / 工作区 / 记忆 / 工具）
+    if not user.is_admin:
+        from backend.modules.multiuser.runtime import user_runtime_manager
 
-        if not token or not validate_ws_session(token):
+        try:
+            runtime = await user_runtime_manager.get(user)
+        except Exception as exc:
+            logger.warning(f"Failed to build runtime for {user.username}: {exc}")
             await websocket.accept()
-            await websocket.close(code=4001, reason="Authentication required")
+            await websocket.close(code=1011, reason=str(exc)[:120])
             return
+
+        await handle_websocket(
+            websocket,
+            agent_loop=runtime.agent_loop,
+            loop_factory=None,
+            user=user,
+        )
+        return
 
     shared = websocket.app.state.shared
 
@@ -567,6 +618,7 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.debug(f"Failed to sync MCP tools to WebSocket: {e}")
 
     from backend.modules.config.loader import config_loader
+    from backend.modules.config.schema import resolve_stream_enabled
     config = config_loader.config
 
     from backend.modules.providers.runtime import (
@@ -610,6 +662,7 @@ async def websocket_endpoint(websocket: WebSocket):
         max_retries=3,
         provider_id=provider_id,
         api_type=runtime_state.api_type,
+        stream_enabled=resolve_stream_enabled(config),
     )
 
     agent_loop = AgentLoop(
@@ -623,6 +676,7 @@ async def websocket_endpoint(websocket: WebSocket):
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         thinking_enabled=config.model.thinking_enabled,
+        stream_enabled=resolve_stream_enabled(config),
         reasoning_level=config.model.reasoning_level,
     )
 
@@ -651,6 +705,7 @@ async def websocket_endpoint(websocket: WebSocket):
         websocket,
         agent_loop=agent_loop,
         loop_factory=get_loop_for_session,
+        user=user,
     )
 
 
@@ -661,21 +716,51 @@ async def health_check():
 
 # 挂载前端静态文件
 from backend.utils.paths import APPLICATION_ROOT
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 frontend_dist = APPLICATION_ROOT / "frontend" / "dist"
 if frontend_dist.exists():
     from fastapi.responses import FileResponse
     import mimetypes
-    
+
     # 确保 Windows 上正确识别 JavaScript 模块的 MIME 类型
     mimetypes.add_type("application/javascript", ".js")
     mimetypes.add_type("text/css", ".css")
     mimetypes.add_type("image/svg+xml", ".svg")
 
+    NO_STORE = "no-store, no-cache, must-revalidate, max-age=0"
+
+    def spa_index() -> FileResponse:
+        # index.html 引用带内容 hash 的分块；缓存旧文档会让浏览器继续加载已下线的旧分块。
+        response = FileResponse(str(frontend_dist / "index.html"))
+        response.headers["Cache-Control"] = NO_STORE
+        return response
+
+    def is_spa_route(path: str) -> bool:
+        # 回退只覆盖前端路由；API 与带扩展名的资源请求必须保留 404，避免掩盖接口错误。
+        if path.startswith(("api/", "ws/", "assets/", "docs", "openapi.json", "redoc")):
+            return False
+        tail = path.rsplit("/", 1)[-1]
+        return bool(tail) and "." not in tail
+
+    class SPAStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope: Scope) -> Response:
+            try:
+                response = await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code != 404 or not is_spa_route(path):
+                    raise
+                return spa_index()
+            if response.media_type == "text/html":
+                response.headers["Cache-Control"] = NO_STORE
+            return response
+
     # SPA 路由回退（必须在 StaticFiles 之前注册）
     @app.get("/login")
     async def spa_login():
-        return FileResponse(str(frontend_dist / "index.html"))
+        return spa_index()
 
     @app.get("/setup/{setup_secret}")
     async def spa_setup(setup_secret: str):
@@ -683,6 +768,6 @@ if frontend_dist.exists():
             raise HTTPException(status_code=404)
         if not has_valid_remote_setup_secret(app, setup_secret):
             raise HTTPException(status_code=404)
-        return FileResponse(str(frontend_dist / "index.html"))
+        return spa_index()
 
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
+    app.mount("/", SPAStaticFiles(directory=str(frontend_dist), html=True), name="static")

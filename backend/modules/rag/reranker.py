@@ -14,10 +14,8 @@ MODEL_ENV = "COUNTBOT_RAG_RERANK_MODEL"
 DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
 
 # rerank top-1 分数 ≥ 该阈值时，调用方可跳过 LLM grader（置信门控）。
-# 2026-09-06 冒烟校准后默认禁用（1.01 = 永不触发）：cross-encoder 度量主题匹配而非
-# 可回答性，实测无法用分数分离正负样本（与 roadmap §3.7/D2 结论一致）；机制保留，
-# 待有判别力的信号出现后再启用。"单题 LLM 调用 ≤1.5"门禁因此暂不达成（实测约 2.0/题），
-# 见 work-log。
+# 当前默认禁用（1.01 = 永不触发）：cross-encoder 度量主题匹配而非可回答性，
+# 分数无法可靠区分正负样本；机制保留，待有判别力的信号出现后再启用。
 RERANK_CONFIDENT_SCORE = 1.01
 
 _TIMEOUT = 30.0

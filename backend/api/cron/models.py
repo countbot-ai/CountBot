@@ -19,6 +19,7 @@ class CronJobInfo(BaseModel):
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
+    notify_channel_id: Optional[str] = Field(None, description="用户通知渠道 ID（纯出站推送）")
     last_run: Optional[str] = Field(None, description="上次运行时间")
     last_finished_at: Optional[str] = Field(None, description="上次执行结束时间")
     next_run: Optional[str] = Field(None, description="下次运行时间")
@@ -65,6 +66,7 @@ class CreateCronJobRequest(BaseModel):
     )
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
+    notify_channel_id: Optional[str] = Field(None, description="用户通知渠道 ID（纯出站推送）")
 
 
 class UpdateCronJobRequest(BaseModel):
@@ -85,6 +87,7 @@ class UpdateCronJobRequest(BaseModel):
     # 传空字符串表示改回跟随全局默认模型；不传该字段则保持原值
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
+    notify_channel_id: Optional[str] = Field(None, description="用户通知渠道 ID（纯出站推送）")
 
 
 class CronJobResponse(BaseModel):

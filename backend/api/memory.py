@@ -1,22 +1,22 @@
-"""记忆 HTTP 接口。
-
-旧端点保持原语义，避免前端与既有脚本被迫同时改动；新增端点补齐结构化查看与
-生命周期操作。pin / 删除在这里传 ``allow_pinned=True``：pinned 只限制模型侧自动
-改写，人工在面板里的操作不受该约束。
-"""
+"""记忆 HTTP 接口：保留旧端点语义，新增结构化查看与生命周期操作。"""
 
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from backend.modules.config.loader import config_loader
 from backend.modules.memory import MemoryDenied, MemoryKind, MemoryService
+from backend.modules.multiuser.permissions import require_active_user
 from backend.utils.paths import WORKSPACE_DIR
 
-router = APIRouter(prefix="/api/memory", tags=["memory"])
+router = APIRouter(
+    prefix="/api/memory",
+    tags=["memory"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
 class MemoryContentResponse(BaseModel):
@@ -73,9 +73,18 @@ class PinRequest(BaseModel):
 
 
 def get_memory_store() -> MemoryService:
-    config = config_loader.config
-    workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
-    memory_dir = workspace / "memory"
+    """记忆永远按用户隔离：普通用户读写自己的记忆目录。"""
+    from backend.modules.multiuser.permissions import get_request_user
+    from backend.modules.workspace import resolve_user_workspace
+
+    current = get_request_user()
+    if current is not None and not getattr(current, "is_admin", False):
+        memory_dir = resolve_user_workspace(current) / "memory"
+    else:
+        config = config_loader.config
+        workspace = Path(config.workspace.path) if config.workspace.path else WORKSPACE_DIR
+        memory_dir = workspace / "memory"
+
     memory_dir.mkdir(parents=True, exist_ok=True)
     return MemoryService(memory_dir)
 

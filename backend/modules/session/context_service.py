@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from loguru import logger
 from sqlalchemy import select
@@ -21,10 +21,11 @@ from backend.modules.session.usage_recorder import (
     record_usage,
 )
 from backend.modules.session.message_context import (
+    extract_native_history_context,
     extract_reasoning_content_from_message_context,
     strip_workflow_exec_metadata,
 )
-MessageFormatter = Callable[[Message], dict[str, str]]
+MessageFormatter = Callable[[Message], dict[str, Any]]
 
 _CONTEXT_MAINTENANCE_TASKS: dict[str, asyncio.Task[None]] = {}
 _PENDING_CONTEXT_MAINTENANCE: dict[str, "ContextMaintenanceRequest"] = {}
@@ -44,6 +45,9 @@ def default_message_formatter(message: Message) -> dict[str, str]:
     )
     if reasoning:
         result["reasoning_content"] = reasoning
+    result.update(
+        extract_native_history_context(getattr(message, "message_context", None))
+    )
     return result
 
 
@@ -407,12 +411,7 @@ class ConversationContextService:
         message_formatter: MessageFormatter = default_message_formatter,
         source: Optional[str] = None,
     ) -> bool:
-        """Optionally summarize the whole conversation to long-term memory.
-
-        Resolve ``source`` from the current turn when empty instead of defaulting
-        to a specific channel, otherwise every summary would be recorded as
-        web-sourced.
-        """
+        """Summarize the conversation into long-term memory; infer source from the current turn."""
         if provider is None or memory_store is None:
             return False
 
@@ -601,6 +600,23 @@ class ConversationContextService:
 
         return "".join(parts).strip()
 
+    async def _maybe_summarize_persona_session(
+        self,
+        request: "ContextMaintenanceRequest",
+    ) -> None:
+        """给克隆人格补一条对话摘要；只负责转发，异常一律吞掉"""
+        try:
+            from backend.modules.persona.session_memory import maybe_summarize_session
+
+            await maybe_summarize_session(
+                self.db,
+                session_id=request.session_id,
+                provider=request.provider,
+                model=request.model or "",
+            )
+        except Exception as exc:
+            logger.debug(f"Persona session summary hook skipped: {exc}")
+
     async def _clear_short_summary_cache(
         self,
         session: Session,
@@ -641,13 +657,7 @@ def schedule_context_maintenance(
     auto_summary_source: Optional[str] = None,
     enable_auto_memory_summary: bool = True,
 ) -> Optional[asyncio.Task[None]]:
-    """Schedule post-response maintenance once per session.
-
-    When enable_auto_memory_summary=False (injection.auto_memory_summary off),
-    skip both background LLM calls (overflow summary and whole-session
-    distillation) to save tokens; the short context summary cache is still
-    governed by enable_short_context_summary independently.
-    """
+    """Schedule post-response maintenance once per session; skip LLM summaries when disabled."""
     request = ContextMaintenanceRequest(
         db_session_factory=db_session_factory,
         session_id=session_id,
@@ -706,6 +716,7 @@ def schedule_context_maintenance(
                             f"自动记忆维护已关闭（injection.auto_memory_summary=false），"
                             f"跳过后台记忆总结 | 会话={current_request.session_id}"
                         )
+                    await service._maybe_summarize_persona_session(current_request)
                 logger.info(
                     f"后台会话上下文维护完成 | 会话={current_request.session_id}"
                 )

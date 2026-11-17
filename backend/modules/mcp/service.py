@@ -1,7 +1,4 @@
-"""MCP Service Layer - 服务层抽象
-
-提供统一的MCP服务接口，封装业务逻辑，隔离API层和Client层。
-"""
+"""MCP 服务层：统一封装客户端管理与业务操作。"""
 
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -29,14 +26,7 @@ class McpValidationError(McpServiceError):
 
 
 class McpService:
-    """MCP服务层
-
-    职责：
-    1. 封装MCP客户端管理逻辑
-    2. 提供统一的错误处理
-    3. 管理后台任务生命周期
-    4. 提供业务级别的操作接口
-    """
+    """MCP 服务层：封装客户端管理、错误处理与后台任务。"""
 
     def __init__(self, tool_registry: Optional[ToolRegistry] = None):
         self._manager = McpClientManager.get_instance()
@@ -55,15 +45,7 @@ class McpService:
         servers: List[McpServerConfig],
         background: bool = False
     ) -> Dict[str, Any]:
-        """连接MCP服务器
-
-        Args:
-            servers: 服务器配置列表
-            background: 是否在后台连接
-
-        Returns:
-            连接结果统计
-        """
+        """连接MCP服务器"""
         # 验证配置
         for server in servers:
             errors = self._validator.validate_server(server)
@@ -111,14 +93,7 @@ class McpService:
         self._background_tasks.clear()
 
     async def reconnect_server(self, server_id: str) -> bool:
-        """重连指定服务器
-
-        Args:
-            server_id: 服务器ID
-
-        Returns:
-            是否重连成功
-        """
+        """重连指定服务器"""
         try:
             return await self._manager.reconnect_server(server_id)
         except Exception as e:
@@ -126,11 +101,7 @@ class McpService:
             raise McpConnectionError(f"Reconnect failed: {e}")
 
     async def reconnect_all(self) -> Dict[str, bool]:
-        """重连所有失败的服务器
-
-        Returns:
-            各服务器重连结果
-        """
+        """重连所有失败的服务器"""
         await self._manager.reconnect_all()
         status = self._manager.get_status()
 
@@ -141,14 +112,7 @@ class McpService:
         return results
 
     async def start_server(self, server_id: str) -> bool:
-        """启动指定服务器
-
-        Args:
-            server_id: 服务器ID
-
-        Returns:
-            是否启动成功
-        """
+        """启动指定服务器"""
         try:
             return await self._manager.start_server(server_id)
         except Exception as e:
@@ -156,14 +120,7 @@ class McpService:
             raise McpConnectionError(f"Start failed: {e}")
 
     async def stop_server(self, server_id: str) -> bool:
-        """停止指定服务器
-
-        Args:
-            server_id: 服务器ID
-
-        Returns:
-            是否停止成功
-        """
+        """停止指定服务器"""
         try:
             return await self._manager.disconnect_server(server_id)
         except Exception as e:
@@ -186,14 +143,7 @@ class McpService:
         return status
 
     def get_server_status(self, server_id: str) -> Optional[Dict[str, Any]]:
-        """获取指定服务器状态
-
-        Args:
-            server_id: 服务器ID
-
-        Returns:
-            服务器状态，不存在返回None
-        """
+        """获取指定服务器状态"""
         status = self._manager.get_status()
         server_status = status.get("server_status", {}).get(server_id)
 
@@ -202,31 +152,20 @@ class McpService:
 
         # 添加工具列表
         all_tools = status.get("tools", [])
-        server_tools = [t for t in all_tools if t.startswith(f"mcp_{server_id}_")]
+        server_tools = [
+            t for t in all_tools
+            if t.startswith(f"mcp__{server_id}__") or t.startswith(f"mcp_{server_id}_")
+        ]
         server_status["tools"] = server_tools
 
         return server_status
 
     def sync_to_registry(self, registry: ToolRegistry) -> int:
-        """同步MCP工具到新的注册表
-
-        Args:
-            registry: 目标工具注册表
-
-        Returns:
-            同步的工具数量
-        """
+        """同步MCP工具到新的注册表"""
         return self._manager.sync_to_registry_sync(registry)
 
     async def sync_to_registry_async(self, registry: ToolRegistry) -> int:
-        """同步MCP工具到新的注册表
-
-        Args:
-            registry: 目标工具注册表
-
-        Returns:
-            同步的工具数量
-        """
+        """同步MCP工具到新的注册表"""
         return await self._manager.sync_to_registry(registry)
 
     @property
@@ -235,14 +174,7 @@ class McpService:
         return self._manager.connected
 
     async def test_server(self, config: McpServerConfig) -> Dict[str, Any]:
-        """测试服务器连接
-
-        Args:
-            config: 服务器配置
-
-        Returns:
-            测试结果
-        """
+        """测试服务器连接"""
         # 验证配置
         errors = self._validator.validate_server(config)
         if errors:
@@ -268,12 +200,7 @@ class McpService:
             }
 
     def update_server_config(self, server_id: str, config: McpServerConfig) -> None:
-        """更新服务器配置
-
-        Args:
-            server_id: 服务器ID
-            config: 新配置
-        """
+        """更新服务器配置"""
         self._manager._server_configs[server_id] = config
 
     async def cleanup(self) -> None:

@@ -11,17 +11,21 @@ from loguru import logger
 from backend.modules.config.schema import AppConfig, ModelConfig, PersonaConfig
 from backend.modules.providers.registry import get_provider_metadata
 
-# 会话级模型绑定的合法来源。只有带来源标记的绑定才算「用户显式设置的自定义模型」：
-# - channel_command：渠道命令 /m 写下；
-# - session_panel：前端「会话自定义配置」写下。
-# 老版本在对话窗口选模型会把绑定写进会话，形状与新写入完全一致却没有任何标记；
-# 这类历史绑定一律视为失效、回落全局默认模型（否则会一直钉在已不存在的模型上，
-# 表现为「所选模型不可用」）。
+# 会话级模型绑定仅认可带来源标记的写入，无标记的历史绑定视为失效并回落全局默认
 SESSION_MODEL_SOURCE_CHANNEL_COMMAND = "channel_command"
 SESSION_MODEL_SOURCE_SESSION_PANEL = "session_panel"
 SESSION_MODEL_SOURCES = frozenset(
     {SESSION_MODEL_SOURCE_CHANNEL_COMMAND, SESSION_MODEL_SOURCE_SESSION_PANEL}
 )
+
+# 会话对话模式：agent 提供完整能力，chat 不向模型提供任何工具与执行约束
+CHAT_MODE_AGENT = "agent"
+CHAT_MODE_CHAT = "chat"
+
+
+def normalize_chat_mode(value: Any) -> str:
+    """归一化对话模式，未知值一律回落到 agent。"""
+    return CHAT_MODE_CHAT if _normalized_text(value) == CHAT_MODE_CHAT else CHAT_MODE_AGENT
 
 
 def is_explicit_session_model_config(raw_model_overrides: Dict[str, Any]) -> bool:
@@ -47,13 +51,21 @@ class SessionRuntimeConfig:
     max_tokens: int
     max_iterations: int
     thinking_enabled: bool
+    stream_enabled: bool
     reasoning_level: Optional[str]
+    chat_mode: str
     api_key: str
     api_base: Optional[str]
     model_config: ModelConfig
     persona_config: PersonaConfig
     model_response: Dict[str, Any]
     persona_response: Dict[str, Any]
+    # 会话里显式写入的人设字段（未与全局合并）：普通用户需要它按「自身人设 +
+    # 会话改动」叠加，而不是继承管理员全局人设。
+    persona_overrides: Optional[Dict[str, Any]] = None
+    # 需要固化进执行器覆盖参数的输出模式：None 表示不固化（交给运行时基座解析），
+    # 避免普通用户会话保存其他参数时把管理员全局值误写成自己的输出模式。
+    stream_override: Optional[bool] = None
 
 
 def build_session_model_override(
@@ -66,7 +78,7 @@ def build_session_model_override(
     if not force and not runtime_config.has_custom_model_config:
         return None
 
-    return {
+    overrides = {
         "provider": runtime_config.provider_name,
         "model": runtime_config.model_name,
         "api_mode": runtime_config.api_mode,
@@ -79,6 +91,11 @@ def build_session_model_override(
         "api_key": runtime_config.api_key,
         "api_base": runtime_config.api_base or "",
     }
+    # 只有会话显式设置过、或当前模型条目明确限定输出模式时才下发；
+    # 其余情况交给运行时基座，避免覆盖用户自己的模型级设置。
+    if runtime_config.stream_override is not None:
+        overrides["stream_enabled"] = runtime_config.stream_override
+    return overrides
 
 
 def _parse_session_json(raw: Optional[str], *, session_id: Optional[str], field_name: str) -> Dict[str, Any]:
@@ -136,12 +153,7 @@ def _merge_persona_overrides(
 
 
 def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]) -> SessionRuntimeConfig:
-    """解析会话最终配置。
-
-    优先级：会话配置 > 全局 provider 配置 > provider 默认值（仅 api_base）。
-    会话级模型绑定必须带来源标记（渠道命令 /m 或前端会话配置面板）；
-    没有标记的历史绑定视为失效，回落全局默认模型。
-    """
+    """解析会话最终配置，优先级为会话配置 > 全局 provider 配置 > provider 默认值。"""
 
     session_id = getattr(session, "id", None)
     use_custom_config = bool(session and getattr(session, "use_custom_config", False))
@@ -173,7 +185,7 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         if normalized is not None:
             effective_model_data[key] = normalized
     for key in ("temperature", "max_tokens", "max_iterations", "thinking_enabled",
-                "reasoning_level", "api_mode", "supports_image"):
+                "stream_enabled", "reasoning_level", "api_mode", "supports_image"):
         if raw_model_overrides.get(key) is not None:
             effective_model_data[key] = (
                 _normalize_api_mode(raw_model_overrides[key])
@@ -181,11 +193,41 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
                 else raw_model_overrides[key]
             )
 
+    # 输出模式优先级：会话显式设置 > 当前模型条目 > 全局默认。
+    # 只有前两者需要固化进执行器覆盖参数；仅全局默认时交给运行时基座解析，
+    # 否则普通用户的自有模型设置会被会话里保存的其他参数间接覆盖。
+    raw_stream_override = raw_model_overrides.get("stream_enabled")
+    selected_provider = app_config.providers.get(
+        str(effective_model_data.get("provider") or "").strip()
+    )
+    selected_entry = (
+        selected_provider.find_model(str(effective_model_data.get("model") or "").strip())
+        if selected_provider is not None
+        else None
+    )
+    entry_stream_override = (
+        selected_entry.stream_enabled if selected_entry is not None else None
+    )
+    if raw_stream_override is None:
+        effective_model_data["stream_enabled"] = (
+            bool(entry_stream_override)
+            if entry_stream_override is not None
+            else bool(app_config.model.stream_enabled)
+        )
+    stream_override = (
+        bool(raw_stream_override)
+        if raw_stream_override is not None
+        else (
+            bool(entry_stream_override)
+            if entry_stream_override is not None
+            else None
+        )
+    )
+
     effective_persona_data = _merge_persona_overrides(
         app_config.persona.model_dump(),
         raw_persona_overrides,
     )
-
     effective_model_config = ModelConfig(**effective_model_data)
     effective_persona_config = PersonaConfig(**effective_persona_data)
 
@@ -199,6 +241,9 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         model_entry = provider_config.find_model(effective_model_config.model)
         if model_entry is not None:
             reasoning_level = _normalized_text(model_entry.reasoning_level)
+
+    # 对话模式是纯会话级开关：未显式设置时保持完整 Agent 能力
+    chat_mode = normalize_chat_mode(raw_model_overrides.get("chat_mode"))
 
     session_api_key = _normalized_text(raw_model_overrides.get("api_key"))
     session_api_base = _normalized_text(raw_model_overrides.get("api_base"))
@@ -235,6 +280,8 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
             )
     model_response["api_key"] = raw_model_overrides.get("api_key", "") or ""
     model_response["api_base"] = raw_model_overrides.get("api_base", "") or ""
+    # 模型条目可能改写了输出模式；响应回显最终生效值，避免面板显示与实际请求不一致
+    model_response["stream_enabled"] = effective_model_config.stream_enabled
 
     persona_response = _merge_persona_overrides(
         app_config.persona.model_dump(),
@@ -252,11 +299,15 @@ def resolve_session_runtime_config(app_config: AppConfig, session: Optional[Any]
         max_tokens=effective_model_config.max_tokens,
         max_iterations=effective_model_config.max_iterations,
         thinking_enabled=effective_model_config.thinking_enabled,
+        stream_enabled=effective_model_config.stream_enabled,
         reasoning_level=reasoning_level,
+        chat_mode=chat_mode,
         api_key=api_key,
         api_base=api_base,
         model_config=effective_model_config,
         persona_config=effective_persona_config,
         model_response=model_response,
         persona_response=persona_response,
+        persona_overrides=raw_persona_overrides,
+        stream_override=stream_override,
     )

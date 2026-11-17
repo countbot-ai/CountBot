@@ -1,35 +1,124 @@
 """Wiki API 端点 - 基于模块化 Wiki 服务"""
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from loguru import logger
 
 from backend.modules.config.loader import config_loader
+from backend.modules.wiki.layered import LayeredWikiService
 from backend.modules.wiki.service import WikiService
+from backend.modules.multiuser.permissions import require_active_user
 from backend.utils.paths import WORKSPACE_DIR
 
-router = APIRouter(prefix="/api/wiki", tags=["wiki"])
+router = APIRouter(
+    prefix="/api/wiki",
+    tags=["wiki"],
+    dependencies=[Depends(require_active_user)],
+)
 
 # ============================================================================
 # 全局服务实例
 # ============================================================================
 
 _wiki_service: Optional[WikiService] = None
+# 普通用户各持一个独立 Wiki 服务，避免读写管理员目录
+_user_wiki_services: dict[str, object] = {}
 
 
-def get_wiki_service() -> WikiService:
-    """获取 Wiki 服务实例（单例）"""
+def reset_user_wiki_services() -> None:
+    """共享策略变更后丢弃用户 Wiki 缓存，强制下次访问重新构建。"""
+    _user_wiki_services.clear()
+
+
+def _shared_mode_readonly() -> bool:
+    """当前是否处于「共享模式 + 共享知识库」：普通用户可读管理员 Wiki。"""
+    from backend.modules.multiuser.settings import MODE_SHARED, peek_settings
+
+    settings = peek_settings()
+    return settings.enabled and settings.mode == MODE_SHARED and settings.shared_skills_wiki_mcp
+
+
+def _resolve_wiki_dir(user=None) -> Path:
+    """普通用户使用自己的 Wiki 目录；管理员沿用全局工作区。"""
+    from backend.modules.multiuser.permissions import get_request_user
+    from backend.modules.workspace import resolve_user_workspace
+
+    current = user if user is not None else get_request_user()
+    if current is not None and not getattr(current, "is_admin", False):
+        return resolve_user_workspace(current) / "wiki"
+
+    config = config_loader.config
+    return Path(config.workspace.path) / "wiki" if config.workspace.path else WORKSPACE_DIR / "wiki"
+
+
+def get_wiki_service(user=None):
+    """按身份返回 Wiki 服务：管理员用单例，普通用户按共享或隔离模式分层。"""
     global _wiki_service
+
+    from backend.modules.multiuser.permissions import get_request_user
+
+    current = user if user is not None else get_request_user()
+
+    if current is not None and not getattr(current, "is_admin", False):
+        owner_id = getattr(current, "owner_id", None) or "anonymous"
+        cached = _user_wiki_services.get(owner_id)
+        if cached is not None:
+            return cached
+
+        user_dir = _resolve_wiki_dir(current)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        own_service = WikiService(user_dir)
+
+        service: object = own_service
+        if _shared_mode_readonly():
+            admin_dir = _resolve_wiki_dir(None)
+            admin_dir.mkdir(parents=True, exist_ok=True)
+            # 复用管理员单例，保证管理员更新后用户能立即看到
+            if _wiki_service is None:
+                _wiki_service = WikiService(admin_dir)
+                logger.info(f"Wiki service initialized: {admin_dir}")
+            service = LayeredWikiService(own_service, _wiki_service)
+            logger.info(f"User Wiki service (shared, read-only admin layer): {user_dir}")
+        else:
+            logger.info(f"User Wiki service initialized: {user_dir}")
+
+        _user_wiki_services[owner_id] = service
+        return service
+
     if _wiki_service is None:
-        config = config_loader.config
-        wiki_dir = Path(config.workspace.path) / "wiki" if config.workspace.path else WORKSPACE_DIR / "wiki"
+        wiki_dir = _resolve_wiki_dir(None)
         wiki_dir.mkdir(parents=True, exist_ok=True)
         _wiki_service = WikiService(wiki_dir)
         logger.info(f"Wiki service initialized: {wiki_dir}")
     return _wiki_service
+
+
+def _writable_concepts_dir(service=None) -> Path:
+    """写文件必须落到可写层目录。"""
+    svc = service if service is not None else get_wiki_service()
+    return svc.concepts_dir
+
+
+def _ensure_own_entry(service, slug: str) -> None:
+    """拒绝写入管理员只读条目（更新/删除/打标签时调用）。"""
+    if isinstance(service, LayeredWikiService) and service.is_readonly_slug(slug):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="管理员知识库为只读，不能修改或删除",
+        )
+
+
+def _ensure_slug_not_shared(service, slug: str) -> None:
+    """创建/导入时禁止占用管理员已有 slug，避免同名遮蔽。"""
+    if isinstance(service, LayeredWikiService) and service.is_readonly_slug(slug):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该条目由管理员提供，不能使用同名标识；请更换标题",
+        )
 
 
 # ============================================================================
@@ -129,12 +218,22 @@ def _generate_slug(title: str) -> str:
 
 
 def _get_concepts_dir() -> Path:
-    """获取 concepts 目录"""
-    config = config_loader.config
-    wiki_dir = Path(config.workspace.path) / "wiki" if config.workspace.path else WORKSPACE_DIR / "wiki"
-    concepts = wiki_dir / "concepts"
-    concepts.mkdir(parents=True, exist_ok=True)
-    return concepts
+    """获取当前用户可写层的 concepts 目录。"""
+    return _writable_concepts_dir(get_wiki_service())
+
+
+_SLUG_RE = re.compile(r"^[\w\-\u4e00-\u9fa5.]{1,100}$")
+
+
+def _safe_md_path(concepts_dir: Path, slug: str) -> Path:
+    """把 slug 限制为单级文件名，拒绝分隔符与路径穿越。"""
+    text = str(slug or "").strip()
+    if not _SLUG_RE.fullmatch(text) or text in {".", ".."} or ".." in text:
+        raise HTTPException(status_code=400, detail="条目标识不合法")
+    path = (concepts_dir / f"{text}.md").resolve()
+    if path.parent != concepts_dir.resolve():
+        raise HTTPException(status_code=400, detail="条目标识不合法")
+    return path
 
 
 # ============================================================================
@@ -388,7 +487,14 @@ async def batch_delete_entries(slugs: List[str]) -> Dict[str, Any]:
         failed = []
 
         for slug in slugs:
-            md_file = concepts_dir / f"{slug}.md"
+            try:
+                md_file = _safe_md_path(concepts_dir, slug)
+            except HTTPException as exc:
+                failed.append({"slug": slug, "error": str(exc.detail)})
+                continue
+            if isinstance(service, LayeredWikiService) and service.is_readonly_slug(slug):
+                failed.append({"slug": slug, "error": "管理员知识库只读，不能删除"})
+                continue
             if md_file.exists():
                 try:
                     md_file.unlink()
@@ -432,7 +538,14 @@ async def batch_update_tags(request: Dict[str, Any]) -> Dict[str, Any]:
         failed = []
 
         for slug in slugs:
-            md_file = concepts_dir / f"{slug}.md"
+            try:
+                md_file = _safe_md_path(concepts_dir, slug)
+            except HTTPException as exc:
+                failed.append({"slug": slug, "error": str(exc.detail)})
+                continue
+            if isinstance(service, LayeredWikiService) and service.is_readonly_slug(slug):
+                failed.append({"slug": slug, "error": "管理员知识库只读，不能修改"})
+                continue
             if not md_file.exists():
                 failed.append({"slug": slug, "error": "Not found"})
                 continue
@@ -506,7 +619,15 @@ async def import_wiki(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
                 failed.append({"entry": entry, "error": "Missing required fields"})
                 continue
 
-            md_file = concepts_dir / f"{slug}.md"
+            slug = str(slug).strip()
+            try:
+                md_file = _safe_md_path(concepts_dir, slug)
+            except HTTPException as exc:
+                failed.append({"slug": slug, "error": str(exc.detail)})
+                continue
+            if isinstance(service, LayeredWikiService) and service.is_readonly_slug(slug):
+                skipped.append(slug)
+                continue
             if md_file.exists():
                 skipped.append(slug)
                 continue
@@ -552,9 +673,12 @@ async def create_wiki_entry(request: WikiEntryCreate) -> WikiEntryResponse:
     from datetime import datetime
     
     try:
+        service = get_wiki_service()
         concepts_dir = _get_concepts_dir()
         slug = _generate_slug(request.title)
-        md_file = concepts_dir / f"{slug}.md"
+        # 共享模式下不允许用同名 slug 遮蔽管理员的只读条目
+        _ensure_slug_not_shared(service, slug)
+        md_file = _safe_md_path(concepts_dir, slug)
         
         if md_file.exists():
             raise HTTPException(
@@ -575,7 +699,6 @@ async def create_wiki_entry(request: WikiEntryCreate) -> WikiEntryResponse:
         md_file.write_text(md_content, encoding="utf-8")
         
         # 更新索引
-        service = get_wiki_service()
         service.add_document(slug, request.title, request.content, request.tags)
         
         logger.info(f"Created wiki entry: {slug}")
@@ -607,9 +730,11 @@ async def update_wiki_entry(
     from datetime import datetime
     
     try:
+        service = get_wiki_service()
         concepts_dir = _get_concepts_dir()
-        md_file = concepts_dir / f"{slug}.md"
-        
+        md_file = _safe_md_path(concepts_dir, slug)
+        # 管理员条目在共享模式下只读：先拒绝，再判断是否存在
+        _ensure_own_entry(service, slug)
         if not md_file.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -631,7 +756,6 @@ async def update_wiki_entry(
         md_file.write_text(md_content, encoding="utf-8")
         
         # 更新索引
-        service = get_wiki_service()
         service.add_document(
             slug,
             post.metadata.get("title", slug),
@@ -662,9 +786,10 @@ async def update_wiki_entry(
 async def delete_wiki_entry(slug: str) -> None:
     """删除 Wiki 条目"""
     try:
+        service = get_wiki_service()
         concepts_dir = _get_concepts_dir()
-        md_file = concepts_dir / f"{slug}.md"
-        
+        md_file = _safe_md_path(concepts_dir, slug)
+        _ensure_own_entry(service, slug)
         if not md_file.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -674,7 +799,6 @@ async def delete_wiki_entry(slug: str) -> None:
         md_file.unlink()
         
         # 更新索引
-        service = get_wiki_service()
         service.remove_document(slug)
         
         logger.info(f"Deleted wiki entry: {slug}")

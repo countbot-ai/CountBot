@@ -1,7 +1,7 @@
 """系统集成 API 端点"""
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from loguru import logger
@@ -9,8 +9,12 @@ from typing import Optional
 
 from backend.version import APP_VERSION
 from backend.utils.runtime_env import resolve_bind_address
+from backend.modules.multiuser.permissions import require_admin
 
 router = APIRouter(prefix="/api/system", tags=["system"])
+
+# 除健康检查外，系统信息与桌面集成能力均属管理员域
+_ADMIN = [Depends(require_admin)]
 
 # 全局引用（由 main.py 设置）
 tray_manager = None
@@ -28,7 +32,7 @@ async def health_check():
     }
 
 
-@router.get("/info")
+@router.get("/info", dependencies=_ADMIN)
 async def system_info():
     """返回系统运行信息，供前端侧边栏展示"""
     import platform
@@ -49,26 +53,17 @@ async def system_info():
     }
 
 
-@router.get("/usage")
+@router.get("/usage", dependencies=_ADMIN)
 async def model_usage(session_id: Optional[str] = None, days: int = 7):
-    """查询模型用量统计。
-
-    Args:
-        session_id: 只统计指定会话；省略时统计全库
-        days: 统计最近多少天，默认 7 天
-    """
+    """查询模型用量统计，可按会话和天数过滤。"""
     from backend.modules.session.usage_recorder import summarize_usage
 
     return await summarize_usage(session_id=session_id, days=days)
 
 
-@router.get("/concurrency")
+@router.get("/concurrency", dependencies=_ADMIN)
 async def concurrency_stats():
-    """查询会话并发状态：正在处理与排队中的会话数量。
-
-    用于排查「消息发出后没有反应」类问题——若某会话长时间处于 busy，
-    说明上一轮处理尚未结束，新消息在排队等待。
-    """
+    """查询正在处理与排队中的会话数量。"""
     from backend.modules.agent.session_gate import get_session_gate
 
     gate = get_session_gate()
@@ -100,7 +95,7 @@ class AutoStartRequest(BaseModel):
     enabled: bool
 
 
-@router.post("/notify")
+@router.post("/notify", dependencies=_ADMIN)
 async def send_notification(request: NotificationRequest):
     """发送系统通知"""
     try:
@@ -111,7 +106,7 @@ async def send_notification(request: NotificationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/tray/status")
+@router.get("/tray/status", dependencies=_ADMIN)
 async def get_tray_status():
     """获取系统托盘状态"""
     return JSONResponse(content={
@@ -120,7 +115,7 @@ async def get_tray_status():
     })
 
 
-@router.post("/tray/minimize")
+@router.post("/tray/minimize", dependencies=_ADMIN)
 async def minimize_to_tray():
     """最小化到系统托盘"""
     if not tray_manager:
@@ -134,7 +129,7 @@ async def minimize_to_tray():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/tray/restore")
+@router.post("/tray/restore", dependencies=_ADMIN)
 async def restore_from_tray():
     """从系统托盘恢复窗口"""
     if not tray_manager:
@@ -148,7 +143,7 @@ async def restore_from_tray():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/hotkeys")
+@router.get("/hotkeys", dependencies=_ADMIN)
 async def get_hotkeys():
     """获取已注册的快捷键"""
     if not hotkey_manager:
@@ -160,15 +155,14 @@ async def get_hotkeys():
     })
 
 
-@router.post("/hotkeys/register")
+@router.post("/hotkeys/register", dependencies=_ADMIN)
 async def register_hotkey(request: HotkeyRequest):
     """注册全局快捷键"""
     if not hotkey_manager:
         raise HTTPException(status_code=503, detail="Hotkey manager not available")
     
     try:
-        # Note: Actual hotkey implementation would need platform-specific libraries
-        # like keyboard or pynput
+        # Hotkey 需要 keyboard/pynput 等平台相关库。
         hotkey_manager.register(request.hotkey, lambda: logger.info(f"Hotkey triggered: {request.action}"))
         return JSONResponse(content={"success": True})
     except Exception as e:
@@ -176,7 +170,7 @@ async def register_hotkey(request: HotkeyRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/hotkeys/{hotkey}")
+@router.delete("/hotkeys/{hotkey}", dependencies=_ADMIN)
 async def unregister_hotkey(hotkey: str):
     """注销全局快捷键"""
     if not hotkey_manager:
@@ -190,7 +184,7 @@ async def unregister_hotkey(hotkey: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/autostart")
+@router.get("/autostart", dependencies=_ADMIN)
 async def get_autostart_status():
     """获取自启动状态"""
     if not autostart_manager:
@@ -204,7 +198,7 @@ async def get_autostart_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/autostart")
+@router.post("/autostart", dependencies=_ADMIN)
 async def set_autostart(request: AutoStartRequest):
     """启用或禁用自启动"""
     if not autostart_manager:

@@ -74,8 +74,10 @@ class CronExecutor:
         logger.info(f"Executing job {job_id}: {message[:100]}...")
 
         try:
-            # 定时任务始终使用独立会话，不读写渠道会话，避免把任务记录混进用户对话。
-            # 开启「关联上下文」时复用任务专属会话 ID，并把历史执行记录作为上下文。
+            # 按任务归属选择运行时：普通用户用其独立 Agent，避免借用管理员配置
+            agent, owner_id, owner_user = await self._resolve_agent(job_id)
+
+            # 定时任务使用独立会话，避免混入渠道会话；关联上下文时复用任务专属会话 ID
             if link_context:
                 session_id = f"cron:{job_id}"
                 context_messages = await self._load_context_history(job_id)
@@ -83,26 +85,31 @@ class CronExecutor:
                 session_id = f"cron:{job_id}:{uuid.uuid4().hex[:12]}"
                 context_messages = []
 
-            if self.agent.tools:
-                self.agent.tools.set_session_id(session_id)
-                self.agent.tools.set_channel(channel or "cron")
+            if owner_id:
+                await self._ensure_owned_session(session_id, owner_id)
+
+            if agent.tools:
+                agent.tools.set_session_id(session_id)
+                agent.tools.set_channel(channel or "cron")
 
             cron_message = render_prompt(CRON_TASK_EXECUTION_PROMPT, task_message=message)
+            model_override = (
+                await self._build_user_model_override(owner_user, model_provider, model_name)
+                if owner_user is not None
+                else self._build_model_override_with_level(model_provider, model_name)
+            )
             # 关联上下文时同一任务会复用会话，仍然走会话闸门避免重试与手动触发并发写同一份记录
             gate = get_session_gate()
             await gate.acquire(session_id)
             try:
-                response = await self.agent.process_direct(
+                response = await agent.process_direct(
                     content=cron_message,
                     session_id=session_id,
                     channel=channel or "cron",
                     chat_id=chat_id or job_id,
                     account_id=account_id,
                     context=context_messages,
-                    model_override=self._build_model_override_with_level(
-                        model_provider,
-                        model_name,
-                    ),
+                    model_override=model_override,
                 )
             finally:
                 gate.release(session_id)
@@ -122,11 +129,151 @@ class CronExecutor:
                     job_id=job_id,
                 )
 
+            # 用户通知为纯出站推送，与管理员的机器人渠道隔离；推送失败只记录日志
+            await self._deliver_user_notification(job_id, response)
+
             return response or ""
 
         except Exception as e:
             logger.error(f"Cron job {job_id} failed: {e}")
             raise
+
+    async def _resolve_agent(self, job_id: str):
+        """按任务 owner 返回 AgentLoop；管理员沿用进程级实例。"""
+        from backend.database import get_db_session_factory
+        from backend.models.cron_job import CronJob
+
+        owner_id = None
+        try:
+            async with get_db_session_factory()() as db:
+                owner_id = (
+                    await db.execute(
+                        __import__("sqlalchemy").select(CronJob.owner_id).where(CronJob.id == job_id)
+                    )
+                ).scalar_one_or_none()
+        except Exception as exc:
+            logger.warning(f"Failed to resolve job owner for {job_id}: {exc}")
+            return self.agent, None, None
+
+        if not owner_id:
+            return self.agent, None, None
+
+        from backend.modules.multiuser.identity import get_user_by_id, user_to_auth_user
+        from backend.modules.multiuser.runtime import user_runtime_manager
+
+        user_row = await get_user_by_id(owner_id)
+        if user_row is None or user_row.status != "active":
+            raise RuntimeError("任务归属用户不可用")
+
+        user = user_to_auth_user(user_row)
+        agent = await user_runtime_manager.get_agent_loop(user)
+        return agent, owner_id, user
+
+    async def _build_user_model_override(self, user, provider: Optional[str], model: Optional[str]):
+        """普通用户任务模型：只解析属于该用户的模型，避免落到管理员供应商。"""
+        from backend.modules.multiuser.effective import (
+            ModelResolutionError,
+            build_provider,
+            enforce_shared_daily_limit,
+            enforce_shared_daily_limit_for,
+            resolve_model_ref_for_user,
+        )
+
+        provider_id = str(provider or "").strip()
+        model_id = str(model or "").strip()
+        if not provider_id or not model_id:
+            # 未指定任务模型时按用户默认模型执行，同样受共享配额约束
+            await enforce_shared_daily_limit(user)
+            return None
+
+        try:
+            resolved = await resolve_model_ref_for_user(user, provider_id, model_id)
+            provider_instance = build_provider(resolved)
+        except ModelResolutionError as exc:
+            # 共享被取消或模型被删除时回落到用户默认模型，避免任务永久失败
+            logger.warning(
+                f"Cron model {provider_id}/{model_id} unavailable for "
+                f"{getattr(user, 'username', '?')}, fallback to default: {exc}"
+            )
+            await enforce_shared_daily_limit(user)
+            return None
+
+        await enforce_shared_daily_limit_for(user, resolved)
+
+        entry = resolved.provider_config.find_model(resolved.model_id)
+        level = getattr(entry, "reasoning_level", None) if entry else None
+        override = {
+            "provider": resolved.provider_id,
+            "model": resolved.model_id,
+            "provider_instance": provider_instance,
+            # 沿用该模型实际解析出的输出模式，避免被 cron 基座的全局值覆盖
+            "stream_enabled": getattr(provider_instance, "stream_enabled", True),
+        }
+        if level:
+            override["reasoning_level"] = level
+        return override
+
+    async def _ensure_owned_session(self, session_id: str, owner_id: str) -> None:
+        """确保定时任务会话存在且归属正确。"""
+        from backend.database import get_db_session_factory
+        from backend.models.session import Session
+
+        try:
+            async with get_db_session_factory()() as db:
+                existing = await db.get(Session, session_id)
+                if existing is not None:
+                    # 会话 ID 撞到其他归属时直接失败，避免把任务写进别人的会话
+                    if existing.owner_id and existing.owner_id != owner_id:
+                        raise RuntimeError("定时任务会话归属异常")
+                    if not existing.owner_id:
+                        existing.owner_id = owner_id
+                        await db.commit()
+                    return
+                db.add(
+                    Session(
+                        id=session_id,
+                        name=session_id,
+                        title_source="channel",
+                        owner_id=owner_id,
+                    )
+                )
+                await db.commit()
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logger.warning(f"Failed to ensure cron session {session_id}: {exc}")
+
+    async def _deliver_user_notification(self, job_id: str, response: Optional[str]) -> None:
+        """按任务的 notify_channel_id 推送结果；无该字段时直接跳过。"""
+        from backend.database import get_db_session_factory
+        from backend.models.cron_job import CronJob
+        from backend.models.user import UserNotificationChannel
+        from backend.modules.multiuser.notifications import (
+            NotificationError,
+            send_to_channel_row,
+        )
+
+        try:
+            async with get_db_session_factory()() as db:
+                job = await db.get(CronJob, job_id)
+                if job is None or not getattr(job, "notify_channel_id", None):
+                    return
+                if not getattr(job, "owner_id", None):
+                    # 管理员任务走原有渠道推送，不使用用户通知渠道
+                    return
+                channel = await db.get(UserNotificationChannel, job.notify_channel_id)
+                if channel is None or channel.owner_id != job.owner_id or not channel.enabled:
+                    logger.warning(f"Skip notification for job {job_id}: channel unavailable")
+                    return
+                title = f"定时任务完成：{job.name}"
+                content = (response or "任务执行完成（无输出）")[:4000]
+
+            await send_to_channel_row(channel, title, content)
+            logger.info(f"Cron notification delivered for job {job_id}")
+        except NotificationError as exc:
+            logger.warning(f"Cron notification failed for job {job_id}: {exc}")
+        except Exception as exc:
+            logger.warning(f"Unexpected notification error for job {job_id}: {exc}")
 
     async def _load_context_history(self, job_id: str) -> list[dict]:
         """读取该任务之前的执行记录，作为本轮模型的上下文。"""
@@ -271,8 +418,7 @@ class CronExecutor:
             return dispatch.greeting
         except Exception as e:
             logger.error(f"Heartbeat execution failed: {e}")
-            # 向上抛出：吞掉异常会让调度器把本次执行记为成功，
-            # 投递渠道故障在面板上无法体现。
+            # 向上抛出，避免调度器把投递失败记为成功
             raise
 
     @classmethod
@@ -314,10 +460,7 @@ class CronExecutor:
         model_provider: Optional[str],
         model_name: Optional[str],
     ) -> Optional[dict]:
-        """任务指定了模型时生成执行器可消费的覆盖参数。
-
-        未指定（跟随全局默认）时返回 None；api_key / api_base 由执行器按供应商配置解析。
-        """
+        """任务指定模型时生成覆盖参数，未指定时返回 None。"""
         provider = str(model_provider or "").strip()
         model = str(model_name or "").strip()
         if not provider or not model:
@@ -332,11 +475,7 @@ class CronExecutor:
         response: Optional[str],
         job_id: str,
     ) -> None:
-        """把 AI 响应推送到渠道；任何一步失败都抛出 CronDeliveryError。
-
-        开启「推送响应到渠道」后，推送就是任务的一部分：静默失败会让用户
-        以为任务成功，所以这里必须显式失败并保留原因。
-        """
+        """把响应推送到渠道，任一步失败都抛出 CronDeliveryError。"""
         if not channel or not chat_id:
             raise CronDeliveryError("推送失败：任务未配置推送渠道或聊天 ID")
         if not response:
@@ -604,6 +743,7 @@ class CronExecutor:
             session = Session(
                 id=str(uuid.uuid4()),
                 name=session_name,
+                title_source="channel",
                 channel_context=json.dumps(channel_context, ensure_ascii=False),
             )
             db.add(session)

@@ -4,12 +4,16 @@ from fastapi import Depends, HTTPException, status
 from loguru import logger
 
 from backend.modules.cron.service import CronService
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import require_active_user
 
 from backend.api.cron._common import (
     BUILTIN_PREFIX,
     build_job_info,
     get_cron_service,
     router,
+    validate_channel_push_for_user,
+    validate_model_for_user,
 )
 from backend.api.cron.models import (
     BatchCreateCronJobsRequest,
@@ -23,23 +27,17 @@ from backend.api.cron.models import (
 async def batch_create_cron_jobs(
     request: BatchCreateCronJobsRequest,
     cron_service: CronService = Depends(get_cron_service),
+    user: AuthUser = Depends(require_active_user),
 ) -> BatchCreateCronJobsResponse:
-    """
-    批量创建 Cron 任务
-    
-    Args:
-        request: 批量创建请求
-        cron_service: Cron 服务（带 scheduler）
-        
-    Returns:
-        BatchCreateCronJobsResponse: 批量创建结果
-    """
+    """批量创建 Cron 任务，单个失败不影响其余任务。"""
     try:
         success_jobs = []
         errors = []
         
         for idx, job_req in enumerate(request.jobs):
             try:
+                await validate_channel_push_for_user(user, job_req)
+                await validate_model_for_user(user, job_req)
                 job = await cron_service.add_job(
                     name=job_req.name,
                     schedule=job_req.schedule,
@@ -90,16 +88,7 @@ async def batch_delete_cron_jobs(
     request: BatchDeleteCronJobsRequest,
     cron_service: CronService = Depends(get_cron_service),
 ) -> BatchDeleteCronJobsResponse:
-    """
-    批量删除 Cron 任务
-    
-    Args:
-        request: 批量删除请求
-        cron_service: Cron 服务（带 scheduler）
-        
-    Returns:
-        BatchDeleteCronJobsResponse: 批量删除结果
-    """
+    """批量删除 Cron 任务，仅删除当前用户可见的任务。"""
     try:
         deleted_ids = []
         errors = []

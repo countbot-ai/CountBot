@@ -1,14 +1,19 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from backend.modules.config.loader import config_loader
 from backend.modules.config.schema import McpConfig, McpRegistryConfig, McpServerConfig
 from backend.modules.mcp.exceptions import McpValidationError, McpServerNotFoundError
 from backend.modules.mcp.validators import McpConfigValidator
+from backend.modules.multiuser.permissions import require_admin
 
-router = APIRouter(prefix="/api/mcp", tags=["mcp"])
+router = APIRouter(
+    prefix="/api/mcp",
+    tags=["mcp"],
+    dependencies=[Depends(require_admin)],
+)
 
 # 全局验证器实例
 _validator = McpConfigValidator()
@@ -108,11 +113,14 @@ async def get_overview():
         server_id = s.id or s.name or "unknown"
         is_connected = server_id in connected_servers
         s_status = server_status.get(server_id, {})
-        # Get tool names for this server
+        # 取该服务器已注册的工具名
         server_tools = []
         if is_connected:
             all_tools = status.get("tools", [])
-            server_tools = [t for t in all_tools if t.startswith(f"mcp_{server_id}_")]
+            server_tools = [
+                t for t in all_tools
+                if t.startswith(f"mcp__{server_id}__") or t.startswith(f"mcp_{server_id}_")
+            ]
         server_items.append({
             "id": server_id,
             "name": s.name or server_id,
@@ -340,7 +348,7 @@ async def reconnect_server(data: Dict[str, Any] | None = None):
     try:
         from backend.modules.mcp.client import McpClientManager
         manager = McpClientManager.get_instance()
-        # Ensure configs are loaded from registry before reconnecting
+        # 重连前先把注册表里的配置灌进管理器，避免用到旧的连接参数
         mcp = _get_mcp_config()
         for s in mcp.registry.servers:
             sid = s.id or s.name or "unknown"
@@ -406,7 +414,10 @@ async def get_server_status(server_id: str):
         if server_status is None:
             return {"success": False, "message": f"Server '{server_id}' not found"}
         all_tools = status.get("tools", [])
-        server_tools = [t for t in all_tools if t.startswith(f"mcp_{server_id}_")]
+        server_tools = [
+            t for t in all_tools
+            if t.startswith(f"mcp__{server_id}__") or t.startswith(f"mcp_{server_id}_")
+        ]
         return {
             "success": True,
             "server_id": server_id,

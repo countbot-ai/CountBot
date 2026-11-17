@@ -10,6 +10,8 @@ from backend.database import get_db
 from backend.models.message import Message
 from backend.modules.cron.service import CronService
 
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 from backend.api.cron._common import (
     _now_beijing,
     _to_shanghai_iso,
@@ -31,12 +33,13 @@ async def get_cron_job_messages(
     job_id: str,
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> CronJobMessagesResponse:
     """获取 Cron 任务关联会话的消息。"""
     try:
         from backend.modules.session.manager import SessionManager
 
-        job = await _get_cron_job_or_404(db, job_id)
+        job = await _get_cron_job_or_404(db, job_id, owner_scope(user))
         session = await _find_cron_session(db, job)
 
         if not session:
@@ -80,12 +83,13 @@ async def cleanup_cron_job_session(
     job_id: str,
     request: CleanupCronSessionRequest,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> CleanupCronSessionResponse:
     """清理 Cron 任务关联会话，保留最近 N 条消息。"""
     try:
         from backend.modules.session.manager import SessionManager
 
-        job = await _get_cron_job_or_404(db, job_id)
+        job = await _get_cron_job_or_404(db, job_id, owner_scope(user))
         session = await _find_cron_session(db, job)
 
         if not session:
@@ -166,12 +170,13 @@ async def cleanup_cron_job_session(
 async def reset_cron_job_session(
     job_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> ResetCronSessionResponse:
     """重置 Cron 任务关联会话。"""
     try:
         from backend.modules.session.manager import SessionManager
 
-        job = await _get_cron_job_or_404(db, job_id)
+        job = await _get_cron_job_or_404(db, job_id, owner_scope(user))
         session = await _find_cron_session(db, job)
 
         if not session:

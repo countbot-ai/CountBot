@@ -15,18 +15,13 @@ class McpClientManager:
     _instance: Optional["McpClientManager"] = None
     _lock: asyncio.Lock = None  # 类级别锁，用于单例创建
 
-    def __init__(self):
-        # 每个 server 的“连接持有者任务”与其停止信号。
-        # 关键不变量：某条 stdio/sse/http 连接的 AsyncExitStack 必须在
-        # “进入它的那个任务”里退出（anyio cancel scope 要求），否则会抛
-        # RuntimeError: Attempted to exit cancel scope in a different task。
-        # 因此连接的 open/hold/close 全部锁死在 _run_server_connection 这一个任务内，
-        # 外部只通过 _stop_events 发信号、绝不跨任务 aclose()。
+    def __init__(self, *, broadcast: bool = True):
+        # 用户自建 MCP 使用独立实例：不应把状态广播给管理员的 WS 会话
+        self._broadcast = broadcast
+        # 每个 server 的持有者任务与停止信号；AsyncExitStack 必须在进入它的任务内退出（anyio 限制）
         self._conn_tasks: Dict[str, asyncio.Task] = {}
         self._stop_events: Dict[str, asyncio.Event] = {}
-        # 用户在运行时“显式停止”的 server：即便全局 MCP 开关仍开着，
-        # 也不应被 ensure_connected / reconnect_all 的惰性自动连接重新拉起，
-        # 否则“停止”会被下一次状态轮询立刻撤销（按钮停不下来）。
+        # 用户显式停止的 server 不再被惰性自动连接拉起，避免停止状态被状态轮询撤销
         self._manually_stopped: set = set()
         self._connected = False
         self._connecting = False
@@ -39,7 +34,7 @@ class McpClientManager:
         self._reconnect_backoff_base: float = 5.0
         # 关闭单条连接时 aclose 的超时上限（秒），防止关闭卡死持有者任务
         self._close_timeout: float = 10.0
-        # Store tool wrappers for syncing to new registries
+        # 已注册的工具包装器：用于向后续新建的注册表（会话级）补发工具
         self._tool_wrappers: Dict[str, Tool] = {}
         # 实例级别锁，用于保护并发操作
         self._operation_lock = asyncio.Lock()
@@ -57,10 +52,7 @@ class McpClientManager:
 
     @classmethod
     def get_instance(cls) -> "McpClientManager":
-        """同步获取单例实例（保持向后兼容）
-
-        注意：在异步环境中应优先使用 get_instance_async()
-        """
+        """同步获取单例实例（保持向后兼容） 注意：在异步环境中应优先使用 get_instance_async()"""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -69,11 +61,7 @@ class McpClientManager:
         self._registry = registry
 
     async def ensure_connected(self) -> bool:
-        """确保MCP已连接，未连接则尝试连接（延迟初始化）。
-
-        采用延迟连接策略：首次访问时自动建立连接。
-        Returns True if connected (or already was).
-        """
+        """确保 MCP 已连接，未连接时延迟发起连接。"""
         if self._connected:
             return True
         if self._connecting:
@@ -110,12 +98,7 @@ class McpClientManager:
         self._connected = False
 
     def sync_to_registry_sync(self, registry: ToolRegistry) -> int:
-        """Sync MCP tools to a new registry (e.g., per-WebSocket registry).
-
-        同步版本，用于非异步上下文（如WebSocket连接初始化）
-
-        Returns the number of tools synced.
-        """
+        """同步 MCP 工具到指定注册表并返回同步数量（同步版本）。"""
         if not self._connected or not self._tool_wrappers:
             return 0
         synced = 0
@@ -130,25 +113,22 @@ class McpClientManager:
             logger.debug(f"Synced {synced} MCP tools to new registry")
         return synced
 
-    def reconcile_registry_sync(self, registry: ToolRegistry) -> int:
-        """把某个会话级 registry 的 MCP 工具与“当前全局 MCP 工具集”全量对齐。
-
-        与 sync_to_registry_sync（只增不减）不同，这里做增/删/换：
-          - 新增：manager 有、registry 没有的工具
-          - 移除：registry 里以 mcp_ 开头、但 manager 当前已无的工具（配置删了/禁用了）
-          - 替换：wrapper 对象已更换（重连后指向新 session）的旧工具
-
-        用途：在每轮对话开始前调用，使“中途改了 MCP 配置”的老对话也能在下一条
-        消息加载到最新工具。同步、无 await、在事件循环上原子执行；幂等。
-
-        Returns 变更的工具数（新增 + 移除/替换）。
-        """
+    def reconcile_registry_sync(
+        self,
+        registry: ToolRegistry,
+        *,
+        prefix: str = "mcp_",
+        keep_prefixes: tuple[str, ...] = (),
+    ) -> int:
+        """把某个会话级 registry 的 MCP 工具与“当前全局 MCP 工具集”全量对齐。"""
         current = dict(self._tool_wrappers) if self._connected else {}
         changed = 0
 
         # 移除已不存在、或对象已变（重连）的旧 MCP 工具
         for name in list(registry.list_tools()):
-            if not name.startswith("mcp_"):
+            if not name.startswith(prefix):
+                continue
+            if any(name.startswith(keep) for keep in keep_prefixes):
                 continue
             cur = current.get(name)
             if cur is None or registry.get_tool(name) is not cur:
@@ -172,12 +152,7 @@ class McpClientManager:
         return changed
 
     async def sync_to_registry(self, registry: ToolRegistry) -> int:
-        """Sync MCP tools to a new registry (e.g., per-WebSocket registry).
-
-        异步版本，线程安全
-
-        Returns the number of tools synced.
-        """
+        """同步 MCP 工具到指定注册表并返回同步数量（异步、线程安全）。"""
         async with self._operation_lock:
             return self.sync_to_registry_sync(registry)
 
@@ -205,9 +180,7 @@ class McpClientManager:
                 server_id = cfg.id or cfg.name or "unknown"
                 self._server_configs[server_id] = cfg
 
-            # 每个 server 各起一个“持有者任务”，并发等待各自“首次连接就绪”。
-            # 连接的 open/hold/close 全部发生在持有者任务内部（见 _run_server_connection），
-            # 这里只负责等待就绪结果，绝不持有或跨任务关闭连接。
+            # 每个 server 各起一个持有者任务，此处只等待首次连接就绪，不跨任务关闭连接
             await asyncio.gather(
                 *[
                     self._start_connection(cfg.id or cfg.name or "unknown", cfg)
@@ -221,36 +194,30 @@ class McpClientManager:
                 logger.info(f"MCP connected: {len(self._conn_tasks)} servers, {len(self._mcp_tool_names)} tools")
                 self._start_health_check()
 
-                # 通知所有活跃的WebSocket会话MCP已连接
-                try:
-                    from backend.modules.websocket.broadcast import broadcast_mcp_status_change
-                    await broadcast_mcp_status_change(connected=True)
-                except Exception as e:
-                    logger.debug(f"Failed to broadcast MCP status change: {e}")
+                # 通知所有活跃的WebSocket会话MCP已连接（用户私有实例不广播）
+                if self._broadcast:
+                    try:
+                        from backend.modules.websocket.broadcast import broadcast_mcp_status_change
+                        await broadcast_mcp_status_change(connected=True)
+                    except Exception as e:
+                        logger.debug(f"Failed to broadcast MCP status change: {e}")
             else:
                 logger.warning("No MCP servers connected successfully (will retry next message)")
         finally:
             self._connecting = False
 
-    # ---- 连接生命周期：open/hold/close 全部锁死在“持有者任务”内 -----------
+    # ---- 连接生命周期：open/hold/close 均在“持有者任务”内完成 -----------
 
     async def _run_server_connection(
         self, server_id: str, cfg: McpServerConfig, ready: asyncio.Future
     ) -> None:
-        """单个 server 的连接持有者任务：在“本任务”内 open → hold → close。
-
-        - open ：connect_mcp_server 在本任务里 enter 传输的 AsyncExitStack
-        - hold ：await stop_event.wait()，挂起持有连接
-        - close：finally 里在“本任务”内关闭 stack —— 满足 anyio“同任务退出 cancel scope”的要求
-        ready 用于把“首次连接结果”回报给发起方（True/False）。
-        """
+        """单个 server 的连接持有者任务：在“本任务”内 open → hold → close。"""
         stop = asyncio.Event()
         self._stop_events[server_id] = stop
         stack: Optional[AsyncExitStack] = None
         registered: List[str] = []
         try:
-            # 经门面调用连接函数：测试与文档都以 backend.modules.mcp.client 为入口，
-            # 在该模块上替换 connect_mcp_server 应当生效。延迟导入避免循环依赖。
+            # 经 backend.modules.mcp.client 门面调用，便于测试替换；延迟导入避免循环依赖
             from backend.modules.mcp import client as client_facade
 
             stack = await client_facade.connect_mcp_server(
@@ -260,9 +227,11 @@ class McpClientManager:
                 if not ready.done():
                     ready.set_result(False)
                 return
+            # 兼容两种历史命名：``mcp__server__tool``（当前）与 ``mcp_server_tool``
             registered = [
-                n for n in self._registry.list_tools()
-                if n.startswith(f"mcp_{server_id}_")
+                n for n in self._tool_wrappers
+                if n.startswith(f"mcp__{server_id}__")
+                or n.startswith(f"mcp_{server_id}_")
             ]
             for n in registered:
                 if n not in self._mcp_tool_names:
@@ -279,8 +248,7 @@ class McpClientManager:
             if not ready.done():
                 ready.set_result(False)
         finally:
-            # 关键：正常停止或被取消，都在“本任务”内关闭 stack。
-            # 被取消时 stack.aclose() 让 anyio 在同任务解开 cancel scope 并终止子进程（B 兜底强杀）。
+            # 正常停止或被取消均在本任务内关闭 stack，确保 anyio cancel scope 同任务退出
             if stack is not None:
                 await self._safe_aclose(stack, server_id)
             self._unregister_names(registered)
@@ -290,13 +258,13 @@ class McpClientManager:
                 self._conn_tasks.pop(server_id, None)
 
     async def _safe_aclose(self, stack: AsyncExitStack, server_id: str) -> None:
-        """在本任务内关闭 stack；带超时与兜底，绝不卡死持有者任务或向外抛出。"""
+        """在本任务内关闭 stack，带超时保护，避免阻塞持有者任务或向外抛错。"""
         try:
             await asyncio.wait_for(stack.aclose(), timeout=self._close_timeout)
         except asyncio.TimeoutError:
             logger.warning(f"MCP server '{server_id}': aclose timed out after {self._close_timeout}s")
         except (RuntimeError, BaseExceptionGroup) as exc:
-            # 同任务关闭理论上不再出现 cancel-scope 错误；保留为兜底日志
+            # 同任务关闭理论上不再出现 cancel-scope 错误，仅保留异常日志
             logger.warning(f"MCP server '{server_id}': aclose raised {type(exc).__name__}: {exc}")
         except Exception as exc:
             logger.warning(f"MCP server '{server_id}': aclose unexpected error: {exc}")
@@ -329,11 +297,7 @@ class McpClientManager:
             return False
 
     async def _stop_connection(self, server_id: str, timeout: float = 5.0) -> None:
-        """停止某 server 的持有者任务：先发 stop 信号优雅退出；超时则强制取消。
-
-        取消会让持有者任务在“本任务”内解开 AsyncExitStack，
-        anyio 借此终止子进程 —— 即所选方案的“B 兜底：强杀”。
-        """
+        """停止某 server 的持有者任务：先发 stop 信号优雅退出，超时则强制取消。"""
         stop = self._stop_events.get(server_id)
         task = self._conn_tasks.get(server_id)
         if stop is not None:
@@ -479,24 +443,24 @@ class McpClientManager:
             for server_id in list(self._conn_tasks.keys()):
                 await self._stop_connection(server_id)
 
-            # 兜底清理注册表残留
+            # 清理注册表残留
             self._unregister_mcp_tools()
             self._server_configs.clear()
             self._tool_wrappers.clear()
             self._mcp_tool_names.clear()
-            # 全局断开是一次整体重置：清空“手动停止”标记，
-            # 下次全局启用时所有 enabled server 都应能正常拉起。
+            # 全局断开为整体重置，清空手动停止标记，使下次启用时所有 server 可重新连接
             self._manually_stopped.clear()
             self._connected = False
             self._connecting = False
             logger.info("MCP disconnected")
 
-        # 通知所有活跃的WebSocket会话MCP已断开
-        try:
-            from backend.modules.websocket.broadcast import broadcast_mcp_status_change
-            await broadcast_mcp_status_change(connected=False)
-        except Exception as e:
-            logger.debug(f"Failed to broadcast MCP status change: {e}")
+        # 通知所有活跃的WebSocket会话MCP已断开（用户私有实例不广播）
+        if self._broadcast:
+            try:
+                from backend.modules.websocket.broadcast import broadcast_mcp_status_change
+                await broadcast_mcp_status_change(connected=False)
+            except Exception as e:
+                logger.debug(f"Failed to broadcast MCP status change: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         server_status = {}
@@ -504,13 +468,19 @@ class McpClientManager:
             server_status[server_id] = {
                 "connected": server_id in self._conn_tasks,
                 "transport": cfg.transport or "auto",
-                "tool_count": len([n for n in self._mcp_tool_names if n.startswith(f"mcp_{server_id}_")]),
+                "tool_count": len(
+                    [
+                        n for n in self._tool_wrappers
+                        if n.startswith(f"mcp__{server_id}__")
+                        or n.startswith(f"mcp_{server_id}_")
+                    ]
+                ),
             }
         return {
             "connected": self._connected,
             "servers": list(self._conn_tasks.keys()),
             "all_configured": list(self._server_configs.keys()),
             "server_status": server_status,
-            "tool_count": len(self._mcp_tool_names),
-            "tools": self._mcp_tool_names,
+            "tool_count": len(self._tool_wrappers),
+            "tools": list(self._tool_wrappers.keys()),
         }

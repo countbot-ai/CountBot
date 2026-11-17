@@ -1,6 +1,7 @@
 """工作空间管理器"""
 
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -371,12 +372,180 @@ def get_global_workspace_path() -> Path:
     return workspace_manager.workspace_path
 
 
-def resolve_session_workspace(session: Any = None) -> Path:
+# 用户数据根：默认与管理员工作空间**平级**，不嵌在管理员工作空间内部
+USERS_ROOT_DIR_NAME = "users"
+# 旧版（嵌套）位置：<全局工作区>/.users/<uid>，只用于一次性搬迁
+LEGACY_USERS_ROOT_NAME = ".users"
+# 删除用户时的归档目录：<用户数据根>/.trash/<uid>-<时间戳>
+ARCHIVE_DIR_NAME = ".trash"
+
+
+def get_users_root() -> Path:
+    """用户数据根目录：默认与管理员的全局工作空间平级，可用 workspace.users_root 覆盖。"""
+    configured = ""
+    try:
+        from backend.modules.config.loader import config_loader
+
+        configured = getattr(config_loader.config.workspace, "users_root", "") or ""
+    except Exception as exc:
+        logger.debug(f"读取 users_root 失败，使用默认值: {exc}")
+
+    if configured:
+        root = Path(configured).expanduser()
+    else:
+        root = get_global_workspace_path().parent / USERS_ROOT_DIR_NAME
+
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def _sanitize_user_id(user_id: str) -> str:
+    """用户 ID 只允许安全字符，防止路径穿越。"""
+    raw = str(user_id or "").strip()
+    safe = "".join(ch for ch in raw if ch.isalnum() or ch in ("-", "_"))
+    if not safe:
+        raise ValueError("invalid user id for workspace")
+    return safe
+
+
+def _legacy_user_root(user_id: str) -> Path:
+    """旧版嵌套位置；仅用于搬迁与回退，不再作为默认落点。"""
+    return get_global_workspace_path() / LEGACY_USERS_ROOT_NAME / _sanitize_user_id(user_id)
+
+
+def _migrate_legacy_user_root(user_id: str, target_root: Path) -> None:
+    """把旧版嵌在工作空间里的用户目录搬到新的用户根。
+
+    只在目标不存在时搬一次；搬迁失败保留旧位置并告警——宁可回退也不能丢数据。
+    """
+    legacy = _legacy_user_root(user_id)
+    if not legacy.is_dir():
+        return
+    try:
+        target_root.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(legacy), str(target_root))
+        logger.info(f"已迁移用户工作区 {user_id}: {legacy} -> {target_root}")
+    except Exception as exc:
+        logger.warning(f"迁移用户工作区失败（保留旧位置）{user_id}: {exc}")
+
+
+def get_effective_user_root(user_id: str) -> Path:
+    """该用户数据实际所在的根目录（新位置优先，旧位置兜底）。"""
+    root = get_users_root() / _sanitize_user_id(user_id)
+    if root.exists():
+        return root
+
+    _migrate_legacy_user_root(user_id, root)
+    if root.exists():
+        return root
+
+    legacy = _legacy_user_root(user_id)
+    if legacy.is_dir():
+        logger.warning(f"用户 {user_id} 仍使用旧版嵌套目录: {legacy}")
+        return legacy
+    return root
+
+
+def get_user_workspace_root(user_id: str) -> Path:
+    """返回某用户的隔离根目录（不含 workspace 层）。"""
+    return get_users_root() / _sanitize_user_id(user_id)
+
+
+def ensure_user_workspace(user_id: str) -> Path:
+    """创建并返回用户工作区 ``<用户数据根>/<uid>/workspace``。"""
+    workspace = get_effective_user_root(user_id) / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "memory").mkdir(parents=True, exist_ok=True)
+    (workspace / "uploads").mkdir(parents=True, exist_ok=True)
+    (workspace / "temp").mkdir(parents=True, exist_ok=True)
+    (workspace / "skills").mkdir(parents=True, exist_ok=True)
+    (workspace / "wiki").mkdir(parents=True, exist_ok=True)
+    return workspace.resolve()
+
+
+def archive_user_workspace(user_id: str) -> Optional[Path]:
+    """删除用户时归档其工作区，而不是直接删掉。
+
+    归档到 ``<用户数据根>/.trash/<uid>-<时间戳>``，便于误删恢复。
+    只允许操作 ``<用户数据根>`` 之内的目录，越界一律拒绝。
+    """
+    source = get_effective_user_root(user_id)
+    if not source.is_dir():
+        return None
+
+    users_root = get_users_root().resolve()
+    try:
+        resolved = source.resolve()
+        resolved.relative_to(users_root)
+    except (OSError, ValueError):
+        logger.warning(f"拒绝归档用户数据根之外的目录: {source}")
+        return None
+
+    # 已经在归档区里就不要再嵌套归档
+    if resolved.parent.name == ARCHIVE_DIR_NAME:
+        return None
+
+    trash = users_root / ARCHIVE_DIR_NAME
+    trash.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d%H%M%S")
+    target = trash / f"{resolved.name}-{stamp}"
+    try:
+        shutil.move(str(resolved), str(target))
+    except Exception as exc:
+        logger.warning(f"归档用户工作区失败 {user_id}: {exc}")
+        return None
+
+    logger.info(f"已归档用户工作区 {user_id}: {target}")
+    return target
+
+
+def resolve_user_workspace(user) -> Path:
+    """解析用户实际工作区。
+
+    管理员（owner_id 为空）沿用全局工作区；普通用户强制落在其私有子树，
+    不接受任何前端传入的路径，避免越界读写管理员目录。
+    """
+    owner_id = None
+    if user is not None:
+        owner_id = getattr(user, "owner_id", None)
+        if owner_id is None and getattr(user, "is_admin", False):
+            return get_global_workspace_path()
+    if not owner_id:
+        return get_global_workspace_path()
+    return ensure_user_workspace(owner_id)
+
+
+def is_path_within_user_workspace(path: Path, user_id: str) -> bool:
+    """校验路径是否位于该用户工作区子树内。"""
+    try:
+        root = get_effective_user_root(user_id).resolve()
+        candidate = Path(path).expanduser().resolve()
+    except (OSError, ValueError):
+        return False
+    try:
+        return candidate == root or candidate.is_relative_to(root)
+    except AttributeError:  # pragma: no cover - Python < 3.9
+        try:
+            root.relative_to(candidate)
+            return False
+        except ValueError:
+            return True
+
+
+def resolve_session_workspace(session: Any = None, user: Any = None) -> Path:
     """解析会话实际使用的工作空间。
 
-    会话级路径优先；为空或目录已不可用时回退全局配置，避免历史会话在
-    移动盘/目录被删除后无法继续对话。
+    普通用户强制落在自己的私有工作区，不接受会话上的自定义路径，也不回退
+    到管理员工作区；否则接口会把管理员目录暴露给普通用户。会话级路径仅对
+    管理员生效，路径不可用时回退全局配置。
     """
+    if user is None:
+        from backend.modules.multiuser.permissions import get_request_user
+
+        user = get_request_user()
+    if user is not None and not getattr(user, "is_admin", False):
+        return resolve_user_workspace(user)
+
     custom_path = getattr(session, "workspace_path", None) if session is not None else None
     if custom_path:
         candidate = Path(str(custom_path)).expanduser()

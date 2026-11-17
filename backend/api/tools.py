@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -12,8 +12,13 @@ from backend.modules.tools.registry import ToolRegistry
 from backend.modules.tools.execution import ExecutionState, ToolExecutionInProgress, ToolExecutionRejected
 from backend.modules.tools.conversation_history import get_conversation_history
 from backend.modules.tools.file_audit_logger import file_audit_logger
+from backend.modules.multiuser.permissions import require_admin
 
-router = APIRouter(prefix="/api/tools", tags=["tools"])
+router = APIRouter(
+    prefix="/api/tools",
+    tags=["tools"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 # ============================================================================
@@ -122,15 +127,7 @@ def get_tool_registry() -> ToolRegistry:
 
 @router.post("/execute", response_model=ExecuteToolResponse)
 async def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
-    """
-    执行工具
-    
-    Args:
-        request: 执行工具请求
-        
-    Returns:
-        ExecuteToolResponse: 执行结果
-    """
+    """执行工具。"""
     try:
         # 隐藏的工具列表（禁止前端直接调用）
         hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'exec', 'todo'}
@@ -195,12 +192,7 @@ async def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
 
 @router.get("/list", response_model=ListToolsResponse)
 async def list_tools() -> ListToolsResponse:
-    """
-    获取所有可用工具列表
-    
-    Returns:
-        ListToolsResponse: 工具列表
-    """
+    """获取所有可用工具。"""
     try:
         tools = get_tool_registry()
         
@@ -238,18 +230,7 @@ async def get_conversations(
     limit: Optional[int] = Query(None, description="限制返回数量"),
     offset: int = Query(0, description="偏移量，用于分页")
 ) -> ConversationHistoryResponse:
-    """
-    获取工具调用对话历史
-    
-    Args:
-        session_id: 可选，按会话ID过滤
-        tool_name: 可选，按工具名称过滤
-        limit: 可选，限制返回数量
-        offset: 偏移量，用于分页（默认0）
-        
-    Returns:
-        ConversationHistoryResponse: 对话历史记录
-    """
+    """获取工具调用对话历史，支持分页与会话、工具名过滤。"""
     try:
         conversation_history = get_conversation_history()
         
@@ -285,12 +266,7 @@ async def get_conversations(
 
 @router.get("/conversations/stats", response_model=ConversationStatsResponse)
 async def get_conversation_stats() -> ConversationStatsResponse:
-    """
-    获取工具调用对话统计信息
-    
-    Returns:
-        ConversationStatsResponse: 统计信息
-    """
+    """获取工具调用对话统计信息。"""
     try:
         conversation_history = get_conversation_history()
         stats = await conversation_history.get_stats()
@@ -312,12 +288,7 @@ async def get_conversation_stats() -> ConversationStatsResponse:
 
 @router.delete("/conversations")
 async def clear_conversations() -> dict:
-    """
-    清空所有工具调用对话历史
-    
-    Returns:
-        dict: 操作结果
-    """
+    """清空工具调用对话历史。"""
     try:
         conversation_history = get_conversation_history()
         conversation_history.clear()
@@ -343,16 +314,7 @@ async def get_audit_history(
     limit: int = 50,
     session_id: Optional[str] = None
 ):
-    """
-    获取工具调用审计历史（从文件）
-    
-    Args:
-        limit: 返回的记录数量（默认 50）
-        session_id: 可选的会话 ID 过滤
-        
-    Returns:
-        工具调用历史记录列表
-    """
+    """从文件读取工具调用审计历史。"""
     try:
         # 隐藏的工具列表
         hidden_tools = {'read_file', 'write_file', 'edit_file', 'list_dir', 'shell', 'todo'}
@@ -383,12 +345,7 @@ async def get_audit_history(
 
 @router.get("/audit/stats")
 async def get_audit_stats():
-    """
-    获取工具调用统计信息（从文件）
-    
-    Returns:
-        统计信息（总调用数、失败数、成功率等）
-    """
+    """从文件读取工具调用统计信息。"""
     try:
         stats = file_audit_logger.get_stats()
         return {
@@ -405,12 +362,7 @@ async def get_audit_stats():
 
 @router.delete("/audit/history")
 async def clear_audit_history():
-    """
-    清空审计历史记录（删除所有日志文件）
-    
-    Returns:
-        操作结果
-    """
+    """清空审计历史记录。"""
     try:
         deleted_count = file_audit_logger.clear_all_logs()
         return {
@@ -427,12 +379,7 @@ async def clear_audit_history():
 
 @router.post("/audit/cleanup")
 async def cleanup_old_audit_logs():
-    """
-    清理旧的审计日志（超过 30 天）
-    
-    Returns:
-        操作结果
-    """
+    """清理超过 30 天的审计日志。"""
     try:
         deleted_count = file_audit_logger.cleanup_old_logs()
         return {

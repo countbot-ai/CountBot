@@ -45,7 +45,7 @@ _CACHE_WRITE_KEYS = (
 _REASONING_KEYS = ("reasoning_tokens", "reasoningTokens", "completion_tokens_details")
 
 
-# OpenAI 系把缓存/推理 token 放在这些 *_details 子对象里（如 prompt_tokens_details.cached_tokens）。
+# OpenAI 系把缓存 / 推理 token 放在 *_details 子对象里
 _DETAIL_CONTAINER_KEYS = (
     "prompt_tokens_details",
     "completion_tokens_details",
@@ -55,10 +55,7 @@ _DETAIL_CONTAINER_KEYS = (
 
 
 def _first_int(raw: Dict[str, Any], keys: tuple) -> int:
-    """按别名顺序取第一个可转换为整数的值。
-
-    顶层未命中时再下钻 *_details 容器，否则 OpenAI 系原生上报的缓存命中会被算成 0。
-    """
+    """按别名顺序取第一个可转换为整数的用量值，未命中时下钻 *_details 容器。"""
     for key in keys:
         if key in raw:
             value = raw[key]
@@ -84,14 +81,7 @@ def _first_int(raw: Dict[str, Any], keys: tuple) -> int:
 
 
 def normalize_usage(raw: Optional[Dict[str, Any]]) -> Dict[str, int]:
-    """把供应商的原始用量字典归一化为统一字段。
-
-    Args:
-        raw: 供应商返回的 usage 字典，可能为 None 或字段缺失
-
-    Returns:
-        含 prompt/completion/total/cache_read/cache_write/reasoning 六个整数字段
-    """
+    """把供应商原始用量归一化为 prompt/completion/total/cache/reasoning 字段。"""
     result = {
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -124,39 +114,39 @@ def has_usage(normalized: Dict[str, int]) -> bool:
 async def record_usage(
     *,
     session_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
     kind: str = USAGE_KIND_CHAT,
     turn_index: Optional[int] = None,
     raw_usage: Optional[Dict[str, Any]] = None,
 ) -> Optional[ModelUsage]:
-    """记录一次模型请求的用量。
-
-    Args:
-        session_id: 关联会话
-        provider: 供应商标识
-        model: 模型名
-        kind: 用途分类（对话/摘要/压缩/子代理）
-        turn_index: 本轮对话内的第几次模型调用
-        raw_usage: 供应商原始 usage 字典
-
-    Returns:
-        写入的记录；未上报用量或写入失败时返回 None
-    """
+    """记录一次模型请求的用量，无上报或写入失败时返回 None。"""
     normalized = normalize_usage(raw_usage)
     if not has_usage(normalized):
         return None
 
     try:
         from backend.database import AsyncSessionLocal
+        from backend.models.session import Session
 
         async with AsyncSessionLocal() as db:
+            # 归属优先使用显式 owner，否则从会话反查
+            resolved_owner = owner_id
+            if resolved_owner is None and session_id:
+                try:
+                    session_row = await db.get(Session, session_id)
+                    resolved_owner = getattr(session_row, "owner_id", None) if session_row else None
+                except Exception:
+                    resolved_owner = None
+
             record = ModelUsage(
                 session_id=session_id,
                 provider=provider,
                 model=model,
                 kind=kind or USAGE_KIND_OTHER,
                 turn_index=turn_index,
+                owner_id=resolved_owner,
                 **normalized,
             )
             db.add(record)
@@ -173,15 +163,7 @@ async def summarize_usage(
     session_id: Optional[str] = None,
     days: int = 7,
 ) -> Dict[str, Any]:
-    """汇总用量：总量、按用途拆分、按模型拆分。
-
-    Args:
-        session_id: 只统计指定会话；为 None 时统计全库
-        days: 统计最近多少天
-
-    Returns:
-        汇总字典，可直接返回给前端
-    """
+    """汇总用量总量及按用途、按模型的拆分统计。"""
     from datetime import datetime, timedelta, timezone
 
     from sqlalchemy import func, select

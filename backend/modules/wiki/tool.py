@@ -550,19 +550,7 @@ class WikiTool(Tool):
         return await self._generate_from_chunks(question, chunks)
 
     async def _retrieve_and_rerank(self, query: str) -> Tuple[List[dict], bool]:
-        """检索 top-50 候选 → rerank 精排取 top-6。
-
-        Returns:
-            (top_chunks, top1_confident)。confident=True 表示 rerank top-1
-            分数达到置信阈值（reranker.RERANK_CONFIDENT_SCORE），调用方可
-            跳过 grader 直出。rerank 失败 → 回落检索排序前 6 个，
-            confident=False（降级路径必走 grader 把关）。
-
-        候选池取 min_score_ratio=0：相对阈值会让 top-50 常只剩个位数候选
-        （L1 评测实测的"阈值行为"）；候选质量由 reranker 精排把关。
-        max_per_doc=0：候选池不做单文档截断（#114 的截断面向最终注入的
-        top-6，候选阶段的多样性由 reranker 精排决定）。
-        """
+        """检索 top-50 候选 → rerank 精排取 top-6，返回 (chunks, top1_confident)。"""
         candidates = self._rag.search_chunks(query, top_k=50, min_score_ratio=0.0, max_per_doc=0)
         if not candidates:
             return [], False
@@ -596,12 +584,7 @@ class WikiTool(Tool):
             return None
 
     async def _grade_chunks(self, question: str, chunks: List[dict]) -> Optional[str]:
-        """LLM 拒答判定（Phase 2 收缩后：只判 all/none，块过滤职责已移交 reranker）。
-
-        Returns:
-            "all" | "none"；评估不可用时 None（调用方回退全量生成，零破坏降级）。
-            纯分数阈值无法做拒答：实测负样本 top1 分数与正样本重叠率 7/10。
-        """
+        """LLM 拒答判定：只返回 all/none，评估不可用时回退全量生成。"""
         key = (question, tuple(c["chunk_id"] for c in chunks))
         cached = self._grade_cache.get(key)
         if cached is not _BoundedCache._MISS:

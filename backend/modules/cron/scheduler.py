@@ -1,6 +1,7 @@
 """智能 Cron 调度器"""
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional, Set
 
@@ -13,8 +14,8 @@ def _now_shanghai() -> datetime:
     """获取当前北京时间（naive，无 tzinfo）"""
     return datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
 
-# 默认最大并发执行数
-DEFAULT_MAX_CONCURRENT = 3
+# 默认最大并发执行数，可用环境变量覆盖
+DEFAULT_MAX_CONCURRENT = int(os.getenv("COUNTBOT_CRON_MAX_CONCURRENT", "8"))
 # 单个任务最大执行时间（秒）- 20分钟
 DEFAULT_JOB_TIMEOUT = 1200
 # SQLite 写入重试次数
@@ -93,8 +94,7 @@ class CronScheduler:
                 
                 now = _now_shanghai()
                 for job in jobs:
-                    # 进程重启时不可能还有任务在跑，把残留的 running 收敛为失败，
-                    # 否则页面会一直显示「执行中」。
+                    # 进程重启后把残留的 running 状态修正为失败，避免页面停留在执行中
                     if job.last_status == "running":
                         logger.warning(f"Recovering interrupted job {job.id} ({job.name})")
                         job.last_status = "error"
@@ -239,11 +239,7 @@ class CronScheduler:
                 self._active_jobs.discard(job.id)
 
     async def run_job_manually(self, job_id: str) -> None:
-        """立即执行任务。
-
-        调用方需先通过 try_acquire_job 占用执行权；执行状态由 _execute_job
-        统一落库，保证手动执行与定时触发走同一条链路。
-        """
+        """立即执行任务，调用方需先通过 try_acquire_job 占用执行权。"""
         try:
             async with self.db_session_factory() as db:
                 service = CronService(db)
@@ -288,7 +284,7 @@ class CronScheduler:
             logger.error(f"Failed to update timeout status for {job_id}: {e}")
 
     async def _mark_failed(self, job_id: str, error: str, manual: bool = False) -> None:
-        """兜底失败状态：执行链路在 _execute_job 之外抛错时使用。"""
+        """默认失败状态：执行链路在 _execute_job 之外抛错时使用。"""
         try:
             async with self.db_session_factory() as db:
                 service = CronService(db)
@@ -430,12 +426,13 @@ class CronScheduler:
             await self._broadcast_status(job, job.last_status or "error", manual=manual)
 
     async def _broadcast_status(self, job, status: str, manual: bool = False) -> None:
-        """通过 WebSocket 广播任务状态，前端据此更新卡片并弹出告警。"""
+        """通过 WebSocket 按任务归属广播状态，普通用户只收到自己的任务。"""
         try:
             from backend.ws.connection import connection_manager
             from backend.ws.task_notifications import CronJobStatusMessage
 
-            await connection_manager.broadcast(
+            await connection_manager.broadcast_to_owner(
+                getattr(job, "owner_id", None),
                 CronJobStatusMessage(
                     job_id=job.id,
                     job_name=job.name,
@@ -443,7 +440,7 @@ class CronScheduler:
                     delivery_status=job.last_delivery_status,
                     error=job.last_delivery_error or job.last_error,
                     is_manual=manual,
-                )
+                ),
             )
         except Exception as e:
             logger.debug(f"Failed to broadcast cron status for {job.id}: {e}")
@@ -471,11 +468,7 @@ class CronScheduler:
         return job_id in self._active_jobs
 
     def try_acquire_job(self, job_id: str) -> bool:
-        """尝试占用任务执行权。
-
-        检查与占用必须在同一同步调用内完成：分成两步时，两个请求都会通过
-        检查，随后各自创建后台任务，导致同一任务并发执行。
-        """
+        """尝试占用任务执行权，检查与占用需在同一同步调用内完成。"""
         if job_id in self._active_jobs:
             return False
         self._active_jobs.add(job_id)

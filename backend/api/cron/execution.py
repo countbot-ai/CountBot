@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.modules.cron.service import CronService
+from backend.modules.multiuser.identity import AuthUser
+from backend.modules.multiuser.permissions import owner_scope, require_active_user
 
 from backend.api.cron._common import (
     _to_shanghai_iso,
@@ -24,17 +26,9 @@ from backend.api.cron.models import (
 async def trigger_cron_job(
     job_id: str,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> ExecuteCronJobResponse:
-    """
-    手动触发 Cron 任务立即执行（异步，立即返回）
-    
-    Args:
-        job_id: 任务 ID
-        db: 数据库会话
-        
-    Returns:
-        ExecuteCronJobResponse: 提交结果
-    """
+    """立即异步触发 Cron 任务。"""
     try:
         from backend.app import app
 
@@ -45,7 +39,7 @@ async def trigger_cron_job(
                 detail="Cron scheduler not available"
             )
 
-        cron_service = CronService(db, scheduler=scheduler)
+        cron_service = CronService(db, scheduler=scheduler, owner_id=owner_scope(user))
         job = await cron_service.get_job(job_id)
 
         if not job:
@@ -64,8 +58,7 @@ async def trigger_cron_job(
         job_name = job.name
 
         try:
-            # 先落库「运行中」：接口返回后前端刷新、或退出页面再回来，
-            # 都能看到任务当前处于执行中，而不是一片空白。
+            # 先落库运行中状态，接口返回后前端仍能看到任务正在执行
             await cron_service.mark_job_running(job_id)
             asyncio.create_task(scheduler.run_job_manually(job_id))
         except Exception:
@@ -92,17 +85,9 @@ async def trigger_cron_job(
 async def validate_cron_schedule(
     request: ValidateCronRequest,
     db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_active_user),
 ) -> ValidateCronResponse:
-    """
-    验证 Cron 表达式并返回描述和下次运行时间
-    
-    Args:
-        request: 验证请求
-        db: 数据库会话
-        
-    Returns:
-        ValidateCronResponse: 验证结果
-    """
+    """校验 Cron 表达式并返回描述与下次运行时间。"""
     try:
         cron_service = CronService(db)
         

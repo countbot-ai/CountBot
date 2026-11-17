@@ -13,12 +13,7 @@ from backend.models.session import Session
 
 
 def session_name_matches(prefix: str):
-    """构造按会话名前缀匹配的条件，边界处要求分隔符或字符串结束。
-
-    会话名格式为 ``channel:account:chat_id[:timestamp]``。直接用 ``like(f"{p}%")``
-    会让 ``chat_id=123`` 命中 ``chat_id=1234`` 的会话，可能把消息写进别的会话。
-    此处要求前缀之后紧跟 ``:`` 或已到结尾，同时兼容无时间戳的历史命名。
-    """
+    """构造会话名前缀匹配条件，避免 chat_id=123 命中 1234。"""
     escaped = (
         prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     )
@@ -26,16 +21,25 @@ def session_name_matches(prefix: str):
 
 
 class SessionManager:
-    """会话管理器 - 负责会话的 CRUD 操作、消息管理和会话持久化"""
+    """会话管理器：负责会话 CRUD、消息管理与持久化，并按 owner_id 隔离归属。"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, owner_id: Optional[str] = None):
         self.db = db
+        self.owner_id = owner_id
 
-    async def create_session(self, name: str) -> Session:
+    def _scoped(self, query):
+        """按归属收紧查询；owner_id 为空表示管理员，可见全部。"""
+        if self.owner_id:
+            return query.where(Session.owner_id == self.owner_id)
+        return query
+
+    async def create_session(self, name: str, owner_id: Optional[str] = None) -> Session:
         """创建新会话"""
+        effective_owner = owner_id if owner_id is not None else self.owner_id
         session = Session(
             id=str(uuid.uuid4()),
             name=name,
+            owner_id=effective_owner or None,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
         )
@@ -45,15 +49,15 @@ class SessionManager:
         return session
 
     async def get_session(self, session_id: str) -> Optional[Session]:
-        """获取指定会话"""
+        """获取指定会话（按归属收紧）"""
         result = await self.db.execute(
-            select(Session).where(Session.id == session_id)
+            self._scoped(select(Session).where(Session.id == session_id))
         )
         return result.scalar_one_or_none()
 
     async def list_sessions(self, limit: Optional[int] = None, offset: int = 0) -> List[Session]:
-        """列出所有会话，按更新时间倒序排列"""
-        query = select(Session).order_by(Session.updated_at.desc())
+        """列出会话，按更新时间倒序排列"""
+        query = self._scoped(select(Session)).order_by(Session.updated_at.desc())
         
         if limit is not None:
             query = query.limit(limit).offset(offset)
@@ -69,6 +73,8 @@ class SessionManager:
             
         if name is not None:
             session.name = name
+            # 用户显式改名后锁定标题来源，避免自动标题覆盖
+            session.title_source = "custom"
         session.updated_at = datetime.now(timezone.utc)
         
         await self.db.commit()
@@ -137,19 +143,9 @@ class SessionManager:
         limit: Optional[int] = None,
         offset: int = 0
     ) -> List[Message]:
-        """获取会话的消息列表，按创建时间正序排列
-        
-        Args:
-            session_id: 会话ID
-            limit: 限制返回的消息数量（从最新的消息开始计数）
-            offset: 偏移量
-            
-        Returns:
-            消息列表（按时间正序）
-        """
+        """获取会话消息，按创建时间正序返回；limit 从最新消息开始计数。"""
         if limit is not None:
-            # 如果指定了limit，先获取最新的N条消息，然后按时间正序返回
-            # 这样可以确保返回的是最近的对话
+            # 指定 limit 时先取最新 N 条，再反转为时间正序
             query = (
                 select(Message)
                 .where(Message.session_id == session_id)
@@ -228,14 +224,7 @@ class SessionManager:
         return True
 
     async def delete_message(self, message_id: int) -> bool:
-        """删除单条消息及其关联的工具调用记录
-        
-        Args:
-            message_id: 消息 ID
-            
-        Returns:
-            bool: 是否成功删除
-        """
+        """删除单条消息及其关联的工具调用记录，返回是否成功。"""
         from sqlalchemy import delete
         from backend.models.tool_conversation import ToolConversation
         from loguru import logger

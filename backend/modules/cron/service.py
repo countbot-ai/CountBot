@@ -18,12 +18,22 @@ SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 
 class CronService:
-    """Cron 定时任务服务"""
+    """Cron 定时任务服务
 
-    def __init__(self, db: AsyncSession, scheduler=None):
+    ``owner_id`` 用于多用户归属：为空表示管理员/调度器视角（可见全部），
+    非空时所有查询与写入都被限制在该用户的数据内。
+    """
+
+    def __init__(self, db: AsyncSession, scheduler=None, owner_id: Optional[str] = None):
         self.db = db
         self.scheduler = scheduler
+        self.owner_id = owner_id
         self._running_jobs: Dict[str, asyncio.Task] = {}
+
+    def _scoped(self, query):
+        if self.owner_id:
+            return query.where(CronJob.owner_id == self.owner_id)
+        return query
 
     async def add_job(
         self,
@@ -41,6 +51,7 @@ class CronService:
         link_context: bool = False,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
+        notify_channel_id: Optional[str] = None,
     ) -> CronJob:
         """添加定时任务"""
         if not self.validate_schedule(schedule):
@@ -67,6 +78,8 @@ class CronService:
             link_context=link_context,
             model_provider=model_provider,
             model_name=model_name,
+            owner_id=self.owner_id,
+            notify_channel_id=notify_channel_id,
             next_run=next_run,
             created_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None),
             updated_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
@@ -87,9 +100,9 @@ class CronService:
         return job
 
     async def get_job(self, job_id: str) -> Optional[CronJob]:
-        """获取任务"""
+        """获取任务（按归属收紧）"""
         result = await self.db.execute(
-            select(CronJob).where(CronJob.id == job_id)
+            self._scoped(select(CronJob).where(CronJob.id == job_id))
         )
         return result.scalar_one_or_none()
 
@@ -116,8 +129,8 @@ class CronService:
         return job
 
     async def list_jobs(self, enabled_only: bool = False) -> List[CronJob]:
-        """列出所有任务"""
-        query = select(CronJob).order_by(CronJob.created_at.desc())
+        """列出任务（按归属收紧）"""
+        query = self._scoped(select(CronJob)).order_by(CronJob.created_at.desc())
         
         if enabled_only:
             query = query.where(CronJob.enabled == True)
@@ -142,6 +155,7 @@ class CronService:
         link_context: Optional[bool] = None,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
+        notify_channel_id: Optional[str] = None,
     ) -> Optional[CronJob]:
         """更新任务"""
         job = await self.get_job(job_id)
@@ -191,7 +205,10 @@ class CronService:
             job.model_provider = model_provider.strip() or None
 
         if model_name is not None:
-            job.model_name = model_name.strip() or None
+            job.model_name = model_name
+
+        if notify_channel_id is not None:
+            job.notify_channel_id = (notify_channel_id or "").strip() or None
         
         if job.enabled:
             job.next_run = self.calculate_next_run(job.schedule)
