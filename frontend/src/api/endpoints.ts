@@ -1027,13 +1027,6 @@ export const chatAPI = {
     clearMessages: (sessionId: string): Promise<{ success: boolean }> =>
         apiClient.delete(`/chat/sessions/${sessionId}/messages`),
 
-    // 会话总结 API
-    getSession: (sessionId: string): Promise<Session> =>
-        apiClient.get(`/chat/sessions/${sessionId}`, {
-            params: withFreshParams(),
-            headers: noCacheHeaders(),
-        }),
-
     searchSessions: (data: {
         query: string
         limit?: number

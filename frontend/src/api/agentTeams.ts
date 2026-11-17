@@ -85,10 +85,6 @@ export const agentTeamsApi = {
         return apiClient.get(`${API_BASE}/`)
     },
 
-    get(id: string): Promise<AgentTeam> {
-        return apiClient.get(`${API_BASE}/${id}`)
-    },
-
     create(data: AgentTeamCreate): Promise<AgentTeam> {
         return apiClient.post(`${API_BASE}/`, data)
     },
