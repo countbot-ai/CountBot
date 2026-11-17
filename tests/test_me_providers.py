@@ -80,17 +80,24 @@ def _headers(token: str) -> dict:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _ensure_auth_configured():
+    """补齐管理员凭据并开启多用户，测试后还原；全新数据库下也能通过。"""
     from backend.database import init_db
     from backend.modules.auth.router import get_stored_credentials, save_credentials
     from backend.modules.auth.utils import hash_password
-    from backend.modules.multiuser.settings import invalidate_cache
+    from backend.modules.multiuser import settings as mu_settings
 
     await init_db()
     original_username, original_hash = await get_stored_credentials()
     if not original_hash:
         await save_credentials("__me_prov_admin__", hash_password(TEST_PASSWORD))
-    invalidate_cache()
-    yield
+    original_enabled = (await mu_settings.load_settings(use_cache=False)).enabled
+    await mu_settings.save_settings(enabled=True)
+    try:
+        yield
+    finally:
+        await mu_settings.save_settings(enabled=original_enabled)
+        if not original_hash:
+            await save_credentials(original_username, original_hash)
 
 
 @pytest.mark.asyncio
