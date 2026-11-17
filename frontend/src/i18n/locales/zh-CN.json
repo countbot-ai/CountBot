@@ -2693,5 +2693,19 @@
     "preview": "预览",
     "imageError": "图片加载失败，请检查URL是否正确",
     "clear": "清除头像"
-  }
+  },
+    "admin": {
+      "users": {
+        "actions": {
+          "pass": "通过",
+          "reject": "拒绝",
+          "disable": "禁用",
+          "enable": "启用",
+          "unlock": "解锁",
+          "edit": "编辑",
+          "resetPassword": "重置密码",
+          "delete": "删除"
+        }
+      }
+    }
 }

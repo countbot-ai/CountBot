@@ -348,7 +348,7 @@ async def reconnect_server(data: Dict[str, Any] | None = None):
     try:
         from backend.modules.mcp.client import McpClientManager
         manager = McpClientManager.get_instance()
-        # 重连前先把注册表里的配置灌进管理器，避免用到旧的连接参数
+        # 重连前将注册表配置同步到连接管理器，确保使用最新连接参数
         mcp = _get_mcp_config()
         for s in mcp.registry.servers:
             sid = s.id or s.name or "unknown"

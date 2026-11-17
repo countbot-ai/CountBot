@@ -284,60 +284,46 @@
               </td>
               <td class="sub">{{ formatTime(user.last_login_at) }}</td>
               <td class="ops">
-                <button
-                  v-if="user.status === 'pending'"
-                  class="icon-btn"
-                  title="通过"
-                  aria-label="通过"
-                  @click="setStatus(user, 'active')"
-                >
-                  <Check :size="16" />
-                </button>
-                <button
-                  v-if="user.status === 'pending'"
-                  class="icon-btn is-danger"
-                  title="拒绝"
-                  aria-label="拒绝"
-                  @click="setStatus(user, 'disabled')"
-                >
-                  <XCircle :size="16" />
-                </button>
-                <button
-                  v-if="user.status === 'active'"
-                  class="icon-btn"
-                  title="禁用"
-                  aria-label="禁用"
-                  @click="setStatus(user, 'disabled')"
-                >
-                  <Ban :size="16" />
-                </button>
-                <button
-                  v-if="user.status === 'disabled'"
-                  class="icon-btn"
-                  title="启用"
-                  aria-label="启用"
-                  @click="setStatus(user, 'active')"
-                >
-                  <Check :size="16" />
-                </button>
-                <button
-                  v-if="user.login_locked"
-                  class="icon-btn"
-                  title="解锁"
-                  aria-label="解锁"
-                  @click="unlockUser(user)"
-                >
-                  <LockKeyhole :size="16" />
-                </button>
-                <button class="icon-btn" title="编辑" aria-label="编辑" @click="openEditUser(user)">
-                  <Pencil :size="16" />
-                </button>
-                <button class="icon-btn" title="重置密码" aria-label="重置密码" @click="resetPassword(user)">
-                  <KeyRound :size="16" />
-                </button>
-                <button class="icon-btn is-danger" title="删除" aria-label="删除" @click="removeUser(user)">
-                  <Trash2 :size="16" />
-                </button>
+                <Tooltip v-if="user.status === 'pending'" :content="$t('admin.users.actions.pass')">
+                  <button class="icon-btn" :aria-label="$t('admin.users.actions.pass')" @click="setStatus(user, 'active')">
+                    <Check :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip v-if="user.status === 'pending'" :content="$t('admin.users.actions.reject')">
+                  <button class="icon-btn is-danger" :aria-label="$t('admin.users.actions.reject')" @click="setStatus(user, 'disabled')">
+                    <XCircle :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip v-if="user.status === 'active'" :content="$t('admin.users.actions.disable')">
+                  <button class="icon-btn" :aria-label="$t('admin.users.actions.disable')" @click="setStatus(user, 'disabled')">
+                    <Ban :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip v-if="user.status === 'disabled'" :content="$t('admin.users.actions.enable')">
+                  <button class="icon-btn" :aria-label="$t('admin.users.actions.enable')" @click="setStatus(user, 'active')">
+                    <Check :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip v-if="user.login_locked" :content="$t('admin.users.actions.unlock')">
+                  <button class="icon-btn" :aria-label="$t('admin.users.actions.unlock')" @click="unlockUser(user)">
+                    <LockKeyhole :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip :content="$t('admin.users.actions.edit')">
+                  <button class="icon-btn" :aria-label="$t('admin.users.actions.edit')" @click="openEditUser(user)">
+                    <Pencil :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip :content="$t('admin.users.actions.resetPassword')">
+                  <button class="icon-btn" :aria-label="$t('admin.users.actions.resetPassword')" @click="resetPassword(user)">
+                    <KeyRound :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip :content="$t('admin.users.actions.delete')">
+                  <button class="icon-btn is-danger" :aria-label="$t('admin.users.actions.delete')" @click="removeUser(user)">
+                    <Trash2 :size="16" />
+                  </button>
+                </Tooltip>
               </td>
             </tr>
             <tr v-if="!users.length">
@@ -426,6 +412,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Ban, Check, KeyRound, LockKeyhole, Pencil, Trash2, XCircle } from 'lucide-vue-next'
+import Tooltip from '@/components/ui/Tooltip.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import Modal from '@/components/ui/Modal.vue'
 import { useConfirm } from '@/composables/useConfirm'

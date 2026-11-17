@@ -1,4 +1,4 @@
-"""记忆 HTTP 接口：保留旧端点语义，新增结构化查看与生命周期操作。"""
+"""记忆 HTTP 接口：保持既有端点语义，提供结构化查看与生命周期操作。"""
 
 from pathlib import Path
 from typing import Dict, List, Optional

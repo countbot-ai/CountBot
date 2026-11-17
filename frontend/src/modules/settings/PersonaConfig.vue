@@ -559,7 +559,7 @@ const loadPersonalities = async () => {
   }
 }
 
-/** 直接打开当前性格的编辑弹窗，不用切到「性格编辑」标签 */
+/** 直接打开当前性格的编辑弹窗 */
 async function openPersonalityEditor(id: string) {
   try {
     editingPersonality.value = personalityRecords.value[id] || (await personalitiesApi.get(id))
@@ -794,7 +794,7 @@ watch(
       output_language:
         newValue.output_language || settingsStore.settings?.persona?.output_language || '中文',
     }
-    // 普通用户不依赖全局配置，避免写进一个不会被提交的 store
+    // 普通用户直接调用接口保存，不写入全局配置
     if (personaSource.isUserScoped.value) {
       return
     }

@@ -349,7 +349,7 @@ async def _collect_channel_chats(
     per_channel_limit: int = 100,
     owner_id: Optional[str] = None,
 ) -> Dict[str, list[Dict[str, Any]]]:
-    """按会话名前缀反查历史渠道会话的 chat_id，并按 owner_id 过滤。"""
+    """按会话名前缀反查既有渠道会话的 chat_id，并按 owner_id 过滤。"""
     from sqlalchemy import select
 
     from backend.database import get_db_session_factory
@@ -777,7 +777,7 @@ async def list_channels():
 
 @router.get("/delivery-targets")
 async def get_delivery_targets():
-    """获取已配置的渠道推送目标，含机器人账号与历史 chat_id。"""
+    """获取已配置的渠道推送目标，含机器人账号与既有 chat_id。"""
     try:
         config = config_loader.config
         channels_config = config.channels

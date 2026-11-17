@@ -190,7 +190,7 @@ async def _audit_login_failure(request: Request, username: str) -> None:
 
 
 async def _is_admin_session_token(token: Optional[str]) -> bool:
-    """旧版管理员会话没有 users 记录，只能按 settings 中的管理员用户名确认。"""
+    """单用户模式的管理员会话没有 users 记录，按 settings 中的管理员用户名确认。"""
     username = validate_session(token) if token else None
     if not username:
         return False
@@ -353,7 +353,7 @@ async def auth_status(request: Request):
             username = current_user.username
             display_name = current_user.display_name
         elif await _is_admin_session_token(token):
-            # 旧版管理员会话没有 users 记录，需单独识别为已登录
+            # 单用户模式的管理员会话没有 users 记录，需单独识别为已登录
             authenticated = True
             role = "admin"
     except Exception as exc:  # 多用户未就绪时不影响登录页引导

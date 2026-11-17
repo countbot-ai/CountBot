@@ -120,7 +120,7 @@ def _to_response(team: AgentTeam) -> AgentTeamResponse:
 
 
 def _team_owner_filter(user):
-    """团队归属过滤：普通用户只看自己的，管理员只看 owner_id 为空的历史/全局团队。"""
+    """团队归属过滤：普通用户仅返回本人团队，管理员返回 owner_id 为空的全局团队。"""
     owner_id = getattr(user, "owner_id", None)
     if owner_id:
         return AgentTeam.owner_id == owner_id

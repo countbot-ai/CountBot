@@ -2591,5 +2591,19 @@
     "preview": "Preview",
     "imageError": "Failed to load image, please check if the URL is correct",
     "clear": "Clear Avatar"
-  }
+  },
+    "admin": {
+      "users": {
+        "actions": {
+          "pass": "Approve",
+          "reject": "Reject",
+          "disable": "Disable",
+          "enable": "Enable",
+          "unlock": "Unlock",
+          "edit": "Edit",
+          "resetPassword": "Reset password",
+          "delete": "Delete"
+        }
+      }
+    }
 }

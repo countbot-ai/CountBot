@@ -37,7 +37,7 @@ const API_BASE = '/api/personalities'
 
 const CJK_PATTERN = /[\u4e00-\u9fff]/
 
-/** 非中文界面不直接展示服务端中文详情，退回当前语言的兜底文案 */
+/** 非中文界面使用当前语言的默认提示，不直接展示服务端中文详情 */
 function localizeDetail(detail: string, fallback: string): string {
     if (!CJK_PATTERN.test(detail)) {
         return detail
