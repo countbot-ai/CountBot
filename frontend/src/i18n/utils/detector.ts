@@ -148,11 +148,11 @@ export function setStoredThemePalette(palette: ThemePalette): void {
 }
 
 /**
- * 获取最终使用的语言（优先级：存储 > 系统语言 > 英文兜底）。
- * 未存储过选择时必须探测系统语言，否则中文环境首开会被迫落在英文。
+ * 获取最终使用的语言（优先级：存储 > 中文默认）。
+ * 未存储选择时固定使用中文，避免英文环境首开显示英文界面。
  */
 export function getEffectiveLocale(): SupportedLocale {
-    return getStoredLocale() || detectSystemLanguage()
+    return getStoredLocale() || 'zh-CN'
 }
 
 /**
