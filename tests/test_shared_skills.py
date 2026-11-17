@@ -186,7 +186,7 @@ async def test_publish_review_and_distribute(workspace, db, monkeypatch):
     assert row.version == 1
     snapshot = resolve_storage_path(row.storage_path)
     assert snapshot is not None and (snapshot / "shared-clean" / "SKILL.md").is_file()
-    assert str(row.storage_path).startswith(".shared-skills/")
+    assert str(row.storage_path).replace("\\", "/").startswith(".shared-skills/")
 
     # 快照根目录必须能被 SkillsLoader 按工作区同样的规则扫到
     loader = SkillsLoader(

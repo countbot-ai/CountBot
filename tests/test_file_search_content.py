@@ -23,6 +23,11 @@ def workspace(tmp_path):
     return tmp_path
 
 
+def _posix(text):
+    """统一成 / 分隔符，Windows 输出为反斜杠。"""
+    return text.replace("\\", "/")
+
+
 def _search(workspace, **kwargs):
     tool = FileSearchTool(workspace)
     return asyncio.run(tool.execute(**kwargs))
@@ -31,8 +36,9 @@ def _search(workspace, **kwargs):
 def test_content_search_returns_path_line_snippet(workspace):
     out = _search(workspace, path=".", content="100")
 
-    assert "pkg/report.py:2: total = 100" in out
-    assert "docs/note.md:1:" in out
+    out_norm = _posix(out)
+    assert "pkg/report.py:2: total = 100" in out_norm
+    assert "docs/note.md:1:" in out_norm
     # 二进制与 node_modules 必须被跳过
     assert "blob.bin" not in out
     assert "node_modules" not in out
@@ -40,12 +46,12 @@ def test_content_search_returns_path_line_snippet(workspace):
 
 def test_content_search_regex(workspace):
     out = _search(workspace, path=".", content=r"今日充值\s+\d+", regex=True)
-    assert "docs/note.md:1:" in out
+    assert "docs/note.md:1:" in _posix(out)
 
 
 def test_content_search_case_insensitive_by_default(workspace):
     (workspace / "Case.txt").write_text("TOTAL VALUE\n", encoding="utf-8")
-    assert "Case.txt:1:" in _search(workspace, path=".", content="total")
+    assert "Case.txt:1:" in _posix(_search(workspace, path=".", content="total"))
     assert "Case.txt" not in _search(workspace, path=".", content="total", case_sensitive=True)
 
 
@@ -65,7 +71,7 @@ def test_content_search_outcome_path(workspace):
     tool = FileSearchTool(workspace)
     result = asyncio.run(tool.execute_outcome(path=".", content="100"))
     assert result.state.value == "SUCCEEDED"
-    assert "pkg/report.py:2:" in result.display_text
+    assert "pkg/report.py:2:" in _posix(result.display_text)
 
 
 def test_skip_dirs_only_apply_inside_workspace(tmp_path):
@@ -75,7 +81,7 @@ def test_skip_dirs_only_apply_inside_workspace(tmp_path):
     (root / "pkg" / "a.py").write_text("value = 100\n", encoding="utf-8")
 
     out = _search(root, path=".", content="100")
-    assert "pkg/a.py:1:" in out
+    assert "pkg/a.py:1:" in _posix(out)
 
 
 def test_skip_dirs_still_apply_inside_workspace(workspace):
