@@ -112,8 +112,8 @@
           v-if="nativeCapabilities?.asr"
           type="button"
           class="nc-tool-button"
-          :class="{ 'is-recording': isRecording, 'is-busy': isTranscribing }"
-          :disabled="isTranscribing"
+          :class="{ 'is-recording': isRecording, 'is-busy': isTranscribing || isCheckingSpeech }"
+          :disabled="isTranscribing || isCheckingSpeech"
           :aria-label="isRecording ? $t('chat.native.stopRecording') : $t('chat.native.voiceInput')"
           :title="isRecording ? $t('chat.native.stopRecording') : $t('chat.native.voiceInput')"
           @click="toggleVoiceInput"
@@ -189,7 +189,7 @@ import ReasoningLevelSelect from '@/components/chat/ReasoningLevelSelect.vue'
 import ChatModeToggle from '@/components/chat/ChatModeToggle.vue'
 import type { ModelPickerGroup } from '@/components/chat/ModelPicker.vue'
 import type { ChatMode } from '@/api'
-import { transcribeAudio } from '@/api/nativeCaps'
+import { getSpeechStatus, transcribeAudio } from '@/api/nativeCaps'
 import { useToast } from '@/composables/useToast'
 import type { NativeCapabilities } from '@/types/nativeCaps'
 import type { AgentTeam } from '@/store/agentTeams'
@@ -267,11 +267,23 @@ const toast = useToast()
 
 const isRecording = ref(false)
 const isTranscribing = ref(false)
+const isCheckingSpeech = ref(false)
 let recorder: MediaRecorder | null = null
 let recordingStream: MediaStream | null = null
 let recordedChunks: Blob[] = []
+let recordingTimer: ReturnType<typeof setTimeout> | null = null
+
+const RECORDING_LIMIT_MS = 60_000
+
+function clearRecordingTimer(): void {
+  if (recordingTimer) {
+    clearTimeout(recordingTimer)
+    recordingTimer = null
+  }
+}
 
 function cleanupRecorder(): void {
+  clearRecordingTimer()
   recordingStream?.getTracks().forEach(track => track.stop())
   recordingStream = null
   recorder = null
@@ -279,8 +291,45 @@ function cleanupRecorder(): void {
   isRecording.value = false
 }
 
+function speechReasonMessage(reason: string): string {
+  if (reason === 'missing_api_key') {
+    return t('chat.native.missingApiKey')
+  }
+  if (reason === 'asr_disabled') {
+    return t('chat.native.asrDisabled')
+  }
+  if (reason === 'model_not_found' || reason === 'model_unavailable') {
+    return t('chat.native.speechConfigMissing')
+  }
+  return t('chat.native.speechCheckFailed')
+}
+
+async function ensureSpeechReady(): Promise<boolean> {
+  const providerId = props.activeProviderId || ''
+  const modelId = props.activeModelId || ''
+  if (!providerId || !modelId) {
+    toast.error(t('chat.native.speechConfigMissing'))
+    return false
+  }
+  isCheckingSpeech.value = true
+  try {
+    const status = await getSpeechStatus(providerId, modelId)
+    if (!status.asr_enabled || !status.has_api_key) {
+      toast.error(speechReasonMessage(status.reason))
+      return false
+    }
+    return true
+  } catch (error: any) {
+    console.error('Failed to check speech status:', error)
+    toast.error(error?.response?.data?.detail || t('chat.native.speechCheckFailed'))
+    return false
+  } finally {
+    isCheckingSpeech.value = false
+  }
+}
+
 async function toggleVoiceInput(): Promise<void> {
-  if (isTranscribing.value) {
+  if (isTranscribing.value || isCheckingSpeech.value) {
     return
   }
   if (isRecording.value) {
@@ -289,6 +338,9 @@ async function toggleVoiceInput(): Promise<void> {
   }
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
     toast.error(t('chat.native.voiceUnsupported'))
+    return
+  }
+  if (!(await ensureSpeechReady())) {
     return
   }
   try {
@@ -303,13 +355,19 @@ async function toggleVoiceInput(): Promise<void> {
         recordedChunks.push(event.data)
       }
     }
+    recorder.onerror = () => {
+      cleanupRecorder()
+      toast.error(t('chat.native.recordingFailed'))
+    }
     recorder.onstop = () => {
+      clearRecordingTimer()
       const mimeType = recorder?.mimeType || 'audio/webm'
       const chunks = [...recordedChunks]
       cleanupRecorder()
       void transcribeRecording(new Blob(chunks, { type: mimeType }))
     }
     recorder.start()
+    recordingTimer = setTimeout(() => recorder?.stop(), RECORDING_LIMIT_MS)
     isRecording.value = true
   } catch (error) {
     console.error('Failed to start recording:', error)
@@ -320,6 +378,7 @@ async function toggleVoiceInput(): Promise<void> {
 
 async function transcribeRecording(blob: Blob): Promise<void> {
   if (!blob.size) {
+    toast.error(t('chat.native.recordingEmpty'))
     return
   }
   isTranscribing.value = true
@@ -331,6 +390,7 @@ async function transcribeRecording(blob: Blob): Promise<void> {
     )
     const text = result.text.trim()
     if (!text) {
+      toast.warning(t('chat.native.transcribeEmpty'))
       return
     }
     const prefix = props.inputMessage
@@ -339,7 +399,11 @@ async function transcribeRecording(blob: Blob): Promise<void> {
     emit('input', `${prefix}${text}`)
   } catch (error: any) {
     console.error('Failed to transcribe recording:', error)
-    toast.error(error?.response?.data?.detail || t('chat.native.transcribeFailed'))
+    const detail = error?.response?.data?.detail
+    const message = error?.code === 'ECONNABORTED'
+      ? t('chat.native.transcribeTimeout')
+      : detail || t('chat.native.transcribeFailed')
+    toast.error(message)
   } finally {
     isTranscribing.value = false
   }

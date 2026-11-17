@@ -240,9 +240,7 @@ function describeCron(expr: string): string {
     return t('cron.patterns.everyNMinutes', { n: min.slice(2) })
   }
   if (min !== '*' && hour === '*' && day === '*' && month === '*' && weekday === '*') {
-    if (hour === '*') {
-      return t('cron.builder.descEveryHourAt', { minute: min.padStart(2, '0') })
-    }
+    return t('cron.builder.descEveryHourAt', { minute: min.padStart(2, '0') })
   }
   if (hour.startsWith('*/') && day === '*' && month === '*' && weekday === '*') {
     return t('cron.patterns.everyNHours', { n: hour.slice(2) }) + ` ${t('cron.builder.descAtMinute', { minute: min.padStart(2, '0') })}`
@@ -254,7 +252,7 @@ function describeCron(expr: string): string {
     desc = t('cron.builder.descMonthlyOn', { day })
   } else if (weekday !== '*' && day === '*') {
     const names = [t('cron.builder.sun'), t('cron.builder.mon'), t('cron.builder.tue'), t('cron.builder.wed'), t('cron.builder.thu'), t('cron.builder.fri'), t('cron.builder.sat')]
-    const days = weekday.split(',').map(d => names[parseInt(d)] || d).join(', ')
+    const days = weekday.split(',').map(d => names[parseInt(d)] || d).join(t('cron.patterns.weekdaySeparator'))
     desc = t('cron.builder.descWeeklyOn', { days })
   } else if (day === '*' && month === '*' && weekday === '*') {
     desc = t('cron.builder.descDaily')
@@ -309,12 +307,52 @@ function buildExpression() {
   rawExpression.value = expr
 }
 
+// Cron 字段为数字或步长形式；语义非法时在预览区直接提示
+function validateCronFields(parts: string[]): string {
+  const ranges = [
+    [0, 59],
+    [0, 23],
+    [1, 31],
+    [1, 12],
+    [0, 7],
+  ]
+  const invalid = parts.some((part, index) => {
+    const [minimum, maximum] = ranges[index]
+    return !part.split(',').every((segment) => {
+      const [value, step] = segment.split('/')
+      if (step !== undefined && (!/^\d+$/.test(step) || Number(step) < 1)) {
+        return false
+      }
+      if (value === '*') {
+        return true
+      }
+      if (value.includes('-')) {
+        const [start, end] = value.split('-')
+        return (
+          /^\d+$/.test(start) &&
+          /^\d+$/.test(end) &&
+          Number(start) >= minimum &&
+          Number(end) <= maximum &&
+          Number(start) <= Number(end)
+        )
+      }
+      return /^\d+$/.test(value) && Number(value) >= minimum && Number(value) <= maximum
+    })
+  })
+  return invalid ? t('cron.errors.scheduleInvalid') : ''
+}
+
 // Parse existing expression into simple mode fields
 function parseExpression(expr: string) {
   if (!expr) return
   const parts = expr.trim().split(/\s+/)
   if (parts.length !== 5) {
     parseError.value = t('cron.errors.scheduleInvalid')
+    return
+  }
+  const fieldError = validateCronFields(parts)
+  if (fieldError) {
+    parseError.value = fieldError
     return
   }
   parseError.value = ''
@@ -355,13 +393,22 @@ function onFrequencyChange() {
 
 function onRawInput() {
   const parts = rawExpression.value.trim().split(/\s+/)
-  if (parts.length === 5) {
+  if (!rawExpression.value.trim()) {
     parseError.value = ''
-    emit('update:modelValue', rawExpression.value.trim())
-    parseExpression(rawExpression.value.trim())
-  } else if (rawExpression.value.trim()) {
-    parseError.value = t('cron.errors.scheduleInvalid')
+    return
   }
+  if (parts.length !== 5) {
+    parseError.value = t('cron.errors.scheduleInvalid')
+    return
+  }
+  const fieldError = validateCronFields(parts)
+  if (fieldError) {
+    parseError.value = fieldError
+    return
+  }
+  parseError.value = ''
+  emit('update:modelValue', rawExpression.value.trim())
+  parseExpression(rawExpression.value.trim())
 }
 
 function applyPreset(value: string) {

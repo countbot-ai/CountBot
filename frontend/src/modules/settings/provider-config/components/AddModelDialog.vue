@@ -78,6 +78,7 @@ import NativeCapabilityPicker from './NativeCapabilityPicker.vue'
 import { CONTEXT_WINDOW_PRESET_VALUES, formatContextLength, isOfficialDeepSeekApiBase, supportsNativeCapabilities } from '@/utils/modelConfig'
 import {
   DEFAULT_NATIVE_CAPABILITIES,
+  DEEPSEEK_DEFAULT_NATIVE_CAPABILITIES,
   normalizeNativeCapabilities,
   type NativeCapabilities,
 } from '@/types/nativeCaps'
@@ -106,7 +107,13 @@ const { t } = useI18n()
 
 const modelId = ref('')
 const contextWindow = ref('')
-const nativeCapabilities = ref<NativeCapabilities>({ ...DEFAULT_NATIVE_CAPABILITIES })
+/** DeepSeek 官方模型默认开启全部原生能力，其他供应商保持关闭。 */
+const defaultNativeCapabilities = computed(() =>
+  props.providerId === 'deepseek'
+    ? DEEPSEEK_DEFAULT_NATIVE_CAPABILITIES
+    : DEFAULT_NATIVE_CAPABILITIES,
+)
+const nativeCapabilities = ref<NativeCapabilities>({ ...defaultNativeCapabilities.value })
 const nativePickerExpanded = ref(false)
 const inputRef = ref<{ focus?: () => void } | null>(null)
 
@@ -160,7 +167,7 @@ watch(
     }
     modelId.value = ''
     contextWindow.value = ''
-    nativeCapabilities.value = { ...DEFAULT_NATIVE_CAPABILITIES }
+    nativeCapabilities.value = { ...defaultNativeCapabilities.value }
     nativePickerExpanded.value = false
     nextTick(() => inputRef.value?.focus?.())
   },

@@ -129,10 +129,10 @@
   left: 0;
   right: 0;
   max-height: 300px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   z-index: 1000;
   overflow: hidden;
   display: flex;
@@ -175,17 +175,17 @@
 
 .select-option:hover,
 .select-option.is-focused {
-  background: var(--hover-bg);
+  background: var(--color-bg-secondary);
 }
 
 .select-option.is-selected {
   background: var(--color-bg-tertiary);
-  color: var(--color-primary);
+  color: var(--color-accent);
 }
 
 .option-check {
   flex-shrink: 0;
-  color: var(--color-primary);
+  color: var(--color-accent);
 }
 
 /* 供应商等前缀图标：选中值 + 下拉行共用 */

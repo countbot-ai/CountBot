@@ -11,6 +11,12 @@ export const LOCAL_PROVIDERS = ['ollama', 'vllm', 'lm_studio']
 /** 自定义接口：不要求 API Key。 */
 export const NO_API_KEY_PROVIDERS = ['custom_openai', 'custom_anthropic']
 
+/** 该供应商是否必须配置 API Key。 */
+export function providerRequiresApiKey(providerId: string | undefined): boolean {
+  const key = providerId || ''
+  return !LOCAL_PROVIDERS.includes(key) && !NO_API_KEY_PROVIDERS.includes(key)
+}
+
 /** 需要用户手填 Base URL 的供应商。 */
 export const CUSTOM_PROVIDERS = ['custom_openai', 'custom_anthropic']
 
@@ -35,9 +41,9 @@ export function resolveApiTypeBaseUrl(
   return API_TYPE_BASE_URLS[providerId || '']?.[apiType] || ''
 }
 
-/** Anthropic 系走 messages 协议，其余默认 chat.completions。 */
+/** Anthropic 系与 DeepSeek 官方默认走 messages 协议，其余默认 chat.completions。 */
 export function resolveDefaultApiType(providerId: string | undefined): ProviderApiType {
-  return providerId === 'anthropic' || providerId === 'custom_anthropic'
+  return providerId === 'anthropic' || providerId === 'custom_anthropic' || providerId === 'deepseek'
     ? ANTHROPIC_API_TYPE
     : DEFAULT_API_TYPE
 }

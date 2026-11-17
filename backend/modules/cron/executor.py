@@ -129,9 +129,7 @@ class CronExecutor:
                     job_id=job_id,
                 )
 
-            # 用户通知为纯出站推送，与管理员的机器人渠道隔离；推送失败只记录日志
-            await self._deliver_user_notification(job_id, response)
-
+            # 任务结果只通过用户显式选择的渠道推送；未配置时不产生额外通知
             return response or ""
 
         except Exception as e:
@@ -242,38 +240,6 @@ class CronExecutor:
             raise
         except Exception as exc:
             logger.warning(f"Failed to ensure cron session {session_id}: {exc}")
-
-    async def _deliver_user_notification(self, job_id: str, response: Optional[str]) -> None:
-        """按任务的 notify_channel_id 推送结果；无该字段时直接跳过。"""
-        from backend.database import get_db_session_factory
-        from backend.models.cron_job import CronJob
-        from backend.models.user import UserNotificationChannel
-        from backend.modules.multiuser.notifications import (
-            NotificationError,
-            send_to_channel_row,
-        )
-
-        try:
-            async with get_db_session_factory()() as db:
-                job = await db.get(CronJob, job_id)
-                if job is None or not getattr(job, "notify_channel_id", None):
-                    return
-                if not getattr(job, "owner_id", None):
-                    # 管理员任务走原有渠道推送，不使用用户通知渠道
-                    return
-                channel = await db.get(UserNotificationChannel, job.notify_channel_id)
-                if channel is None or channel.owner_id != job.owner_id or not channel.enabled:
-                    logger.warning(f"Skip notification for job {job_id}: channel unavailable")
-                    return
-                title = f"定时任务完成：{job.name}"
-                content = (response or "任务执行完成（无输出）")[:4000]
-
-            await send_to_channel_row(channel, title, content)
-            logger.info(f"Cron notification delivered for job {job_id}")
-        except NotificationError as exc:
-            logger.warning(f"Cron notification failed for job {job_id}: {exc}")
-        except Exception as exc:
-            logger.warning(f"Unexpected notification error for job {job_id}: {exc}")
 
     async def _load_context_history(self, job_id: str) -> list[dict]:
         """读取该任务之前的执行记录，作为本轮模型的上下文。"""
@@ -476,6 +442,8 @@ class CronExecutor:
         job_id: str,
     ) -> None:
         """把响应推送到渠道，任一步失败都抛出 CronDeliveryError。"""
+        if channel == "web":
+            raise CronDeliveryError("推送失败：网页不是推送渠道，请重新选择渠道")
         if not channel or not chat_id:
             raise CronDeliveryError("推送失败：任务未配置推送渠道或聊天 ID")
         if not response:

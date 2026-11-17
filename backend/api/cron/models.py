@@ -19,7 +19,6 @@ class CronJobInfo(BaseModel):
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
-    notify_channel_id: Optional[str] = Field(None, description="用户通知渠道 ID（纯出站推送）")
     last_run: Optional[str] = Field(None, description="上次运行时间")
     last_finished_at: Optional[str] = Field(None, description="上次执行结束时间")
     next_run: Optional[str] = Field(None, description="下次运行时间")
@@ -49,16 +48,16 @@ class ListCronJobsResponse(BaseModel):
 class CreateCronJobRequest(BaseModel):
     """创建 Cron 任务请求"""
     
-    name: str = Field(..., description="任务名称")
-    schedule: str = Field(..., description="Cron 表达式")
-    message: str = Field(..., description="要执行的消息")
+    name: str = Field(..., min_length=1, max_length=100, description="任务名称")
+    schedule: str = Field(..., min_length=1, max_length=100, description="Cron 表达式")
+    message: str = Field(..., min_length=1, max_length=10000, description="要执行的消息")
     enabled: bool = Field(True, description="是否启用")
     channel: Optional[str] = Field(None, description="渠道名称")
     account_id: Optional[str] = Field(None, description="机器人账号 ID")
     chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: bool = Field(False, description="是否发送响应到渠道")
-    max_retries: int = Field(0, description="最大重试次数（0=不重试）")
-    retry_delay: int = Field(60, description="重试延迟（秒）")
+    max_retries: int = Field(0, ge=0, le=5, description="最大重试次数（0=不重试）")
+    retry_delay: int = Field(60, ge=10, le=3600, description="重试延迟（秒）")
     delete_on_success: bool = Field(False, description="成功后自动删除")
     link_context: bool = Field(
         False,
@@ -66,28 +65,26 @@ class CreateCronJobRequest(BaseModel):
     )
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
-    notify_channel_id: Optional[str] = Field(None, description="用户通知渠道 ID（纯出站推送）")
 
 
 class UpdateCronJobRequest(BaseModel):
     """更新 Cron 任务请求"""
     
-    name: Optional[str] = Field(None, description="任务名称")
-    schedule: Optional[str] = Field(None, description="Cron 表达式")
-    message: Optional[str] = Field(None, description="要执行的消息")
+    name: Optional[str] = Field(None, min_length=1, max_length=100, description="任务名称")
+    schedule: Optional[str] = Field(None, min_length=1, max_length=100, description="Cron 表达式")
+    message: Optional[str] = Field(None, min_length=1, max_length=10000, description="要执行的消息")
     enabled: Optional[bool] = Field(None, description="是否启用")
     channel: Optional[str] = Field(None, description="渠道名称")
     account_id: Optional[str] = Field(None, description="机器人账号 ID")
     chat_id: Optional[str] = Field(None, description="聊天 ID")
     deliver_response: Optional[bool] = Field(None, description="是否发送响应到渠道")
-    max_retries: Optional[int] = Field(None, description="最大重试次数")
-    retry_delay: Optional[int] = Field(None, description="重试延迟（秒）")
+    max_retries: Optional[int] = Field(None, ge=0, le=5, description="最大重试次数")
+    retry_delay: Optional[int] = Field(None, ge=10, le=3600, description="重试延迟（秒）")
     delete_on_success: Optional[bool] = Field(None, description="成功后自动删除")
     link_context: Optional[bool] = Field(None, description="关联上下文开关")
     # 传空字符串表示改回跟随全局默认模型；不传该字段则保持原值
     model_provider: Optional[str] = Field(None, description="本任务使用的模型供应商 ID；空表示跟随全局默认")
     model_name: Optional[str] = Field(None, description="本任务使用的模型名；空表示跟随全局默认")
-    notify_channel_id: Optional[str] = Field(None, description="用户通知渠道 ID（纯出站推送）")
 
 
 class CronJobResponse(BaseModel):
@@ -157,8 +154,8 @@ class CronJobDetailResponse(BaseModel):
     """Cron 任务详细信息响应"""
     
     job: CronJobInfo = Field(..., description="任务信息")
-    last_response: Optional[str] = Field(None, description="完整的上次响应")
-    last_error: Optional[str] = Field(None, description="完整的上次错误")
+    last_response: Optional[str] = Field(None, description="最近一次响应（最多 10000 字符）")
+    last_error: Optional[str] = Field(None, description="最近一次错误（最多 500 字符）")
 
 
 class CronSessionMessage(BaseModel):
@@ -166,7 +163,7 @@ class CronSessionMessage(BaseModel):
 
     role: str = Field(..., description="消息角色")
     content: str = Field(..., description="消息内容")
-    created_at: str = Field(..., description="消息创建时间")
+    created_at: Optional[str] = Field(None, description="消息创建时间")
 
 
 class CronJobMessagesResponse(BaseModel):

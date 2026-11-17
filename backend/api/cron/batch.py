@@ -102,7 +102,14 @@ async def batch_delete_cron_jobs(
                         "error": "内置系统任务不可删除"
                     })
                     continue
-                
+
+                if cron_service.scheduler and cron_service.scheduler.is_job_active(job_id):
+                    errors.append({
+                        "job_id": job_id,
+                        "error": "任务正在执行，暂不能删除"
+                    })
+                    continue
+
                 success = await cron_service.delete_job(job_id)
                 
                 if success:

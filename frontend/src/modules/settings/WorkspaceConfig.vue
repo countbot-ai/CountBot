@@ -140,7 +140,7 @@ async function handleFollowGlobal() {
     message: t('settings.workspace.followGlobalConfirm'),
     type: 'warning',
     confirmText: t('common.confirm'),
-    confirmVariant: 'warning'
+    confirmVariant: 'primary'
   })
   if (!confirmed) {
     return

@@ -89,7 +89,7 @@ export const personalitiesApi = {
         return response.json()
     },
 
-    /** 创建自定义性格 */
+    /** 创建性格 */
     async create(data: PersonalityCreate): Promise<Personality> {
         const response = await fetch(API_BASE, {
             method: 'POST',
@@ -121,7 +121,7 @@ export const personalitiesApi = {
         return response.json()
     },
 
-    /** 删除性格（仅限自定义性格） */
+    /** 删除性格 */
     async delete(id: string): Promise<void> {
         const response = await fetch(`${API_BASE}/${id}`, {
             method: 'DELETE',
@@ -130,25 +130,6 @@ export const personalitiesApi = {
             const error = await response.json().catch(() => ({}))
             throw new Error(extractErrorMessage(error, 'Failed to delete personality'))
         }
-    },
-
-    /** 复制性格 */
-    async duplicate(id: string, newId: string, newName?: string): Promise<Personality> {
-        const response = await fetch(`${API_BASE}/${id}/duplicate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                new_id: newId,
-                new_name: newName,
-            }),
-        })
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}))
-            throw new Error(extractErrorMessage(error, 'Failed to duplicate personality'))
-        }
-        return response.json()
     },
 }
 

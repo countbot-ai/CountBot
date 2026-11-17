@@ -47,9 +47,16 @@ const userStore = useUserStore()
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
-  if (hour < 12) return t('chat.next.greetingMorning')
-  if (hour < 18) return t('chat.next.greetingAfternoon')
-  return t('chat.next.greetingEvening')
+  const period = hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening'
+  const baseKey = `chat.next.greeting${period}`
+  const userKey = `chat.next.greeting${period}User`
+  const name = userStore.displayName.trim()
+
+  // 未登录或身份未就绪时沿用通用问候
+  if (!userStore.isAuthenticated || !name) {
+    return t(baseKey)
+  }
+  return t(userKey, { name })
 })
 
 /** 管理员入口指向全局配置，普通用户入口指向 /api/me/* 的用户级配置。 */

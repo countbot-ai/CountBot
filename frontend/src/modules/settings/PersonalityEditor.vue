@@ -10,7 +10,7 @@
           class="header-create-button"
           @click="showCreateDialog"
         >
-          {{ $t('settings.persona.createPersonality') }}
+          {{ $t('settings.persona.addPersonality') }}
         </Button>
       </div>
     </div>
@@ -21,126 +21,62 @@
       <p>{{ $t('common.loading') }}</p>
     </div>
 
-    <!-- 性格列表 -->
+    <!-- 性格列表：内置与自建统一展示，末尾固定添加入口 -->
     <div v-else class="personality-list">
-      <!-- 内置性格 -->
-      <div v-if="builtinPersonalities.length > 0" class="personality-section">
-        <h4 class="section-title">{{ $t('settings.persona.builtinPersonalities') }}</h4>
-        <div class="personality-grid">
-          <div
-            v-for="p in builtinPersonalities"
-            :key="p.id"
-            class="personality-card"
-            :class="{ inactive: !p.is_active }"
-          >
-            <div class="card-header">
-              <component :is="getIcon(p.icon)" :size="20" class="personality-icon" />
-              <h5>{{ p.name }}</h5>
-              <span class="builtin-badge">{{ $t('settings.persona.builtin') }}</span>
-            </div>
-            <p class="personality-desc">{{ p.description }}</p>
-            <div class="personality-traits">
-              <span v-for="trait in p.traits" :key="trait" class="trait-tag">{{ trait }}</span>
-            </div>
-            <div class="card-actions">
-              <Button
-                variant="primary"
-                size="sm"
-                :icon="EditIcon"
-                class="personality-action-button"
-                @click="editPersonality(p)"
-              >
-                {{ $t('common.edit') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                :icon="p.is_active ? EyeOffIcon : EyeIcon"
-                class="personality-action-button"
-                @click="toggleActive(p)"
-              >
-                {{ p.is_active ? $t('common.disable') : $t('common.enable') }}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                :icon="CopyIcon"
-                class="personality-action-button"
-                @click="duplicatePersonality(p)"
-              >
-                {{ $t('settings.persona.duplicate') }}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 自定义性格 -->
-      <div v-if="customPersonalities.length > 0" class="personality-section">
-        <h4 class="section-title">{{ $t('settings.persona.customPersonalities') }}</h4>
-        <div class="personality-grid">
-          <div
-            v-for="p in customPersonalities"
-            :key="p.id"
-            class="personality-card"
-            :class="{ inactive: !p.is_active }"
-          >
-            <div class="card-header">
-              <component :is="getIcon(p.icon)" :size="20" class="personality-icon" />
-              <h5>{{ p.name }}</h5>
-            </div>
-            <p class="personality-desc">{{ p.description }}</p>
-            <div class="personality-traits">
-              <span v-for="trait in p.traits" :key="trait" class="trait-tag">{{ trait }}</span>
-            </div>
-            <div class="card-actions">
-              <Button
-                variant="primary"
-                size="sm"
-                :icon="EditIcon"
-                class="personality-action-button"
-                @click="editPersonality(p)"
-              >
-                {{ $t('common.edit') }}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                :icon="p.is_active ? EyeOffIcon : EyeIcon"
-                class="personality-action-button"
-                @click="toggleActive(p)"
-              >
-                {{ p.is_active ? $t('common.disable') : $t('common.enable') }}
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                :icon="TrashIcon"
-                class="personality-action-button"
-                @click="deletePersonality(p)"
-              >
-                {{ $t('common.delete') }}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-if="customPersonalities.length === 0" class="empty-state">
-        <div class="empty-state-icon">
-          <component :is="SparklesIcon" :size="30" />
-        </div>
-        <p>{{ $t('settings.persona.noCustomPersonalities') }}</p>
-        <Button
-          variant="primary"
-          size="lg"
-          :icon="PlusIcon"
-          class="empty-state-create-button"
-          @click="showCreateDialog"
+      <div class="personality-grid">
+        <div
+          v-for="p in personalities"
+          :key="p.id"
+          class="personality-card"
+          :class="{ inactive: !p.is_active }"
         >
-          {{ $t('settings.persona.createFirstPersonality') }}
-        </Button>
+          <div class="card-header">
+            <component :is="getIcon(p.icon)" :size="20" class="personality-icon" />
+            <h5>{{ p.name }}</h5>
+            <span v-if="p.is_builtin" class="builtin-badge">
+              {{ $t('settings.persona.builtin') }}
+            </span>
+          </div>
+          <p class="personality-desc">{{ p.description }}</p>
+          <div class="personality-traits">
+            <span v-for="trait in p.traits" :key="trait" class="trait-tag">{{ trait }}</span>
+          </div>
+          <div v-if="canManage(p)" class="card-actions">
+            <Button
+              variant="primary"
+              size="sm"
+              :icon="EditIcon"
+              class="personality-action-button"
+              @click="editPersonality(p)"
+            >
+              {{ $t('common.edit') }}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              :icon="p.is_active ? EyeOffIcon : EyeIcon"
+              class="personality-action-button"
+              @click="toggleActive(p)"
+            >
+              {{ p.is_active ? $t('common.disable') : $t('common.enable') }}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              :icon="TrashIcon"
+              class="personality-action-button"
+              @click="deletePersonality(p)"
+            >
+              {{ $t('common.delete') }}
+            </Button>
+          </div>
+        </div>
+
+        <button type="button" class="personality-add" @click="showCreateDialog">
+          <component :is="PlusIcon" :size="20" class="personality-add-icon" />
+          <span class="personality-add-title">{{ $t('settings.persona.addPersonality') }}</span>
+          <span class="personality-add-desc">{{ $t('settings.persona.addPersonalityHint') }}</span>
+        </button>
       </div>
     </div>
 
@@ -149,6 +85,7 @@
       v-if="editingPersonality"
       :personality="editingPersonality"
       :is-new="isCreating"
+      :show-id="false"
       @save="savePersonality"
       @cancel="closeDialog"
     />
@@ -157,16 +94,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Plus as PlusIcon,
   Edit as EditIcon,
-  Copy as CopyIcon,
   Trash as TrashIcon,
   Eye as EyeIcon,
   EyeOff as EyeOffIcon,
-  Sparkles as SparklesIcon,
   CloudLightning,
   Frown,
   Heart,
@@ -183,12 +118,14 @@ import {
 import { personalitiesApi, type Personality } from '@/api/personalities'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
+import { useUserStore } from '@/store/user'
 import Button from '@/components/ui/Button.vue'
 import PersonalityEditDialog from './PersonalityEditDialog.vue'
 
 const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
+const userStore = useUserStore()
 
 const personalities = ref<Personality[]>([])
 const loading = ref(false)
@@ -216,13 +153,15 @@ const getIcon = (iconName: string) => {
 }
 
 // 分类性格
-const builtinPersonalities = computed(() =>
-  personalities.value.filter(p => p.is_builtin)
-)
+const canManage = (personality: Personality) =>
+  !personality.is_builtin || userStore.isAdmin
 
-const customPersonalities = computed(() =>
-  personalities.value.filter(p => !p.is_builtin)
-)
+function createPersonalityId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `persona-${crypto.randomUUID()}`
+  }
+  return `persona-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
 
 // 加载性格列表
 const loadPersonalities = async () => {
@@ -241,7 +180,7 @@ const loadPersonalities = async () => {
 // 显示创建对话框
 const showCreateDialog = () => {
   editingPersonality.value = {
-    id: '',
+    id: createPersonalityId(),
     name: '',
     description: '',
     traits: [],
@@ -259,21 +198,6 @@ const showCreateDialog = () => {
 const editPersonality = (personality: Personality) => {
   editingPersonality.value = { ...personality }
   isCreating.value = false
-}
-
-// 复制性格
-const duplicatePersonality = async (personality: Personality) => {
-  const newId = prompt(t('settings.persona.enterNewId'), `${personality.id}_copy`)
-  if (!newId) return
-
-  try {
-    await personalitiesApi.duplicate(personality.id, newId, `${personality.name}${t('settings.persona.copySuffix')}`)
-    toast.success(t('settings.persona.duplicateSuccess'))
-    await loadPersonalities()
-  } catch (error: any) {
-    console.error('Failed to duplicate personality:', error)
-    toast.error(error.message || t('settings.persona.duplicateFailed'))
-  }
 }
 
 // 切换启用状态

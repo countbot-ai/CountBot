@@ -44,6 +44,16 @@ class NativeCapabilities(BaseModel):
 
 DEFAULT_CAPABILITIES = NativeCapabilities()
 
+# DeepSeek 官方默认模型：原生能力全开，模型仍按各自能力开关生效
+DEEPSEEK_DEFAULT_CAPABILITIES = NativeCapabilities(
+    web_search=True,
+    read_url=True,
+    document_parsing="rich",
+    safety_check=True,
+    asr=True,
+    tts=True,
+)
+
 
 def normalize_native_capabilities(raw: Any) -> NativeCapabilities:
     """把任意来源（配置、接口、历史）的字段收敛成合法能力配置。"""

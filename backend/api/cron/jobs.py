@@ -1,7 +1,6 @@
 """Cron 任务的增删改查路由。"""
 
 from types import SimpleNamespace
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from loguru import logger
@@ -27,6 +26,8 @@ from backend.api.cron.models import (
     UpdateCronJobRequest,
 )
 
+_DELIVERY_FIELDS = ("channel", "account_id", "chat_id")
+
 
 @router.get("/jobs", response_model=ListCronJobsResponse)
 async def list_cron_jobs(
@@ -35,15 +36,15 @@ async def list_cron_jobs(
     """获取所有 Cron 任务。"""
     try:
         jobs = await cron_service.list_jobs()
-        
+
         # 转换为响应格式
         jobs_info = [
             build_job_info(job, cron_service.scheduler)
             for job in jobs
         ]
-        
+
         return ListCronJobsResponse(jobs=jobs_info)
-        
+
     except Exception as e:
         logger.exception(f"Failed to list cron jobs: {e}")
         raise HTTPException(
@@ -51,27 +52,28 @@ async def list_cron_jobs(
             detail=f"Failed to list cron jobs: {str(e)}"
         )
 
+
 @router.get("/jobs/{job_id}", response_model=CronJobDetailResponse)
 async def get_cron_job_detail(
     job_id: str,
     cron_service: CronService = Depends(get_cron_service),
 ) -> CronJobDetailResponse:
-    """获取 Cron 任务详情，包含完整响应与错误。"""
+    """获取 Cron 任务详情，包含最近一次响应与错误。"""
     try:
         job = await cron_service.get_job(job_id)
-        
+
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Cron job '{job_id}' not found"
             )
-        
+
         return CronJobDetailResponse(
             job=build_job_info(job, cron_service.scheduler, error_limit=500),
-            last_response=job.last_response,  # 完整响应
-            last_error=job.last_error,  # 完整错误
+            last_response=job.last_response,
+            last_error=job.last_error,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -80,23 +82,6 @@ async def get_cron_job_detail(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get cron job detail: {str(e)}"
         )
-
-
-async def _validate_notify_channel(owner_id, channel_id: Optional[str]) -> Optional[str]:
-    """校验通知渠道归属：普通用户只能引用自己的渠道。"""
-    target = (channel_id or "").strip()
-    if not target:
-        return None
-    if not owner_id:
-        return None
-    from backend.database import AsyncSessionLocal
-    from backend.models.user import UserNotificationChannel
-
-    async with AsyncSessionLocal() as session:
-        row = await session.get(UserNotificationChannel, target)
-    if row is None or row.owner_id != owner_id:
-        raise HTTPException(status_code=404, detail="通知渠道不存在")
-    return target
 
 
 @router.post("/jobs", response_model=CronJobResponse)
@@ -109,11 +94,7 @@ async def create_cron_job(
     try:
         await validate_channel_push_for_user(user, request)
         await validate_model_for_user(user, request)
-        from backend.modules.multiuser.permissions import owner_scope
 
-        notify_channel_id = await _validate_notify_channel(
-            owner_scope(user), request.notify_channel_id
-        )
         job = await cron_service.add_job(
             name=request.name,
             schedule=request.schedule,
@@ -129,13 +110,12 @@ async def create_cron_job(
             link_context=request.link_context,
             model_provider=request.model_provider,
             model_name=request.model_name,
-            notify_channel_id=notify_channel_id,
         )
-        
+
         return CronJobResponse(
             job=build_job_info(job, cron_service.scheduler)
         )
-        
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -176,33 +156,43 @@ async def update_cron_job(
                 detail=f"Cron job '{job_id}' not found"
             )
 
-        # 未提交的字段沿用原值，避免绕过渠道/模型归属校验
-        effective = SimpleNamespace(
-            deliver_response=(
-                request.deliver_response
-                if request.deliver_response is not None
-                else existing.deliver_response
-            ),
-            channel=request.channel if request.channel is not None else existing.channel,
-            account_id=(
-                request.account_id if request.account_id is not None else existing.account_id
-            ),
-            chat_id=request.chat_id if request.chat_id is not None else existing.chat_id,
-            model_provider=(
-                request.model_provider
-                if request.model_provider is not None
-                else existing.model_provider
-            ),
-            model_name=(
-                request.model_name if request.model_name is not None else existing.model_name
-            ),
-        )
-        await validate_channel_push_for_user(user, effective)
-        await validate_model_for_user(user, effective)
-        from backend.modules.multiuser.permissions import owner_scope
+        fields_set = request.model_fields_set
+        delivery_touched = any(field in fields_set for field in _DELIVERY_FIELDS + ("deliver_response",))
+        # 历史网页任务从未真正推送；允许先修其他字段，待用户重选渠道后再收敛
+        legacy_web_push = existing.deliver_response and existing.channel == "web" and not delivery_touched
 
-        notify_channel_id = await _validate_notify_channel(
-            owner_scope(user), request.notify_channel_id
+        if not legacy_web_push:
+            effective = SimpleNamespace(
+                deliver_response=(
+                    request.deliver_response
+                    if "deliver_response" in fields_set
+                    else existing.deliver_response
+                ),
+                channel=(
+                    request.channel if "channel" in fields_set else existing.channel
+                ),
+                account_id=(
+                    request.account_id if "account_id" in fields_set else existing.account_id
+                ),
+                chat_id=(
+                    request.chat_id if "chat_id" in fields_set else existing.chat_id
+                ),
+                model_provider=(
+                    request.model_provider
+                    if request.model_provider is not None
+                    else existing.model_provider
+                ),
+                model_name=(
+                    request.model_name
+                    if request.model_name is not None
+                    else existing.model_name
+                ),
+            )
+            await validate_channel_push_for_user(user, effective)
+            await validate_model_for_user(user, effective)
+
+        clear_delivery = (
+            "deliver_response" in fields_set and request.deliver_response is False
         )
 
         job = await cron_service.update_job(
@@ -221,19 +211,19 @@ async def update_cron_job(
             link_context=request.link_context,
             model_provider=request.model_provider,
             model_name=request.model_name,
-            notify_channel_id=notify_channel_id,
+            clear_delivery=clear_delivery,
         )
-        
+
         if job is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Cron job '{job_id}' not found"
             )
-        
+
         return CronJobResponse(
             job=build_job_info(job, cron_service.scheduler)
         )
-        
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -263,7 +253,13 @@ async def delete_cron_job(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="内置系统任务不可删除"
             )
-        
+
+        if cron_service.scheduler and cron_service.scheduler.is_job_active(job_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="任务正在执行，暂不能删除"
+            )
+
         success = await cron_service.delete_job(job_id)
         
         if not success:

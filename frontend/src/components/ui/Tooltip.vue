@@ -4,35 +4,33 @@
     class="tooltip-wrapper"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
-    @focus="handleFocus"
-    @blur="handleBlur"
+    @focusin="handleFocus"
+    @focusout="handleBlur"
   >
     <slot />
-    
+
     <Teleport to="body">
-      <Transition name="tooltip">
-        <div
-          v-if="isVisible && (content || $slots.content)"
-          ref="tooltipRef"
-          class="tooltip"
-          :class="[`tooltip-${placement}`, `tooltip-${theme}`]"
-          :style="tooltipStyle"
-          role="tooltip"
-        >
-          <div class="tooltip-content">
-            <slot name="content">
-              {{ content }}
-            </slot>
-          </div>
-          <div class="tooltip-arrow" />
+      <div
+        v-if="isVisible && (content || $slots.content)"
+        ref="tooltipRef"
+        class="tooltip"
+        :class="[`tooltip-${placement}`, `tooltip-${theme}`]"
+        :style="tooltipStyle"
+        role="tooltip"
+      >
+        <div class="tooltip-content">
+          <slot name="content">
+            {{ content }}
+          </slot>
         </div>
-      </Transition>
+        <div class="tooltip-arrow" />
+      </div>
     </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
 
 type Placement = 'top' | 'bottom' | 'left' | 'right'
 type Theme = 'dark' | 'light'
@@ -92,7 +90,7 @@ const calculatePosition = () => {
       break
   }
   
-  // Keep tooltip within viewport
+  // 保证提示框不超出视口
   const padding = 8
   top = Math.max(padding, Math.min(top, window.innerHeight - tooltipRect.height - padding))
   left = Math.max(padding, Math.min(left, window.innerWidth - tooltipRect.width - padding))
@@ -113,7 +111,7 @@ const show = () => {
   
   showTimer = setTimeout(() => {
     isVisible.value = true
-    setTimeout(calculatePosition, 0)
+    nextTick(calculatePosition)
   }, props.delay)
 }
 
@@ -182,25 +180,23 @@ onBeforeUnmount(() => {
 .tooltip {
   position: fixed;
   z-index: 10000;
-  max-width: 300px;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  line-height: 1.4;
+  max-width: 320px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  line-height: 1.5;
   word-wrap: break-word;
   pointer-events: none;
 }
 
-.tooltip-dark {
-  background: var(--color-bg-overlay);
-  color: var(--color-text-inverse);
-}
-
+.tooltip-dark,
 .tooltip-light {
   background: var(--color-bg-elevated);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-md);
+  color: var(--color-text-primary);
 }
 
 .tooltip-content {
@@ -215,13 +211,10 @@ onBeforeUnmount(() => {
   transform: rotate(45deg);
 }
 
-.tooltip-dark .tooltip-arrow {
-  background: var(--color-bg-overlay);
-}
-
+.tooltip-dark .tooltip-arrow,
 .tooltip-light .tooltip-arrow {
   background: var(--color-bg-elevated);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border-primary);
 }
 
 /* Arrow positioning */
@@ -257,34 +250,4 @@ onBeforeUnmount(() => {
   border-left: none;
 }
 
-/* Tooltip transitions */
-.tooltip-enter-active,
-.tooltip-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.tooltip-enter-from,
-.tooltip-leave-to {
-  opacity: 0;
-}
-
-.tooltip-top.tooltip-enter-from,
-.tooltip-top.tooltip-leave-to {
-  transform: translateY(4px);
-}
-
-.tooltip-bottom.tooltip-enter-from,
-.tooltip-bottom.tooltip-leave-to {
-  transform: translateY(-4px);
-}
-
-.tooltip-left.tooltip-enter-from,
-.tooltip-left.tooltip-leave-to {
-  transform: translateX(4px);
-}
-
-.tooltip-right.tooltip-enter-from,
-.tooltip-right.tooltip-leave-to {
-  transform: translateX(-4px);
-}
 </style>

@@ -16,12 +16,12 @@
         <Icon
           v-if="icon"
           :name="icon"
-          :size="48"
+          :size="20"
         />
         <component
           :is="getTypeIcon()"
           v-else
-          :size="48"
+          :size="20"
         />
       </div>
       
@@ -40,6 +40,7 @@
       <div class="confirm-dialog-actions">
         <Button
           variant="outline"
+          size="sm"
           :disabled="loading"
           @click="handleCancel"
         >
@@ -47,6 +48,7 @@
         </Button>
         <Button
           :variant="confirmVariant"
+          size="sm"
           :loading="loading"
           @click="handleConfirm"
         >
@@ -124,19 +126,19 @@ const handleCancel = () => {
 <style scoped>
 .confirm-dialog {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-4);
-  padding: var(--spacing-4, 1rem) 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0 8px;
 }
 
 .confirm-dialog-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-secondary);
 }
 
@@ -161,31 +163,27 @@ const handleCancel = () => {
 }
 
 .confirm-dialog-content {
-  text-align: center;
-  max-width: 400px;
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .confirm-dialog-message {
   margin: 0;
-  font-size: var(--font-size-base);
-  line-height: 1.6;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
   color: var(--color-text-primary);
+  text-wrap: pretty;
 }
 
 .confirm-dialog-actions {
   display: flex;
-  gap: var(--spacing-2);
+  gap: 8px;
   justify-content: flex-end;
 }
 
-/* 深色模式 */
-
-
-
-
-
-
-
-
-
+:deep(.modal-body) {
+  min-height: 0;
+  padding: 18px 20px 6px;
+}
 </style>

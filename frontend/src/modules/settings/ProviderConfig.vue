@@ -342,6 +342,7 @@ const {
   isProviderDirty,
   savingProvider,
   isApiKeyOptional,
+  getPrimaryApiKey,
   isCustomProvider,
   currentDefaultBaseUrl,
   selectedProviderSelectable,
@@ -499,6 +500,11 @@ async function handleSaveProvider(): Promise<void> {
   if (!selectedProvider.value || savingProvider.value) {
     return
   }
+  const keyWarning = validateConnectionBeforeSave()
+  if (keyWarning) {
+    toast.error(keyWarning, t('common.error'))
+    return
+  }
   syncProviderDraftToStore()
   syncModelDraftToStore()
 
@@ -595,7 +601,23 @@ function validateBeforeSave(): string | null {
   })
 }
 
-defineExpose({ validateBeforeSave })
+/** 有模型但未配置密钥时阻断保存，避免保存后到对话页才暴露不可用。 */
+function validateConnectionBeforeSave(): string | null {
+  if (
+    !selectedProvider.value
+    || !providerConfig.value.enabled
+    || isApiKeyOptional.value
+    || getPrimaryApiKey().trim()
+    || providerModels.value.length === 0
+  ) {
+    return null
+  }
+  return t('settings.providers.apiKeyRequiredWarning', {
+    provider: selectedProviderDisplayName.value,
+  })
+}
+
+defineExpose({ validateBeforeSave, validateConnectionBeforeSave })
 
 /* ------------------------------------------------------------------ */
 /* watchers                                                            */

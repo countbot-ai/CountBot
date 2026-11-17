@@ -78,9 +78,9 @@ export function useConfirm() {
     const confirmClear = (): Promise<boolean> => confirm({
             title: '确认清空',
             message: '确定要清空所有内容吗？此操作无法撤销。',
-            type: 'warning',
+            type: 'danger',
             confirmText: '清空',
-            confirmVariant: 'warning'
+            confirmVariant: 'danger'
         })
 
     return {

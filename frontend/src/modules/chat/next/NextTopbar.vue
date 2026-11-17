@@ -16,6 +16,13 @@
     </div>
 
     <div class="nc-topbar-right">
+      <span
+        v-if="userName"
+        class="nc-topbar-user"
+        :title="$t('settings.account.signedInAs', { name: userName })"
+      >
+        {{ userName }}
+      </span>
       <button
         v-if="hasMessages"
         class="nc-topbar-button"
@@ -85,6 +92,7 @@ import {
 
 interface Props {
   title?: string
+  userName?: string
   hasMessages?: boolean
   isStreaming?: boolean
   /** 有登录会话才显示注销：本机免登录时没有会话可注销 */

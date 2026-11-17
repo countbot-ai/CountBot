@@ -161,10 +161,10 @@ defineExpose({
   min-width: 300px;
   max-width: 400px;
   padding: var(--spacing-md);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   pointer-events: auto;
 }
 

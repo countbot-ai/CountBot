@@ -8,6 +8,27 @@ export interface SpeechTranscription {
   request_id: string
 }
 
+export interface SpeechStatus {
+  provider_id: string
+  model: string
+  asr_enabled: boolean
+  tts_enabled: boolean
+  has_api_key: boolean
+  ready: boolean
+  tts_ready: boolean
+  reason: string
+  message: string
+}
+
+export async function getSpeechStatus(
+  providerId: string,
+  model: string,
+): Promise<SpeechStatus> {
+  return apiClient.get('/native-caps/speech/status', {
+    params: { provider_id: providerId, model },
+  })
+}
+
 export async function transcribeAudio(
   file: File | Blob,
   providerId: string,
@@ -18,7 +39,7 @@ export async function transcribeAudio(
   form.append('provider_id', providerId)
   form.append('model', model)
   return apiClient.post('/native-caps/speech/asr', form, {
-    timeout: 180000,
+    timeout: 60000,
   })
 }
 

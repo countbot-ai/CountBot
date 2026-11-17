@@ -13,8 +13,8 @@ export interface ModelConfigLike {
 }
 
 export const MODEL_CONFIG_FALLBACK: Required<ModelConfigLike> = {
-  provider: 'zhipu',
-  model: 'glm-5',
+  provider: 'deepseek',
+  model: 'deepseek-flash',
   api_mode: 'chat_completions',
   temperature: 0,
   max_tokens: 0,
@@ -24,7 +24,7 @@ export const MODEL_CONFIG_FALLBACK: Required<ModelConfigLike> = {
   stream_enabled: true,
   supports_image: null,
   api_key: '',
-  api_base: '',
+  api_base: 'https://api.deepseek.com/anthropic',
 }
 
 /** 工具调用次数的显式上限最大值。 */

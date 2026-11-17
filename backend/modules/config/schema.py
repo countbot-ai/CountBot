@@ -4,7 +4,16 @@ from typing import ClassVar, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.modules.native_caps.types import NativeCapabilities
+from backend.modules.native_caps.types import (
+    DEEPSEEK_DEFAULT_CAPABILITIES,
+    NativeCapabilities,
+)
+
+
+DEFAULT_PROVIDER_ID = "deepseek"
+DEFAULT_MODEL_ID = "deepseek-flash"
+DEFAULT_PROVIDER_API_TYPE = "anthropic-messages"
+DEFAULT_PROVIDER_API_BASE = "https://api.deepseek.com/anthropic"
 
 
 class ModelEntry(BaseModel):
@@ -129,12 +138,28 @@ class ProviderConfig(BaseModel):
         return entry
 
 
+def build_default_provider_config() -> ProviderConfig:
+    """新配置的默认供应商：DeepSeek 官方 Anthropic 协议。"""
+    return ProviderConfig(
+        api_base=DEFAULT_PROVIDER_API_BASE,
+        enabled=True,
+        api_type=DEFAULT_PROVIDER_API_TYPE,
+        models=[
+            ModelEntry(
+                id=DEFAULT_MODEL_ID,
+                source="builtin",
+                native_capabilities=DEEPSEEK_DEFAULT_CAPABILITIES.model_copy(deep=True),
+            )
+        ],
+    )
+
+
 class ModelConfig(BaseModel):
     """模型配置"""
     MAX_TOKENS_LIMIT: ClassVar[int] = 2_000_000
 
-    provider: str = "zhipu"
-    model: str = "glm-5"
+    provider: str = DEFAULT_PROVIDER_ID
+    model: str = DEFAULT_MODEL_ID
     api_mode: Literal["chat_completions"] = Field(
         default="chat_completions",
         description="OpenAI API 模式，固定为 chat.completions",
@@ -644,20 +669,48 @@ class AppConfig(BaseModel):
         for provider_id in get_provider_ids():
             if provider_id not in self.providers:
                 metadata = get_provider_metadata(provider_id)
-                
-                if provider_id == "zhipu":
-                    self.providers[provider_id] = ProviderConfig(
-                        api_key="",
-                        api_base="https://open.bigmodel.cn/api/paas/v4",
-                        enabled=True
-                    )
+
+                if provider_id == DEFAULT_PROVIDER_ID:
+                    self.providers[provider_id] = build_default_provider_config()
                 else:
                     self.providers[provider_id] = ProviderConfig(
                         api_base=metadata.default_api_base if metadata else None,
                         enabled=True,
                     )
 
+        self._normalize_default_provider()
         self._migrate_provider_models()
+
+    def _normalize_default_provider(self) -> None:
+        """把未配置的 DeepSeek 默认项补齐为 Anthropic 协议。"""
+        provider_config = self.providers.get(DEFAULT_PROVIDER_ID)
+        if provider_config is None:
+            return
+
+        legacy_bases = {
+            "",
+            "https://api.deepseek.com",
+            "https://api.deepseek.com/v1",
+        }
+        api_base = (provider_config.api_base or "").rstrip("/")
+        if (
+            not provider_config.get_effective_api_keys()
+            and not provider_config.models
+            and api_base in legacy_bases
+        ):
+            provider_config.api_base = DEFAULT_PROVIDER_API_BASE
+            provider_config.api_type = DEFAULT_PROVIDER_API_TYPE
+
+        if not provider_config.models:
+            provider_config.ensure_model(DEFAULT_MODEL_ID, source="builtin")
+
+        default_model = provider_config.find_model(DEFAULT_MODEL_ID)
+        if (
+            default_model is not None
+            and default_model.source == "builtin"
+            and not default_model.native_capabilities.any_enabled()
+        ):
+            default_model.native_capabilities = DEEPSEEK_DEFAULT_CAPABILITIES.model_copy(deep=True)
 
     def _migrate_provider_models(self) -> None:
         """把旧版单模型配置迁移为供应商模型清单，缺失的 api_type / models 就地补齐。"""

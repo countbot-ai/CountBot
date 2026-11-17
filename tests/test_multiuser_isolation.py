@@ -480,6 +480,12 @@ async def test_regular_user_cannot_edit_builtin_personality():
         )
         assert response.status_code == 404
 
+        response = _client().delete(
+            f"/api/personalities/{builtin_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
         async with AsyncSessionLocal() as session:
             row = await session.get(Personality, builtin_id)
             assert row is not None and row.name == "内置性格"
@@ -490,6 +496,92 @@ async def test_regular_user_cannot_edit_builtin_personality():
                 await session.delete(row)
                 await session.commit()
         await _cleanup_user(user_id, username)
+
+
+@pytest.mark.asyncio
+async def test_admin_can_delete_builtin_personality():
+    """内置性格对管理员可删除，删除后数据库不再保留记录。"""
+    from backend.database import AsyncSessionLocal, init_db
+    from backend.models.personality import Personality
+    from backend.modules.multiuser.settings import invalidate_cache
+
+    await init_db()
+    invalidate_cache()
+    builtin_id = f"__builtin_{uuid.uuid4().hex[:8]}"
+    admin_id, admin_name = await _create_user(role="admin")
+    try:
+        async with AsyncSessionLocal() as session:
+            session.add(
+                Personality(
+                    id=builtin_id,
+                    name="待删除内置性格",
+                    description="临时记录",
+                    traits=["临时"],
+                    speaking_style="简洁",
+                    icon="Smile",
+                    is_builtin=True,
+                )
+            )
+            await session.commit()
+
+        token = await _token(admin_id, admin_name)
+        response = _client().delete(
+            f"/api/personalities/{builtin_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+        async with AsyncSessionLocal() as session:
+            assert await session.get(Personality, builtin_id) is None
+    finally:
+        async with AsyncSessionLocal() as session:
+            row = await session.get(Personality, builtin_id)
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
+        await _cleanup_user(admin_id, admin_name)
+
+
+@pytest.mark.asyncio
+async def test_speech_status_reports_missing_api_key():
+    """语音状态接口应在录音前返回缺密钥，而不是等转写请求失败。"""
+    from backend.database import init_db
+    from backend.modules.config.loader import config_loader
+    from backend.modules.config.schema import ModelEntry, ProviderConfig
+    from backend.modules.multiuser.settings import invalidate_cache
+    from backend.modules.native_caps.types import NativeCapabilities
+
+    await init_db()
+    invalidate_cache()
+    provider_id = f"__speech_{uuid.uuid4().hex[:8]}"
+    admin_id, admin_name = await _create_user(role="admin")
+    try:
+        config_loader.config.providers[provider_id] = ProviderConfig(
+            api_base="https://example.com/v1",
+            enabled=True,
+            models=[
+                ModelEntry(
+                    id="probe",
+                    source="builtin",
+                    native_capabilities=NativeCapabilities(asr=True),
+                )
+            ],
+        )
+        token = await _token(admin_id, admin_name)
+        response = _client().get(
+            "/api/native-caps/speech/status",
+            params={"provider_id": provider_id, "model": "probe"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["asr_enabled"] is True
+        assert body["has_api_key"] is False
+        assert body["ready"] is False
+        assert body["reason"] == "missing_api_key"
+    finally:
+        config_loader.config.providers.pop(provider_id, None)
+        await _cleanup_user(admin_id, admin_name)
 
 
 @pytest.mark.asyncio
@@ -839,7 +931,6 @@ async def test_cron_execution_sessions_are_owned_and_isolated(monkeypatch):
         AsyncMock(return_value=(agent, owner, SimpleNamespace(username="a", owner_id=owner))),
     )
     monkeypatch.setattr(executor, "_build_user_model_override", AsyncMock(return_value=None))
-    monkeypatch.setattr(executor, "_deliver_user_notification", AsyncMock())
 
     created: set[str] = set()
     try:

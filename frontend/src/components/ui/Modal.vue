@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: 0;
   background: var(--color-bg-overlay);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,9 +233,10 @@ onBeforeUnmount(() => {
 
 .modal-container {
   position: relative;
-  background: var(--color-bg-primary);
-  border-radius: 14px;
-  box-shadow: var(--shadow-lg);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - var(--spacing-3xl));
@@ -245,7 +246,7 @@ onBeforeUnmount(() => {
 }
 
 .modal-small {
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .modal-medium {
@@ -266,9 +267,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 16px 20px 14px;
   border-bottom: 1px solid var(--color-border-primary);
-  background: var(--color-bg-primary);
+  background: transparent;
 }
 
 .modal-title {
@@ -307,7 +308,7 @@ onBeforeUnmount(() => {
   padding: 20px;
   overflow-y: auto;
   color: var(--color-text-primary);
-  background: var(--color-bg-primary);
+  background: transparent;
   /* 预留最小高度，避免「加载中 → 加载完成」时弹窗高度猛跳 */
   min-height: 120px;
 }
@@ -319,7 +320,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--color-border-primary);
-  background: var(--color-bg-primary);
+  background: transparent;
 }
 
 /* 深色模式 */

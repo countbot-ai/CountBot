@@ -585,9 +585,9 @@ async function clearCurrentChat() {
   await confirm({
     title: t('common.confirmClear'),
     message: t('chat.confirmClearChat'),
-    type: 'warning',
+    type: 'danger',
     confirmText: t('common.clear'),
-    confirmVariant: 'warning',
+    confirmVariant: 'danger',
     onConfirm: async () => {
       try {
         clearMessages()

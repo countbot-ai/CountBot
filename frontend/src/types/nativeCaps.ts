@@ -20,6 +20,16 @@ export const DEFAULT_NATIVE_CAPABILITIES: NativeCapabilities = {
   tts: false,
 }
 
+/** DeepSeek 官方默认模型的原生能力。 */
+export const DEEPSEEK_DEFAULT_NATIVE_CAPABILITIES: NativeCapabilities = {
+  web_search: true,
+  read_url: true,
+  document_parsing: 'rich',
+  safety_check: true,
+  asr: true,
+  tts: true,
+}
+
 export interface NativeSearchResult {
   title?: string
   url?: string

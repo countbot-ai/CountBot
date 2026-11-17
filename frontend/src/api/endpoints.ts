@@ -648,6 +648,45 @@ export interface ExecuteCronJobResponse {
     message?: string
 }
 
+export interface CronValidateResponse {
+    valid: boolean
+    description?: string | null
+    next_run?: string | null
+}
+
+export interface CronSessionMessage {
+    role: string
+    content: string
+    created_at?: string | null
+}
+
+export interface CronJobMessagesResponse {
+    job_id: string
+    job_name: string
+    session_id?: string | null
+    session_name?: string | null
+    messages: CronSessionMessage[]
+}
+
+export interface CleanupCronSessionResponse {
+    success: boolean
+    job_id: string
+    job_name: string
+    session_id?: string | null
+    session_name?: string | null
+    deleted_count: number
+    kept_count: number
+}
+
+export interface ResetCronSessionResponse {
+    success: boolean
+    job_id: string
+    job_name: string
+    session_id?: string | null
+    session_name?: string | null
+    deleted_message_count: number
+}
+
 // Tasks API Types
 
 /** 子代理单次工具调用记录（后端持久化字段） */
@@ -1404,6 +1443,18 @@ export const cronAPI = {
 
     execute: (id: string): Promise<ExecuteCronJobResponse> =>
         apiClient.post(`/cron/jobs/${id}/run`),
+
+    validate: (schedule: string): Promise<CronValidateResponse> =>
+        apiClient.post('/cron/validate', { schedule }),
+
+    getMessages: (id: string, limit = 20): Promise<CronJobMessagesResponse> =>
+        apiClient.get(`/cron/jobs/${id}/messages?limit=${limit}`),
+
+    cleanupSession: (id: string, keep = 10): Promise<CleanupCronSessionResponse> =>
+        apiClient.post(`/cron/jobs/${id}/session/cleanup`, { keep }),
+
+    resetSession: (id: string): Promise<ResetCronSessionResponse> =>
+        apiClient.post(`/cron/jobs/${id}/session/reset`),
 }
 
 

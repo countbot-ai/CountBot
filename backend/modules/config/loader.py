@@ -8,7 +8,14 @@ from sqlalchemy import select
 
 from backend.database import AsyncSessionLocal
 from backend.models.setting import Setting
-from backend.modules.config.schema import AppConfig
+from backend.modules.config.schema import (
+    AppConfig,
+    DEFAULT_MODEL_ID,
+    DEFAULT_PROVIDER_API_BASE,
+    DEFAULT_PROVIDER_API_TYPE,
+    DEFAULT_PROVIDER_ID,
+)
+from backend.modules.native_caps.types import DEEPSEEK_DEFAULT_CAPABILITIES
 
 # 旧默认值；升级后语义变为「不限制」，存量配置需迁移一次
 LEGACY_DEFAULT_MAX_ITERATIONS = 25
@@ -56,6 +63,7 @@ class ConfigLoader:
                             provider_data["model"] = None
 
             await self._migrate_legacy_max_iterations(session, config_dict)
+            await self._migrate_default_provider(session, config_dict)
 
             self.config = AppConfig(**config_dict)
             from backend.modules.workspace import workspace_manager
@@ -102,6 +110,51 @@ class ConfigLoader:
         logger.info(
             f"已将旧默认的工具调用上限 {LEGACY_DEFAULT_MAX_ITERATIONS} 迁移为「不限制」"
         )
+
+    async def _migrate_default_provider(
+        self,
+        session: Any,
+        config_dict: Dict[str, Any],
+    ) -> None:
+        """把未配置的旧 DeepSeek 条目迁移为官方 Anthropic 默认项。"""
+        providers = config_dict.get("providers")
+        if not isinstance(providers, dict):
+            return
+        provider = providers.get(DEFAULT_PROVIDER_ID)
+        if not isinstance(provider, dict):
+            return
+
+        keys = [
+            provider.get("api_key"),
+            *((provider.get("api_keys") or []) if isinstance(provider.get("api_keys"), list) else []),
+        ]
+        if any(str(key or "").strip() for key in keys):
+            return
+        if provider.get("models"):
+            return
+
+        api_base = str(provider.get("api_base") or "").strip().rstrip("/")
+        if api_base not in {"", "https://api.deepseek.com", "https://api.deepseek.com/v1"}:
+            return
+
+        provider["api_base"] = DEFAULT_PROVIDER_API_BASE
+        provider["api_type"] = DEFAULT_PROVIDER_API_TYPE
+        provider["models"] = [
+            {
+                "id": DEFAULT_MODEL_ID,
+                "source": "builtin",
+                "native_capabilities": DEEPSEEK_DEFAULT_CAPABILITIES.model_dump(),
+            }
+        ]
+        for key, value in provider.items():
+            await session.merge(
+                Setting(
+                    key=f"config.providers.{DEFAULT_PROVIDER_ID}.{key}",
+                    value=json.dumps(value),
+                )
+            )
+        await session.commit()
+        logger.info("已将未配置的 DeepSeek 默认项迁移为 Anthropic 协议")
 
     async def save(self) -> None:
         """保存配置到数据库"""

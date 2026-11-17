@@ -55,12 +55,19 @@ PUSH_ONLY_CHANNELS = {"serverchan"}
 
 
 async def validate_channel_push_for_user(user, request) -> None:
-    """普通用户只能推送到自己的渠道账号与会话。"""
+    """校验推送目标：网页与空目标不可作为推送渠道。"""
     if not getattr(request, "deliver_response", False):
         return
-    channel = getattr(request, "channel", None)
-    if not channel or channel == "web":
-        return
+
+    channel = str(getattr(request, "channel", None) or "").strip()
+    chat_id = str(getattr(request, "chat_id", None) or "").strip()
+    if not channel:
+        raise HTTPException(status_code=400, detail="请选择推送渠道")
+    if channel == "web":
+        raise HTTPException(status_code=400, detail="网页不能作为推送渠道，请选择真实渠道")
+    if channel not in PUSH_ONLY_CHANNELS and not chat_id:
+        raise HTTPException(status_code=400, detail="请选择推送会话")
+
     if getattr(user, "is_admin", False):
         return
 
@@ -70,7 +77,6 @@ async def validate_channel_push_for_user(user, request) -> None:
     channel_config = getattr(config_loader.config.channels, channel, None)
     allowed = _owned_account_ids(channel_config, user.owner_id) if channel_config else set()
     account_id = str(getattr(request, "account_id", None) or "default")
-    chat_id = str(getattr(request, "chat_id", None) or "").strip()
 
     if account_id not in allowed:
         raise HTTPException(
@@ -79,8 +85,6 @@ async def validate_channel_push_for_user(user, request) -> None:
         )
     if channel in PUSH_ONLY_CHANNELS:
         return
-    if not chat_id:
-        raise HTTPException(status_code=400, detail="请选择推送会话")
 
     chats = await _collect_channel_chats((channel,), owner_id=user.owner_id)
     if not any(
@@ -130,10 +134,6 @@ def build_job_info(job, scheduler=None, *, error_limit: Optional[int] = None):
     if error_limit is not None and last_error:
         last_error = last_error[:error_limit]
 
-    notify_channel_id = getattr(job, "notify_channel_id", None)
-    if not isinstance(notify_channel_id, str):
-        notify_channel_id = None
-
     return CronJobInfo(
         id=job.id,
         name=job.name,
@@ -146,7 +146,6 @@ def build_job_info(job, scheduler=None, *, error_limit: Optional[int] = None):
         deliver_response=job.deliver_response,
         model_provider=job.model_provider,
         model_name=job.model_name,
-        notify_channel_id=notify_channel_id,
         last_run=_to_shanghai_iso(job.last_run),
         last_finished_at=_to_shanghai_iso(getattr(job, "last_finished_at", None)),
         next_run=_to_shanghai_iso(job.next_run),

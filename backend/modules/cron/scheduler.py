@@ -128,8 +128,12 @@ class CronScheduler:
                 
                 if not jobs:
                     return None
-                
-                next_times = [j.next_run for j in jobs if j.next_run]
+
+                next_times = [
+                    j.next_run
+                    for j in jobs
+                    if j.next_run and j.id not in self._active_jobs
+                ]
                 if not next_times:
                     return None
                 
@@ -140,7 +144,12 @@ class CronScheduler:
     
     def _arm_timer(self):
         """调度下一个定时器"""
-        if self._timer_task and not self._timer_task.done():
+        current = asyncio.current_task()
+        if (
+            self._timer_task
+            and not self._timer_task.done()
+            and self._timer_task is not current
+        ):
             self._timer_task.cancel()
         
         async def schedule_next():
@@ -194,31 +203,40 @@ class CronScheduler:
                     return
                 
                 logger.info(f"Executing {len(pending)} jobs (active: {len(self._active_jobs)})")
-                
-                # 每个任务使用独立的 db session，通过信号量控制并发
-                tasks = []
+
+                # 先占用任务再启动，定时器可立即重新布防，不等整批任务结束
                 for job in pending:
-                    task = asyncio.create_task(
-                        self._execute_job_safe(job),
-                        name=f"cron-job-{job.id[:8]}"
-                    )
+                    self._active_jobs.add(job.id)
+                    try:
+                        task = asyncio.create_task(
+                            self._execute_job_safe(job),
+                            name=f"cron-job-{job.id[:8]}"
+                        )
+                    except Exception:
+                        self._active_jobs.discard(job.id)
+                        raise
                     self._active_tasks.add(task)
-                    task.add_done_callback(self._active_tasks.discard)
-                    tasks.append(task)
-                
-                await asyncio.gather(*tasks, return_exceptions=True)
-        
+                    task.add_done_callback(
+                        lambda done, job_id=job.id: self._on_job_task_done(done, job_id)
+                    )
+
         except Exception as e:
             logger.error(f"Timer handler error: {e}")
-        
+
         finally:
             if self._running:
                 self._arm_timer()
-    
+
+    def _on_job_task_done(self, task: asyncio.Task, job_id: str) -> None:
+        """释放任务占用，并按最新 next_run 重新布防。"""
+        self._active_tasks.discard(task)
+        self._active_jobs.discard(job_id)
+        if self._running:
+            asyncio.create_task(self.trigger_reschedule())
+
     async def _execute_job_safe(self, job):
         """带信号量、超时和独立 session 的安全执行包装"""
         async with self._semaphore:
-            self._active_jobs.add(job.id)
             try:
                 # 每个任务使用独立的 db session
                 async with self.db_session_factory() as db:
@@ -240,17 +258,21 @@ class CronScheduler:
 
     async def run_job_manually(self, job_id: str) -> None:
         """立即执行任务，调用方需先通过 try_acquire_job 占用执行权。"""
+        task = asyncio.current_task()
+        if task is not None:
+            self._active_tasks.add(task)
         try:
-            async with self.db_session_factory() as db:
-                service = CronService(db)
-                job = await service.get_job(job_id)
-                if job is None:
-                    logger.warning(f"Manual run skipped, job not found: {job_id}")
-                    return
-                await asyncio.wait_for(
-                    self._execute_job(job, service, manual=True),
-                    timeout=self.job_timeout,
-                )
+            async with self._semaphore:
+                async with self.db_session_factory() as db:
+                    service = CronService(db)
+                    job = await service.get_job(job_id)
+                    if job is None:
+                        logger.warning(f"Manual run skipped, job not found: {job_id}")
+                        return
+                    await asyncio.wait_for(
+                        self._execute_job(job, service, manual=True),
+                        timeout=self.job_timeout,
+                    )
         except asyncio.TimeoutError:
             logger.error(f"Manual job {job_id} timed out after {self.job_timeout}s")
             await self._mark_timeout(job_id, manual=True)
@@ -258,7 +280,11 @@ class CronScheduler:
             logger.error(f"Manual job {job_id} failed: {e}")
             await self._mark_failed(job_id, f"执行异常：{e}", manual=True)
         finally:
+            if task is not None:
+                self._active_tasks.discard(task)
             self.release_job(job_id)
+            if self._running:
+                await self.trigger_reschedule()
 
     async def _mark_timeout(self, job_id: str, manual: bool = False) -> None:
         """超时后把任务收敛为失败，避免前端一直停留在执行中。"""
@@ -336,7 +362,7 @@ class CronScheduler:
                 # 执行成功
                 job.last_status = "ok"
                 job.last_error = None
-                job.last_response = response[:1000] if response else None
+                job.last_response = response[:10000] if response else None
                 job.last_finished_at = _now_shanghai()
                 job.last_delivery_status = (
                     "ok" if job.deliver_response and job.channel and job.chat_id else "skipped"

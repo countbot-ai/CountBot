@@ -43,14 +43,14 @@
       :hint="$t('settings.general.outputLanguageHint')"
       wide-control
     >
-      <Input
-        v-model="outputLanguage"
-        class="output-language-input"
-        type="text"
-        :placeholder="$t('settings.general.outputLanguagePlaceholder')"
-      />
+      <OutputLanguageSelect v-model="outputLanguage" />
     </SettingsRow>
   </SettingsCard>
+
+  <ConversationHistorySettings
+    v-model:max-history-messages="maxHistoryMessages"
+    v-model:enable-short-context-summary="enableShortContextSummary"
+  />
 </template>
 
 <script setup lang="ts">
@@ -64,13 +64,12 @@ import {
   Flower2 as Flower2Icon,
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import Input from '@/components/ui/Input.vue'
 import { setLocale } from '@/i18n'
 import { useTheme } from '@/composables/useTheme'
 import type { ThemePreset } from '@/i18n/utils/detector'
 import { useSettingsStore } from '@/store/settings'
 import { usePersonaSource } from '@/composables/usePersonaSource'
-import { SettingsCard, SettingsRow } from './ui'
+import { SettingsCard, SettingsRow, OutputLanguageSelect, ConversationHistorySettings } from './ui'
 
 const { locale } = useI18n()
 const { themePreset, setThemePreset } = useTheme()
@@ -82,6 +81,46 @@ const currentLocale = computed(() => locale.value)
 
 /** 普通用户的输出语言存在本地（全局配置不可读），管理员沿用全局草稿 */
 const localOutputLanguage = ref('中文')
+const localMaxHistoryMessages = ref(0)
+const localShortContextSummary = ref(false)
+
+const normalizeHistoryLimit = (value?: number | null) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0
+  return value <= 0 ? 0 : value
+}
+
+const maxHistoryMessages = computed({
+  get: () =>
+    personaSource.isUserScoped.value
+      ? localMaxHistoryMessages.value
+      : normalizeHistoryLimit(settingsStore.settings?.persona.max_history_messages),
+  set: (value: number) => {
+    const normalized = normalizeHistoryLimit(value)
+    if (personaSource.isUserScoped.value) {
+      localMaxHistoryMessages.value = normalized
+      return
+    }
+    if (settingsStore.settings) {
+      settingsStore.settings.persona.max_history_messages = normalized
+    }
+  },
+})
+
+const enableShortContextSummary = computed({
+  get: () =>
+    personaSource.isUserScoped.value
+      ? localShortContextSummary.value
+      : Boolean(settingsStore.settings?.persona.enable_short_context_summary),
+  set: (value: boolean) => {
+    if (personaSource.isUserScoped.value) {
+      localShortContextSummary.value = value
+      return
+    }
+    if (settingsStore.settings) {
+      settingsStore.settings.persona.enable_short_context_summary = value
+    }
+  },
+})
 
 const outputLanguage = computed({
   get: () =>
@@ -107,8 +146,12 @@ watch(
     try {
       const persona = await personaSource.load()
       localOutputLanguage.value = String(persona.output_language || '中文')
+      localMaxHistoryMessages.value = normalizeHistoryLimit(
+        persona.max_history_messages as number | null | undefined,
+      )
+      localShortContextSummary.value = Boolean(persona.enable_short_context_summary)
     } catch (error) {
-      console.error('Failed to load output language:', error)
+      console.error('Failed to load persona settings:', error)
     }
   },
   { immediate: true },
@@ -153,10 +196,14 @@ watch(
   },
   { immediate: true },
 )
-/** 保存通用设置：普通用户的输出语言在此落库，管理员已写入全局草稿 */
+/** 保存通用设置：普通用户的输出语言与历史条数在此落库，管理员已写入全局草稿 */
 async function saveConfig(): Promise<boolean> {
   if (personaSource.isUserScoped.value) {
-    await personaSource.save({ output_language: localOutputLanguage.value || '中文' })
+    await personaSource.save({
+      output_language: localOutputLanguage.value || '中文',
+      max_history_messages: normalizeHistoryLimit(localMaxHistoryMessages.value),
+      enable_short_context_summary: localShortContextSummary.value,
+    })
   }
   return true
 }
@@ -213,16 +260,5 @@ defineExpose({ saveConfig })
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.output-language-input {
-  width: 100%;
-  max-width: 280px;
-}
-
-@media (max-width: 680px) {
-  .output-language-input {
-    max-width: none;
-  }
 }
 </style>

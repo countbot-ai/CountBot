@@ -29,6 +29,16 @@
   flex-shrink: 0;
 }
 
+.nc-topbar-user {
+  max-width: 140px;
+  margin-right: 4px;
+  overflow: hidden;
+  color: var(--nc-text-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nc-topbar-button {
   width: 32px;
   height: 32px;
@@ -94,5 +104,11 @@
   .nc-topbar {
     height: 44px;
     padding: 0 8px;
+  }
+}
+
+@media (max-width: 680px) {
+  .nc-topbar-user {
+    display: none;
   }
 }

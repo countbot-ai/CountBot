@@ -150,6 +150,9 @@
       "greetingMorning": "Good morning. What should we start with?",
       "greetingAfternoon": "Good afternoon. What should we start with?",
       "greetingEvening": "Good evening. What should we start with?",
+      "greetingMorningUser": "Good morning, {name}. What should we start with?",
+      "greetingAfternoonUser": "Good afternoon, {name}. What should we start with?",
+      "greetingEveningUser": "Good evening, {name}. What should we start with?",
       "searchSessions": "Search sessions",
       "allSessions": "All",
       "showMore": "Show more",
@@ -213,6 +216,14 @@
       "stopRecording": "Stop recording",
       "micDenied": "Cannot access the microphone. Check browser permissions.",
       "voiceUnsupported": "Recording is not supported in this browser",
+      "missingApiKey": "This model has no API key configured, so voice input is unavailable. Add a key in Settings first.",
+      "asrDisabled": "Voice input is not enabled for this model",
+      "speechConfigMissing": "Select an available model before using voice input",
+      "speechCheckFailed": "Could not check voice input status. Try again later.",
+      "recordingFailed": "Recording failed. Try again.",
+      "recordingEmpty": "No audio was captured. Try again.",
+      "transcribeEmpty": "No speech was recognized",
+      "transcribeTimeout": "Speech recognition timed out. Try again.",
       "transcribeFailed": "Speech recognition failed"
     },
     "scrollToBottom": "Scroll to bottom",
@@ -671,6 +682,12 @@
   },
   "settings": {
     "title": "Settings",
+    "account": {
+      "currentUser": "Signed in as {name} ({role})",
+      "signedInAs": "Signed in as {name}",
+      "roleAdmin": "Administrator",
+      "roleUser": "User"
+    },
     "saved": "Settings saved",
     "saveSuccess": "Settings saved successfully",
     "saveError": "Failed to save settings",
@@ -894,7 +911,7 @@
     },
     "general": {
       "title": "General Settings",
-      "description": "Configure basic application settings including theme and language",
+      "description": "Configure basic application settings, including theme, language, and conversation context",
       "theme": "Theme",
       "themeDesc": "Choose your preferred interface theme",
       "lightTheme": "Light Theme",
@@ -906,9 +923,32 @@
       "language": "Language",
       "languageDesc": "Select interface display language",
       "outputLanguage": "Output Language",
-      "outputLanguageDesc": "Set the assistant's default reply language and append it to the prompt automatically",
+      "outputLanguageDesc": "Set the AI's preferred language or dialect for replies",
       "outputLanguagePlaceholder": "e.g. 中文, English",
-      "outputLanguageHint": "Unless the user explicitly asks to switch, replies will default to this language",
+      "outputLanguageHint": "Unless the user asks to switch, replies will use this preference by default",
+      "outputLanguageGroups": {
+        "languages": "Languages",
+        "zh": "Chinese",
+        "en": "English"
+      },
+      "outputLanguageOptions": {
+        "zhHans": "Simplified Chinese",
+        "zhHant": "Traditional Chinese",
+        "cantonese": "Cantonese",
+        "northeastern": "Northeastern Mandarin",
+        "sichuanese": "Sichuanese",
+        "shanghainese": "Shanghainese",
+        "beijing": "Beijing Mandarin",
+        "english": "English",
+        "custom": "Custom",
+        "mandarin": "Chinese (Mandarin)",
+        "japanese": "Japanese",
+        "korean": "Korean",
+        "french": "French",
+        "german": "German",
+        "spanish": "Spanish",
+        "customPlaceholder": "Enter a language or dialect, e.g. Classical Chinese"
+      },
       "appearanceCard": "Appearance & language"
     },
     "memory": {
@@ -932,7 +972,7 @@
         "collapse": "Collapse provider list"
       },
       "model": "Model Name",
-      "modelPlaceholder": "e.g., gpt-4, claude-3-opus-20240229, deepseek-chat",
+      "modelPlaceholder": "e.g., gpt-4, claude-3-opus-20240229, deepseek-flash",
       "modelHint": "Model ID",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "Enter your API key",
@@ -997,35 +1037,10 @@
         "testSuccess": "Connected · {latency}ms · {count} models",
         "testFailed": "Connection failed: {error}"
       },
-      "openrouterFreeModels": {
-        "button": "Free Models",
-        "fetch": "Fetch OpenRouter Free Models",
-        "show": "Show OpenRouter Free Models",
-        "hide": "Hide OpenRouter Free Models",
-        "refresh": "Refresh OpenRouter Free Models",
-        "hint": "Filter free text models directly from OpenRouter's public model catalog without a backend proxy.",
-        "loadedHint": "Loaded {count} OpenRouter free text models",
-        "panelTitle": "OpenRouter Free Models ({count})",
-        "fetchFailed": "Failed to load OpenRouter free models",
-        "empty": "No OpenRouter free text models are currently available",
-        "context": "Context {count}",
-        "contextUnknown": "Context unknown",
-        "reasoningOn": "Reasoning",
-        "reasoningOff": "Standard",
-        "freeVariant": "Free model: {value}",
-        "params": "Supported params: {value}",
-        "paramsFallback": "Not provided"
-      },
-      "openrouterAccess": {
-        "message": "Visit OpenRouter or the free models page. After signing in, you can create an API key on the Keys page for the free models above.",
-        "home": "OpenRouter",
-        "freeModels": "Free Models",
-        "apiKeys": "API Keys"
-      },
       "openrouter": "OpenRouter",
       "anthropic": "Anthropic Claude",
       "openai": "OpenAI",
-      "deepseek": "DeepSeek",
+      "deepseek": "DeepSeek Official",
       "gemini": "Google Gemini",
       "moonshot": "Moonshot/Kimi",
       "zhipu": "Zhipu GLM",
@@ -1189,8 +1204,9 @@
         "contextWindowHint": "Common presets are listed; any value can also be typed in.",
         "contextWindowRequiredHint": "Required. The compaction threshold is derived from this window; a fallback is used when empty.",
         "emptySaveWarning": "\"{provider}\" has no models yet — it will not be selectable in the chat model picker.",
+        "apiKeyRequiredWarning": "\"{provider}\" has models configured but no API key; the model will not be callable after saving. Add a key first, or clear the models before saving.",
         "modelIdLabel": "Model ID",
-        "addHint": "Use the exact model ID the provider expects, e.g. deepseek-chat.",
+        "addHint": "Use the exact model ID the provider expects, e.g. deepseek-flash.",
         "share": "Share with users",
         "shareHint": "When enabled, regular users can pick this model directly. Keys and endpoints are never exposed.",
         "sharedBadge": "Shared",
@@ -1285,6 +1301,10 @@
       "personalityTitle": "AI Personality",
       "personalityName": "Personality name",
       "personalityHint": "Select AI personality type",
+      "addPersonality": "Add Personality",
+      "addPersonalityHint": "Create a new personality preset",
+      "editTooltip": "Edit personality",
+      "deleteTooltip": "Delete personality",
       "personality": "Personality",
       "personalityLabel": "Personality",
       "personalities": {
@@ -1392,18 +1412,8 @@
         "quietTimeHint": "No greetings during this time period (Beijing Time)",
         "notConfigured": "No push channel or target ID is configured yet, so greetings cannot be sent"
       },
-      "createPersonality": "Create Personality",
       "editPersonality": "Edit Personality",
-      "duplicatePersonality": "Duplicate Personality",
-      "deletePersonality": "Delete Personality",
       "builtin": "Built-in",
-      "builtinPersonalities": "Built-in Personalities",
-      "customPersonalities": "Custom Personalities",
-      "noCustomPersonalities": "No custom personalities yet",
-      "createFirstPersonality": "Create your first custom personality",
-      "duplicate": "Duplicate",
-      "duplicateSuccess": "Personality duplicated successfully",
-      "duplicateFailed": "Failed to duplicate personality",
       "createSuccess": "Personality created",
       "updateSuccess": "Personality updated",
       "deleteSuccess": "Personality deleted",
@@ -1412,9 +1422,6 @@
       "deleteFailed": "Failed to delete",
       "loadFailed": "Failed to load personalities",
       "confirmDelete": "Delete personality \"{name}\"?",
-      "enterNewId": "Enter a new personality ID",
-      "copySuffix": " (Copy)",
-      "editBuiltinWarning": "Built-in personalities cannot be modified directly. Click OK to create an editable custom copy based on '{name}'.",
       "messages": "messages"
     },
     "workspace": {
@@ -2077,7 +2084,7 @@
       "instant": "Changes apply immediately"
     },
     "tabDesc": {
-      "general": "Interface language, theme and output preferences.",
+      "general": "Interface language, theme, output language and conversation history.",
       "persona": "How the assistant addresses you, plus its personality.",
       "memory": "Store, search and clear long-term memory.",
       "provider": "Providers, API keys and available models.",
@@ -2512,7 +2519,9 @@
       "nameRequired": "Please enter a job name",
       "scheduleRequired": "Please enter a cron expression",
       "scheduleInvalid": "Invalid cron expression format (should have 5 parts)",
-      "messageRequired": "Please enter a message"
+      "messageRequired": "Please enter a message",
+      "channelRequired": "Please select a delivery channel",
+      "chatRequired": "Please select a delivery chat"
     },
     "deliverToChannel": "Deliver response to channel",
     "deliverToChannelHint": "When enabled, AI responses will be sent to the specified channel (Feishu, Telegram, etc.)",
@@ -2583,9 +2592,9 @@
     "retryDelay": "Retry Delay (seconds)",
     "retryDelayPlaceholder": "e.g., 60",
     "retryDelayHint": "Wait time between retries (10-3600 seconds)",
-    "deleteOnSuccess": "Delete on Success (One-time Task)",
-    "deleteOnSuccessHint": "Automatically delete task after successful execution, suitable for temporary reminders",
-    "deleteOnSuccessWarning": "Task will be automatically deleted after successful execution and cannot be recovered",
+    "deleteOnSuccess": "Delete on success",
+    "deleteOnSuccessHint": "The job keeps its cron schedule and is deleted after a successful run; this is not an absolute one-time run",
+    "deleteOnSuccessWarning": "The job will be deleted after a successful run and cannot be recovered",
     "linkContext": "Link context",
     "linkContextHint": "When enabled, previous runs of this job are sent to the model together; when disabled, every run starts completely fresh with no history.",
     "patterns": {
@@ -2605,7 +2614,8 @@
       "atHour": "At {hour}:00",
       "onDay": "On day {day}",
       "inMonth": "In month {month}",
-      "onWeekday": "On {weekday}"
+      "onWeekday": "On {weekday}",
+      "weekdaySeparator": ", "
     },
     "builder": {
       "simpleMode": "Visual",
@@ -2638,7 +2648,23 @@
       "descMonthlyOn": "Monthly on day {day}",
       "descEveryHourAt": "Every hour at minute {minute}",
       "descAtMinute": "at minute {minute}"
-    }
+    },
+    "selectChannel": "Select a delivery channel",
+    "scheduleTimezoneHint": "Runs in Beijing time (UTC+8)",
+    "deleteRunningError": "The job is running and cannot be deleted yet",
+    "lastResponseHint": "Latest response (truncated when too long)",
+    "sessionRecord": "Session record",
+    "loadMessages": "Load messages",
+    "cleanupSession": "Clean up session (keep last {keep})",
+    "resetSession": "Reset session",
+    "sessionEmpty": "No session messages yet",
+    "sessionHint": "Only affects this job's cron session; the job itself is kept",
+    "sessionConfirmReset": "Reset this job's session record?",
+    "sessionLoadError": "Failed to load session",
+    "sessionCleanupError": "Failed to clean up session",
+    "sessionResetError": "Failed to reset session",
+    "sessionCleanupSuccess": "Cleaned {count} messages, kept {keep}",
+    "sessionResetSuccess": "Session reset, deleted {count} messages"
   },
   "tasks": {
     "title": "Background Tasks",

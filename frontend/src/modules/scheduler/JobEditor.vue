@@ -32,6 +32,9 @@
           <span class="required">*</span>
         </label>
         <CronBuilder v-model="formData.schedule" />
+        <p class="form-hint">
+          {{ $t('cron.scheduleTimezoneHint') }}
+        </p>
         <p
           v-if="errors.schedule"
           class="error-message"
@@ -50,6 +53,7 @@
           v-model="formData.message"
           class="form-textarea"
           :placeholder="$t('cron.messagePlaceholder')"
+          maxlength="10000"
           rows="4"
         />
         <p class="form-hint">
@@ -74,11 +78,16 @@
           </div>
           <SwitchToggle
             v-model="formData.deliverResponse"
+            :disabled="!canDeliver"
             :width="44"
             :height="24"
             :aria-label="$t('cron.deliverToChannel')"
+            @change="handleDeliverToggle"
           />
         </div>
+        <p v-if="!canDeliver" class="form-hint">
+          {{ $t('cron.noConfiguredChannelHint') }}
+        </p>
       </div>
 
       <!-- Channel Selection (shown when deliverResponse is true) -->
@@ -87,7 +96,7 @@
           {{ $t('cron.channel') }}
         </label>
         <select v-model="formData.channel" class="form-select">
-          <option value="web">{{ $t('cron.channelNames.web') }}</option>
+          <option value="" disabled>{{ $t('cron.selectChannel') }}</option>
           <option
             v-for="option in channelOptions"
             :key="option.value"
@@ -99,8 +108,11 @@
         <p v-if="!channelOptions.length" class="form-hint">
           {{ $t('cron.noConfiguredChannelHint') }}
         </p>
+        <p v-if="errors.channel" class="error-message">
+          {{ errors.channel }}
+        </p>
 
-        <template v-if="formData.channel !== 'web'">
+        <template v-if="formData.channel">
           <label class="form-label" style="margin-top: var(--spacing-md)">
             {{ $t('cron.accountId') }}
           </label>
@@ -153,6 +165,9 @@
             />
             <p class="form-hint">
               {{ chatOptions.length ? $t('cron.chatIdPickHint') : $t('cron.chatIdHint') }}
+            </p>
+            <p v-if="errors.chatId" class="error-message">
+              {{ errors.chatId }}
             </p>
           </template>
           <p v-else class="form-hint" style="margin-top: var(--spacing-md)">
@@ -349,7 +364,7 @@ import SwitchToggle from '@/components/ui/SwitchToggle.vue'
 import CronBuilder from './CronBuilder.vue'
 import { useChannelsStore } from '@/store/channels'
 import { useSettingsStore } from '@/store/settings'
-import { meAPI } from '@/api'
+import { cronAPI, meAPI } from '@/api'
 import type { CronJob, ProviderMetadata } from '@/api'
 import { useModelCatalog } from '@/composables/useModelCatalog'
 import {
@@ -375,9 +390,12 @@ const channelsStore = useChannelsStore()
 
 // 推送目标：直接复用「设置 - 渠道」里已配置好的渠道/账号/历史会话
 const deliveryTargets = computed(() => channelsStore.deliveryTargets)
+const deliverableTargets = computed(() =>
+  deliveryTargets.value.filter((target) => target.channel !== 'web')
+)
 
 const channelOptions = computed(() => {
-  const options = deliveryTargets.value.map((target) => ({
+  const options = deliverableTargets.value.map((target) => ({
     value: target.channel,
     label: target.running ? target.name : `${target.name}（${t('cron.channelNotRunning')}）`
   }))
@@ -395,8 +413,14 @@ const channelOptions = computed(() => {
   return options
 })
 
+// 新任务必须有真实推送目标；历史真实渠道允许保留原值
+const canDeliver = computed(() =>
+  deliverableTargets.value.length > 0 ||
+  Boolean(props.job?.channel && props.job.channel !== 'web')
+)
+
 const selectedTarget = computed(() =>
-  deliveryTargets.value.find((target) => target.channel === formData.channel) || null
+  deliverableTargets.value.find((target) => target.channel === formData.channel) || null
 )
 
 const accountOptions = computed(() => selectedTarget.value?.accounts || [])
@@ -431,7 +455,7 @@ const handleChatOptionChange = (event: Event) => {
 
 // 复用渠道设置里已配置的账号，避免手填 account_id
 const syncAccountWithChannel = () => {
-  const target = deliveryTargets.value.find((item) => item.channel === formData.channel)
+  const target = deliverableTargets.value.find((item) => item.channel === formData.channel)
   if (!target || !target.accounts.length) {
     return
   }
@@ -440,14 +464,6 @@ const syncAccountWithChannel = () => {
   }
 }
 
-onMounted(() => {
-  // 强制刷新，确保渠道启用状态立即反映到推送目标
-  void channelsStore.fetchDeliveryTargets(true)
-})
-
-watch(deliveryTargets, syncAccountWithChannel)
-watch(() => formData.channel, syncAccountWithChannel)
-
 // State
 const saving = ref(false)
 const formData = reactive({
@@ -455,8 +471,8 @@ const formData = reactive({
   schedule: props.job?.schedule || '',
   message: props.job?.message || '',
   enabled: props.job?.enabled ?? true,
-  deliverResponse: props.job?.deliver_response ?? false,
-  channel: props.job?.channel || 'web',
+  deliverResponse: props.job?.channel === 'web' ? false : (props.job?.deliver_response ?? false),
+  channel: props.job?.channel === 'web' ? '' : (props.job?.channel || ''),
   accountId: props.job?.account_id || 'default',
   chatId: props.job?.chat_id || '',
   modelProvider: props.job?.model_provider || '',
@@ -471,7 +487,9 @@ const formData = reactive({
 const errors = reactive({
   name: '',
   schedule: '',
-  message: ''
+  message: '',
+  channel: '',
+  chatId: ''
 })
 
 // Server酱等只推送渠道没有会话目标，chat_id 用渠道名占位即可，无需用户填写
@@ -489,7 +507,51 @@ const syncChatIdWithChannel = () => {
   }
 }
 
-watch(() => formData.channel, syncChatIdWithChannel, { immediate: true })
+const handleChannelChange = (channel: string, previous: string) => {
+  syncChatIdWithChannel()
+  syncAccountWithChannel()
+  if (
+    channel &&
+    previous &&
+    channel !== previous &&
+    formData.chatId &&
+    chatOptions.value.length &&
+    !chatOptions.value.some((chat) => chat.chat_id === formData.chatId)
+  ) {
+    formData.chatId = ''
+  }
+}
+
+watch(() => formData.channel, handleChannelChange)
+syncChatIdWithChannel()
+
+const syncDeliverySelection = () => {
+  if (!formData.deliverResponse) {
+    return
+  }
+  if (!formData.channel) {
+    formData.channel = deliverableTargets.value[0]?.channel || ''
+  }
+  if (!formData.channel) {
+    return
+  }
+  syncAccountWithChannel()
+}
+
+const handleDeliverToggle = (checked: boolean) => {
+  if (checked) {
+    syncDeliverySelection()
+  }
+}
+
+onMounted(async () => {
+  await channelsStore.fetchDeliveryTargets(true).catch(() => [])
+  syncDeliverySelection()
+})
+
+watch(deliveryTargets, () => {
+  syncDeliverySelection()
+})
 
 // 任务模型：管理员复用全局供应商清单；普通用户复用 /api/me/models 的可选模型
 const settingsStore = useSettingsStore()
@@ -566,13 +628,15 @@ onMounted(async () => {
   providerMetadata.value = await modelCatalog.listProviders().catch(() => [])
 })
 
-const validateForm = (): boolean => {
+const validateForm = async (): Promise<boolean> => {
   let isValid = true
 
   // Reset errors
   errors.name = ''
   errors.schedule = ''
   errors.message = ''
+  errors.channel = ''
+  errors.chatId = ''
 
   // Validate name
   if (!formData.name.trim()) {
@@ -581,15 +645,26 @@ const validateForm = (): boolean => {
   }
 
   // Validate schedule
-  if (!formData.schedule.trim()) {
+  const schedule = formData.schedule.trim()
+  if (!schedule) {
     errors.schedule = t('cron.errors.scheduleRequired')
     isValid = false
   } else {
-    // Basic cron expression validation (5 parts)
-    const parts = formData.schedule.trim().split(/\s+/)
+    const parts = schedule.split(/\s+/)
     if (parts.length !== 5) {
       errors.schedule = t('cron.errors.scheduleInvalid')
       isValid = false
+    } else {
+      try {
+        const result = await cronAPI.validate(schedule)
+        if (!result.valid) {
+          errors.schedule = result.description || t('cron.errors.scheduleInvalid')
+          isValid = false
+        }
+      } catch {
+        errors.schedule = t('cron.errors.scheduleInvalid')
+        isValid = false
+      }
     }
   }
 
@@ -599,16 +674,31 @@ const validateForm = (): boolean => {
     isValid = false
   }
 
+  if (formData.deliverResponse) {
+    if (!formData.channel) {
+      errors.channel = t('cron.errors.channelRequired')
+      isValid = false
+    }
+    if (channelNeedsChatId.value && !formData.chatId.trim()) {
+      errors.chatId = t('cron.errors.chatRequired')
+      isValid = false
+    }
+  }
+
   return isValid
 }
 
 const handleSave = async () => {
-  if (!validateForm()) {
+  if (saving.value) {
     return
   }
 
   saving.value = true
   try {
+    if (!(await validateForm())) {
+      return
+    }
+
     const data: any = {
       name: formData.name.trim(),
       schedule: formData.schedule.trim(),
@@ -624,13 +714,13 @@ const handleSave = async () => {
       model_name: formData.modelName.trim(),
     }
 
-    // 只在启用渠道推送时包含渠道信息
+    // 关闭推送时显式清空目标，避免后端保留旧渠道
     if (formData.deliverResponse) {
       data.channel = formData.channel
-      data.account_id = formData.channel === 'web' ? null : (formData.accountId.trim() || 'default')
+      data.account_id = formData.accountId.trim() || 'default'
       data.chat_id = channelNeedsChatId.value
         ? formData.chatId.trim()
-        : (formData.chatId.trim() || formData.channel)
+        : formData.channel
     } else {
       data.channel = null
       data.account_id = null

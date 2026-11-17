@@ -1,9 +1,8 @@
 """Cron 定时任务服务"""
 
-import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from croniter import croniter
 from sqlalchemy import select
@@ -28,7 +27,6 @@ class CronService:
         self.db = db
         self.scheduler = scheduler
         self.owner_id = owner_id
-        self._running_jobs: Dict[str, asyncio.Task] = {}
 
     def _scoped(self, query):
         if self.owner_id:
@@ -51,21 +49,20 @@ class CronService:
         link_context: bool = False,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
-        notify_channel_id: Optional[str] = None,
     ) -> CronJob:
         """添加定时任务"""
         if not self.validate_schedule(schedule):
             raise ValueError(f"Invalid cron: {schedule}")
-        
-        # 调试日志
-        logger.info(f"Creating job with delete_on_success={delete_on_success} (type: {type(delete_on_success)})")
-        
+
+        max_retries = max(0, min(5, int(max_retries)))
+        retry_delay = max(10, min(3600, int(retry_delay)))
+
         next_run = self.calculate_next_run(schedule) if enabled else None
-        
+
         job = CronJob(
             id=str(uuid.uuid4()),
-            name=name,
-            schedule=schedule,
+            name=name.strip(),
+            schedule=schedule.strip(),
             message=message,
             enabled=enabled,
             channel=channel,
@@ -79,24 +76,23 @@ class CronService:
             model_provider=model_provider,
             model_name=model_name,
             owner_id=self.owner_id,
-            notify_channel_id=notify_channel_id,
             next_run=next_run,
             created_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None),
             updated_at=datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
         )
-        
+
         self.db.add(job)
         await self.db.commit()
         await self.db.refresh(job)
-        
-        logger.info(f"Created job: {name} ({job.id}), delete_on_success={job.delete_on_success}")
-        
+
+        logger.info(f"Created job: {name} ({job.id})")
+
         if self.scheduler and enabled:
             try:
                 await self.scheduler.trigger_reschedule()
             except Exception as e:
                 logger.error(f"Failed to reschedule: {e}")
-        
+
         return job
 
     async def get_job(self, job_id: str) -> Optional[CronJob]:
@@ -155,45 +151,51 @@ class CronService:
         link_context: Optional[bool] = None,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
-        notify_channel_id: Optional[str] = None,
+        clear_delivery: bool = False,
     ) -> Optional[CronJob]:
         """更新任务"""
         job = await self.get_job(job_id)
         if job is None:
             return None
-        
+
         if name is not None:
-            job.name = name
-        
+            job.name = name.strip()
+
         if schedule is not None:
+            schedule = schedule.strip()
             if not self.validate_schedule(schedule):
                 raise ValueError(f"Invalid cron: {schedule}")
             job.schedule = schedule
-        
+
         if message is not None:
             job.message = message
-        
+
         if enabled is not None:
             job.enabled = enabled
-        
-        if channel is not None:
-            job.channel = channel
 
-        if account_id is not None:
-            job.account_id = account_id
+        if clear_delivery:
+            job.channel = None
+            job.account_id = None
+            job.chat_id = None
+        else:
+            if channel is not None:
+                job.channel = channel
 
-        if chat_id is not None:
-            job.chat_id = chat_id
-        
+            if account_id is not None:
+                job.account_id = account_id
+
+            if chat_id is not None:
+                job.chat_id = chat_id
+
         if deliver_response is not None:
             job.deliver_response = deliver_response
-        
+
         if max_retries is not None:
-            job.max_retries = max_retries
-        
+            job.max_retries = max(0, min(5, int(max_retries)))
+
         if retry_delay is not None:
-            job.retry_delay = retry_delay
-        
+            job.retry_delay = max(10, min(3600, int(retry_delay)))
+
         if delete_on_success is not None:
             job.delete_on_success = delete_on_success
 
@@ -207,27 +209,24 @@ class CronService:
         if model_name is not None:
             job.model_name = model_name
 
-        if notify_channel_id is not None:
-            job.notify_channel_id = (notify_channel_id or "").strip() or None
-        
         if job.enabled:
             job.next_run = self.calculate_next_run(job.schedule)
         else:
             job.next_run = None
-        
+
         job.updated_at = datetime.now(SHANGHAI_TZ).replace(tzinfo=None)
-        
+
         await self.db.commit()
         await self.db.refresh(job)
-        
+
         logger.info(f"Updated job: {job.name} ({job_id})")
-        
+
         if self.scheduler:
             try:
                 await self.scheduler.trigger_reschedule()
             except Exception as e:
                 logger.error(f"Failed to reschedule: {e}")
-        
+
         return job
 
     async def delete_job(self, job_id: str) -> bool:
@@ -235,11 +234,7 @@ class CronService:
         job = await self.get_job(job_id)
         if job is None:
             return False
-        
-        if job_id in self._running_jobs:
-            self._running_jobs[job_id].cancel()
-            del self._running_jobs[job_id]
-        
+
         await self.db.delete(job)
         await self.db.commit()
         

@@ -216,7 +216,10 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
 
     const existing = settings.providers[providerId]
     const providerMeta = findProviderById(deps.availableProviders.value, providerId)
-    const defaultBaseUrl = resolveProviderDefaultApiBase(providerMeta)
+    const apiType = (existing?.api_type as ProviderApiType) || resolveDefaultApiType(providerMeta?.id)
+    const defaultBaseUrl =
+      resolveApiTypeBaseUrl(providerMeta?.id, apiType)
+      || resolveProviderDefaultApiBase(providerMeta)
     const defaultModel = resolveProviderDefaultModel(providerMeta)
     const apiKeys = buildEditableApiKeys(existing?.api_keys, existing?.api_key || '')
 
@@ -226,7 +229,7 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
       baseUrl: existing?.api_base || defaultBaseUrl || '',
       enabled: existing?.enabled ?? true,
       name: existing?.name || '',
-      apiType: (existing?.api_type as ProviderApiType) || DEFAULT_API_TYPE,
+      apiType,
     }
 
     if (settings.model.provider === providerId) {
@@ -465,14 +468,19 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     }
 
     const meta = findProviderById(deps.availableProviders.value, providerId)
+    const apiType = (existing?.api_type as ProviderApiType) || resolveDefaultApiType(meta?.id)
+    const apiBase =
+      existing?.api_base
+      || resolveApiTypeBaseUrl(meta?.id, apiType)
+      || resolveProviderDefaultApiBase(meta)
     providers[providerId] = {
       ...(existing || {}),
       enabled: existing?.enabled ?? true,
       api_key: existing?.api_key || '',
       api_keys: existing?.api_keys || [],
-      api_base: existing?.api_base || resolveProviderDefaultApiBase(meta),
+      api_base: apiBase,
       name: existing?.name ?? null,
-      api_type: (existing?.api_type as ProviderApiType) || resolveDefaultApiType(meta?.id),
+      api_type: apiType,
       models: existing?.models || [],
     }
 
@@ -520,13 +528,16 @@ export function useProviderDraft(deps: ProviderDraftDeps): ProviderDraftState {
     }
 
     const meta = findProviderById(deps.availableProviders.value, providerId)
+    const apiType = resolveDefaultApiType(meta?.id)
     const cleared: ProviderConfig = {
       enabled: true,
       api_key: '',
       api_keys: [],
-      api_base: resolveProviderDefaultApiBase(meta),
+      api_base:
+        resolveApiTypeBaseUrl(meta?.id, apiType)
+        || resolveProviderDefaultApiBase(meta),
       name: null,
-      api_type: resolveDefaultApiType(meta?.id),
+      api_type: apiType,
       models: [],
     }
 

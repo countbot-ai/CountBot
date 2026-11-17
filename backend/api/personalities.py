@@ -14,7 +14,7 @@ from backend.modules.multiuser.permissions import owner_scope, require_active_us
 
 
 def _visible_filter(user: AuthUser):
-    """可见范围：内置 + 自己的自定义；管理员看内置与管理员的。"""
+    """可见范围：内置与自己的性格；管理员看内置与管理员的。"""
     scope = owner_scope(user)
     if scope:
         return or_(Personality.is_builtin == True, Personality.owner_id == scope)  # noqa: E712
@@ -103,7 +103,7 @@ async def create_personality(
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_active_user),
 ):
-    """创建自定义性格"""
+    """创建性格"""
     # 普通用户的 ID 只在自己作用域内唯一，避免占用管理员的 ID
     scope = owner_scope(user)
     existing_query = select(Personality).where(Personality.id == data.id)
@@ -173,72 +173,14 @@ async def delete_personality(
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_active_user),
 ):
-    """删除性格（仅限自定义性格）"""
+    """删除性格，内置与新增使用同一规则"""
     result = await db.execute(_load_editable(db, personality_id, user))
     personality = result.scalar_one_or_none()
     
     if not personality:
         raise HTTPException(status_code=404, detail="性格不存在")
     
-    if personality.is_builtin:
-        raise HTTPException(status_code=403, detail="内置性格不能删除，只能禁用")
-    
     await db.delete(personality)
     await db.commit()
     
     return {"message": "删除成功"}
-
-
-class DuplicateRequest(BaseModel):
-    """复制性格请求"""
-    new_id: str = Field(..., min_length=1, max_length=50, pattern="^[a-z0-9_-]+$")
-    new_name: Optional[str] = None
-
-
-@router.post("/{personality_id}/duplicate")
-async def duplicate_personality(
-    personality_id: str,
-    request: DuplicateRequest,
-    db: AsyncSession = Depends(get_db),
-    user: AuthUser = Depends(require_active_user),
-):
-    """复制性格（用于基于内置性格创建自定义版本）"""
-    new_id = request.new_id
-    new_name = request.new_name
-    scope = owner_scope(user)
-    # 获取源性格（只能复制自己可见的）
-    result = await db.execute(
-        select(Personality).where(Personality.id == personality_id, _visible_filter(user))
-    )
-    source = result.scalar_one_or_none()
-    
-    if not source:
-        raise HTTPException(status_code=404, detail="源性格不存在")
-    
-    
-    # 检查新 ID 是否已存在于自己的作用域
-    existing = select(Personality).where(Personality.id == new_id)
-    if scope:
-        existing = existing.where(Personality.owner_id == scope)
-    result = await db.execute(existing)
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="新性格 ID 已存在")
-    
-    # 创建副本
-    personality = Personality(
-        id=new_id,
-        name=new_name or f"{source.name} (副本)",
-        description=source.description,
-        traits=source.traits.copy(),
-        speaking_style=source.speaking_style,
-        icon=source.icon,
-        is_builtin=False,
-        is_active=True,
-        owner_id=scope,
-    )
-    
-    db.add(personality)
-    await db.commit()
-    await db.refresh(personality)
-    
-    return personality.to_dict()

@@ -877,7 +877,7 @@ async function handleSummarizeSession(session: Session, target: SummaryTarget) {
     message: t('sessions.confirmSummarize'),
     type: 'warning',
     confirmText: t('common.confirm'),
-    confirmVariant: 'warning'
+    confirmVariant: 'primary'
   })
   if (!confirmed) return
 
@@ -918,7 +918,7 @@ async function handleCompactSession(session: Session) {
     message: t('sessions.confirmCompact'),
     type: 'warning',
     confirmText: t('common.confirm'),
-    confirmVariant: 'warning'
+    confirmVariant: 'primary'
   })
   if (!confirmed) return
 

@@ -213,7 +213,6 @@
                 <label>{{ $t('chat.sessionConfig.customSystemPrompt') }}</label>
                 <textarea
                   v-model="personaConfig.custom_personality"
-                  @input="onCustomPromptChange"
                   rows="4"
                   :placeholder="$t('chat.sessionConfig.systemPromptPlaceholder')"
                   class="textarea-input"
@@ -438,23 +437,8 @@ function translatePersonalityLabel(id: string, fallback: string) {
   return translated === key ? fallback : translated
 }
 
-function createCustomPromptOption(): PersonalityOption {
-  return {
-    value: 'custom',
-    label: t('settings.persona.customPersonality'),
-    icon: Edit3,
-  }
-}
-
-function appendCustomPromptOption(options: PersonalityOption[]) {
-  if (options.some(option => option.value === 'custom')) {
-    return options
-  }
-  return [...options, createCustomPromptOption()]
-}
-
 function createFallbackPersonalities(): PersonalityOption[] {
-  return appendCustomPromptOption([
+  return [
     { value: 'grumpy', label: translatePersonalityLabel('grumpy', '暴躁'), icon: CloudLightning },
     { value: 'roast', label: translatePersonalityLabel('roast', '吐槽'), icon: Frown },
     { value: 'gentle', label: translatePersonalityLabel('gentle', '温柔'), icon: Heart },
@@ -467,13 +451,22 @@ function createFallbackPersonalities(): PersonalityOption[] {
     { value: 'hyper', label: translatePersonalityLabel('hyper', '兴奋'), icon: TrendingUp },
     { value: 'chuuni', label: translatePersonalityLabel('chuuni', '中二'), icon: Gamepad2 },
     { value: 'zen', label: translatePersonalityLabel('zen', '佛系'), icon: Clock },
-  ])
+  ]
+}
+
+function isEditedBuiltin(personality: Personality): boolean {
+  if (!personality.is_builtin) return false
+  const created = Date.parse(personality.created_at || '')
+  const updated = Date.parse(personality.updated_at || '')
+  return Number.isFinite(created) && Number.isFinite(updated) && updated - created > 1000
 }
 
 function mapPersonalityOption(personality: Personality): PersonalityOption {
   return {
     value: personality.id,
-    label: translatePersonalityLabel(personality.id, personality.name),
+    label: personality.is_builtin && !isEditedBuiltin(personality)
+      ? translatePersonalityLabel(personality.id, personality.name)
+      : personality.name,
     icon: iconMap[personality.icon] || Smile,
   }
 }
@@ -566,11 +559,9 @@ async function loadPersonalities() {
   loadingPersonalities.value = true
   try {
     const { personalities: data } = await personalitiesApi.list(true)
-    personalities.value = appendCustomPromptOption(
-      data
-        .filter(personality => personality.is_active)
-        .map(mapPersonalityOption)
-    )
+    personalities.value = data
+      .filter(personality => personality.is_active)
+      .map(mapPersonalityOption)
   } catch (error) {
     console.error('Failed to load personalities:', error)
     personalities.value = createFallbackPersonalities()
@@ -829,7 +820,7 @@ async function resetToDefaults() {
     message: t('chat.sessionConfig.confirmReset'),
     type: 'warning',
     confirmText: t('common.confirm'),
-    confirmVariant: 'warning'
+    confirmVariant: 'primary'
   })
   if (!confirmed) {
     return false
@@ -862,15 +853,7 @@ function onToggleCustomConfig() {
 // 选择性格
 function selectPersonality(value: string) {
   personaConfig.value.personality = value
-  // 选择预设性格时保留自定义提示词，交由用户自行清空
-}
-
-// 自定义提示词变化时的处理
-function onCustomPromptChange() {
-  // 如果填写了自定义提示词，自动将 personality 设置为 'custom'
-  if (personaConfig.value.custom_personality && personaConfig.value.custom_personality.trim()) {
-    personaConfig.value.personality = 'custom'
-  }
+  // 自定义系统提示词作为补充约束，不改变当前性格选择
 }
 
 function normalizeSessionHistoryLimitInput() {

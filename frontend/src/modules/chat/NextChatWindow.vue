@@ -26,6 +26,7 @@
       <div class="nc-workspace">
         <NextTopbar
           :title="topbarTitle"
+          :user-name="userStore.displayName"
           :has-messages="messages.length > 0"
           :is-streaming="isStreaming"
           @toggle-sidebar="toggleListPane"
@@ -642,9 +643,9 @@ async function clearCurrentChat() {
   await confirm({
     title: t('common.confirmClear'),
     message: t('chat.confirmClearChat'),
-    type: 'warning',
+    type: 'danger',
     confirmText: t('common.clear'),
-    confirmVariant: 'warning',
+    confirmVariant: 'danger',
     onConfirm: async () => {
       try {
         clearMessages()

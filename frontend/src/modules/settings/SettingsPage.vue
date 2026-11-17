@@ -38,6 +38,14 @@
         </nav>
 
         <div class="co-panel-actions">
+          <div
+            v-if="userStore.loaded && userStore.displayName"
+            class="co-account"
+            :title="accountTitle"
+          >
+            <span class="co-account-avatar">{{ accountInitial }}</span>
+            <span class="co-account-name">{{ userStore.displayName }}</span>
+          </div>
           <span class="co-save-state" :class="{ 'is-dirty': isDirty }">
             <span class="co-save-state-dot" />
             {{ saveStateText }}
@@ -123,6 +131,7 @@ import { useSettingsStore } from '@/store/settings'
 import { useExternalCodingToolsStore } from '@/store/externalCodingTools'
 import { useToast } from '@/composables/useToast'
 import type { SettingsTab } from '@/types/settings'
+import { providerRequiresApiKey } from './provider-config/constants'
 
 interface TabMeta {
   id: SettingsTab
@@ -213,6 +222,15 @@ const tabComponentRef = ref<
 >(null)
 
 const saving = computed(() => settingsStore.saving)
+const accountInitial = computed(() => userStore.displayName.trim().slice(0, 1).toUpperCase())
+const accountTitle = computed(() =>
+  t('settings.account.currentUser', {
+    name: userStore.displayName,
+    role: userStore.isAdmin
+      ? t('settings.account.roleAdmin')
+      : t('settings.account.roleUser'),
+  }),
+)
 
 const visibleTabs = computed(() =>
   TABS.filter((tab) => {
@@ -366,6 +384,24 @@ watch([visibleTabs, () => userStore.loaded], ([tabs, loaded]) => {
   if (!tabs.some((tab) => tab.id === activeTab.value)) goToTab('general')
 })
 
+/** 已启用且有模型的供应商必须有密钥，否则保存后模型不可调用。 */
+const providerKeyWarning = (providers: Record<string, any> | undefined): string | null => {
+  if (!providers) return null
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (!provider?.enabled || !providerRequiresApiKey(providerId)) continue
+    if (!Array.isArray(provider.models) || provider.models.length === 0) continue
+    const keys = [provider.api_key, ...(Array.isArray(provider.api_keys) ? provider.api_keys : [])]
+      .map((key: unknown) => String(key || '').trim())
+      .filter(Boolean)
+    if (keys.length === 0) {
+      return t('settings.providers.apiKeyRequiredWarning', {
+        provider: provider.name || providerId,
+      })
+    }
+  }
+  return null
+}
+
 /** 供应商一个模型都没有时，保存后补一条提示：它在对话窗口里选不到 */
 const warnProviderWithoutModels = () => {
   const warning = tabComponentRef.value?.validateBeforeSave?.()
@@ -399,6 +435,14 @@ const handleSave = async () => {
   if (!currentSettings) {
     toast.error(t('settings.loadError'), t('common.error'))
     return
+  }
+
+  if (activeTab.value === 'provider' || activeTab.value === 'model') {
+    const keyWarning = providerKeyWarning(currentSettings.providers)
+    if (keyWarning) {
+      toast.error(keyWarning, t('common.error'))
+      return
+    }
   }
 
   let savePayload: Record<string, unknown> = {}
@@ -444,6 +488,12 @@ const handleSaveAll = async () => {
   const currentSettings = settingsStore.settings
   if (!currentSettings) {
     toast.error(t('settings.loadError'), t('common.error'))
+    return
+  }
+
+  const keyWarning = providerKeyWarning(currentSettings.providers)
+  if (keyWarning) {
+    toast.error(keyWarning, t('common.error'))
     return
   }
 

@@ -590,7 +590,7 @@ async function handleRegistrationChange(value: boolean) {
     type: 'warning',
     confirmText: t('admin.users.confirm.openRegistrationConfirm'),
     cancelText: t('common.cancel'),
-    confirmVariant: 'warning',
+    confirmVariant: 'primary',
   })
   if (!confirmed) {
     settings.value.registration_open = false

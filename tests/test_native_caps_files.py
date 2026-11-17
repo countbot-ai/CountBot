@@ -9,6 +9,21 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.modules.native_caps import files as native_files
+from backend.modules.config.schema import (
+    DEFAULT_MODEL_ID,
+    build_default_provider_config,
+)
+
+
+def test_deepseek_default_model_has_native_capabilities():
+    """新装默认的 DeepSeek 模型应直接带上全部原生能力。"""
+    provider = build_default_provider_config()
+    model = provider.find_model(DEFAULT_MODEL_ID)
+    assert model is not None
+    caps = model.native_capabilities
+    assert caps.web_search and caps.read_url and caps.safety_check
+    assert caps.asr and caps.tts
+    assert caps.document_parsing == "rich"
 
 
 @pytest.mark.parametrize(

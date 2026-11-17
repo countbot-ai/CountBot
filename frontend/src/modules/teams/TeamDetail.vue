@@ -229,7 +229,7 @@
 
                 <div class="form-group">
                   <label>{{ $t('settings.providers.model') }}</label>
-                  <input v-model="modelConfig.model" type="text" class="form-input" placeholder="glm-5" />
+                  <input v-model="modelConfig.model" type="text" class="form-input" placeholder="deepseek-flash" />
                 </div>
 
               </div>
@@ -904,10 +904,10 @@ async function handleTestConnection() {
 
   try {
     const response = await modelCatalog.testConnection({
-      provider: modelConfig.value.provider || 'zhipu',
+      provider: modelConfig.value.provider || 'deepseek',
       api_key: modelConfig.value.api_key || undefined,
       api_base: modelConfig.value.api_base || undefined,
-      model: modelConfig.value.model || 'glm-5',
+      model: modelConfig.value.model || 'deepseek-flash',
       ...buildSendableModelConfig(modelConfig.value),
     })
     

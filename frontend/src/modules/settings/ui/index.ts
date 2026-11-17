@@ -1,3 +1,5 @@
 export { default as SettingsCard } from './SettingsCard.vue'
 export { default as SettingsRow } from './SettingsRow.vue'
 export { default as SettingsPageHeader } from './SettingsPageHeader.vue'
+export { default as OutputLanguageSelect } from './OutputLanguageSelect.vue'
+export { default as ConversationHistorySettings } from './ConversationHistorySettings.vue'

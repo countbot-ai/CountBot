@@ -138,9 +138,9 @@ onBeforeUnmount(() => {
   z-index: 9000;
   width: 240px;
   padding: 12px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: 8px;
-  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
   box-shadow: var(--shadow-lg);
   text-align: left;
 }

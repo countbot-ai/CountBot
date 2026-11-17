@@ -243,8 +243,9 @@
             </button>
             <button
               class="action-btn-icon danger"
-              @click="handleDeleteJob(job.id, job.name)"
-              :title="$t('common.delete')"
+              :disabled="isJobRunning(job)"
+              @click="handleDeleteJob(job)"
+              :title="isJobRunning(job) ? $t('cron.deleteRunningError') : $t('common.delete')"
             >
               <component :is="TrashIcon" :size="14" />
             </button>
@@ -319,7 +320,7 @@
             >
               <div class="detail-header">
                 <component :is="MessageSquareIcon" :size="14" />
-                <span class="detail-title">{{ $t('cron.lastResponse') }}</span>
+                <span class="detail-title">{{ $t('cron.lastResponseHint') }}</span>
                 <button
                   class="detail-copy-btn"
                   :title="$t('common.copy')"
@@ -330,14 +331,54 @@
               </div>
               <pre class="detail-text">{{ getJobDetail(job.id)?.last_response }}</pre>
             </div>
-            
-            <!-- No Details Available -->
-            <div
-              v-if="!getJobDetail(job.id)?.last_error && !getJobDetail(job.id)?.last_response && !getJobDetail(job.id)?.last_delivery_status"
-              class="detail-empty"
-            >
-              <component :is="AlertCircleIcon" :size="16" />
-              <span>{{ $t('cron.noDetailsAvailable') }}</span>
+
+            <div class="detail-section session-section">
+              <div class="detail-header">
+                <component :is="MessageSquareIcon" :size="14" />
+                <span class="detail-title">{{ $t('cron.sessionRecord') }}</span>
+                <button
+                  class="detail-copy-btn"
+                  :title="$t('cron.loadMessages')"
+                  :disabled="loadingSession.has(job.id)"
+                  @click="handleLoadMessages(job.id)"
+                >
+                  <component
+                    :is="loadingSession.has(job.id) ? LoaderIcon : HistoryIcon"
+                    :size="13"
+                    :class="{ spin: loadingSession.has(job.id) }"
+                  />
+                </button>
+              </div>
+              <p class="session-hint">{{ $t('cron.sessionHint') }}</p>
+              <div v-if="sessionMessages[job.id]" class="session-messages">
+                <div
+                  v-for="(message, messageIndex) in sessionMessages[job.id]"
+                  :key="messageIndex"
+                  class="session-message"
+                >
+                  <span class="session-role">{{ message.role }}</span>
+                  <pre class="session-content">{{ message.content }}</pre>
+                </div>
+                <p v-if="!sessionMessages[job.id].length" class="session-empty">
+                  {{ $t('cron.sessionEmpty') }}
+                </p>
+              </div>
+              <div class="session-actions">
+                <button
+                  class="session-action-btn"
+                  :disabled="loadingSession.has(job.id)"
+                  @click="handleCleanupSession(job.id)"
+                >
+                  {{ $t('cron.cleanupSession', { keep: 10 }) }}
+                </button>
+                <button
+                  class="session-action-btn danger"
+                  :disabled="loadingSession.has(job.id)"
+                  @click="handleResetSession(job.id)"
+                >
+                  {{ $t('cron.resetSession') }}
+                </button>
+              </div>
             </div>
           </template>
         </div>
@@ -402,7 +443,7 @@ import {
   Copy as CopyIcon
 } from 'lucide-vue-next'
 import { useCronStore } from '@/store/cron'
-import type { CronJob } from '@/api'
+import { cronAPI, type CronJob, type CronSessionMessage } from '@/api'
 import { useToast } from '@/composables/useToast'
 import { useConfirm } from '@/composables/useConfirm'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -419,6 +460,8 @@ const editingJob = ref<CronJob | null>(null)
 const expandedJobs = ref<Set<string>>(new Set())
 const loadingDetails = ref<Set<string>>(new Set())
 const executingJobs = ref<Set<string>>(new Set())
+const loadingSession = ref<Set<string>>(new Set())
+const sessionMessages = ref<Record<string, CronSessionMessage[]>>({})
 
 // Methods
 const toggleDetails = async (jobId: string) => {
@@ -447,6 +490,77 @@ const toggleDetails = async (jobId: string) => {
 // Helper to get job detail
 const getJobDetail = (jobId: string) => {
   return cronStore.jobDetails.get(jobId)
+}
+
+const handleLoadMessages = async (jobId: string) => {
+  if (loadingSession.value.has(jobId)) {
+    return
+  }
+  loadingSession.value.add(jobId)
+  try {
+    const response = await cronAPI.getMessages(jobId, 20)
+    sessionMessages.value[jobId] = response.messages || []
+  } catch {
+    toast.error(t('cron.sessionLoadError'))
+  } finally {
+    loadingSession.value.delete(jobId)
+  }
+}
+
+const handleCleanupSession = async (jobId: string) => {
+  await confirm({
+    title: t('common.confirm'),
+    message: t('cron.cleanupSession', { keep: 10 }),
+    type: 'warning',
+    confirmText: t('common.confirm'),
+    onConfirm: async () => {
+      if (loadingSession.value.has(jobId)) {
+        return
+      }
+      loadingSession.value.add(jobId)
+      try {
+        const response = await cronAPI.cleanupSession(jobId, 10)
+        toast.success(t('cron.sessionCleanupSuccess', {
+          count: response.deleted_count,
+          keep: response.kept_count,
+        }))
+        const messages = await cronAPI.getMessages(jobId, 20)
+        sessionMessages.value[jobId] = messages.messages || []
+      } catch {
+        toast.error(t('cron.sessionCleanupError'))
+      } finally {
+        loadingSession.value.delete(jobId)
+      }
+    },
+  })
+}
+
+const handleResetSession = async (jobId: string) => {
+  await confirm({
+    title: t('common.confirmDelete'),
+    message: t('cron.sessionConfirmReset'),
+    type: 'danger',
+    confirmText: t('cron.resetSession'),
+    confirmVariant: 'danger',
+    onConfirm: async () => {
+      if (loadingSession.value.has(jobId)) {
+        return
+      }
+      loadingSession.value.add(jobId)
+      try {
+        const response = await cronAPI.resetSession(jobId)
+        delete sessionMessages.value[jobId]
+        cronStore.jobDetails.delete(jobId)
+        toast.success(t('cron.sessionResetSuccess', {
+          count: response.deleted_message_count,
+        }))
+      } catch {
+        toast.error(t('cron.sessionResetError'))
+      } finally {
+        loadingSession.value.delete(jobId)
+      }
+    },
+  })
 }
 
 const isJobRunning = (job: CronJob): boolean => {
@@ -590,8 +704,20 @@ const parseCronExpression = (cron: string): string => {
   
   // 星期
   if (weekday !== '*') {
-    const weekdays = ['日', '一', '二', '三', '四', '五', '六']
-    result += ' ' + t('cron.patterns.onWeekday', { weekday: weekdays[parseInt(weekday)] || weekday })
+    const weekdays = [
+      t('cron.builder.sun'),
+      t('cron.builder.mon'),
+      t('cron.builder.tue'),
+      t('cron.builder.wed'),
+      t('cron.builder.thu'),
+      t('cron.builder.fri'),
+      t('cron.builder.sat'),
+    ]
+    const labels = weekday
+      .split(',')
+      .map((part) => weekdays[parseInt(part)] || part)
+      .join(t('cron.patterns.weekdaySeparator'))
+    result += ' ' + t('cron.patterns.onWeekday', { weekday: labels })
   }
   
   return result || cron
@@ -633,7 +759,7 @@ const handleSaveJob = async (data: any) => {
     }
     handleCloseEditor()
   } catch (err: any) {
-    toast.error(editingJob.value ? t('cron.updateError') : t('cron.createError'))
+    toast.error(err?.message || (editingJob.value ? t('cron.updateError') : t('cron.createError')))
   }
 }
 
@@ -646,7 +772,7 @@ const handleExecuteJob = async (id: string) => {
     await cronStore.executeJob(id)
     toast.success(t('cron.executeSubmitted'))
   } catch (err: any) {
-    toast.error(t('cron.executeError'))
+    toast.error(err?.message || t('cron.executeError'))
   } finally {
     executingJobs.value.delete(id)
   }
@@ -661,23 +787,27 @@ const handleToggleJob = async (id: string, enabled: boolean) => {
         : t('cron.disableSuccess')
     )
   } catch (err: any) {
-    toast.error(t('cron.toggleError'))
+    toast.error(err?.message || t('cron.toggleError'))
   }
 }
 
-const handleDeleteJob = async (id: string, name: string) => {
+const handleDeleteJob = async (job: CronJob) => {
+  if (isJobRunning(job)) {
+    toast.error(t('cron.deleteRunningError'))
+    return
+  }
   await confirm({
     title: t('common.confirmDelete'),
-    message: t('cron.deleteConfirm', { name }),
+    message: t('cron.deleteConfirm', { name: job.name }),
     type: 'danger',
     confirmText: t('common.delete'),
     confirmVariant: 'danger',
     onConfirm: async () => {
       try {
-        await cronStore.deleteJob(id)
-        toast.success(t('cron.deleteSuccess', { name }))
+        await cronStore.deleteJob(job.id)
+        toast.success(t('cron.deleteSuccess', { name: job.name }))
       } catch (err: any) {
-        toast.error(t('cron.deleteError'))
+        toast.error(err?.message || t('cron.deleteError'))
       }
     }
   })
@@ -685,7 +815,7 @@ const handleDeleteJob = async (id: string, name: string) => {
 
 // Lifecycle
 // 执行状态持久化在服务端：面板打开期间轮询保持实时，退出页面再回来也能直接看到状态
-const POLL_INTERVAL_MS = 5000
+const POLL_INTERVAL_MS = 15000
 let pollTimer: number | null = null
 
 const refreshExpandedDetails = async () => {

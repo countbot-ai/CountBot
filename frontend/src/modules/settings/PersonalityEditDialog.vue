@@ -2,14 +2,14 @@
   <div class="dialog-overlay" @click.self="$emit('cancel')">
     <div class="dialog-content">
       <div class="dialog-header">
-        <h3>{{ isNew ? $t('settings.persona.createPersonality') : $t('settings.persona.editPersonality') }}</h3>
+        <h3>{{ isNew ? $t('settings.persona.addPersonality') : $t('settings.persona.editPersonality') }}</h3>
         <button class="close-btn" @click="$emit('cancel')">
           <component :is="XIcon" :size="20" />
         </button>
       </div>
 
       <div class="dialog-body">
-        <div class="form-group">
+        <div v-if="showId" class="form-group">
           <label class="label">{{ $t('settings.persona.personalityId') }}</label>
           <input
             v-model="localPersonality.id"
@@ -126,6 +126,7 @@ import type { Personality } from '@/api/personalities'
 interface Props {
   personality: Personality
   isNew: boolean
+  showId?: boolean
 }
 
 interface Emits {
@@ -133,7 +134,9 @@ interface Emits {
   (e: 'cancel'): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  showId: true,
+})
 const emit = defineEmits<Emits>()
 const { t } = useI18n()
 
