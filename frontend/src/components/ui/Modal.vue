@@ -134,12 +134,11 @@ const containerZStyle = computed(() =>
 )
 
 const handleClose = () => {
+  // 立即卸载遮罩，避免离场动画期间挡住返回等外层操作
   isClosing.value = true
-  setTimeout(() => {
-    emit('update:modelValue', false)
-    emit('close')
-    isClosing.value = false
-  }, 200)
+  emit('update:modelValue', false)
+  emit('close')
+  isClosing.value = false
 }
 
 const handleOverlayClick = () => {
@@ -357,6 +356,12 @@ onBeforeUnmount(() => {
 }
 
 /* Closing animation */
+.modal-overlay.is-closing,
+.modal-overlay.modal-leave-active {
+  /* 离场期间不再拦截底层操作，避免返回按钮被残留遮罩挡住 */
+  pointer-events: none;
+}
+
 .modal-overlay.is-closing {
   animation: fadeOut 0.2s ease;
 }
