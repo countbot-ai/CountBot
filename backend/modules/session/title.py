@@ -40,7 +40,7 @@ _NON_WEB_SESSION_ID_PREFIXES = ("cron:",)
 TITLE_SOURCE_DEFAULT = "default"
 TITLE_SOURCE_GENERATED = "generated"
 
-# 可被自动标题覆盖的来源：历史数据为空、默认名、以及已生成过标题
+# 可被自动标题覆盖的来源：标题为空、默认名，以及已生成过标题
 _GENERATABLE_TITLE_SOURCES = (
     None,
     "",

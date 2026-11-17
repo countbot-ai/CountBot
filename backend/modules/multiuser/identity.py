@@ -61,7 +61,7 @@ class AuthUser:
 
     @property
     def owner_id(self) -> Optional[str]:
-        """数据归属键。管理员返回 None（历史数据与管理员数据 owner 为空）。"""
+        """数据归属键。管理员返回 None，管理员数据的 owner 为空。"""
         return None if self.is_admin else (self.id or None)
 
     def to_dict(self) -> dict:

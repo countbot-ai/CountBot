@@ -31,7 +31,7 @@ class LayeredWikiService:
         if self.readonly is None:
             return False
         if self.writable.get_document(slug) is not None:
-            # 用户已创建同名条目时以用户条目为准（创建时已被禁止同名，属历史数据兜底）
+            # 用户已创建同名条目时以用户条目为准（创建时已禁止同名，此处按既有条目处理）
             return False
         return self.readonly.get_document(slug) is not None
 

@@ -442,7 +442,7 @@ function submit(): void {
     clearReasoningLevel = false
   }
 
-  // 关闭共享时一并清空别名 / 说明 / 限额，避免留下「不共享但占着别名」的脏数据
+  // 关闭共享时一并清空别名 / 说明 / 限额，避免残留无法清理的共享配置
   const sharedAlias = current.shared ? current.sharedAlias.trim() : ''
   const sharedNote = current.shared ? current.sharedNote.trim() : ''
   const limitRaw = current.shared ? current.userDailyLimit.trim() : ''
