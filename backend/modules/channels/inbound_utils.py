@@ -1,4 +1,4 @@
-"""频道入站消息工具：从 handler.py 拆出的纯函数（@mention 清洗、会话路由、上下文编解码、错误友好化与 provider 校验），handler 按原名导入使用。"""
+"""频道入站消息工具。"""
 
 import json
 import re

@@ -1,4 +1,4 @@
-"""频道消息持久化与上下文构建（Mixin）：从 handler.py 拆出的媒体转存、用户/助手消息上下文构建与消息落库历史重建（含压缩）。"""
+"""频道消息持久化与上下文构建。"""
 
 from typing import Dict, List, Optional
 

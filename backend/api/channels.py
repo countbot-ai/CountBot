@@ -3,7 +3,7 @@
 import asyncio
 import re
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 from loguru import logger
@@ -17,8 +17,13 @@ from backend.modules.channels.onboarding import (
     supports_onboarding,
 )
 from backend.modules.external_agents.registry import ExternalAgentRegistry
+from backend.modules.multiuser.permissions import require_active_user, require_admin
 
-router = APIRouter(prefix="/api/channels", tags=["channels"])
+router = APIRouter(
+    prefix="/api/channels",
+    tags=["channels"],
+    dependencies=[Depends(require_active_user)],
+)
 
 # 全局渠道管理器实例（将在应用启动时初始化）
 _channel_manager: Optional[ChannelManager] = None
@@ -106,6 +111,119 @@ def _normalize_accounts_payload(config_dict: Dict[str, Any]) -> Dict[str, Any]:
         for account_id, account_cfg in accounts.items()
     }
     return normalized
+
+
+def _current_owner_id() -> Optional[str]:
+    """当前请求的数据归属：管理员为 None，普通用户为其 user id。"""
+    from backend.modules.multiuser.permissions import get_request_user
+
+    user = get_request_user()
+    if user is None or getattr(user, "is_admin", False):
+        return None
+    return getattr(user, "owner_id", None)
+
+
+def _owned_accounts(channel_config: Any, owner_id: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """只保留当前归属的扩展账号；管理员归属为 None。"""
+    accounts = _normalize_accounts_payload(channel_config.model_dump()).get("accounts", {}) or {}
+    target = str(owner_id or "")
+    return {
+        str(account_id): dict(account_cfg)
+        for account_id, account_cfg in accounts.items()
+        if str(account_cfg.get("owner_id") or "") == target
+    }
+
+
+def _channel_view_for_owner(channel_config: Any, owner_id: Optional[str]) -> Any:
+    """把全局渠道配置裁剪成当前用户可见的视图。
+
+    管理员：顶层配置即主账号，附加 owner_id 为空的扩展账号。
+    普通用户：自己的第一个账号提升为顶层，其余账号留在 accounts。
+    """
+    owned = _owned_accounts(channel_config, owner_id)
+    if owner_id is None:
+        data = channel_config.model_dump()
+        data["accounts"] = owned
+        return channel_config.__class__(**data)
+
+    if not owned:
+        view = channel_config.__class__()
+        view.enabled = False
+        view.accounts = {}
+        return view
+
+    first_id = sorted(owned)[0]
+    data = channel_config.__class__().model_dump()
+    data.update(owned[first_id])
+    data["account_id"] = first_id
+    data["owner_id"] = owner_id
+    data["enabled"] = bool(owned[first_id].get("enabled"))
+    data["accounts"] = {
+        account_id: account_cfg
+        for account_id, account_cfg in owned.items()
+        if account_id != first_id
+    }
+    return channel_config.__class__(**data)
+
+
+def _owned_account_ids(channel_config: Any, owner_id: Optional[str]) -> set[str]:
+    """当前用户可操作的账号 ID 集合。"""
+    ids = set(_owned_accounts(channel_config, owner_id))
+    if owner_id is None:
+        ids.add(str(getattr(channel_config, "account_id", "default") or "default"))
+    return ids
+
+
+def _merge_owned_channel_config(
+    channel_config: Any,
+    payload: Dict[str, Any],
+    owner_id: Optional[str],
+    config_class: Any,
+) -> Any:
+    """把当前用户提交的账号合并回全局配置，保留其他归属的账号。"""
+    existing = _normalize_accounts_payload(channel_config.model_dump())
+    payload = dict(payload or {})
+    payload_accounts = payload.pop("accounts", {}) or {}
+
+    top_id = str(payload.get("account_id") or "default").strip() or "default"
+    incoming: Dict[str, Dict[str, Any]] = {
+        top_id: {**payload, "account_id": top_id, "owner_id": owner_id}
+    }
+    for raw_id, account_cfg in payload_accounts.items():
+        account_id = str(raw_id or "default").strip() or "default"
+        incoming[account_id] = {
+            **dict(account_cfg or {}),
+            "account_id": account_id,
+            "owner_id": owner_id,
+        }
+
+    target_owner = str(owner_id or "")
+    accounts = {
+        str(account_id): dict(account_cfg)
+        for account_id, account_cfg in (existing.get("accounts") or {}).items()
+        if str(account_cfg.get("owner_id") or "") != target_owner
+    }
+
+    reserved = set(accounts)
+    if owner_id is not None:
+        # 普通用户不能占用管理员主账号的 ID
+        reserved.add(str(existing.get("account_id") or "default"))
+
+    for account_id, account_cfg in incoming.items():
+        final_id = account_id
+        if final_id in reserved:
+            final_id = f"u_{(owner_id or '')[:8]}_{account_id}"
+            while final_id in reserved:
+                final_id += "_1"
+        reserved.add(final_id)
+        accounts[final_id] = {**account_cfg, "account_id": final_id}
+
+    existing["accounts"] = accounts
+    if owner_id is None:
+        # 只有管理员能改顶层主账号配置
+        existing.update({key: value for key, value in payload.items() if key != "accounts"})
+        existing["owner_id"] = None
+    return config_class(**existing)
 
 
 def _serialize_channel_for_list(channel_config: Any) -> Dict[str, Any]:
@@ -216,11 +334,7 @@ def _is_group_chat_id(channel: str, chat_id: str) -> bool:
 
 
 def _parse_session_route(session_name: str) -> Optional[tuple[str, str, str]]:
-    """从渠道会话名 ``channel:account_id:chat_id[:timestamp]`` 解析推送目标。
-
-    普通会话名（如 ``New Chat 2026/10/24 15:46:22``）也含冒号，这里要求首段是
-    合法的渠道标识，避免把普通会话误当作渠道会话。
-    """
+    """从渠道会话名解析推送目标，首段须为合法渠道标识。"""
     parts = (session_name or "").split(":")
     if len(parts) < 3:
         return None
@@ -231,13 +345,11 @@ def _parse_session_route(session_name: str) -> Optional[tuple[str, str, str]]:
 
 
 async def _collect_channel_chats(
-    channel_ids: tuple[str, ...], per_channel_limit: int = 100
+    channel_ids: tuple[str, ...],
+    per_channel_limit: int = 100,
+    owner_id: Optional[str] = None,
 ) -> Dict[str, list[Dict[str, Any]]]:
-    """从历史渠道会话中反查真实使用过的 chat_id。
-
-    chat_id 只在渠道收到入站消息时才知道，配置里没有；这里按会话名前缀扫描
-    渠道会话，聚合出每个渠道/账号下的候选聊天，按最近活跃排序。
-    """
+    """按会话名前缀反查历史渠道会话的 chat_id，并按 owner_id 过滤。"""
     from sqlalchemy import select
 
     from backend.database import get_db_session_factory
@@ -261,11 +373,15 @@ async def _collect_channel_chats(
                 .replace("%", "\\%")
                 .replace("_", "\\_")
             )
+            query = select(SessionModel).where(
+                SessionModel.name.like(f"{escaped}:%", escape="\\")
+            )
+            if owner_id is None:
+                query = query.where(SessionModel.owner_id.is_(None))
+            else:
+                query = query.where(SessionModel.owner_id == owner_id)
             result = await db.execute(
-                select(SessionModel)
-                .where(SessionModel.name.like(f"{escaped}:%", escape="\\"))
-                .order_by(SessionModel.updated_at.desc())
-                .limit(per_channel_limit)
+                query.order_by(SessionModel.updated_at.desc()).limit(per_channel_limit)
             )
             for session in result.scalars().all():
                 route = _parse_session_route(session.name)
@@ -376,17 +492,15 @@ def _apply_onboarding_credentials(
     account_id: Optional[str],
     credentials: Dict[str, Any],
     display_name: str = "",
+    owner_id: Optional[str] = None,
 ) -> Any:
-    """把扫码得到的凭据写入渠道配置，并启用对应账号。
-
-    只写入凭据与启用状态，不覆盖用户已有的其他配置；主账号与多机器人账号
-    走同一套逻辑，避免出现两条写入路径。
-    """
+    """把扫码凭据写入渠道配置并启用账号，不覆盖其他配置。"""
     from backend.modules.config.schema import (
         QQConfig,
         FeishuConfig,
         WeComConfig,
         DingTalkConfig,
+        WeChatConfig,
     )
 
     config_classes = {
@@ -394,6 +508,7 @@ def _apply_onboarding_credentials(
         "feishu": FeishuConfig,
         "wecom": WeComConfig,
         "dingtalk": DingTalkConfig,
+        "wechat": WeChatConfig,
     }
     config_class = config_classes.get(channel_name)
     channel_config = getattr(config_loader.config.channels, channel_name, None)
@@ -404,29 +519,91 @@ def _apply_onboarding_credentials(
     top_level_account_id = str(config_data.get("account_id") or "default")
     target_account_id = str(account_id or top_level_account_id).strip() or top_level_account_id
     target_display_name = str(display_name or "").strip()
+    accounts = dict(config_data.get("accounts") or {})
 
-    if target_account_id == top_level_account_id:
+    # 管理员扫码到主账号时沿用顶层配置
+    if owner_id is None and target_account_id == top_level_account_id:
         config_data.update(credentials)
         config_data["enabled"] = True
         if target_display_name and not str(config_data.get("display_name") or "").strip():
             config_data["display_name"] = target_display_name
-    else:
-        accounts = dict(config_data.get("accounts") or {})
-        account_data = dict(accounts.get(target_account_id) or {})
-        account_data.update(credentials)
-        account_data["account_id"] = target_account_id
-        account_data["enabled"] = True
-        if target_display_name and not str(account_data.get("display_name") or "").strip():
-            account_data["display_name"] = target_display_name
-        accounts[target_account_id] = account_data
-        config_data["accounts"] = accounts
+        updated_config = config_class(**config_data)
+        _validate_duplicate_accounts(channel_name, updated_config)
+        _validate_external_coding_route_config(channel_name, updated_config)
+        setattr(config_loader.config.channels, channel_name, updated_config)
+        return updated_config, target_account_id
+
+    owner_key = str(owner_id or "")
+    reserved = {
+        str(account_id_)
+        for account_id_, account_cfg in accounts.items()
+        if str(account_cfg.get("owner_id") or "") != owner_key
+    }
+    if owner_id is not None:
+        reserved.add(top_level_account_id)
+
+    final_account_id = target_account_id
+    if final_account_id in reserved:
+        if owner_id is None:
+            raise ValueError(f"账号 ID 已被占用: {final_account_id}")
+        final_account_id = f"u_{owner_id[:8]}_{target_account_id}"
+        while final_account_id in reserved:
+            final_account_id += "_1"
+
+    account_data = dict(accounts.get(final_account_id) or {})
+    account_data.update(credentials)
+    account_data["account_id"] = final_account_id
+    account_data["enabled"] = True
+    account_data["owner_id"] = owner_id
+    if target_display_name and not str(account_data.get("display_name") or "").strip():
+        account_data["display_name"] = target_display_name
+    accounts[final_account_id] = account_data
+    config_data["accounts"] = accounts
 
     updated_config = config_class(**config_data)
     # 先校验再落盘：扫码到的机器人若已被其他账号占用，不应留下半写入配置。
     _validate_duplicate_accounts(channel_name, updated_config)
     _validate_external_coding_route_config(channel_name, updated_config)
     setattr(config_loader.config.channels, channel_name, updated_config)
-    return updated_config
+    return updated_config, final_account_id
+
+
+async def purge_owner_channel_accounts(owner_id: str, fastapi_request: Request) -> int:
+    """删除某用户的全部渠道账号并热重载，供删除用户时调用。"""
+    supported = [
+        "telegram", "discord", "qq", "wechat", "dingtalk",
+        "feishu", "weibo", "wecom", "xiaozhi", "serverchan",
+    ]
+    removed = 0
+    for channel_id in supported:
+        channel_config = getattr(config_loader.config.channels, channel_id, None)
+        if channel_config is None:
+            continue
+        data = channel_config.model_dump()
+        accounts = data.get("accounts") or {}
+        kept = {
+            account_id: account_cfg
+            for account_id, account_cfg in accounts.items()
+            if str(account_cfg.get("owner_id") or "") != owner_id
+        }
+        if len(kept) == len(accounts):
+            continue
+        removed += len(accounts) - len(kept)
+        data["accounts"] = kept
+        setattr(config_loader.config.channels, channel_id, channel_config.__class__(**data))
+
+    if not removed:
+        return 0
+
+    await config_loader.save()
+    message_handler = getattr(fastapi_request.app.state, "message_handler", None)
+    if message_handler is not None and hasattr(message_handler, "reload_config"):
+        message_handler.reload_config()
+    channel_manager = await _restart_channel_manager(fastapi_request)
+    if message_handler is not None and channel_manager is not None:
+        message_handler.set_channel_manager(channel_manager)
+    logger.info(f"Removed {removed} channel account(s) owned by user {owner_id}")
+    return removed
 
 
 async def _restart_channel_manager(fastapi_request: Request) -> Optional[ChannelManager]:
@@ -512,17 +689,18 @@ async def list_channels():
     try:
         config = config_loader.config
         channels_config = config.channels
+        owner_id = _current_owner_id()
         
-        telegram_data = _serialize_channel_for_list(channels_config.telegram)
-        discord_data = _serialize_channel_for_list(channels_config.discord)
-        qq_data = _serialize_channel_for_list(channels_config.qq)
-        wechat_data = _serialize_channel_for_list(channels_config.wechat)
-        dingtalk_data = _serialize_channel_for_list(channels_config.dingtalk)
-        feishu_data = _serialize_channel_for_list(channels_config.feishu)
-        weibo_data = _serialize_channel_for_list(channels_config.weibo)
-        wecom_data = _serialize_channel_for_list(channels_config.wecom)
-        xiaozhi_data = _serialize_channel_for_list(channels_config.xiaozhi)
-        serverchan_data = _serialize_channel_for_list(channels_config.serverchan)
+        telegram_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.telegram, owner_id))
+        discord_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.discord, owner_id))
+        qq_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.qq, owner_id))
+        wechat_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.wechat, owner_id))
+        dingtalk_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.dingtalk, owner_id))
+        feishu_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.feishu, owner_id))
+        weibo_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.weibo, owner_id))
+        wecom_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.wecom, owner_id))
+        xiaozhi_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.xiaozhi, owner_id))
+        serverchan_data = _serialize_channel_for_list(_channel_view_for_owner(channels_config.serverchan, owner_id))
 
         available_channels = {
             "telegram": {
@@ -599,15 +777,11 @@ async def list_channels():
 
 @router.get("/delivery-targets")
 async def get_delivery_targets():
-    """获取可用于消息推送的渠道目标（复用「设置 - 渠道」里已配置好的渠道）。
-
-    返回两部分信息，供定时任务等推送场景直接选择，避免重复手工填写：
-    - 已在渠道设置中完成配置的渠道与其机器人账号（含运行状态）
-    - 从历史渠道会话反查出的真实 chat_id（会话名格式 channel:account_id:chat_id:ts）
-    """
+    """获取已配置的渠道推送目标，含机器人账号与历史 chat_id。"""
     try:
         config = config_loader.config
         channels_config = config.channels
+        owner_id = _current_owner_id()
 
         try:
             status_map = get_channel_manager().get_status()
@@ -615,7 +789,7 @@ async def get_delivery_targets():
             logger.debug(f"Channel status unavailable for delivery targets: {exc}")
             status_map = {}
 
-        known_chats = await _collect_channel_chats(_DELIVERY_CHANNEL_IDS)
+        known_chats = await _collect_channel_chats(_DELIVERY_CHANNEL_IDS, owner_id=owner_id)
 
         targets: list[Dict[str, Any]] = []
         for channel_id in _DELIVERY_CHANNEL_IDS:
@@ -623,17 +797,23 @@ async def get_delivery_targets():
             if channel_config is None:
                 continue
 
-            serialized = _serialize_channel_for_list(channel_config)
+            view = _channel_view_for_owner(channel_config, owner_id)
+            serialized = _serialize_channel_for_list(view)
             channel_status = status_map.get(channel_id) or {}
+            allowed_accounts = _owned_account_ids(channel_config, owner_id)
+            status_instances = {
+                account_id: instance
+                for account_id, instance in (channel_status.get("instances") or {}).items()
+                if account_id in allowed_accounts
+            }
             # 未配置且未运行的渠道没有推送能力，不出现在候选里
-            if not serialized["configured"] and not channel_status.get("running"):
+            if not serialized["configured"] and not status_instances:
                 continue
 
             accounts_map = serialized["config"].get("accounts", {}) or {}
-            status_instances = channel_status.get("instances", {}) or {}
 
             accounts: list[Dict[str, Any]] = []
-            config_dict = channel_config.model_dump()
+            config_dict = view.model_dump()
             # 顶层配置本身也是一个机器人账号（多账号模式下同样需要出现在推送目标里）
             default_account_id = str(config_dict.get("account_id") or "default")
             default_instance = status_instances.get(default_account_id, {})
@@ -695,8 +875,26 @@ async def get_channels_status():
     """获取所有渠道的运行状态"""
     try:
         manager = get_channel_manager()
-        status = manager.get_status()
-        
+        raw_status = manager.get_status()
+        owner_id = _current_owner_id()
+        channels_config = config_loader.config.channels
+
+        status = {}
+        for channel_id, info in raw_status.items():
+            channel_config = getattr(channels_config, channel_id, None)
+            allowed = _owned_account_ids(channel_config, owner_id) if channel_config else set()
+            instances = {
+                account_id: instance
+                for account_id, instance in (info.get("instances") or {}).items()
+                if account_id in allowed
+            }
+            status[channel_id] = {
+                **info,
+                "instances": instances,
+                "enabled": bool(instances),
+                "running": any(bool(item.get("running")) for item in instances.values()),
+            }
+
         return {
             "success": True,
             "status": status,
@@ -713,12 +911,13 @@ async def get_channels_status():
         }
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[Depends(require_admin)])
 async def test_channel(request: ChannelTestRequest):
     """测试指定渠道的连接"""
     try:
         manager = get_channel_manager()
         account_id = str(request.account_id or "").strip() or None
+        owner_id = _current_owner_id()
         
         if request.config:
             logger.info(
@@ -788,7 +987,16 @@ async def test_channel(request: ChannelTestRequest):
                     "message": f"渠道 {request.channel} 暂不支持测试功能"
                 }
         else:
-            # 使用已保存的配置测试
+            # 使用已保存的配置测试；普通用户只能测自己的账号
+            channel_config = getattr(config_loader.config.channels, request.channel, None)
+            allowed = _owned_account_ids(channel_config, owner_id) if channel_config else set()
+            if owner_id is not None and not account_id:
+                account_id = sorted(allowed)[0] if allowed else None
+            if owner_id is not None and (not account_id or account_id not in allowed):
+                return {
+                    "success": False,
+                    "message": "账号不存在或无权操作",
+                }
             result = await manager.test_channel(request.channel, account_id=account_id)
         
         # 翻译英文消息为中文
@@ -920,7 +1128,7 @@ async def test_channel(request: ChannelTestRequest):
         }
 
 
-@router.post("/wechat/login/start")
+@router.post("/wechat/login/start", dependencies=[Depends(require_admin)])
 async def start_wechat_login(request: WeChatLoginStartRequest):
     """启动微信扫码登录。"""
     try:
@@ -929,10 +1137,19 @@ async def start_wechat_login(request: WeChatLoginStartRequest):
 
         channel_config = WeChatConfig(
             **_normalize_accounts_payload(
-                request.config or config_loader.config.channels.wechat.model_dump()
+                request.config
+                or _channel_view_for_owner(
+                    config_loader.config.channels.wechat,
+                    _current_owner_id(),
+                ).model_dump()
             )
         )
         account_id = str(request.account_id or "default").strip() or "default"
+        owner_id = _current_owner_id()
+        if owner_id is not None:
+            owned = _owned_account_ids(config_loader.config.channels.wechat, owner_id)
+            if account_id not in owned:
+                account_id = f"user_{owner_id[:8]}"
         resolved_config = _select_account_config(channel_config, account_id)
 
         result = await start_wechat_qr_login(
@@ -946,7 +1163,7 @@ async def start_wechat_login(request: WeChatLoginStartRequest):
         return {"success": False, "message": f"启动微信扫码登录失败: {e}"}
 
 
-@router.post("/wechat/login/poll")
+@router.post("/wechat/login/poll", dependencies=[Depends(require_admin)])
 async def poll_wechat_login(request: WeChatLoginPollRequest, fastapi_request: Request):
     """轮询微信扫码登录状态。"""
     try:
@@ -954,38 +1171,24 @@ async def poll_wechat_login(request: WeChatLoginPollRequest, fastapi_request: Re
             clear_wechat_session_pause,
             poll_wechat_qr_login,
         )
-        from backend.modules.config.schema import WeChatConfig
-
         result = await poll_wechat_qr_login(request.session_key)
         if not result.get("success") or result.get("status") != "confirmed":
             return result
 
-        config_snapshot = result.get("config_snapshot") or config_loader.config.channels.wechat.model_dump()
-        channel_config = WeChatConfig(**_normalize_accounts_payload(config_snapshot))
-        account_id = str(result.get("account_id") or "default").strip() or "default"
-
         login_data = dict(result.get("result") or {})
-        merged_channel_config = _normalize_accounts_payload(channel_config.model_dump())
-        merged_channel_config["enabled"] = True
-        accounts = merged_channel_config.get("accounts", {}) or {}
-        top_level_account_id = str(merged_channel_config.get("account_id") or "default")
-
-        if account_id == top_level_account_id:
-            merged_channel_config["enabled"] = True
-            merged_channel_config.update(login_data)
-        else:
-            account_payload = dict(accounts.get(account_id) or {})
-            account_payload.update(login_data)
-            account_payload["account_id"] = account_id
-            account_payload["enabled"] = True
-            accounts[account_id] = account_payload
-            merged_channel_config["accounts"] = accounts
+        owner_id = _current_owner_id()
+        try:
+            updated_config, account_id = _apply_onboarding_credentials(
+                "wechat",
+                result.get("account_id"),
+                login_data,
+                owner_id=owner_id,
+            )
+            await config_loader.save()
+        except ValueError as exc:
+            return {"success": False, "status": "error", "message": str(exc)}
 
         clear_wechat_session_pause(account_id)
-        config_loader.config.channels.wechat = WeChatConfig(**merged_channel_config)
-        _validate_duplicate_accounts("wechat", config_loader.config.channels.wechat)
-        _validate_external_coding_route_config("wechat", config_loader.config.channels.wechat)
-        await config_loader.save()
 
         message_handler = getattr(fastapi_request.app.state, "message_handler", None)
         channel_manager = await _restart_channel_manager(fastapi_request)
@@ -998,7 +1201,9 @@ async def poll_wechat_login(request: WeChatLoginPollRequest, fastapi_request: Re
             "message": "微信连接成功",
             "account_id": account_id,
             "result": login_data,
-            "config": _normalize_accounts_payload(config_loader.config.channels.wechat.model_dump()),
+            "config": _normalize_accounts_payload(
+                _channel_view_for_owner(updated_config, owner_id).model_dump()
+            ),
         }
     except Exception as e:
         logger.error(f"Failed to poll wechat login: {e}")
@@ -1006,7 +1211,7 @@ async def poll_wechat_login(request: WeChatLoginPollRequest, fastapi_request: Re
 
 
 
-@router.post("/{channel}/onboard/start")
+@router.post("/{channel}/onboard/start", dependencies=[Depends(require_admin)])
 async def start_channel_onboarding(channel: str, request: ChannelOnboardStartRequest):
     """发起 QQ / 飞书 / 企业微信 / 钉钉扫码接入，返回二维码。"""
     try:
@@ -1021,6 +1226,11 @@ async def start_channel_onboarding(channel: str, request: ChannelOnboardStartReq
         account_id = str(
             request.account_id or getattr(channel_config, "account_id", "default") or "default"
         ).strip() or "default"
+        owner_id = _current_owner_id()
+        if owner_id is not None:
+            owned = _owned_account_ids(channel_config, owner_id)
+            if account_id not in owned:
+                account_id = f"user_{owner_id[:8]}"
         result = await begin_onboarding(
             normalized,
             account_id,
@@ -1032,7 +1242,7 @@ async def start_channel_onboarding(channel: str, request: ChannelOnboardStartReq
         return {"success": False, "message": f"发起扫码绑定失败: {e}"}
 
 
-@router.post("/{channel}/onboard/poll")
+@router.post("/{channel}/onboard/poll", dependencies=[Depends(require_admin)])
 async def poll_channel_onboarding(
     channel: str,
     request: ChannelOnboardPollRequest,
@@ -1058,11 +1268,13 @@ async def poll_channel_onboarding(
         return {"success": False, "status": "error", "message": "扫码成功但未返回机器人凭据"}
 
     try:
-        updated_config = _apply_onboarding_credentials(
+        owner_id = _current_owner_id()
+        updated_config, account_id = _apply_onboarding_credentials(
             normalized,
             result.get("account_id"),
             credentials,
             display_name=str(result.get("display_name") or ""),
+            owner_id=owner_id,
         )
         await config_loader.save()
     except ValueError as e:
@@ -1081,18 +1293,19 @@ async def poll_channel_onboarding(
     except Exception as e:
         logger.warning(f"Failed to reload channels after {channel} onboarding: {e}")
 
-    account_id = str(result.get("account_id") or updated_config.account_id or "default")
     logger.info(f"{channel} bot bound via QR onboarding: {account_id}")
     return {
         "success": True,
         "status": "success",
         "message": str(result.get("message") or "扫码绑定成功"),
         "account_id": account_id,
-        "config": _normalize_accounts_payload(updated_config.model_dump()),
+        "config": _normalize_accounts_payload(
+            _channel_view_for_owner(updated_config, owner_id).model_dump()
+        ),
     }
 
 
-@router.post("/{channel}/onboard/cancel")
+@router.post("/{channel}/onboard/cancel", dependencies=[Depends(require_admin)])
 async def cancel_channel_onboarding(channel: str, request: ChannelOnboardPollRequest):
     """关闭二维码时释放扫码会话，避免后台继续保留轮询状态。"""
     if not supports_onboarding(str(channel or "").strip().lower()):
@@ -1101,7 +1314,7 @@ async def cancel_channel_onboarding(channel: str, request: ChannelOnboardPollReq
     return {"success": True}
 
 
-@router.post("/update")
+@router.post("/update", dependencies=[Depends(require_admin)])
 async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: Request):
     """更新渠道配置"""
     try:
@@ -1136,10 +1349,13 @@ async def update_channel_config(request: ChannelConfigUpdate, fastapi_request: R
             "serverchan": ServerChanConfig,
         }
 
-        merged_config = _normalize_accounts_payload(channel_config.model_dump())
-        merged_config.update(request.config)
-        merged_config = _normalize_accounts_payload(merged_config)
-        updated_channel_config = config_classes[request.channel](**merged_config)
+        owner_id = _current_owner_id()
+        updated_channel_config = _merge_owned_channel_config(
+            channel_config,
+            request.config,
+            owner_id,
+            config_classes[request.channel],
+        )
         # 先校验再写回运行时配置，避免校验失败时内存中的配置已被污染
         _validate_duplicate_accounts(request.channel, updated_channel_config)
         _validate_external_coding_route_config(request.channel, updated_channel_config)
@@ -1212,7 +1428,10 @@ async def get_channel_config(channel: str):
             setattr(config.channels, channel, channel_config)
             await config_loader.save()
 
-        config_dict = _normalize_accounts_payload(channel_config.model_dump())
+        owner_id = _current_owner_id()
+        config_dict = _normalize_accounts_payload(
+            _channel_view_for_owner(channel_config, owner_id).model_dump()
+        )
         
         return {
             "success": True,

@@ -1,4 +1,4 @@
-"""频道会话管理（Mixin）：从 handler.py 拆出的路由键/列表范围记忆、会话查找创建（含主账号群共享路由）与非主机器人问答镜像到主群会话。"""
+"""频道会话管理。"""
 
 import json
 from typing import Dict, List, Optional
@@ -161,6 +161,8 @@ class ChannelSessionMixin:
             session = Session(
                 id=str(uuid.uuid4()),
                 name=session_name,
+                title_source="channel",
+                owner_id=getattr(self, "_owner_id", None),
                 channel_context=(
                     json.dumps(channel_context, ensure_ascii=False)
                     if channel_context

@@ -1,13 +1,8 @@
-"""渠道命令处理器（Mixin）
-
-从 channels/handler.py 拆出的 / 命令处理器（纯搬家，无逻辑改动）。
-ChannelMessageHandler 继承本 Mixin；命令处理器通过 self 访问宿主的
-会话管理、回复发送、工具注册表等能力，行为与拆分前完全一致。
-"""
+"""渠道 / 命令处理器。"""
 
 import json
 import time
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from loguru import logger
 
@@ -50,6 +45,8 @@ class ChannelCommandMixin:
                 Session(
                     id=session_id,
                     name=session_name,
+                    title_source="channel",
+                    owner_id=getattr(self, "_owner_id", None),
                     channel_context=(
                         json.dumps(channel_context, ensure_ascii=False)
                         if channel_context
@@ -751,3 +748,62 @@ class ChannelCommandMixin:
                 get_session_gate().release(session_id)
 
 
+
+    async def _dispatch_command(
+        self,
+        msg: InboundMessage,
+        content: str,
+        *,
+        session_route: Dict[str, object],
+        user_message_context: dict,
+        cancel_token: CancellationToken,
+        tool_event_handler,
+        start_time: float,
+    ) -> bool:
+        """命中 / 命令时交给对应处理器并返回 True；普通消息返回 False。"""
+        cmd = content.strip().lower()
+        if cmd in ("/new", "/newsession", "/new_session", "/n"):
+            await self._handle_new_session_command(msg)
+            return True
+        if cmd in ("/list", "/sessions", "/list_sessions", "/l", "/ls"):
+            await self._handle_list_sessions_command(msg)
+            return True
+        if cmd in ("/all", "/all_sessions", "/al"):
+            await self._handle_list_sessions_command(msg, include_all=True)
+            return True
+        if cmd.startswith(("/switch ", "/切换 ", "/s ")):
+            await self._handle_switch_session_command(msg, content)
+            return True
+        if cmd in ("/clear", "/clear_history", "/c"):
+            await self._handle_clear_history_command(msg)
+            return True
+        if cmd in ("/stop", "/cancel"):
+            await self._handle_stop_command(msg)
+            return True
+        if cmd in ("/help", "/h", "/?"):
+            await self._handle_help_command(msg)
+            return True
+        if cmd.startswith(("/route", "/rt")):
+            await self._handle_route_command(msg, content)
+            return True
+        if cmd.startswith(("/coder", "/cdr")):
+            await self._handle_coder_command(msg, content)
+            return True
+        if cmd == "/team" or cmd.startswith("/team "):
+            await self._handle_team_command(
+                msg,
+                content,
+                session_route=session_route,
+                user_message_context=user_message_context,
+                cancel_token=cancel_token,
+                tool_event_handler=tool_event_handler,
+                start_time=start_time,
+            )
+            return True
+        if cmd.startswith(("/provider ", "/提供商 ", "/m ")) or cmd in ("/provider", "/提供商", "/m"):
+            await self._handle_provider_command(msg, content)
+            return True
+        if cmd.startswith(("/personality ", "/性格 ", "/p ")) or cmd in ("/personality", "/性格", "/p"):
+            await self._handle_personality_command(msg, content)
+            return True
+        return False
