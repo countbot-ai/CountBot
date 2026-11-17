@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from loguru import logger
 
 from backend.models.user import ROLE_ADMIN, STATUS_ACTIVE, User
+from backend.modules.multiuser.shared_access import (
+    SHARED_MODEL_SCOPE_ALL,
+    normalize_shared_model_refs,
+    normalize_shared_model_scope,
+)
 
 CHAT_MODE_POLICY_ALL = "all"
 CHAT_MODE_POLICY_CHAT = "chat"
@@ -50,6 +55,8 @@ class AuthUser:
     status: str = STATUS_ACTIVE
     display_name: str = ""
     chat_mode_policy: str = CHAT_MODE_POLICY_ALL
+    shared_model_scope: str = SHARED_MODEL_SCOPE_ALL
+    shared_model_refs: Tuple[str, ...] = ()
 
     @property
     def is_admin(self) -> bool:
@@ -85,6 +92,12 @@ def user_to_auth_user(user: User) -> AuthUser:
         display_name=user.display_name or "",
         chat_mode_policy=normalize_chat_mode_policy(
             getattr(user, "chat_mode_policy", CHAT_MODE_POLICY_ALL)
+        ),
+        shared_model_scope=normalize_shared_model_scope(
+            getattr(user, "shared_model_scope", None)
+        ),
+        shared_model_refs=normalize_shared_model_refs(
+            getattr(user, "shared_model_refs", ())
         ),
     )
 

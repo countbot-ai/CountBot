@@ -33,6 +33,14 @@ class User(Base):
     chat_mode_policy: Mapped[str] = mapped_column(
         String(16), nullable=False, default="all", server_default="all"
     )
+    # 共享模型可见范围：all / selected；selected 时由 shared_model_refs 收敛
+    shared_model_scope: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="all", server_default="all"
+    )
+    # 允许使用的共享模型引用（JSON 文本，元素形如 shared:provider:model）
+    shared_model_refs: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

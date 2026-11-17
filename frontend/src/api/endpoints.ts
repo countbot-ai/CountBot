@@ -918,6 +918,8 @@ export interface AdminUserItem {
     status: 'pending' | 'active' | 'disabled'
     display_name?: string
     chat_mode_policy: ChatModePolicy
+    shared_model_scope: 'all' | 'selected'
+    shared_model_refs: string[]
     created_at?: string
     approved_at?: string
     last_login_at?: string
@@ -970,9 +972,18 @@ export const adminAPI = {
         status?: string
         display_name?: string
         chat_mode_policy?: ChatModePolicy
+        shared_model_scope?: 'all' | 'selected'
+        shared_model_refs?: string[]
     }): Promise<AdminUserItem> => apiClient.post('/admin/users', data),
 
-    updateUser: (id: string, data: { status?: string; role?: string; display_name?: string; chat_mode_policy?: ChatModePolicy }): Promise<AdminUserItem> =>
+    updateUser: (id: string, data: {
+        status?: string
+        role?: string
+        display_name?: string
+        chat_mode_policy?: ChatModePolicy
+        shared_model_scope?: 'all' | 'selected'
+        shared_model_refs?: string[]
+    }): Promise<AdminUserItem> =>
         apiClient.patch(`/admin/users/${id}`, data),
 
     resetPassword: (id: string, newPassword: string): Promise<{ success: boolean; message: string }> =>

@@ -10,6 +10,10 @@ from loguru import logger
 from backend.modules.config.loader import config_loader
 from backend.modules.config.schema import ModelConfig, PersonaConfig, ProviderConfig
 from backend.modules.native_caps.types import normalize_native_capabilities
+from backend.modules.multiuser.shared_access import (
+    filter_shared_models_for_user,
+    is_shared_model_allowed,
+)
 from backend.modules.multiuser.ssrf import SsrfError, assert_outbound_url_allowed
 from backend.modules.multiuser.user_config import (
     load_user_config,
@@ -137,6 +141,7 @@ async def list_available_models(user) -> Dict[str, Any]:
     is_regular = bool(getattr(user, "owner_id", None))
     if settings.mode == "shared" and settings.shared_providers:
         shared = list_shared_models(anonymize=is_regular)
+        shared = filter_shared_models_for_user(shared, user)
 
     if getattr(user, "owner_id", None):
         raw = await load_user_config(user.owner_id)
@@ -167,6 +172,12 @@ async def list_available_models(user) -> Dict[str, Any]:
         "mode": settings.mode,
         "shared_enabled": settings.shared_providers,
     }
+
+
+def assert_shared_model_allowed(user, provider_id: str, model_id: str) -> None:
+    """共享模型解析前的统一授权门闩；未授权直接拒绝，不回落其他模型。"""
+    if not is_shared_model_allowed(user, provider_id, model_id):
+        raise ModelResolutionError("该共享模型未授权给当前用户")
 
 
 def _from_shared(provider_id: str, model_id: str) -> ResolvedModel:
@@ -262,6 +273,7 @@ async def resolve_model_for_user(user) -> ResolvedModel:
     if ref["source"] == "shared":
         if settings.mode != "shared" or not settings.shared_providers:
             raise ModelResolutionError("当前模式不允许使用共享模型")
+        assert_shared_model_allowed(user, ref["provider"], ref["model"])
         return _from_shared(ref["provider"], ref["model"])
 
     return _from_own(raw, ref["provider"], ref["model"])
@@ -290,6 +302,7 @@ async def resolve_model_ref_for_user(user, provider: str, model: str) -> Resolve
     settings = await load_settings()
     if settings.mode == "shared" and settings.shared_providers:
         try:
+            assert_shared_model_allowed(user, provider_id, model_id)
             return _from_shared(provider_id, model_id)
         except ModelResolutionError:
             pass
@@ -310,6 +323,7 @@ async def validate_model_ref(user, source: str, provider: str, model: str) -> Di
         settings = await load_settings()
         if settings.mode != "shared" or not settings.shared_providers:
             raise ModelResolutionError("当前模式不允许使用共享模型")
+        assert_shared_model_allowed(user, provider, model)
         resolved = _from_shared(provider, model)
         return {
             "source": "shared",

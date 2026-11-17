@@ -27,12 +27,20 @@ from backend.modules.auth.utils import (
     validate_username,
 )
 from backend.modules.multiuser import audit
+from backend.modules.multiuser.effective import list_shared_models
 from backend.modules.multiuser.identity import (
     CHAT_MODE_POLICY_ALL,
     AuthUser,
     normalize_chat_mode_policy,
 )
 from backend.modules.multiuser.permissions import require_admin
+from backend.modules.multiuser.shared_access import (
+    SHARED_MODEL_SCOPE_ALL,
+    SHARED_MODEL_SCOPE_SELECTED,
+    normalize_shared_model_refs,
+    normalize_shared_model_scope,
+    serialize_shared_model_refs,
+)
 from backend.modules.workspace import archive_user_workspace
 
 _VALID_ROLES = {ROLE_ADMIN, ROLE_USER}
@@ -51,6 +59,8 @@ class UserItem(BaseModel):
     status: str
     display_name: Optional[str] = None
     chat_mode_policy: str = CHAT_MODE_POLICY_ALL
+    shared_model_scope: str = SHARED_MODEL_SCOPE_ALL
+    shared_model_refs: List[str] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     approved_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
@@ -72,6 +82,8 @@ class CreateUserRequest(BaseModel):
     status: str = Field(STATUS_ACTIVE)
     display_name: Optional[str] = None
     chat_mode_policy: str = Field(CHAT_MODE_POLICY_ALL, description="all | chat | agent")
+    shared_model_scope: Optional[str] = Field(None, description="all | selected")
+    shared_model_refs: Optional[List[str]] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -79,6 +91,8 @@ class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     display_name: Optional[str] = None
     chat_mode_policy: Optional[str] = Field(None, description="all | chat | agent")
+    shared_model_scope: Optional[str] = Field(None, description="all | selected")
+    shared_model_refs: Optional[List[str]] = None
 
 
 class ResetPasswordRequest(BaseModel):
@@ -107,6 +121,12 @@ def _to_item(user: User) -> UserItem:
         chat_mode_policy=normalize_chat_mode_policy(
             getattr(user, "chat_mode_policy", CHAT_MODE_POLICY_ALL)
         ),
+        shared_model_scope=normalize_shared_model_scope(
+            getattr(user, "shared_model_scope", None)
+        ),
+        shared_model_refs=list(
+            normalize_shared_model_refs(getattr(user, "shared_model_refs", ()))
+        ),
         created_at=user.created_at,
         approved_at=user.approved_at,
         last_login_at=user.last_login_at,
@@ -125,6 +145,28 @@ async def _count_active_admins(session) -> int:
         .where(User.role == ROLE_ADMIN, User.status == STATUS_ACTIVE)
     )
     return int(result.scalar() or 0)
+
+
+def _shared_selection(
+    role: str, scope: Optional[str], refs: Optional[List[str]]
+) -> tuple[str, List[str]]:
+    """校验并收敛共享模型范围；管理员始终全量。"""
+    if role == ROLE_ADMIN:
+        return SHARED_MODEL_SCOPE_ALL, []
+
+    normalized_scope = normalize_shared_model_scope(scope)
+    normalized_refs = list(normalize_shared_model_refs(refs or []))
+    if normalized_scope == SHARED_MODEL_SCOPE_SELECTED:
+        available = {item["ref"] for item in list_shared_models()}
+        invalid = [ref for ref in normalized_refs if ref not in available]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail="共享模型不存在或已取消共享，请刷新后重新选择",
+            )
+    else:
+        normalized_refs = []
+    return normalized_scope, normalized_refs
 
 
 def _revoke(user: User) -> None:
@@ -194,6 +236,9 @@ async def create_user(
         if role == ROLE_ADMIN
         else normalize_chat_mode_policy(payload.chat_mode_policy)
     )
+    shared_scope, shared_refs = _shared_selection(
+        role, payload.shared_model_scope, payload.shared_model_refs
+    )
 
     async with AsyncSessionLocal() as session:
         existing = (
@@ -210,6 +255,8 @@ async def create_user(
             status=user_status,
             display_name=(payload.display_name or payload.username).strip(),
             chat_mode_policy=chat_mode_policy,
+            shared_model_scope=shared_scope,
+            shared_model_refs=serialize_shared_model_refs(shared_refs),
             approved_at=datetime.utcnow() if user_status == STATUS_ACTIVE else None,
             approved_by=admin.username if user_status == STATUS_ACTIVE else None,
         )
@@ -221,7 +268,10 @@ async def create_user(
         audit.ACTION_USER_CREATE,
         actor=admin,
         target=user.username,
-        detail=f"role={role} status={user_status} chat_mode={chat_mode_policy}",
+        detail=(
+            f"role={role} status={user_status} chat_mode={chat_mode_policy} "
+            f"shared_scope={shared_scope} shared_refs={len(shared_refs)}"
+        ),
         request=request,
     )
     logger.info(f"Admin {admin.username} created user {user.username} ({role}/{user_status})")
@@ -254,6 +304,25 @@ async def update_user(
                 else old_policy
             )
         )
+        old_scope = normalize_shared_model_scope(
+            getattr(user, "shared_model_scope", None)
+        )
+        old_refs = list(
+            normalize_shared_model_refs(getattr(user, "shared_model_refs", ()))
+        )
+        requested_scope = (
+            payload.shared_model_scope
+            if payload.shared_model_scope is not None
+            else old_scope
+        )
+        requested_refs = (
+            payload.shared_model_refs
+            if payload.shared_model_refs is not None
+            else old_refs
+        )
+        new_scope, new_refs = _shared_selection(
+            new_role, requested_scope, requested_refs
+        )
 
         # 护栏：不能把最后一个活跃管理员降级或禁用
         if user.role == ROLE_ADMIN and user.status == STATUS_ACTIVE:
@@ -264,10 +333,13 @@ async def update_user(
         role_changed = new_role != user.role
         status_changed = new_status != user.status
         policy_changed = new_policy != old_policy
+        shared_changed = new_scope != old_scope or tuple(new_refs) != tuple(old_refs)
 
         user.role = new_role
         user.status = new_status
         user.chat_mode_policy = new_policy
+        user.shared_model_scope = new_scope
+        user.shared_model_refs = serialize_shared_model_refs(new_refs)
         if payload.display_name is not None:
             user.display_name = payload.display_name.strip()
         if status_changed and new_status == STATUS_ACTIVE and user.approved_at is None:
@@ -280,7 +352,7 @@ async def update_user(
     # 状态或角色变更立即生效
     if status_changed or role_changed:
         _revoke(user)
-    if policy_changed:
+    if policy_changed or shared_changed:
         from backend.ws.connection import connection_manager
 
         await connection_manager.disconnect_owner(user.id)
@@ -299,7 +371,10 @@ async def update_user(
         action,
         actor=admin,
         target=user.username,
-        detail=f"role={new_role} status={new_status} chat_mode={new_policy}",
+        detail=(
+            f"role={new_role} status={new_status} chat_mode={new_policy} "
+            f"shared_scope={new_scope} shared_refs={len(new_refs)}"
+        ),
         request=request,
     )
     return _to_item(user)

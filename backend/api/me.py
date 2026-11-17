@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from backend.modules.config.schema import McpServerConfig, ProviderConfig
 from backend.modules.multiuser.effective import (
     ModelResolutionError,
+    assert_shared_model_allowed,
     build_provider,
     list_available_models,
     resolve_persona_for_user,
@@ -256,6 +257,7 @@ async def test_own_model(
         if payload.source == "shared":
             from backend.modules.multiuser.effective import _from_shared  # 内部复用
 
+            assert_shared_model_allowed(user, ref["provider"], ref["model"])
             resolved = _from_shared(ref["provider"], ref["model"])
         else:
             from backend.modules.multiuser.effective import _from_own  # 内部复用

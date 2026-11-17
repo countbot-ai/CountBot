@@ -2951,6 +2951,17 @@
         "policy": "可用模式",
         "hint": "只允许一种模式时，用户输入框不再显示模式切换。"
       },
+      "sharedScope": {
+        "label": "共享模型范围",
+        "all": "全部共享模型",
+        "selected": "仅选中的共享模型",
+        "hint": "只影响管理员共享的模型；用户自己的模型不受此范围限制。",
+        "empty": "当前没有已共享模型",
+        "selectedShort": "共享模型：{n} 个",
+        "allShort": "共享模型：全部",
+        "invalid": "有 {n} 个已选模型已取消共享，保存前请清除。",
+        "clearInvalid": "清除失效模型"
+      },
       "messages": {
         "loadUsersFailed": "加载用户失败",
         "loadSettingsFailed": "加载策略失败",

@@ -79,6 +79,15 @@ _SCHEMA_COMPATIBILITY_MIGRATIONS = (
                 name="chat_mode_policy",
                 ddl="chat_mode_policy VARCHAR DEFAULT 'all'",
             ),
+            # 共享模型可见范围：all / selected，selected 时仅允许白名单引用
+            CompatibilityColumnMigration(
+                name="shared_model_scope",
+                ddl="shared_model_scope VARCHAR DEFAULT 'all'",
+            ),
+            CompatibilityColumnMigration(
+                name="shared_model_refs",
+                ddl="shared_model_refs TEXT DEFAULT '[]'",
+            ),
         ),
     ),
     CompatibilityTableMigration(

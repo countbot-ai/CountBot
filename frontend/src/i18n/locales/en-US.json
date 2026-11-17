@@ -2865,6 +2865,17 @@
         "policy": "Allowed modes",
         "hint": "When only one mode is allowed, the mode switch is hidden in the chat input."
       },
+      "sharedScope": {
+        "label": "Shared model access",
+        "all": "All shared models",
+        "selected": "Selected shared models only",
+        "hint": "Only affects models shared by the administrator; the user's own models are not limited.",
+        "empty": "No shared models are available.",
+        "selectedShort": "Shared models: {n}",
+        "allShort": "Shared models: all",
+        "invalid": "{n} selected model(s) are no longer shared. Clear them before saving.",
+        "clearInvalid": "Clear unavailable"
+      },
       "messages": {
         "loadUsersFailed": "Failed to load users",
         "loadSettingsFailed": "Failed to load policy",

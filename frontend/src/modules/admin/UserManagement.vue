@@ -255,6 +255,7 @@
               <td>
                 <div class="username">{{ user.username }}</div>
                 <div class="sub" v-if="user.display_name">{{ user.display_name }}</div>
+                <div v-if="user.role !== 'admin'" class="sub">{{ sharedScopeLabel(user) }}</div>
               </td>
               <td>{{ user.role === 'admin' ? $t('admin.users.roles.admin') : $t('admin.users.roles.user') }}</td>
               <td>
@@ -404,6 +405,41 @@
           </select>
           <p class="edit-hint">{{ $t('admin.users.edit.hint') }}</p>
         </div>
+        <div v-if="editForm.role !== 'admin'" class="edit-field">
+          <label class="edit-label">{{ $t('admin.users.sharedScope.label') }}</label>
+          <select v-model="editForm.shared_model_scope" class="co-select">
+            <option value="all">{{ $t('admin.users.sharedScope.all') }}</option>
+            <option value="selected">{{ $t('admin.users.sharedScope.selected') }}</option>
+          </select>
+          <div
+            v-if="editForm.shared_model_scope === 'selected'"
+            class="shared-model-picker"
+            role="group"
+            :aria-label="$t('admin.users.sharedScope.label')"
+          >
+            <label
+              v-for="item in sharedModels?.items || []"
+              :key="item.ref"
+              class="shared-model-option"
+            >
+              <input v-model="editForm.shared_model_refs" type="checkbox" :value="item.ref">
+              <span class="shared-model-text">
+                <span class="shared-model-name">{{ item.alias }}</span>
+                <span class="shared-model-meta">{{ item.provider_name }} / {{ item.model }}</span>
+              </span>
+            </label>
+            <p v-if="!(sharedModels?.items || []).length" class="edit-hint">
+              {{ $t('admin.users.sharedScope.empty') }}
+            </p>
+          </div>
+          <p class="edit-hint">{{ $t('admin.users.sharedScope.hint') }}</p>
+          <p v-if="missingEditRefs.length" class="edit-hint is-warn">
+            {{ $t('admin.users.sharedScope.invalid', { n: missingEditRefs.length }) }}
+            <button type="button" class="btn-link" @click="removeMissingEditRefs">
+              {{ $t('admin.users.sharedScope.clearInvalid') }}
+            </button>
+          </p>
+        </div>
       </div>
     </Modal>
   </div>
@@ -482,6 +518,14 @@ const editForm = reactive({
   role: 'user',
   status: 'active',
   chat_mode_policy: 'all' as ChatModePolicy,
+  shared_model_scope: 'all' as 'all' | 'selected',
+  shared_model_refs: [] as string[],
+})
+
+const missingEditRefs = computed(() => {
+  if (editForm.shared_model_scope !== 'selected' || !sharedModels.value) return []
+  const available = new Set(sharedModels.value.items.map((item) => item.ref))
+  return editForm.shared_model_refs.filter((ref) => !available.has(ref))
 })
 
 const createForm = reactive({
@@ -655,11 +699,18 @@ function openEditUser(user: AdminUserItem) {
   editForm.role = user.role
   editForm.status = user.status
   editForm.chat_mode_policy = user.chat_mode_policy
+  editForm.shared_model_scope = user.shared_model_scope || 'all'
+  editForm.shared_model_refs = [...(user.shared_model_refs || [])]
+  if (!sharedModels.value) void loadSharedModels()
   showEdit.value = true
 }
 
 async function saveEditUser() {
   if (!editForm.id) return
+  if (missingEditRefs.value.length) {
+    notify(t('admin.users.sharedScope.invalid', { n: missingEditRefs.value.length }), true)
+    return
+  }
   editing.value = true
   try {
     await adminAPI.updateUser(editForm.id, {
@@ -667,6 +718,8 @@ async function saveEditUser() {
       role: editForm.role,
       status: editForm.status,
       chat_mode_policy: editForm.role === 'admin' ? 'all' : editForm.chat_mode_policy,
+      shared_model_scope: editForm.role === 'admin' ? 'all' : editForm.shared_model_scope,
+      shared_model_refs: editForm.role === 'admin' ? [] : editForm.shared_model_refs,
     })
     showEdit.value = false
     notify(t('admin.users.messages.userUpdated'))
@@ -676,6 +729,18 @@ async function saveEditUser() {
   } finally {
     editing.value = false
   }
+}
+
+function sharedScopeLabel(user: AdminUserItem) {
+  if (user.shared_model_scope === 'selected') {
+    return t('admin.users.sharedScope.selectedShort', { n: user.shared_model_refs.length })
+  }
+  return t('admin.users.sharedScope.allShort')
+}
+
+function removeMissingEditRefs() {
+  const available = new Set((sharedModels.value?.items || []).map((item) => item.ref))
+  editForm.shared_model_refs = editForm.shared_model_refs.filter((ref) => available.has(ref))
 }
 
 function formatLockRemaining(seconds: number) {
@@ -871,6 +936,61 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 1.5;
   color: var(--color-text-tertiary);
+}
+
+.edit-hint.is-warn {
+  color: var(--color-warning);
+}
+
+/* 共享模型多选：选项多时在框内滚动，不把弹窗撑高 */
+.shared-model-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg-secondary);
+}
+
+.shared-model-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+}
+
+.shared-model-option:hover {
+  background: var(--color-bg-primary);
+}
+
+.shared-model-option input {
+  margin-top: 2px;
+  accent-color: var(--color-accent);
+}
+
+.shared-model-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.shared-model-name {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.shared-model-meta {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-compact {
