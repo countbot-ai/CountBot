@@ -83,7 +83,7 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  padding: 8px;
+  padding: 10px;
 }
 
 .nc-list-content--panel {
@@ -100,9 +100,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  height: 32px;
+  height: 34px;
   flex-shrink: 0;
-  padding: 0 8px;
+  padding: 0 9px;
   border: 1px solid var(--nc-border);
   border-radius: 6px;
   background: var(--nc-surface);
@@ -204,11 +204,11 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 4px;
   min-height: 0;
-  margin-top: 8px;
+  margin-top: 10px;
   overflow-y: auto;
-  padding-bottom: 2px;
+  padding-bottom: 8px;
 }
 
 .nc-session-list::-webkit-scrollbar {
@@ -225,7 +225,7 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   transition: background var(--transition-fast);
 }
 
@@ -241,13 +241,13 @@
 .nc-session-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1;
   min-width: 0;
-  min-height: 34px;
-  padding: 0 8px;
+  min-height: 40px;
+  padding: 0 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--nc-text-2);
   font-size: 13px;
@@ -277,7 +277,7 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-  padding-right: 4px;
+  padding-right: 6px;
 }
 
 .nc-session-row:hover .nc-session-actions,
@@ -313,12 +313,12 @@
 }
 
 .nc-session-rename-input {
-  width: 100%;
-  height: 30px;
-  margin: 2px 4px;
-  padding: 0 8px;
+  width: calc(100% - 8px);
+  height: 36px;
+  margin: 4px;
+  padding: 0 10px;
   border: 1px solid var(--nc-border-strong);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--nc-surface);
   color: var(--nc-text);
   font-size: 13px;
@@ -349,28 +349,6 @@
   padding: 16px 8px;
   color: var(--nc-text-3);
   font-size: 12px;
-}
-
-.nc-show-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  flex-shrink: 0;
-  margin-top: 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--nc-text-3);
-  font-size: 12px;
-  font-family: var(--font-sans);
-  cursor: pointer;
-}
-
-.nc-show-more:hover {
-  background: var(--nc-hover);
-  color: var(--nc-text);
 }
 
 /* ---------- 移动端：第 2 栏改为抽屉，覆盖在主内容之上 ---------- */

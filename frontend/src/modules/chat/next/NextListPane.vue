@@ -53,7 +53,7 @@
 
         <div v-else class="nc-session-list">
           <div
-            v-for="session in visibleSessions"
+            v-for="session in filteredSessions"
             :key="session.id"
             class="nc-session-row"
             :class="{ 'is-active': session.id === currentSessionId }"
@@ -111,15 +111,6 @@
           <p v-if="filteredSessions.length === 0" class="nc-session-empty">
             {{ query ? $t('common.noResults') : $t('sessions.empty') }}
           </p>
-
-          <button
-            v-if="filteredSessions.length > INITIAL_VISIBLE"
-            class="nc-show-more"
-            @click="showAll = !showAll"
-          >
-            <component :is="showAll ? ChevronUpIcon : ChevronDownIcon" :size="14" />
-            <span>{{ showAll ? $t('chat.next.showLess') : $t('chat.next.showMore') }}</span>
-          </button>
         </div>
       </div>
     </div>
@@ -131,8 +122,6 @@ import { computed, nextTick, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  ChevronDown as ChevronDownIcon,
-  ChevronUp as ChevronUpIcon,
   PanelLeftClose as PanelLeftCloseIcon,
   Pencil as PencilIcon,
   Plus as PlusIcon,
@@ -170,10 +159,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const INITIAL_VISIBLE = 8
-
 const query = ref('')
-const showAll = ref(false)
 const searchInputRef = ref<HTMLInputElement>()
 
 const filteredSessions = computed(() => {
@@ -186,10 +172,6 @@ const filteredSessions = computed(() => {
     (a, b) => parseTimestamp(b.updatedAt).getTime() - parseTimestamp(a.updatedAt).getTime(),
   )
 })
-
-const visibleSessions = computed(() =>
-  showAll.value ? filteredSessions.value : filteredSessions.value.slice(0, INITIAL_VISIBLE),
-)
 
 // 会话行内重命名：仅一个输入框存在，用函数 ref 取元素（v-for 内字符串 ref 会变成数组）
 const renamingId = ref<string | null>(null)

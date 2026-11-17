@@ -155,8 +155,6 @@
       "greetingEveningUser": "Good evening, {name}. What should we start with?",
       "searchSessions": "Search sessions",
       "allSessions": "All",
-      "showMore": "Show more",
-      "showLess": "Show less",
       "toggleSidebar": "Toggle sidebar",
       "collapseSidebar": "Collapse sidebar",
       "timeline": "Timeline",
