@@ -252,7 +252,7 @@ function describeCron(expr: string): string {
     desc = t('cron.builder.descMonthlyOn', { day })
   } else if (weekday !== '*' && day === '*') {
     const names = [t('cron.builder.sun'), t('cron.builder.mon'), t('cron.builder.tue'), t('cron.builder.wed'), t('cron.builder.thu'), t('cron.builder.fri'), t('cron.builder.sat')]
-    const days = weekday.split(',').map(d => names[parseInt(d)] || d).join(t('cron.patterns.weekdaySeparator'))
+    const days = weekday.split(',').map(d => names[parseInt(d) === 7 ? 0 : parseInt(d)] || d).join(t('cron.patterns.weekdaySeparator'))
     desc = t('cron.builder.descWeeklyOn', { days })
   } else if (day === '*' && month === '*' && weekday === '*') {
     desc = t('cron.builder.descDaily')
@@ -373,7 +373,7 @@ function parseExpression(expr: string) {
     frequency.value = 'week'
     atMinute.value = parseInt(min) || 0
     atHour.value = parseInt(hour) || 9
-    selectedWeekdays.value = weekday.split(',').map(d => parseInt(d)).filter(d => !isNaN(d))
+    selectedWeekdays.value = weekday.split(',').map(d => parseInt(d)).map(d => d === 7 ? 0 : d).filter(d => !isNaN(d))
     if (selectedWeekdays.value.length === 0) selectedWeekdays.value = [1]
   } else if (day !== '*' && weekday === '*') {
     frequency.value = 'month'

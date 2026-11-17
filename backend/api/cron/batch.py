@@ -104,13 +104,6 @@ async def batch_delete_cron_jobs(
                     })
                     continue
 
-                if cron_service.scheduler and cron_service.scheduler.is_job_active(job_id):
-                    errors.append({
-                        "job_id": job_id,
-                        "error": "任务正在执行，暂不能删除"
-                    })
-                    continue
-
                 job = await cron_service.get_job(job_id)
                 if job is None:
                     errors.append({

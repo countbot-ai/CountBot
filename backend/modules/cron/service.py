@@ -53,6 +53,10 @@ class CronService:
         """添加定时任务"""
         if not self.validate_schedule(schedule):
             raise ValueError(f"Invalid cron: {schedule}")
+        if not str(name or "").strip():
+            raise ValueError("任务名称不能为空")
+        if not str(message or "").strip():
+            raise ValueError("执行消息不能为空")
 
         max_retries = max(0, min(5, int(max_retries)))
         retry_delay = max(10, min(3600, int(retry_delay)))
@@ -159,6 +163,8 @@ class CronService:
             return None
 
         if name is not None:
+            if not name.strip():
+                raise ValueError("任务名称不能为空")
             job.name = name.strip()
 
         if schedule is not None:
@@ -168,6 +174,8 @@ class CronService:
             job.schedule = schedule
 
         if message is not None:
+            if not message.strip():
+                raise ValueError("执行消息不能为空")
             job.message = message
 
         if enabled is not None:

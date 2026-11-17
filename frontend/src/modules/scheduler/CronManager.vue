@@ -721,7 +721,7 @@ const parseCronExpression = (cron: string): string => {
     ]
     const labels = weekday
       .split(',')
-      .map((part) => weekdays[parseInt(part)] || part)
+      .map((part) => weekdays[parseInt(part) === 7 ? 0 : parseInt(part)] || part)
       .join(t('cron.patterns.weekdaySeparator'))
     result += ' ' + t('cron.patterns.onWeekday', { weekday: labels })
   }

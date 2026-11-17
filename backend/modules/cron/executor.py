@@ -129,6 +129,10 @@ class CronExecutor:
                     job_id=job_id,
                 )
 
+            # 供应商错误会以用户可读文本结束流；不要让这类文本被当成正常结果
+            if self._is_provider_error_response(response):
+                raise RuntimeError(str(response).strip()[:1000])
+
             # 任务结果只通过用户显式选择的渠道推送；未配置时不产生额外通知
             return response or ""
 
@@ -432,6 +436,31 @@ class CronExecutor:
         if not provider or not model:
             return None
         return {"provider": provider, "model": model}
+
+    @staticmethod
+    def _is_provider_error_response(response: Optional[str]) -> bool:
+        """识别 Provider 以普通文本结束的错误，避免 Cron 把失败记成成功。"""
+        text = str(response or "")
+        marker = "上游原始返回："
+        if marker not in text:
+            return False
+        prefixes = (
+            "AI 调用出错",
+            "API 账户余额不足",
+            "请求过于频繁",
+            "API 密钥无效",
+            "所选模型不可用",
+            "对话上下文过长",
+            "上下文过长",
+            "AI 服务暂时不可用",
+            "网络连接异常",
+            "请求超时",
+            "当前模型或接口不支持图片输入",
+            "该供应商不支持 Responses API",
+            "接口地址不存在",
+            "未安装 anthropic",
+        )
+        return text.split(marker, 1)[0].strip().startswith(prefixes)
 
     async def _deliver_response_or_raise(
         self,
