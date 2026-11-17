@@ -139,7 +139,16 @@
       <SettingsRow layout="block">
         <div class="slider-container">
           <div class="slider-header">
-            <label class="label">{{ $t('settings.persona.maxHistoryMessages') }}</label>
+            <Tooltip :content="historyTooltip" placement="top">
+              <button
+                type="button"
+                class="history-label"
+                :aria-label="$t('settings.persona.maxHistoryTooltipLabel')"
+              >
+                <span class="label">{{ $t('settings.persona.maxHistoryMessages') }}</span>
+                <InfoIcon :size="15" class="history-info-icon" />
+              </button>
+            </Tooltip>
             <div class="slider-value">
               {{ historyDisplayValue }}
             </div>
@@ -400,12 +409,14 @@ import {
   Heart,
   CloudLightning,
   Infinity,
+  Info as InfoIcon,
 } from 'lucide-vue-next'
 import { useSettingsStore } from '@/store/settings'
 import { useChannelsStore } from '@/store/channels'
 import { personalitiesApi, type Personality } from '@/api/personalities'
 import { usePersonaSource } from '@/composables/usePersonaSource'
 import { useToast } from '@/composables/useToast'
+import Tooltip from '@/components/ui/Tooltip.vue'
 import PersonalityEditDialog from './PersonalityEditDialog.vue'
 
 const { t } = useI18n()
@@ -700,6 +711,14 @@ const historyDisplayValue = computed(() =>
   isUnlimitedHistory.value
     ? t('settings.persona.unlimited')
     : localPersona.value.max_history_messages
+)
+
+const historyTooltip = computed(() =>
+  isUnlimitedHistory.value
+    ? t('settings.persona.maxHistoryTooltipUnlimited')
+    : t('settings.persona.maxHistoryTooltip', {
+        count: localPersona.value.max_history_messages,
+      })
 )
 
 // Token消耗估算（假设每条消息200 tokens）

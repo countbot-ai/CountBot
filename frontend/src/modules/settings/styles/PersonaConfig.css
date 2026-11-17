@@ -322,6 +322,34 @@
   margin-bottom: 12px;
 }
 
+.history-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: help;
+}
+
+.history-info-icon {
+  color: var(--text-secondary);
+  transition: color 0.15s ease;
+}
+
+.history-label:hover .history-info-icon,
+.history-label:focus-visible .history-info-icon {
+  color: var(--color-primary);
+}
+
+.history-label:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 .slider-value {
   font-size: 16px;
   font-weight: 600;
