@@ -1098,13 +1098,6 @@ export const chatAPI = {
     }> =>
         apiClient.post(`/chat/sessions/${sessionId}/summarize`),
 
-    summarizeSessionToSelfImproving: (sessionId: string): Promise<{
-        success: boolean
-        summary: string
-        message?: string
-    }> =>
-        apiClient.post(`/chat/sessions/${sessionId}/summarize-self-improving`),
-
     // 手动压缩会话上下文：按 token 水位折叠过长的历史，保留头部与最近若干条原文
     compactSessionContext: (sessionId: string, focusTopic?: string): Promise<{
         success: boolean

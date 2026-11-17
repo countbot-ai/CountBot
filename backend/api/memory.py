@@ -72,7 +72,7 @@ class PinRequest(BaseModel):
     pinned: bool = Field(True, description="True 置顶，False 取消置顶")
 
 
-def get_memory_store() -> MemoryService:
+def resolve_memory_dir() -> Path:
     """记忆永远按用户隔离：普通用户读写自己的记忆目录。"""
     from backend.modules.multiuser.permissions import get_request_user
     from backend.modules.workspace import resolve_user_workspace
@@ -86,7 +86,11 @@ def get_memory_store() -> MemoryService:
         memory_dir = workspace / "memory"
 
     memory_dir.mkdir(parents=True, exist_ok=True)
-    return MemoryService(memory_dir)
+    return memory_dir
+
+
+def get_memory_store() -> MemoryService:
+    return MemoryService(resolve_memory_dir())
 
 
 def _to_response(entry) -> MemoryEntryResponse:
@@ -232,4 +236,100 @@ async def restore_memory_entry(entry_id: str) -> UpdateMemoryResponse:
         raise
     except Exception as e:
         logger.exception(f"Failed to restore memory entry: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# 自我改进记忆（SELF_IMPROVING）
+# ============================================================================
+
+SELF_IMPROVING_FILE = "SELF_IMPROVING.md"
+CORRECTIONS_FILE = "CORRECTIONS.md"
+INDEX_FILE = "INDEX.md"
+HEARTBEAT_STATE_FILE = "heartbeat_state.json"
+
+
+class SelfImprovingMemoryResponse(BaseModel):
+    """自我改进记忆内容。"""
+
+    memory: str = ""
+    corrections: str = ""
+    index: str = ""
+    heartbeat_state: str = ""
+    projects: List[str] = Field(default_factory=list)
+    domains: List[str] = Field(default_factory=list)
+    archive: List[str] = Field(default_factory=list)
+
+
+class UpdateSelfImprovingMemoryRequest(BaseModel):
+    memory: Optional[str] = None
+    corrections: Optional[str] = None
+    index: Optional[str] = None
+
+
+def _read_text_file(path: Path) -> str:
+    try:
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning(f"读取自我改进记忆失败 {path}: {exc}")
+    return ""
+
+
+def _write_text_file(path: Path, content: str) -> None:
+    """原子写入。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _list_names(directory: Path) -> List[str]:
+    if not directory.is_dir():
+        return []
+    names: List[str] = []
+    for item in sorted(directory.iterdir()):
+        if item.name.startswith("."):
+            continue
+        names.append(item.stem if item.is_file() else item.name)
+    return names
+
+
+@router.get("/self-improving", response_model=SelfImprovingMemoryResponse)
+async def get_self_improving_memory() -> SelfImprovingMemoryResponse:
+    """读取自我改进记忆。"""
+    try:
+        memory_dir = resolve_memory_dir()
+        return SelfImprovingMemoryResponse(
+            memory=_read_text_file(memory_dir / SELF_IMPROVING_FILE),
+            corrections=_read_text_file(memory_dir / CORRECTIONS_FILE),
+            index=_read_text_file(memory_dir / INDEX_FILE),
+            heartbeat_state=_read_text_file(memory_dir / HEARTBEAT_STATE_FILE),
+            projects=_list_names(memory_dir / "projects"),
+            domains=_list_names(memory_dir / "domains"),
+            archive=_list_names(memory_dir / "archive"),
+        )
+    except Exception as e:
+        logger.exception(f"Failed to get self-improving memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/self-improving", response_model=UpdateMemoryResponse)
+async def update_self_improving_memory(
+    request: UpdateSelfImprovingMemoryRequest,
+) -> UpdateMemoryResponse:
+    """写入自我改进记忆。"""
+    try:
+        memory_dir = resolve_memory_dir()
+        targets = (
+            (SELF_IMPROVING_FILE, request.memory),
+            (CORRECTIONS_FILE, request.corrections),
+            (INDEX_FILE, request.index),
+        )
+        for filename, content in targets:
+            if content is not None:
+                _write_text_file(memory_dir / filename, content)
+        return UpdateMemoryResponse(success=True, message="Self-improving memory updated")
+    except Exception as e:
+        logger.exception(f"Failed to update self-improving memory: {e}")
         raise HTTPException(status_code=500, detail=str(e))

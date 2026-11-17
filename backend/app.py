@@ -483,6 +483,7 @@ app.add_middleware(RemoteAuthMiddleware, get_password_hash_fn=get_password_hash)
 
 # 注册 API 路由
 from backend.api.chat import router as chat_router
+from backend.api.session_search import router as session_search_router
 from backend.api.settings import router as settings_router
 from backend.api.tools import router as tools_router
 from backend.api.memory import router as memory_router
@@ -504,6 +505,7 @@ from backend.api.native_caps import router as native_caps_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(session_search_router)
 app.include_router(settings_router)
 app.include_router(tools_router)
 app.include_router(memory_router)
