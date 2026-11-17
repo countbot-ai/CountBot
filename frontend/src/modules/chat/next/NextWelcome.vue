@@ -52,8 +52,8 @@ const greeting = computed(() => {
   const userKey = `chat.next.greeting${period}User`
   const name = userStore.displayName.trim()
 
-  // 未登录或身份未就绪时沿用通用问候
-  if (!userStore.isAuthenticated || !name) {
+  // 用户名未就绪时沿用通用问候；登录页切换后 auth status 可能仍是旧值，不能据此拦截
+  if (!name) {
     return t(baseKey)
   }
   return t(userKey, { name })

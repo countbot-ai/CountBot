@@ -112,8 +112,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { authAPI } from '@/api/endpoints'
+import { useUserStore } from '@/store/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const { t } = useI18n()
 const route = useRoute()
 
@@ -209,6 +211,7 @@ async function handleSubmit() {
       if (data.token) {
         localStorage.setItem('CountBot_token', data.token)
       }
+      await userStore.refresh().catch(() => undefined)
       router.replace('/')
     } else if (isRegister.value) {
       if (password.value !== confirmPassword.value) {
@@ -225,6 +228,7 @@ async function handleSubmit() {
         isRegister.value = false
         return
       }
+      await userStore.refresh().catch(() => undefined)
       router.replace('/')
     } else {
       const { data } = await axios.post('/api/auth/login', {
@@ -234,6 +238,7 @@ async function handleSubmit() {
       if (data.token) {
         localStorage.setItem('CountBot_token', data.token)
       }
+      await userStore.refresh().catch(() => undefined)
       router.replace('/')
     }
   } catch (err: any) {
