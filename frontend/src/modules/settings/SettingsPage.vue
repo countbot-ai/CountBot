@@ -337,12 +337,9 @@ const goToTab = (tab: SettingsTab) => {
   void router.replace({ name: 'settings', params: { tab } })
 }
 
+/** 固定回聊天首页：浏览器历史可能指向登录页或其它设置页，不能作为返回目标 */
 const goBack = () => {
-  if (window.history.length > 1) {
-    router.back()
-    return
-  }
-  void router.push({ name: 'home' })
+  void router.replace({ name: 'home' })
 }
 
 const loadSettings = async () => {
