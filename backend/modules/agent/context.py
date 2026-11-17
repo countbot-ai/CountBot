@@ -399,11 +399,6 @@ class ContextBuilder:
             custom_personality,
         )
 
-        # 克隆人格用档案里的名字自称，配置页的 AI 名称对它不生效
-        cloned_name = self._cloned_personality_name(personality)
-        if cloned_name:
-            ai_name = cloned_name
-
         # 环境信息随 core_rules 关闭；对话模式没有工具，同样不需要这些路径
         environment_block = ""
         if self._injection_flag("core_rules") and chat_mode != "chat":
