@@ -2605,5 +2605,172 @@
           "delete": "Delete"
         }
       }
+    },
+    "admin": {
+      "users": {
+        "actions": {
+          "pass": "Approve",
+          "reject": "Reject",
+          "disable": "Disable",
+          "enable": "Enable",
+          "unlock": "Unlock",
+          "edit": "Edit",
+          "resetPassword": "Reset password",
+          "delete": "Delete"
+        },
+        "tabs": {
+          "aria": "User management sections",
+          "users": "Users",
+          "access": "Registration & Access",
+          "resources": "Resource Sharing",
+          "models": "Shared Models"
+        },
+        "common": {
+          "loadingSettings": "Loading policy…",
+          "refresh": "Refresh",
+          "removing": "Removing…",
+          "loadingModels": "Loading shared models…"
+        },
+        "access": {
+          "title": "Registration & Access",
+          "description": "Control who can register and how new accounts take effect. Changes save immediately.",
+          "enable": "Enable multi-user",
+          "enableHint": "When disabled, only administrator accounts can sign in",
+          "openRegistration": "Open registration",
+          "openRegistrationHint": "When disabled, only administrators can create accounts. When enabled, anyone who can reach this service may register and use server resources.",
+          "approval": "Registration approval",
+          "approvalHint": "How new accounts are admitted",
+          "approvalManual": "Manual approval",
+          "approvalAuto": "Automatic",
+          "openWarning": "Open registration shares server access with everyone: anyone who can reach this service may create an account and use its models, compute, files, and command tools.",
+          "bypassDisabled": "Local auto-login is disabled by the deployment-level switch."
+        },
+        "resources": {
+          "title": "Resource Sharing & Permissions",
+          "description": "Administrator resources available to regular users, and the limits of self-managed capabilities",
+          "mode": "Global mode",
+          "modeHint": "Shared mode reuses administrator configuration; isolated mode lets each user maintain their own",
+          "modeShared": "Shared (reuse administrator resources)",
+          "modeIsolated": "Isolated (user-managed)",
+          "sharedProviders": "Share LLM providers",
+          "sharedProvidersHint": "Regular users can use model providers configured by administrators",
+          "sharedSkills": "Share skills / wiki / MCP",
+          "sharedSkillsHint": "Regular users can reuse administrator skills, wiki, and MCP configuration",
+          "sharedWarning": "Shared MCP tools run with administrator credentials and permissions. Only share trusted services.",
+          "allowUserMcp": "Allow user-managed MCP",
+          "allowUserMcpHint": "When enabled, regular users can add MCP servers in their own settings",
+          "stdioAllowlist": "stdio command allowlist",
+          "stdioHint": "Separate commands with commas; leave empty to deny stdio access for regular users."
+        },
+        "models": {
+          "title": "Shared models",
+          "description": "Models regular users can select under Settings → Models. Enable “Shared” in the model editor to list a model here.",
+          "disabledNotice": "Current mode: {mode}. Regular users cannot see these shared models.",
+          "modeSharedNoProviders": "shared mode without shared providers",
+          "modeIsolated": "isolated mode",
+          "colAlias": "Visible alias",
+          "colProviderModel": "Provider / model",
+          "colDailyLimit": "Daily limit",
+          "colTodayCalls": "Today",
+          "colTotalCalls": "Total",
+          "colActions": "Actions",
+          "calls": "{n} calls",
+          "unlimited": "Unlimited",
+          "empty": "No models are shared yet.",
+          "usageTitle": "Usage by user (today / total)",
+          "colUser": "User",
+          "colModel": "Model",
+          "colTodayTokens": "Today tokens"
+        },
+        "list": {
+          "title": "Users",
+          "count": "{total} accounts",
+          "searchPlaceholder": "Search username",
+          "statusAll": "All statuses",
+          "statusPending": "Pending",
+          "statusActive": "Active",
+          "statusDisabled": "Disabled",
+          "create": "New user",
+          "createUsername": "Username (3–32 characters)",
+          "createPassword": "Initial password",
+          "createDisplayName": "Display name (optional)",
+          "creating": "Creating…",
+          "createSubmit": "Create",
+          "empty": "No users yet",
+          "total": "{total} users",
+          "prev": "Previous",
+          "next": "Next",
+          "lockedBadge": "Locked",
+          "lockedTitle": "Too many failed sign-in attempts. Remaining: {time}"
+        },
+        "roles": {
+          "user": "User",
+          "admin": "Administrator"
+        },
+        "policy": {
+          "all": "All modes",
+          "chat": "Chat only",
+          "agent": "Agent only",
+          "allShort": "All",
+          "chatShort": "Chat",
+          "agentShort": "Agent"
+        },
+        "status": {
+          "pending": "Pending",
+          "active": "Active",
+          "disabled": "Disabled"
+        },
+        "cols": {
+          "username": "Username",
+          "role": "Role",
+          "status": "Status",
+          "policy": "Allowed modes",
+          "lastLogin": "Last sign-in",
+          "actions": "Actions"
+        },
+        "edit": {
+          "title": "Edit user",
+          "username": "Username",
+          "displayName": "Display name",
+          "role": "Role",
+          "status": "Status",
+          "policy": "Allowed modes",
+          "hint": "When only one mode is allowed, the mode switch is hidden in the chat input."
+        },
+        "messages": {
+          "loadUsersFailed": "Failed to load users",
+          "loadSettingsFailed": "Failed to load policy",
+          "settingsSaved": "Policy saved",
+          "saveFailed": "Save failed",
+          "created": "User created",
+          "createFailed": "Create failed",
+          "statusUpdated": "Status updated",
+          "updateFailed": "Update failed",
+          "policyUpdated": "Allowed modes updated",
+          "policyUpdateFailed": "Failed to update allowed modes",
+          "userUpdated": "User updated",
+          "unlocked": "Sign-in lock cleared",
+          "unlockFailed": "Failed to unlock",
+          "resetPrompt": "Set a new password for {name} (at least 8 characters with upper case, lower case, and digits)",
+          "resetSuccess": "Password reset. The user must sign in again.",
+          "resetFailed": "Reset failed",
+          "deleteConfirm": "Delete user {name}? This cannot be undone.",
+          "deleted": "User deleted",
+          "deleteFailed": "Delete failed",
+          "sharedLoadFailed": "Failed to load shared models",
+          "sharedRemoved": "Removed from shared list",
+          "sharedRemoveFailed": "Failed to remove shared model",
+          "lessThanMinute": "less than a minute",
+          "minutes": "{n} min"
+        },
+        "confirm": {
+          "openRegistrationTitle": "Confirm open registration",
+          "openRegistrationMessage": "Open registration shares server access with everyone and creates serious privacy and security risks: anyone who can reach this service may create an account and use its models, compute, files, and command tools. Confirm the service is restricted to a trusted network or protected by access control.",
+          "openRegistrationConfirm": "Enable anyway",
+          "removeSharedTitle": "Remove shared model",
+          "removeSharedMessage": "Remove “{name}” from the shared list? The model itself stays in the provider and can be shared again later.",
+          "removeSharedConfirm": "Remove"
+        }
+      }
     }
 }

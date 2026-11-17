@@ -1,6 +1,6 @@
 <template>
   <div class="user-management">
-    <div class="um-tabs co-segmented" role="tablist" aria-label="用户管理分区">
+    <div class="um-tabs co-segmented" role="tablist" :aria-label="$t('admin.users.tabs.aria')">
       <button
         v-for="tab in TABS"
         :key="tab.key"
@@ -10,138 +10,138 @@
         :aria-selected="activeTab === tab.key"
         @click="activeTab = tab.key"
       >
-        {{ tab.label }}
+        {{ $t(tab.labelKey) }}
       </button>
     </div>
 
     <!-- 注册与准入 -->
     <template v-if="activeTab === 'access'">
     <SettingsCard
-      title="注册与准入"
-      description="控制谁能注册、新账号如何生效，改动后立即保存"
+      :title="$t('admin.users.access.title')"
+      :description="$t('admin.users.access.description')"
       flush
     >
       <template v-if="settings">
-        <SettingsRow label="启用多用户" description="关闭后仅管理员账号可用">
+        <SettingsRow :label="$t('admin.users.access.enable')" :description="$t('admin.users.access.enableHint')">
           <SwitchToggle
             v-model="settings.enabled"
             :width="40"
             :height="22"
-            aria-label="启用多用户"
+            :aria-label="$t('admin.users.access.enable')"
             @change="saveSettings"
           />
         </SettingsRow>
-        <SettingsRow label="开放注册" description="关闭后新账号只能由管理员手动创建；开放后任何能访问本服务的人都能注册并使用服务器资源">
+        <SettingsRow :label="$t('admin.users.access.openRegistration')" :description="$t('admin.users.access.openRegistrationHint')">
           <SwitchToggle
             v-model="settings.registration_open"
             :width="40"
             :height="22"
             :disabled="!settings.enabled"
-            aria-label="开放注册"
+            :aria-label="$t('admin.users.access.openRegistration')"
             @change="handleRegistrationChange"
           />
         </SettingsRow>
-        <SettingsRow label="注册审批" description="新注册账号的准入方式">
+        <SettingsRow :label="$t('admin.users.access.approval')" :description="$t('admin.users.access.approvalHint')">
           <select v-model="settings.approval" class="co-select form-control" @change="saveSettings">
-            <option value="manual">管理员审批</option>
-            <option value="auto">自动通过</option>
+            <option value="manual">{{ $t('admin.users.access.approvalManual') }}</option>
+            <option value="auto">{{ $t('admin.users.access.approvalAuto') }}</option>
           </select>
         </SettingsRow>
         <p v-if="settings.registration_open" class="note is-warn">
-          开放注册意味着把服务器权限共享给所有用户：任何能访问本服务的人都能注册并使用服务器上的模型、算力、文件与命令工具。
+          {{ $t('admin.users.access.openWarning') }}
         </p>
       </template>
-      <p v-else class="empty-note">正在读取策略…</p>
+      <p v-else class="empty-note">{{ $t('admin.users.common.loadingSettings') }}</p>
     </SettingsCard>
 
     <p v-if="settings && !settings.allow_local_admin_bypass" class="note is-warn">
-      本机免登录已被部署级开关关闭。
+      {{ $t('admin.users.access.bypassDisabled') }}
     </p>
     </template>
 
     <!-- 资源共享 -->
     <template v-if="activeTab === 'resources'">
     <SettingsCard
-      title="资源共享与权限"
-      description="普通用户可复用的管理员资源，以及自建能力的边界"
+      :title="$t('admin.users.resources.title')"
+      :description="$t('admin.users.resources.description')"
       flush
     >
       <template v-if="settings">
-        <SettingsRow label="全局模式" description="共享模式复用管理员配置，隔离模式由各用户自行维护">
+        <SettingsRow :label="$t('admin.users.resources.mode')" :description="$t('admin.users.resources.modeHint')">
           <select v-model="settings.mode" class="co-select form-control" @change="saveSettings">
-            <option value="shared">共享（复用管理员资源）</option>
-            <option value="isolated">隔离（用户自建）</option>
+            <option value="shared">{{ $t('admin.users.resources.modeShared') }}</option>
+            <option value="isolated">{{ $t('admin.users.resources.modeIsolated') }}</option>
           </select>
         </SettingsRow>
-        <SettingsRow label="共享 LLM 供应商" description="普通用户可使用管理员配置的模型供应商">
+        <SettingsRow :label="$t('admin.users.resources.sharedProviders')" :description="$t('admin.users.resources.sharedProvidersHint')">
           <SwitchToggle
             v-model="settings.shared_providers"
             :width="40"
             :height="22"
-            aria-label="共享 LLM 供应商"
+            :aria-label="$t('admin.users.resources.sharedProviders')"
             @change="saveSettings"
           />
         </SettingsRow>
-        <SettingsRow label="共享技能 / 知识库 / MCP" description="普通用户可复用管理员的技能、知识库与 MCP 配置">
+        <SettingsRow :label="$t('admin.users.resources.sharedSkills')" :description="$t('admin.users.resources.sharedSkillsHint')">
           <SwitchToggle
             v-model="settings.shared_skills_wiki_mcp"
             :width="40"
             :height="22"
-            aria-label="共享技能、知识库与 MCP"
+            :aria-label="$t('admin.users.resources.sharedSkills')"
             @change="saveSettings"
           />
         </SettingsRow>
         <p v-if="settings.shared_skills_wiki_mcp" class="note is-warn">
-          共享 MCP 工具会以管理员配置的凭据与权限执行，请只共享可信服务。
+          {{ $t('admin.users.resources.sharedWarning') }}
         </p>
-        <SettingsRow label="允许用户自建 MCP" description="开启后普通用户可在自己的设置里添加 MCP 服务">
+        <SettingsRow :label="$t('admin.users.resources.allowUserMcp')" :description="$t('admin.users.resources.allowUserMcpHint')">
           <SwitchToggle
             v-model="settings.allow_user_mcp"
             :width="40"
             :height="22"
-            aria-label="允许用户自建 MCP"
+            :aria-label="$t('admin.users.resources.allowUserMcp')"
             @change="saveSettings"
           />
         </SettingsRow>
-        <SettingsRow label="stdio 命令白名单" layout="block">
+        <SettingsRow :label="$t('admin.users.resources.stdioAllowlist')" layout="block">
           <input
             v-model="stdioAllowlistText"
             class="co-input"
             placeholder="npx, uvx"
             @change="saveSettings"
           >
-          <p class="note">多个命令用英文逗号分隔；留空表示禁止普通用户使用 stdio。</p>
+          <p class="note">{{ $t('admin.users.resources.stdioHint') }}</p>
         </SettingsRow>
       </template>
-      <p v-else class="co-empty co-empty--inline">正在读取策略…</p>
+      <p v-else class="co-empty co-empty--inline">{{ $t('admin.users.common.loadingSettings') }}</p>
     </SettingsCard>
     </template>
 
     <!-- 共享模型总览 -->
     <template v-if="activeTab === 'models'">
     <SettingsCard
-      title="共享模型"
-      description="普通用户在「设置 → 模型」里能选到的模型；在模型编辑弹窗里勾选「共享」即在此出现"
+      :title="$t('admin.users.models.title')"
+      :description="$t('admin.users.models.description')"
       flush
     >
       <template #actions>
-        <button class="co-btn co-btn--secondary btn-compact" @click="loadSharedModels">刷新</button>
+        <button class="co-btn co-btn--secondary btn-compact" @click="loadSharedModels">{{ $t('admin.users.common.refresh') }}</button>
       </template>
 
       <p v-if="sharedModels && !sharedModels.enabled" class="notice-inline">
-        当前为 {{ sharedModels.mode === 'shared' ? '共享模式但未开启共享供应商' : '隔离模式' }}，普通用户看不到这些共享模型。
+        {{ $t('admin.users.models.disabledNotice', { mode: sharedModels.mode === 'shared' ? $t('admin.users.models.modeSharedNoProviders') : $t('admin.users.models.modeIsolated') }) }}
       </p>
 
       <div v-if="sharedModels && sharedModels.items.length" class="table-scroll">
         <table class="table">
           <thead>
             <tr>
-              <th>用户可见别名</th>
-              <th>供应商 / 模型</th>
-              <th>每日上限</th>
-              <th>今日调用</th>
-              <th>累计调用</th>
-              <th>操作</th>
+              <th>{{ $t('admin.users.models.colAlias') }}</th>
+              <th>{{ $t('admin.users.models.colProviderModel') }}</th>
+              <th>{{ $t('admin.users.models.colDailyLimit') }}</th>
+              <th>{{ $t('admin.users.models.colTodayCalls') }}</th>
+              <th>{{ $t('admin.users.models.colTotalCalls') }}</th>
+              <th>{{ $t('admin.users.models.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -151,7 +151,7 @@
                 <div class="sub" v-if="item.note">{{ item.note }}</div>
               </td>
               <td class="sub">{{ item.provider_name }} / {{ item.model }}</td>
-              <td>{{ item.daily_limit ? item.daily_limit + ' 次' : '不限' }}</td>
+              <td>{{ item.daily_limit ? $t('admin.users.models.calls', { n: item.daily_limit }) : $t('admin.users.models.unlimited') }}</td>
               <td>{{ usageFor(item).todayCalls }}</td>
               <td>{{ usageFor(item).totalCalls }}</td>
               <td class="ops">
@@ -160,27 +160,27 @@
                   :disabled="removingSharedRef === item.ref"
                   @click="removeSharedModel(item)"
                 >
-                  {{ removingSharedRef === item.ref ? '删除中…' : '删除' }}
+                  {{ removingSharedRef === item.ref ? $t('admin.users.common.removing') : $t('admin.users.actions.delete') }}
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p v-else-if="sharedModels" class="empty-note">还没有共享任何模型。</p>
-      <p v-else class="empty-note">正在读取共享模型…</p>
+      <p v-else-if="sharedModels" class="empty-note">{{ $t('admin.users.models.empty') }}</p>
+      <p v-else class="empty-note">{{ $t('admin.users.common.loadingModels') }}</p>
 
       <template v-if="sharedModels && sharedModels.usage.length">
-        <h4 class="usage-title">各用户用量（今日 / 累计）</h4>
+        <h4 class="usage-title">{{ $t('admin.users.models.usageTitle') }}</h4>
         <div class="table-scroll">
           <table class="table">
             <thead>
               <tr>
-                <th>用户</th>
-                <th>模型</th>
-                <th>今日调用</th>
-                <th>累计调用</th>
-                <th>今日 Token</th>
+                <th>{{ $t('admin.users.models.colUser') }}</th>
+                <th>{{ $t('admin.users.models.colModel') }}</th>
+                <th>{{ $t('admin.users.models.colTodayCalls') }}</th>
+                <th>{{ $t('admin.users.models.colTotalCalls') }}</th>
+                <th>{{ $t('admin.users.models.colTodayTokens') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -200,41 +200,41 @@
 
     <!-- 用户列表 -->
     <template v-if="activeTab === 'users'">
-    <SettingsCard title="用户" :description="`共 ${total} 个账号`" flush>
+    <SettingsCard :title="$t('admin.users.list.title')" :description="$t('admin.users.list.count', { total })" flush>
       <div class="toolbar">
         <input
           v-model="query"
           class="co-input search-input"
-          placeholder="搜索用户名"
+          :placeholder="$t('admin.users.list.searchPlaceholder')"
           @keyup.enter="handleFilter"
         >
         <select v-model="statusFilter" class="co-select filter-select" @change="handleFilter">
-          <option value="">全部状态</option>
-          <option value="pending">待审批</option>
-          <option value="active">正常</option>
-          <option value="disabled">已禁用</option>
+          <option value="">{{ $t('admin.users.list.statusAll') }}</option>
+          <option value="pending">{{ $t('admin.users.status.pending') }}</option>
+          <option value="active">{{ $t('admin.users.status.active') }}</option>
+          <option value="disabled">{{ $t('admin.users.status.disabled') }}</option>
         </select>
-        <button class="co-btn co-btn--secondary btn-compact" @click="loadUsers">刷新</button>
+        <button class="co-btn co-btn--secondary btn-compact" @click="loadUsers">{{ $t('admin.users.common.refresh') }}</button>
         <button class="co-btn co-btn--primary btn-compact" @click="showCreate = !showCreate">
-          {{ showCreate ? '取消' : '新建用户' }}
+          {{ showCreate ? $t('common.cancel') : $t('admin.users.list.create') }}
         </button>
       </div>
 
       <div v-if="showCreate" class="create-box">
-        <input v-model="createForm.username" class="co-input" placeholder="用户名（3-32 位）">
-        <input v-model="createForm.password" class="co-input" type="password" placeholder="初始密码">
-        <input v-model="createForm.display_name" class="co-input" placeholder="显示名称（可选）">
+        <input v-model="createForm.username" class="co-input" :placeholder="$t('admin.users.list.createUsername')">
+        <input v-model="createForm.password" class="co-input" type="password" :placeholder="$t('admin.users.list.createPassword')">
+        <input v-model="createForm.display_name" class="co-input" :placeholder="$t('admin.users.list.createDisplayName')">
         <select v-model="createForm.role" class="co-select">
-          <option value="user">普通用户</option>
-          <option value="admin">管理员</option>
+          <option value="user">{{ $t('admin.users.roles.user') }}</option>
+          <option value="admin">{{ $t('admin.users.roles.admin') }}</option>
         </select>
         <select v-model="createForm.chat_mode_policy" class="co-select" :disabled="createForm.role === 'admin'">
-          <option value="all">可用全部模式</option>
-          <option value="chat">仅对话模式</option>
-          <option value="agent">仅 Agent 模式</option>
+          <option value="all">{{ $t('admin.users.policy.all') }}</option>
+          <option value="chat">{{ $t('admin.users.policy.chat') }}</option>
+          <option value="agent">{{ $t('admin.users.policy.agent') }}</option>
         </select>
         <button class="co-btn co-btn--primary" :disabled="creating" @click="createUser">
-          {{ creating ? '创建中…' : '创建' }}
+          {{ creating ? $t('admin.users.list.creating') : $t('admin.users.list.createSubmit') }}
         </button>
       </div>
 
@@ -242,12 +242,12 @@
         <table class="table">
           <thead>
             <tr>
-              <th>用户名</th>
-              <th>角色</th>
-              <th>状态</th>
-              <th>可用模式</th>
-              <th>最后登录</th>
-              <th>操作</th>
+              <th>{{ $t('admin.users.cols.username') }}</th>
+              <th>{{ $t('admin.users.cols.role') }}</th>
+              <th>{{ $t('admin.users.cols.status') }}</th>
+              <th>{{ $t('admin.users.cols.policy') }}</th>
+              <th>{{ $t('admin.users.cols.lastLogin') }}</th>
+              <th>{{ $t('admin.users.models.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -256,16 +256,16 @@
                 <div class="username">{{ user.username }}</div>
                 <div class="sub" v-if="user.display_name">{{ user.display_name }}</div>
               </td>
-              <td>{{ user.role === 'admin' ? '管理员' : '普通用户' }}</td>
+              <td>{{ user.role === 'admin' ? $t('admin.users.roles.admin') : $t('admin.users.roles.user') }}</td>
               <td>
                 <div class="status-cell">
                   <span class="badge" :class="user.status">{{ statusText(user.status) }}</span>
                   <span
                     v-if="user.login_locked"
                     class="badge locked"
-                    :title="`连续登录失败过多，剩余 ${formatLockRemaining(user.login_locked)}`"
+                    :title="$t('admin.users.list.lockedTitle', { time: formatLockRemaining(user.login_locked) })"
                   >
-                    登录锁定
+                    {{ $t('admin.users.list.lockedBadge') }}
                   </span>
                 </div>
               </td>
@@ -276,11 +276,11 @@
                   :value="user.chat_mode_policy"
                   @change="setChatModePolicy(user, ($event.target as HTMLSelectElement).value as ChatModePolicy)"
                 >
-                  <option value="all">全部</option>
-                  <option value="chat">仅对话</option>
-                  <option value="agent">仅 Agent</option>
+                  <option value="all">{{ $t('admin.users.policy.allShort') }}</option>
+                  <option value="chat">{{ $t('admin.users.policy.chatShort') }}</option>
+                  <option value="agent">{{ $t('admin.users.policy.agentShort') }}</option>
                 </select>
-                <span v-else class="sub">全部</span>
+                <span v-else class="sub">{{ $t('admin.users.policy.allShort') }}</span>
               </td>
               <td class="sub">{{ formatTime(user.last_login_at) }}</td>
               <td class="ops">
@@ -327,21 +327,21 @@
               </td>
             </tr>
             <tr v-if="!users.length">
-              <td colspan="6" class="empty">暂无用户</td>
+              <td colspan="6" class="empty">{{ $t('admin.users.list.empty') }}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="pager">
-        <span class="pager-info">共 {{ total }} 个用户</span>
+        <span class="pager-info">{{ $t('admin.users.list.total', { total }) }}</span>
         <div class="pager-actions">
           <button
             class="co-btn co-btn--secondary btn-compact"
             :disabled="page <= 1"
             @click="changePage(page - 1)"
           >
-            上一页
+            {{ $t('admin.users.list.prev') }}
           </button>
           <span class="pager-current">{{ page }} / {{ totalPages }}</span>
           <button
@@ -349,7 +349,7 @@
             :disabled="page >= totalPages"
             @click="changePage(page + 1)"
           >
-            下一页
+            {{ $t('admin.users.list.next') }}
           </button>
         </div>
       </div>
@@ -360,49 +360,49 @@
 
     <Modal
       v-model="showEdit"
-      title="编辑用户"
+      :title="$t('admin.users.edit.title')"
       size="medium"
       show-footer
-      confirm-text="保存"
+      :confirm-text="$t('common.save')"
       :confirm-loading="editing"
       @confirm="saveEditUser"
     >
       <div class="edit-form">
         <div class="edit-field">
-          <label class="edit-label">用户名</label>
+          <label class="edit-label">{{ $t('admin.users.edit.username') }}</label>
           <input :value="editForm.username" class="co-input" disabled>
         </div>
         <div class="edit-field">
-          <label class="edit-label">显示名称</label>
-          <input v-model="editForm.display_name" class="co-input" placeholder="显示名称（可选）">
+          <label class="edit-label">{{ $t('admin.users.edit.displayName') }}</label>
+          <input v-model="editForm.display_name" class="co-input" :placeholder="$t('admin.users.list.createDisplayName')">
         </div>
         <div class="edit-field">
-          <label class="edit-label">角色</label>
+          <label class="edit-label">{{ $t('admin.users.edit.role') }}</label>
           <select v-model="editForm.role" class="co-select">
-            <option value="user">普通用户</option>
-            <option value="admin">管理员</option>
+            <option value="user">{{ $t('admin.users.roles.user') }}</option>
+            <option value="admin">{{ $t('admin.users.roles.admin') }}</option>
           </select>
         </div>
         <div class="edit-field">
-          <label class="edit-label">状态</label>
+          <label class="edit-label">{{ $t('admin.users.edit.status') }}</label>
           <select v-model="editForm.status" class="co-select">
-            <option value="pending">待审批</option>
-            <option value="active">正常</option>
-            <option value="disabled">已禁用</option>
+            <option value="pending">{{ $t('admin.users.status.pending') }}</option>
+            <option value="active">{{ $t('admin.users.status.active') }}</option>
+            <option value="disabled">{{ $t('admin.users.status.disabled') }}</option>
           </select>
         </div>
         <div class="edit-field">
-          <label class="edit-label">可用模式</label>
+          <label class="edit-label">{{ $t('admin.users.edit.policy') }}</label>
           <select
             v-model="editForm.chat_mode_policy"
             class="co-select"
             :disabled="editForm.role === 'admin'"
           >
-            <option value="all">可用全部模式</option>
-            <option value="chat">仅对话模式</option>
-            <option value="agent">仅 Agent 模式</option>
+            <option value="all">{{ $t('admin.users.policy.all') }}</option>
+            <option value="chat">{{ $t('admin.users.policy.chat') }}</option>
+            <option value="agent">{{ $t('admin.users.policy.agent') }}</option>
           </select>
-          <p class="edit-hint">只允许一种模式时，用户输入框不再显示模式切换。</p>
+          <p class="edit-hint">{{ $t('admin.users.edit.hint') }}</p>
         </div>
       </div>
     </Modal>
@@ -411,6 +411,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Ban, Check, KeyRound, LockKeyhole, Pencil, Trash2, XCircle } from 'lucide-vue-next'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import SwitchToggle from '@/components/ui/SwitchToggle.vue'
@@ -439,6 +440,8 @@ interface MultiuserSettings {
   max_users: number
 }
 
+const { t } = useI18n()
+
 const users = ref<AdminUserItem[]>([])
 const total = ref(0)
 const query = ref('')
@@ -454,11 +457,11 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)
 type TabKey = 'users' | 'access' | 'resources' | 'models'
 
 /** 页面分区：策略类配置与用户列表拆开，避免长页面上下滚动 */
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'users', label: '用户' },
-  { key: 'access', label: '注册与准入' },
-  { key: 'resources', label: '资源共享' },
-  { key: 'models', label: '共享模型' },
+const TABS: { key: TabKey; labelKey: string }[] = [
+  { key: 'users', labelKey: 'admin.users.tabs.users' },
+  { key: 'access', labelKey: 'admin.users.tabs.access' },
+  { key: 'resources', labelKey: 'admin.users.tabs.resources' },
+  { key: 'models', labelKey: 'admin.users.tabs.models' },
 ]
 const activeTab = ref<TabKey>('users')
 const settings = ref<MultiuserSettings | null>(null)
@@ -496,7 +499,7 @@ function notify(text: string, isError = false) {
 }
 
 function statusText(status: string) {
-  return { pending: '待审批', active: '正常', disabled: '已禁用' }[status] || status
+  return { pending: t('admin.users.status.pending'), active: t('admin.users.status.active'), disabled: t('admin.users.status.disabled') }[status] || status
 }
 
 function formatTime(value?: string) {
@@ -525,7 +528,7 @@ async function loadUsers() {
     users.value = data.items
     total.value = data.total
   } catch (err: any) {
-    notify(err?.message || '加载用户失败', true)
+    notify(err?.message || t('admin.users.messages.loadUsersFailed'), true)
   }
 }
 
@@ -547,7 +550,7 @@ async function loadSettings() {
     settings.value = { ...data }
     stdioAllowlistText.value = (data.user_mcp_stdio_allowlist || []).join(', ')
   } catch (err: any) {
-    notify(err?.message || '加载策略失败', true)
+    notify(err?.message || t('admin.users.messages.loadSettingsFailed'), true)
   }
 }
 
@@ -567,9 +570,9 @@ async function saveSettings() {
         .map((item) => item.trim())
         .filter(Boolean),
     })
-    notify('策略已保存')
+    notify(t('admin.users.messages.settingsSaved'))
   } catch (err: any) {
-    notify(err?.message || '保存失败', true)
+    notify(err?.message || t('admin.users.messages.saveFailed'), true)
     await loadSettings()
   }
 }
@@ -582,12 +585,11 @@ async function handleRegistrationChange(value: boolean) {
   }
 
   const confirmed = await confirm({
-    title: '开放注册风险确认',
-    message:
-      '开放注册意味着把服务器权限共享给所有用户，这会带来严重的隐私与安全风险：任何能访问本服务的人都可以创建账号，使用服务器上的模型、算力、文件与命令工具。请确认服务已限制在可信网络，或已配置访问控制。',
+    title: t('admin.users.confirm.openRegistrationTitle'),
+    message: t('admin.users.confirm.openRegistrationMessage'),
     type: 'warning',
-    confirmText: '确认开放',
-    cancelText: '取消',
+    confirmText: t('admin.users.confirm.openRegistrationConfirm'),
+    cancelText: t('common.cancel'),
     confirmVariant: 'warning',
   })
   if (!confirmed) {
@@ -608,7 +610,7 @@ async function createUser() {
       status: 'active',
       chat_mode_policy: createForm.chat_mode_policy,
     })
-    notify('用户已创建')
+    notify(t('admin.users.messages.created'))
     showCreate.value = false
     createForm.username = ''
     createForm.password = ''
@@ -619,7 +621,7 @@ async function createUser() {
     page.value = 1
     await loadUsers()
   } catch (err: any) {
-    notify(err?.message || '创建失败', true)
+    notify(err?.message || t('admin.users.messages.createFailed'), true)
   } finally {
     creating.value = false
   }
@@ -628,10 +630,10 @@ async function createUser() {
 async function setStatus(user: AdminUserItem, status: string) {
   try {
     await adminAPI.updateUser(user.id, { status })
-    notify('状态已更新')
+    notify(t('admin.users.messages.statusUpdated'))
     await loadUsers()
   } catch (err: any) {
-    notify(err?.message || '更新失败', true)
+    notify(err?.message || t('admin.users.messages.updateFailed'), true)
   }
 }
 
@@ -639,9 +641,9 @@ async function setChatModePolicy(user: AdminUserItem, policy: ChatModePolicy) {
   try {
     const updated = await adminAPI.updateUser(user.id, { chat_mode_policy: policy })
     user.chat_mode_policy = updated.chat_mode_policy
-    notify('可用模式已更新')
+    notify(t('admin.users.messages.policyUpdated'))
   } catch (err: any) {
-    notify(err?.message || '更新可用模式失败', true)
+    notify(err?.message || t('admin.users.messages.policyUpdateFailed'), true)
     await loadUsers()
   }
 }
@@ -667,10 +669,10 @@ async function saveEditUser() {
       chat_mode_policy: editForm.role === 'admin' ? 'all' : editForm.chat_mode_policy,
     })
     showEdit.value = false
-    notify('用户信息已更新')
+    notify(t('admin.users.messages.userUpdated'))
     await loadUsers()
   } catch (err: any) {
-    notify(err?.message || '保存失败', true)
+    notify(err?.message || t('admin.users.messages.saveFailed'), true)
   } finally {
     editing.value = false
   }
@@ -679,38 +681,38 @@ async function saveEditUser() {
 function formatLockRemaining(seconds: number) {
   if (!seconds || seconds <= 0) return ''
   const minutes = Math.ceil(seconds / 60)
-  return minutes <= 1 ? '不到 1 分钟' : `${minutes} 分钟`
+  return minutes <= 1 ? t('admin.users.messages.lessThanMinute') : t('admin.users.messages.minutes', { n: minutes })
 }
 
 async function unlockUser(user: AdminUserItem) {
   try {
     const result = await adminAPI.unlockUser(user.id)
-    notify(result.message || '已解除登录锁定')
+    notify(result.message || t('admin.users.messages.unlocked'))
     await loadUsers()
   } catch (err: any) {
-    notify(err?.message || '解锁失败', true)
+    notify(err?.message || t('admin.users.messages.unlockFailed'), true)
   }
 }
 
 async function resetPassword(user: AdminUserItem) {
-  const next = window.prompt(`为 ${user.username} 设置新密码（至少 8 位，含大小写与数字）`)
+  const next = window.prompt(t('admin.users.messages.resetPrompt', { name: user.username }))
   if (!next) return
   try {
     await adminAPI.resetPassword(user.id, next)
-    notify('密码已重置，该用户需重新登录')
+    notify(t('admin.users.messages.resetSuccess'))
   } catch (err: any) {
-    notify(err?.message || '重置失败', true)
+    notify(err?.message || t('admin.users.messages.resetFailed'), true)
   }
 }
 
 async function removeUser(user: AdminUserItem) {
-  if (!window.confirm(`确认删除用户 ${user.username}？该操作不可撤销。`)) return
+  if (!window.confirm(t('admin.users.messages.deleteConfirm', { name: user.username }))) return
   try {
     await adminAPI.deleteUser(user.id)
-    notify('用户已删除')
+    notify(t('admin.users.messages.deleted'))
     await loadUsers()
   } catch (err: any) {
-    notify(err?.message || '删除失败', true)
+    notify(err?.message || t('admin.users.messages.deleteFailed'), true)
   }
 }
 
@@ -729,7 +731,7 @@ async function loadSharedModels() {
   try {
     sharedModels.value = await adminAPI.getSharedModels()
   } catch (err: any) {
-    notify(err?.message || '加载共享模型失败', true)
+    notify(err?.message || t('admin.users.messages.sharedLoadFailed'), true)
   }
 }
 
@@ -739,10 +741,10 @@ async function loadSharedModels() {
  */
 async function removeSharedModel(item: SharedModelItem) {
   const confirmed = await confirm({
-    title: '删除共享模型',
-    message: `确认将「${item.alias}」从共享清单移除？供应商中的模型不会被删除，之后仍可重新勾选共享。`,
+    title: t('admin.users.confirm.removeSharedTitle'),
+    message: t('admin.users.confirm.removeSharedMessage', { name: item.alias }),
     type: 'warning',
-    confirmText: '删除',
+    confirmText: t('admin.users.confirm.removeSharedConfirm'),
     confirmVariant: 'danger',
   })
   if (!confirmed) return
@@ -750,9 +752,9 @@ async function removeSharedModel(item: SharedModelItem) {
   removingSharedRef.value = item.ref
   try {
     await settingsAPI.updateProviderModel(item.provider, item.model, { shared: false })
-    notify('已从共享清单移除')
+    notify(t('admin.users.messages.sharedRemoved'))
   } catch (err: any) {
-    notify(err?.message || '删除共享模型失败', true)
+    notify(err?.message || t('admin.users.messages.sharedRemoveFailed'), true)
   } finally {
     removingSharedRef.value = ''
     // 模型可能已随供应商删除：无论成功失败都以服务端清单为准

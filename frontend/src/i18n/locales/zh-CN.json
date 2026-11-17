@@ -2707,5 +2707,172 @@
           "delete": "删除"
         }
       }
+    },
+    "admin": {
+      "users": {
+        "actions": {
+          "pass": "通过",
+          "reject": "拒绝",
+          "disable": "禁用",
+          "enable": "启用",
+          "unlock": "解锁",
+          "edit": "编辑",
+          "resetPassword": "重置密码",
+          "delete": "删除"
+        },
+        "tabs": {
+          "aria": "用户管理分区",
+          "users": "用户",
+          "access": "注册与准入",
+          "resources": "资源共享",
+          "models": "共享模型"
+        },
+        "common": {
+          "loadingSettings": "正在读取策略…",
+          "refresh": "刷新",
+          "removing": "删除中…",
+          "loadingModels": "正在读取共享模型…"
+        },
+        "access": {
+          "title": "注册与准入",
+          "description": "控制谁能注册、新账号如何生效，改动后立即保存",
+          "enable": "启用多用户",
+          "enableHint": "关闭后仅管理员账号可用",
+          "openRegistration": "开放注册",
+          "openRegistrationHint": "关闭后新账号只能由管理员手动创建；开放后任何能访问本服务的人都能注册并使用服务器资源",
+          "approval": "注册审批",
+          "approvalHint": "新注册账号的准入方式",
+          "approvalManual": "管理员审批",
+          "approvalAuto": "自动通过",
+          "openWarning": "开放注册意味着把服务器权限共享给所有用户：任何能访问本服务的人都能注册并使用服务器上的模型、算力、文件与命令工具。",
+          "bypassDisabled": "本机免登录已被部署级开关关闭。"
+        },
+        "resources": {
+          "title": "资源共享与权限",
+          "description": "普通用户可复用的管理员资源，以及自建能力的边界",
+          "mode": "全局模式",
+          "modeHint": "共享模式复用管理员配置，隔离模式由各用户自行维护",
+          "modeShared": "共享（复用管理员资源）",
+          "modeIsolated": "隔离（用户自建）",
+          "sharedProviders": "共享 LLM 供应商",
+          "sharedProvidersHint": "普通用户可使用管理员配置的模型供应商",
+          "sharedSkills": "共享技能 / 知识库 / MCP",
+          "sharedSkillsHint": "普通用户可复用管理员的技能、知识库与 MCP 配置",
+          "sharedWarning": "共享 MCP 工具会以管理员配置的凭据与权限执行，请只共享可信服务。",
+          "allowUserMcp": "允许用户自建 MCP",
+          "allowUserMcpHint": "开启后普通用户可在自己的设置里添加 MCP 服务",
+          "stdioAllowlist": "stdio 命令白名单",
+          "stdioHint": "多个命令用英文逗号分隔；留空表示禁止普通用户使用 stdio。"
+        },
+        "models": {
+          "title": "共享模型",
+          "description": "普通用户在「设置 → 模型」里能选到的模型；在模型编辑弹窗里勾选「共享」即在此出现",
+          "disabledNotice": "当前为 {mode}，普通用户看不到这些共享模型。",
+          "modeSharedNoProviders": "共享模式但未开启共享供应商",
+          "modeIsolated": "隔离模式",
+          "colAlias": "用户可见别名",
+          "colProviderModel": "供应商 / 模型",
+          "colDailyLimit": "每日上限",
+          "colTodayCalls": "今日调用",
+          "colTotalCalls": "累计调用",
+          "colActions": "操作",
+          "calls": "{n} 次",
+          "unlimited": "不限",
+          "empty": "还没有共享任何模型。",
+          "usageTitle": "各用户用量（今日 / 累计）",
+          "colUser": "用户",
+          "colModel": "模型",
+          "colTodayTokens": "今日 Token"
+        },
+        "list": {
+          "title": "用户",
+          "count": "共 {total} 个账号",
+          "searchPlaceholder": "搜索用户名",
+          "statusAll": "全部状态",
+          "statusPending": "待审批",
+          "statusActive": "正常",
+          "statusDisabled": "已禁用",
+          "create": "新建用户",
+          "createUsername": "用户名（3-32 位）",
+          "createPassword": "初始密码",
+          "createDisplayName": "显示名称（可选）",
+          "creating": "创建中…",
+          "createSubmit": "创建",
+          "empty": "暂无用户",
+          "total": "共 {total} 个用户",
+          "prev": "上一页",
+          "next": "下一页",
+          "lockedBadge": "登录锁定",
+          "lockedTitle": "连续登录失败过多，剩余 {time}"
+        },
+        "roles": {
+          "user": "普通用户",
+          "admin": "管理员"
+        },
+        "policy": {
+          "all": "可用全部模式",
+          "chat": "仅对话模式",
+          "agent": "仅 Agent 模式",
+          "allShort": "全部",
+          "chatShort": "仅对话",
+          "agentShort": "仅 Agent"
+        },
+        "status": {
+          "pending": "待审批",
+          "active": "正常",
+          "disabled": "已禁用"
+        },
+        "cols": {
+          "username": "用户名",
+          "role": "角色",
+          "status": "状态",
+          "policy": "可用模式",
+          "lastLogin": "最后登录",
+          "actions": "操作"
+        },
+        "edit": {
+          "title": "编辑用户",
+          "username": "用户名",
+          "displayName": "显示名称",
+          "role": "角色",
+          "status": "状态",
+          "policy": "可用模式",
+          "hint": "只允许一种模式时，用户输入框不再显示模式切换。"
+        },
+        "messages": {
+          "loadUsersFailed": "加载用户失败",
+          "loadSettingsFailed": "加载策略失败",
+          "settingsSaved": "策略已保存",
+          "saveFailed": "保存失败",
+          "created": "用户已创建",
+          "createFailed": "创建失败",
+          "statusUpdated": "状态已更新",
+          "updateFailed": "更新失败",
+          "policyUpdated": "可用模式已更新",
+          "policyUpdateFailed": "更新可用模式失败",
+          "userUpdated": "用户信息已更新",
+          "unlocked": "已解除登录锁定",
+          "unlockFailed": "解锁失败",
+          "resetPrompt": "为 {name} 设置新密码（至少 8 位，含大小写与数字）",
+          "resetSuccess": "密码已重置，该用户需重新登录",
+          "resetFailed": "重置失败",
+          "deleteConfirm": "确认删除用户 {name}？该操作不可撤销。",
+          "deleted": "用户已删除",
+          "deleteFailed": "删除失败",
+          "sharedLoadFailed": "加载共享模型失败",
+          "sharedRemoved": "已从共享清单移除",
+          "sharedRemoveFailed": "删除共享模型失败",
+          "lessThanMinute": "不到 1 分钟",
+          "minutes": "{n} 分钟"
+        },
+        "confirm": {
+          "openRegistrationTitle": "开放注册风险确认",
+          "openRegistrationMessage": "开放注册意味着把服务器权限共享给所有用户，这会带来严重的隐私与安全风险：任何能访问本服务的人都可以创建账号，使用服务器上的模型、算力、文件与命令工具。请确认服务已限制在可信网络，或已配置访问控制。",
+          "openRegistrationConfirm": "确认开放",
+          "removeSharedTitle": "删除共享模型",
+          "removeSharedMessage": "确认将「{name}」从共享清单移除？供应商中的模型不会被删除，之后仍可重新勾选共享。",
+          "removeSharedConfirm": "删除"
+        }
+      }
     }
 }
