@@ -2088,7 +2088,8 @@
       "security": "Dangerous command blocking, allow lists and audit logs.",
       "sharedskills": "Skills that can be reused across the team.",
       "importexport": "Import, export and back up your configuration.",
-      "users": "Accounts, roles and access control."
+      "users": "Accounts, roles and access control.",
+      "workspace": "Working directory and file access scope."
     },
     "notifications": {
       "listTitle": "Configured channels",

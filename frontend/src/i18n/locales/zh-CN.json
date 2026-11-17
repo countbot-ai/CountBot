@@ -539,7 +539,6 @@
     "executing": "执行中...",
     "result": "执行结果",
     "error": "错误信息",
-    "duration": "耗时 {ms}ms",
     "noTools": "暂无可用工具",
     "loadError": "加载工具失败",
     "executeSuccess": "工具执行成功",
@@ -672,10 +671,6 @@
   },
   "settings": {
     "title": "设置",
-    "theme": "主题",
-    "language": "语言",
-    "provider": "提供商",
-    "modelLabel": "模型",
     "toggleTheme": "切换主题",
     "changeLanguage": "切换语言",
     "saved": "设置已保存",
@@ -700,7 +695,6 @@
       "memory": "记忆",
       "workspace": "工作空间",
       "security": "安全设置",
-      "system": "系统集成",
       "channels": "IM 渠道",
       "mcp": "MCP",
       "externaltools": "编程工具",
@@ -750,8 +744,6 @@
       "excludeToolsPlaceholder": "逗号分隔，如 tool_a, tool_b",
       "testConnection": "测试连接",
       "testing": "测试中...",
-      "testSuccess": "连接成功",
-      "testError": "连接失败",
       "importConfig": "导入配置",
       "importSuccess": "成功导入 {count} 个服务器",
       "importError": "导入失败",
@@ -761,7 +753,6 @@
       "reconnectAll": "重新连接",
       "reconnectSuccess": "重连成功",
       "reconnectError": "重连失败",
-      "editServer": "编辑",
       "deleteServer": "删除",
       "startServer": "启动",
       "stopServer": "停止",
@@ -773,8 +764,6 @@
       "statusError": "获取状态失败",
       "cancel": "取消",
       "deleteConfirm": "确认删除此 MCP Server？",
-      "discardChanges": "放弃修改",
-      "unsavedChanges": "有未保存的修改",
       "autoDetect": "自动检测",
       "statusConnected": "已连接",
       "statusDisconnected": "未连接",
@@ -784,7 +773,6 @@
       "jsonInvalidFormat": "JSON 格式无效，需要 mcpServers 对象",
       "applyJson": "应用",
       "jsonApplied": "JSON 配置已应用到表单",
-      "jsonCancelled": "已取消 JSON 编辑",
       "viewTools": "点击查看工具列表",
       "toolsList": "工具列表",
       "noTools": "暂无工具",
@@ -934,7 +922,6 @@
       "baseUrlPlaceholder": "可选：自定义 API 端点",
       "baseUrlRequiredPlaceholder": "必填：输入您的 API 端点地址",
       "baseUrlHint": "留空则用默认地址",
-      "defaultBaseUrl": "默认",
       "enabled": "启用",
       "enabledHint": "启用后可用于请求",
       "providerReadyHint": "可用",
@@ -1019,7 +1006,6 @@
         "freeModels": "免费模型页",
         "apiKeys": "API Keys"
       },
-      "openRouter": "OpenRouter",
       "openrouter": "OpenRouter",
       "anthropic": "Anthropic Claude",
       "openai": "OpenAI",
@@ -1043,7 +1029,6 @@
       "lm_studio": "LM Studio",
       "custom_openai": "自定义 API（OpenAI 兼容）",
       "custom_anthropic": "自定义 API（Anthropic 兼容）",
-      "noProviderSelected": "请选择一个提供商",
       "tabs": {
         "standard": "标准配置",
         "codingPlan": "Coding Plan"
@@ -1236,8 +1221,6 @@
     "model": {
       "title": "模型参数",
       "description": "调整模型行为参数",
-      "modelName": "模型名称",
-      "modelPlaceholder": "例如：gpt-4, claude-3-opus",
       "temperature": "温度 (Temperature)",
       "temperatureDesc": "控制输出的随机性。设为 0 表示默认不发送该参数；较高的值使输出更随机，较低的值使其更确定。",
       "temperatureBalanced": "平衡",
@@ -1261,8 +1244,6 @@
       "imageInputOn": "支持图片",
       "imageInputOff": "不支持图片",
       "thinkingProviderStatus": "当前提供商能力：{tier} · {group}",
-      "topP": "Top P",
-      "topPDesc": "核采样参数，控制输出的多样性。",
       "draftTitle": "当前生效与草稿",
       "paramsTitle": "生成参数"
     },
@@ -1351,8 +1332,6 @@
         "chatId": "目标 ID",
         "chatIdPlaceholder": "输入群组 ID 或用户 ID",
         "chatIdHint": "问候消息会发送到这个群组或用户",
-        "schedule": "检查频率",
-        "scheduleHint": "Cron 表达式，默认每小时整点检查一次",
         "idleThreshold": "空闲多久后问候",
         "idleThresholdHint": "你多久没说话后，AI 才会发问候",
         "hours": "小时",
@@ -1483,24 +1462,12 @@
       "seconds": "秒",
       "characters": "字符",
       "builtInPatterns": "内置危险模式",
-      "builtIn": "内置",
       "customDenyPatterns": "自定义拒绝模式",
       "customAllowPatterns": "自定义允许模式",
       "addPattern": "添加模式",
       "removePattern": "删除模式",
       "patternPlaceholder": "输入正则表达式，例如：^rm\\s+-rf",
       "noPatternsAdded": "暂无自定义模式",
-      "patternDescriptions": {
-        "rm_rf": "删除文件和目录（rm -rf）",
-        "del_force": "强制删除文件（Windows del /f）",
-        "rmdir_recursive": "递归删除目录（Windows rmdir /s）",
-        "disk_operations": "磁盘格式化和分区操作",
-        "dd_command": "磁盘数据复制命令",
-        "write_device": "直接写入磁盘设备",
-        "power_operations": "系统关机/重启命令",
-        "fork_bomb": "Fork 炸弹攻击",
-        "init_shutdown": "系统初始化级别切换"
-      },
       "cardProtection": "执行保护",
       "cardLimits": "超时与输出",
       "cardAudit": "审计"
@@ -1526,41 +1493,6 @@
     },
     "memory": {
       "noManualSaveNeeded": "记忆页内容会即时生效，无需单独保存"
-    },
-    "system": {
-      "title": "系统集成",
-      "tray": {
-        "title": "系统托盘",
-        "minimizeToTray": "最小化到系统托盘",
-        "minimizeDescription": "最小化窗口到系统托盘而不是任务栏",
-        "closeToTray": "关闭到系统托盘",
-        "closeDescription": "关闭窗口时保持应用在系统托盘运行"
-      },
-      "autoStart": {
-        "title": "开机自启动",
-        "enable": "系统启动时自动运行",
-        "description": "登录系统时自动启动应用程序",
-        "enabled": "已启用开机自启动",
-        "disabled": "已禁用开机自启动",
-        "error": "更新开机自启动设置失败"
-      },
-      "hotkeys": {
-        "title": "全局快捷键",
-        "enable": "启用全局快捷键",
-        "showWindow": "显示/隐藏窗口",
-        "newChat": "新建对话"
-      },
-      "notifications": {
-        "title": "通知",
-        "enable": "启用通知",
-        "description": "为重要事件显示系统通知",
-        "taskComplete": "后台任务完成时通知",
-        "cronJob": "定时任务运行时通知",
-        "test": "测试通知",
-        "testMessage": "这是来自 CountBot 的测试通知！",
-        "testSent": "测试通知已发送",
-        "testError": "发送测试通知失败"
-      }
     },
     "channels": {
       "title": "渠道配置",
@@ -2002,23 +1934,7 @@
         "createError": "保存失败"
       },
       "templates": {
-        "title": "快速开始 — 选择预设模板",
-        "codeReview": "代码审查流水线",
-        "codeReviewDesc": "分析 → 安全审计 → 汇总报告（Pipeline）",
-        "researchCouncil": "多视角研究评审",
-        "researchCouncilDesc": "乐观派 vs 质疑派 vs 务实派（Council）",
-        "dataPipeline": "数据处理流水线",
-        "dataPipelineDesc": "采集 → 清洗 → 分析（Graph 依赖图）",
         "agents": {
-          "analyzer": "代码分析师",
-          "security": "安全审计员",
-          "reporter": "报告撰写员",
-          "optimist": "乐观策略师",
-          "skeptic": "质疑风险师",
-          "pragmatist": "务实执行师",
-          "collector": "数据采集员",
-          "cleaner": "数据清洗员",
-          "analyst": "数据分析师",
           "researcher": "研究员",
           "writer": "作者",
           "editor": "编辑",
@@ -2027,12 +1943,6 @@
           "reviewer": "审查员"
         },
         "tasks": {
-          "analyzeCode": "全面分析代码结构、逻辑错误和性能瓶颈，输出带行号的问题列表",
-          "securityAudit": "从安全角度审查代码，重点识别注入漏洞、越权访问和敏感数据暴露",
-          "synthReport": "整合前序分析结果，撰写结构化审查报告，包含问题优先级排序和修复建议",
-          "collectData": "从指定来源采集原始数据，验证完整性并记录数据来源",
-          "cleanData": "标准化格式，处理缺失值和重复项，记录每一步数据转换",
-          "analyzeData": "对清洗后数据进行统计分析，识别趋势和异常，生成结构化洞察报告",
           "researchTopic": "收集和整理相关信息",
           "writeContent": "基于研究材料撰写内容",
           "editContent": "审校内容并提出改进建议",
@@ -2738,7 +2648,6 @@
     "status": {
       "title": "任务状态",
       "pending": "等待中",
-      "queued": "排队中",
       "running": "运行中",
       "completed": "已完成",
       "failed": "失败"
@@ -2785,14 +2694,6 @@
     }
   },
   "teams": {
-    "title": "智能体团队",
-    "create": "创建团队",
-    "edit": "编辑团队",
-    "name": "团队名称",
-    "description": "描述",
-    "mode": "协作模式",
-    "emptyTitle": "还没有智能体团队",
-    "emptyDescription": "创建您的第一个团队，让多个智能体协同完成复杂任务",
     "dependency": {
       "title": "依赖关系图",
       "conditional": "⚡ 条件执行",
