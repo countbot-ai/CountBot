@@ -1,7 +1,11 @@
-"""
-路由实例。各路由模块从这里取同一个 router，避免互相导入成环。
-"""
+"""设置域路由实例，各子模块共用同一 router 以避免循环导入。"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+from backend.modules.multiuser.permissions import require_admin
+
+router = APIRouter(
+    prefix="/api/settings",
+    tags=["settings"],
+    dependencies=[Depends(require_admin)],
+)

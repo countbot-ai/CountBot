@@ -1,5 +1,6 @@
 """LLM Provider 基类 - 流式优先设计"""
 
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -24,6 +25,9 @@ class StreamChunk:
     raw_error: Optional[str] = None
     reasoning_content: Optional[str] = None
     provider_payload: Optional[Dict[str, Any]] = None
+    # 供应商服务端工具事件（联网搜索、阅读链接、引用、拒答等）。
+    # 与正文/工具调用并行下发，不参与本地工具执行。
+    native_events: Optional[List[Dict[str, Any]]] = None
 
     @property
     def is_content(self) -> bool:
@@ -49,6 +53,10 @@ class StreamChunk:
     def has_provider_payload(self) -> bool:
         return self.provider_payload is not None
 
+    @property
+    def has_native_events(self) -> bool:
+        return bool(self.native_events)
+
 
 class LLMProvider(ABC):
     """LLM Provider 抽象基类"""
@@ -60,12 +68,16 @@ class LLMProvider(ABC):
         default_model: Optional[str] = None,
         timeout: float = 120.0,
         max_retries: int = 3,
+        stream_enabled: bool = True,
     ):
         self.api_key = api_key
         self.api_base = api_base
         self.default_model = default_model
         self.timeout = timeout
         self.max_retries = max_retries
+        # 构造期确定的输出模式：未在 chat_stream 显式传参的调用（标题生成、
+        # 摘要、Wiki 检索等单轮工具链路）沿用该默认值，保证与对话链路一致
+        self.stream_enabled = bool(stream_enabled)
 
     @abstractmethod
     async def chat_stream(
@@ -154,6 +166,40 @@ def is_rate_limit_error(error: Exception) -> bool:
         return True
     text = _error_text(error)
     return any(hint in text for hint in RATE_LIMIT_HINTS)
+
+
+# 请求本身不合法或目标资源不存在：重放同一请求不会得到不同结果
+NON_RETRYABLE_STATUS_CODES = frozenset({400, 401, 403, 404, 405, 409, 422})
+RETRY_BACKOFF_CAP_SECONDS = 30.0
+
+
+def _retry_after_seconds(error: Optional[Exception]) -> Optional[float]:
+    """读取上游以秒为单位的 Retry-After；HTTP-date 形式交由默认退避处理。"""
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    if headers is None or not hasattr(headers, "get"):
+        return None
+    raw = headers.get("retry-after")
+    try:
+        seconds = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
+
+
+def is_retryable_error(error: Exception) -> bool:
+    """仅对重放可恢复的上游错误重试：5xx、429、超时、连接中断与 SSE error。"""
+    if is_auth_error(error):
+        return False
+    return _error_status_code(error) not in NON_RETRYABLE_STATUS_CODES
+
+
+def retry_backoff_seconds(attempt: int, error: Optional[Exception] = None) -> float:
+    """指数退避并加抖动；上游给出 Retry-After 时优先遵循。"""
+    hinted = _retry_after_seconds(error)
+    if hinted is not None:
+        return min(hinted, RETRY_BACKOFF_CAP_SECONDS)
+    base = min(2 ** max(1, attempt), RETRY_BACKOFF_CAP_SECONDS)
+    return min(base * (0.8 + random.random() * 0.4), RETRY_BACKOFF_CAP_SECONDS)
 
 
 # 零宽字符：部分上游用它们给思考/正文占位，展开后就是一片空白

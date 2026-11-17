@@ -56,6 +56,9 @@ def create_provider(
     provider_id: Optional[str] = None,
     api_keys: Optional[List[str]] = None,
     api_type: Optional[str] = None,
+    enable_key_rotation: bool = True,
+    key_override: Optional[str] = None,
+    stream_enabled: bool = True,
     **kwargs: Any
 ) -> LLMProvider:
     """创建 LLM Provider
@@ -73,6 +76,12 @@ def create_provider(
         max_retries: 最大重试次数
         provider_id: Provider ID（优先级最高）
         api_type: 供应商协议，见 API_TYPES
+        enable_key_rotation: 是否参与全局 Key 轮换；连通性测试等一次性探测应关闭，
+            避免探测用的单个 Key 覆盖共享轮换器
+        key_override: 指定本次必须使用的 Key（故障转移时由轮换器选定），
+            设置后不再让工厂自行推进轮询指针
+        stream_enabled: 该 Provider 的默认输出模式；未在 chat_stream 显式传参的
+            单轮调用（标题/摘要/Wiki 检索等）沿用此值
         **kwargs: 其他参数
     
     Returns:
@@ -94,18 +103,23 @@ def create_provider(
     if not effective_api_keys and api_key and api_key.strip():
         effective_api_keys = [api_key.strip()]
 
-    selected_key = api_key or ""
-    if effective_api_keys and provider_id:
+    selected_key = (key_override or api_key or "").strip()
+    rotator: Optional[KeyRotator] = None
+    if effective_api_keys and provider_id and enable_key_rotation:
         rotator = get_key_rotator(provider_id, effective_api_keys)
-        selected_key = rotator.next_key() or effective_api_keys[0]
+        if key_override:
+            # 故障转移已由轮换器选定 Key，不能再让工厂推进指针
+            selected_key = key_override.strip()
+        else:
+            selected_key = rotator.next_key() or effective_api_keys[0]
         if rotator.count > 1:
             logger.debug(
                 f"Key rotation enabled for {provider_id}: "
-                f"{rotator.count} keys available, using key index {rotator._index}"
+                f"{rotator.count} keys available"
             )
     elif effective_api_keys:
-        selected_key = effective_api_keys[0]
-    
+        selected_key = selected_key or effective_api_keys[0]
+
     if resolved_api_type == API_TYPE_ANTHROPIC_MESSAGES:
         provider_class = AnthropicProvider
         logger.debug(f"Using AnthropicProvider for {provider_id or 'default'}")
@@ -121,8 +135,8 @@ def create_provider(
             default_model = metadata.default_model
         if not api_base and metadata.default_api_base:
             api_base = metadata.default_api_base
-    
-    return provider_class(
+
+    provider = provider_class(
         api_key=selected_key or None,
         api_base=api_base,
         default_model=default_model,
@@ -132,3 +146,10 @@ def create_provider(
         provider_id=provider_id,
         **kwargs
     )
+    # 把轮换所需的上下文挂在实例上：多用户私有供应商不能用全局配置反查 Key，
+    # 否则会读到管理员配置甚至串用管理员的 Key
+    provider.api_keys = list(effective_api_keys)
+    provider.api_type = resolved_api_type
+    provider.key_rotator = rotator
+    provider.stream_enabled = bool(stream_enabled)
+    return provider

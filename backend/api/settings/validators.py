@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from loguru import logger
 
 from backend.modules.config.schema import AppConfig, ModelEntry
+from backend.modules.native_caps.types import normalize_native_capabilities
 
 
 def _normalize_api_mode_value(value: Any) -> str:
@@ -31,7 +32,11 @@ def _normalize_api_type_value(value: Any) -> str:
 
 
 def _parse_model_entry(raw: Any) -> Optional[ModelEntry]:
-    """把请求里的模型条目解析成 ModelEntry，非法条目返回 None。"""
+    """把请求里的模型条目解析成 ModelEntry，非法条目返回 None。
+
+    供应商级保存（PUT /api/settings）会整段重写 models，因此这里必须保留
+    模型级字段；漏掉共享字段会让「保存供应商连接」把已配置的共享/思考档位清空。
+    """
     if isinstance(raw, ModelEntry):
         return raw
     if isinstance(raw, str):
@@ -43,6 +48,14 @@ def _parse_model_entry(raw: Any) -> Optional[ModelEntry]:
     model_id = str(raw.get("id") or raw.get("model") or "").strip()
     if not model_id:
         return None
+
+    from backend.modules.providers.model_registry import (
+        normalize_alias as _normalize_shared_alias,
+        normalize_daily_limit as _normalize_daily_limit,
+        normalize_reasoning_levels as _normalize_reasoning_levels,
+        normalize_shared_note as _normalize_shared_note,
+        normalize_single_level as _normalize_single_level,
+    )
 
     source = str(raw.get("source") or "manual").strip().lower()
     if source not in ("builtin", "manual", "fetched"):
@@ -61,6 +74,14 @@ def _parse_model_entry(raw: Any) -> Optional[ModelEntry]:
     if not isinstance(supports_image, bool):
         supports_image = None
 
+    stream_enabled = raw.get("stream_enabled")
+    if not isinstance(stream_enabled, bool):
+        stream_enabled = None
+
+    reasoning_levels = raw.get("reasoning_levels")
+    if not isinstance(reasoning_levels, list):
+        reasoning_levels = None
+
     display_name = str(raw.get("display_name") or "").strip() or None
 
     return ModelEntry(
@@ -69,7 +90,15 @@ def _parse_model_entry(raw: Any) -> Optional[ModelEntry]:
         enabled=bool(raw.get("enabled", True)),
         context_window=context_window,
         supports_image=supports_image,
+        stream_enabled=stream_enabled,
+        reasoning_levels=_normalize_reasoning_levels(reasoning_levels),
+        reasoning_level=_normalize_single_level(raw.get("reasoning_level")),
+        native_capabilities=normalize_native_capabilities(raw.get("native_capabilities")),
         source=source,  # type: ignore[arg-type]
+        shared=bool(raw.get("shared", False)),
+        shared_alias=_normalize_shared_alias(raw.get("shared_alias")),
+        shared_note=_normalize_shared_note(raw.get("shared_note")),
+        user_daily_limit=_normalize_daily_limit(raw.get("user_daily_limit")),
     )
 
 

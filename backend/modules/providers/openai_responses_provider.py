@@ -11,15 +11,27 @@ from .base import (
     LLMProvider,
     StreamChunk,
     ToolCall,
-    _TOOL_ARGUMENT_PARSE_ERROR_KEY,
-    _TOOL_ARGUMENT_RAW_KEY,
-    is_auth_error,
+    is_retryable_error,
+    retry_backoff_seconds,
     read_usage_detail_int,
-    append_upstream_detail,
     has_visible_text,
 )
 
+from .error_messages import (
+    format_responses_error,
+    is_timeout_exception,
+    parse_json_arguments,
+    summarize_responses_error_for_log,
+)
+
 from .thinking_profiles import is_reasoning_off, resolve_supported_reasoning_level
+from backend.modules.native_caps import (
+    build_provider_overrides,
+    resolve_native_capabilities,
+)
+from backend.modules.native_caps import events as native_events
+from backend.modules.native_caps.deepseek import merge_tools
+from backend.modules.native_caps.registry import PROTOCOL_RESPONSES
 
 
 # 上游 status 终态（incomplete/failed）需翻译成 finish_reason 供上层判断截断。
@@ -48,6 +60,7 @@ class OpenAIResponsesProvider(LLMProvider):
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
         self.api_mode = "responses"
+        self.native_capabilities = kwargs.get("native_capabilities")
 
     async def chat_stream(
         self,
@@ -96,7 +109,7 @@ class OpenAIResponsesProvider(LLMProvider):
 
         except Exception as e:
             error_msg = str(e) or type(e).__name__
-            log_summary = self._summarize_error_for_log(e)
+            log_summary = summarize_responses_error_for_log(e)
             if self._is_expected_upstream_error(e):
                 logger.error(
                     f"OpenAI Responses call failed [{type(e).__name__}]: {log_summary}"
@@ -106,7 +119,7 @@ class OpenAIResponsesProvider(LLMProvider):
                     f"OpenAI Responses call failed [{type(e).__name__}]: {log_summary}"
                 )
             yield StreamChunk(
-                error=self._format_error_message(error_msg), raw_error=error_msg
+                error=format_responses_error(error_msg), raw_error=error_msg
             )
 
     async def _chat_stream_via_responses(
@@ -123,12 +136,13 @@ class OpenAIResponsesProvider(LLMProvider):
         request_trace_id = (
             str(kwargs.pop("request_trace_id", "")).strip() or uuid.uuid4().hex[:8]
         )
+        stream_enabled = bool(kwargs.pop("stream_enabled", self.stream_enabled))
         instructions, input_items = self._build_responses_input(messages)
 
         request_params: Dict[str, Any] = {
             "model": model,
             "input": input_items,
-            "stream": True,
+            "stream": stream_enabled,
             # 无状态：不依赖上游保存会话，历史由本地完整回放
             "store": False,
         }
@@ -146,6 +160,27 @@ class OpenAIResponsesProvider(LLMProvider):
         if tools:
             request_params["tools"] = self._convert_tools_for_responses(tools)
             request_params["tool_choice"] = "auto"
+
+        native_caps = resolve_native_capabilities(
+            self.provider_id, model, self.native_capabilities
+        )
+        native_overrides = build_provider_overrides(
+            provider_id=self.provider_id,
+            model=model,
+            protocol=PROTOCOL_RESPONSES,
+            capabilities=native_caps,
+            thinking_enabled=kwargs.get("thinking_enabled"),
+        )
+        native_tools = native_overrides.get("tools") or []
+        if native_tools:
+            request_params["tools"] = merge_tools(
+                request_params.get("tools"), native_tools
+            )
+            request_params["tool_choice"] = "auto"
+        if native_overrides.get("safety_check"):
+            extra_body = dict(request_params.get("extra_body") or {})
+            extra_body["safety_check"] = native_overrides["safety_check"]
+            request_params["extra_body"] = extra_body
 
         thinking_enabled = kwargs.get("thinking_enabled")
         self._apply_reasoning_config(
@@ -169,6 +204,14 @@ class OpenAIResponsesProvider(LLMProvider):
             f"OpenAI Responses 输入项统计 [trace={request_trace_id}]: "
             + self._summarize_input_items(input_items)
         )
+
+        if not stream_enabled:
+            response = await self._create_stream_with_retry(
+                client, request_params, request_trace_id
+            )
+            for chunk in self._convert_response_to_chunks(response):
+                yield chunk
+            return
 
         stream = await self._create_stream_with_retry(
             client, request_params, request_trace_id
@@ -223,6 +266,10 @@ class OpenAIResponsesProvider(LLMProvider):
                         self._finalize_function_call_item(
                             event, tool_call_buffer, request_trace_id
                         )
+                        item = getattr(event, "item", None)
+                        item_events = native_events.responses_item_events(item)
+                        if item_events:
+                            yield StreamChunk(native_events=item_events)
                         continue
 
                     if event_type in ("response.completed", "response.incomplete"):
@@ -250,7 +297,7 @@ class OpenAIResponsesProvider(LLMProvider):
                         tool_call=ToolCall(
                             id=tc_data["id"],
                             name=tc_data["name"],
-                            arguments=self._parse_json_arguments(tc_data["arguments"]),
+                            arguments=parse_json_arguments(tc_data["arguments"]),
                         )
                     )
 
@@ -261,20 +308,20 @@ class OpenAIResponsesProvider(LLMProvider):
                 )
 
             except Exception as stream_err:
-                is_timeout = self._is_timeout_exception(stream_err)
-                is_connection = self._is_connection_error(stream_err)
+                is_timeout = is_timeout_exception(stream_err)
 
                 if (
                     not content_yielded
-                    and (is_timeout or is_connection)
+                    and is_retryable_error(stream_err)
                     and stream_retry < max_stream_retries
                 ):
                     stream_retry += 1
-                    wait = min(2 ** stream_retry, 30)
-                    reason = "超时" if is_timeout else "连接中断"
+                    wait = retry_backoff_seconds(stream_retry, stream_err)
                     logger.warning(
-                        f"OpenAI Responses 流读取{reason} [trace={request_trace_id}]"
-                        f"（第{stream_retry}/{max_stream_retries}次），{wait}s 后重试: {stream_err}"
+                        f"OpenAI Responses 流中断 [trace={request_trace_id}]"
+                        f"（第{stream_retry}/{max_stream_retries}次），"
+                        f"{wait:.1f}s 后重试: "
+                        f"{summarize_responses_error_for_log(stream_err)}"
                     )
                     await asyncio.sleep(wait)
                     stream = await client.responses.create(**request_params)
@@ -289,6 +336,140 @@ class OpenAIResponsesProvider(LLMProvider):
                 else:
                     raise
 
+    @staticmethod
+    def _to_data(payload: Any) -> Dict[str, Any]:
+        """SDK 对象 / dict 统一转成 dict，便于非流式响应解析。"""
+        if isinstance(payload, dict):
+            return payload
+        if hasattr(payload, "model_dump"):
+            return payload.model_dump()
+        return {}
+
+    def _convert_response_to_chunks(self, response: Any) -> List[StreamChunk]:
+        """非流式 Responses 响应 -> 统一 StreamChunk 序列。"""
+        data = self._to_data(response)
+        chunks: List[StreamChunk] = []
+        reasoning_ids: List[str] = []
+        has_tool_calls = False
+
+        for item in data.get("output") or []:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "")
+            item_events = native_events.responses_item_events(item)
+            if item_events:
+                chunks.append(StreamChunk(native_events=item_events))
+
+            if item_type == "reasoning":
+                item_id = str(item.get("id") or "").strip()
+                if item_id:
+                    reasoning_ids.append(item_id)
+                reasoning_text = self._collect_reasoning_text(item)
+                if reasoning_text and has_visible_text(reasoning_text):
+                    chunks.append(StreamChunk(reasoning_content=reasoning_text))
+                continue
+
+            if item_type == "message":
+                for content in item.get("content") or []:
+                    if not isinstance(content, dict):
+                        continue
+                    if content.get("type") in ("output_text", "text"):
+                        text = str(content.get("text") or "")
+                        if text:
+                            chunks.append(StreamChunk(content=text))
+                continue
+
+            if item_type == "function_call":
+                name = str(item.get("name") or "")
+                if not name:
+                    continue
+                has_tool_calls = True
+                raw_arguments = item.get("arguments") or ""
+                if not isinstance(raw_arguments, str):
+                    raw_arguments = json.dumps(raw_arguments, ensure_ascii=False)
+                chunks.append(
+                    StreamChunk(
+                        tool_call=ToolCall(
+                            id=str(item.get("call_id") or item.get("id") or "call_unknown"),
+                            name=name,
+                            arguments=parse_json_arguments(raw_arguments),
+                        )
+                    )
+                )
+
+        finish_reason = self._resolve_finish_reason_from_data(data, has_tool_calls)
+        payload = (
+            {"openai_reasoning_ids": reasoning_ids} if reasoning_ids else None
+        )
+        chunks.append(
+            StreamChunk(
+                finish_reason=finish_reason,
+                usage=self._extract_usage_from_data(data),
+                provider_payload=payload,
+            )
+        )
+        return chunks
+
+    @staticmethod
+    def _collect_reasoning_text(item: Dict[str, Any]) -> str:
+        parts: List[str] = []
+        for field in ("summary", "content"):
+            for entry in item.get(field) or []:
+                if not isinstance(entry, dict):
+                    continue
+                text = entry.get("text")
+                if text:
+                    parts.append(str(text))
+        return "".join(parts)
+
+    @staticmethod
+    def _resolve_finish_reason_from_data(
+        data: Dict[str, Any],
+        has_tool_calls: bool,
+    ) -> str:
+        if has_tool_calls:
+            return "tool_calls"
+        status = str(data.get("status") or "").strip().lower()
+        finish_reason = _FINISH_REASON_BY_STATUS.get(status, "stop")
+        if finish_reason == "length":
+            details = data.get("incomplete_details") or {}
+            reason = str(details.get("reason") or "").strip().lower()
+            if reason == "content_filter":
+                return "content_filter"
+            return "length"
+        return finish_reason
+
+    @staticmethod
+    def _extract_usage_from_data(data: Dict[str, Any]) -> Optional[Dict[str, int]]:
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        total_tokens = int(
+            usage.get("total_tokens") or (input_tokens + output_tokens)
+        )
+        extracted: Dict[str, int] = {
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+        input_details = usage.get("input_tokens_details") or {}
+        cached_tokens = read_usage_detail_int(input_details, "cached_tokens")
+        if cached_tokens:
+            extracted["cache_read_tokens"] = cached_tokens
+        cache_write_tokens = read_usage_detail_int(
+            input_details, "cache_write_tokens"
+        )
+        if cache_write_tokens:
+            extracted["cache_write_tokens"] = cache_write_tokens
+        reasoning_tokens = read_usage_detail_int(
+            usage.get("output_tokens_details") or {}, "reasoning_tokens"
+        )
+        if reasoning_tokens:
+            extracted["reasoning_tokens"] = reasoning_tokens
+        return extracted
+
     async def _create_stream_with_retry(
         self,
         client: Any,
@@ -302,18 +483,18 @@ class OpenAIResponsesProvider(LLMProvider):
             try:
                 return await client.responses.create(**request_params)
             except Exception as e:
-                if is_auth_error(e):
+                if not is_retryable_error(e):
                     logger.warning(
-                        f"OpenAI Responses 认证/密钥错误 [trace={request_trace_id}]，"
-                        f"不重试，直接上抛: {self._summarize_error_for_log(e)}"
+                        f"OpenAI Responses 不可重试错误 [trace={request_trace_id}]，"
+                        f"直接上抛: {summarize_responses_error_for_log(e)}"
                     )
                     raise
                 if attempt < max_attempts:
-                    wait = min(2 ** attempt, 30)
+                    wait = retry_backoff_seconds(attempt, e)
                     logger.warning(
                         f"OpenAI Responses 调用失败 [trace={request_trace_id}] "
-                        f"(第{attempt}/{max_attempts}次)，{wait}s 后重试: "
-                        f"{self._summarize_error_for_log(e)}"
+                        f"(第{attempt}/{max_attempts}次)，{wait:.1f}s 后重试: "
+                        f"{summarize_responses_error_for_log(e)}"
                     )
                     attempt += 1
                     await asyncio.sleep(wait)
@@ -450,6 +631,11 @@ class OpenAIResponsesProvider(LLMProvider):
                     if text:
                         converted.append({"type": text_part_type, "text": text})
                     continue
+                if block_type == "file":
+                    file_id = str(block.get("file_id") or "").strip()
+                    if file_id:
+                        converted.append({"type": "input_file", "file_id": file_id})
+                    continue
                 if block_type != "image":
                     continue
                 media_type = (
@@ -529,10 +715,30 @@ class OpenAIResponsesProvider(LLMProvider):
             model=str(request_params.get("model") or ""),
         )
         if supported_level is not None:
-            reasoning: Dict[str, Any] = {"effort": supported_level}
-            if not is_reasoning_off(supported_level):
-                reasoning["summary"] = "auto"
-            request_params["reasoning"] = reasoning
+            if is_reasoning_off(supported_level):
+                # 官方 Responses 用 reasoning.effort=none 关闭思考；
+                # 仅官方 openai 老代际需要按模型收敛，避免不支持的 effort 值。
+                from .thinking_profiles import _resolve_openai_reasoning_effort
+
+                provider_id = (self.provider_id or "").strip().lower()
+                if provider_id in ("", "openai"):
+                    off_effort = _resolve_openai_reasoning_effort(
+                        model=str(request_params.get("model") or ""),
+                        thinking_enabled=False,
+                    )
+                else:
+                    off_effort = "none"
+
+                reasoning: Dict[str, Any] = {"summary": None}
+                if off_effort:
+                    reasoning["effort"] = off_effort
+                request_params["reasoning"] = reasoning
+                return
+
+            request_params["reasoning"] = {
+                "effort": supported_level,
+                "summary": "auto",
+            }
             return
 
         if thinking_enabled is None:
@@ -750,23 +956,6 @@ class OpenAIResponsesProvider(LLMProvider):
         return json.dumps(counts, ensure_ascii=False)
 
     @staticmethod
-    def _parse_json_arguments(raw: str) -> Dict[str, Any]:
-        args_str = (raw or "").strip()
-        if not args_str:
-            return {}
-        try:
-            parsed = json.loads(args_str)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse failed: {e}, raw: {repr(args_str)}")
-            return {
-                _TOOL_ARGUMENT_PARSE_ERROR_KEY: f"{type(e).__name__}: {e}",
-                _TOOL_ARGUMENT_RAW_KEY: args_str,
-            }
-        if isinstance(parsed, dict):
-            return parsed
-        return {"value": parsed}
-
-    @staticmethod
     def _yield_tool_call(tc_data: Dict[str, Any]) -> Optional[ToolCall]:
         """把缓冲区里的工具调用转成 ToolCall；无名称时返回 None。"""
         if not tc_data.get("name"):
@@ -774,7 +963,7 @@ class OpenAIResponsesProvider(LLMProvider):
         return ToolCall(
             id=tc_data["id"],
             name=tc_data["name"],
-            arguments=OpenAIResponsesProvider._parse_json_arguments(
+            arguments=parse_json_arguments(
                 tc_data["arguments"]
             ),
         )
@@ -782,61 +971,6 @@ class OpenAIResponsesProvider(LLMProvider):
     @staticmethod
     def _normalize_model_name(model: Optional[str]) -> str:
         return str(model or "").strip()
-
-    @staticmethod
-    def _is_timeout_exception(error: Exception) -> bool:
-        """超时判定：与 chat.completions 实现保持一致的口径。"""
-        try:
-            import httpx
-
-            if isinstance(error, httpx.TimeoutException):
-                return True
-        except Exception:
-            pass
-
-        err_type = type(error).__name__.lower()
-        err_text = f"{str(error)} {repr(error)}".lower()
-        timeout_hints = (
-            "timeout",
-            "timed out",
-            "readtimeout",
-            "connecttimeout",
-            "read error",
-            "socket",
-        )
-        return any(hint in err_type or hint in err_text for hint in timeout_hints)
-
-    @staticmethod
-    def _is_connection_error(error: Exception) -> bool:
-        """上游在流式响应中途关闭连接等传输层错误。"""
-        try:
-            import httpx
-
-            if isinstance(
-                error,
-                (
-                    httpx.RemoteProtocolError,
-                    httpx.ReadError,
-                    httpx.WriteError,
-                    httpx.ConnectError,
-                ),
-            ):
-                return True
-        except Exception:
-            pass
-
-        err_type = type(error).__name__.lower()
-        return err_type in {
-            "remoteprotocolerror",
-            "readerror",
-            "writeerror",
-            "connecterror",
-            "protocolerror",
-        }
-
-    @staticmethod
-    def _is_auth_error(error: Exception) -> bool:
-        return is_auth_error(error)
 
     @staticmethod
     def _is_expected_upstream_error(error: Exception) -> bool:
@@ -854,81 +988,6 @@ class OpenAIResponsesProvider(LLMProvider):
             return bool(expected) and isinstance(error, expected)
         except Exception:
             return False
-
-    @staticmethod
-    def _summarize_error_for_log(error: Exception) -> str:
-        status_code = getattr(error, "status_code", None)
-        message = str(error) or repr(error)
-        compact = " ".join(message.split())
-        if "api_key" in compact.lower() or "apikey" in compact.lower():
-            compact = "<redacted>"
-        prefix = f"[{status_code}] " if status_code else ""
-        return f"{prefix}{type(error).__name__}: {compact[:300]}"
-
-    @staticmethod
-    def _format_error_message(raw: str) -> str:
-        """将上游原始错误转换为用户友好提示（Responses 侧口径），并附上原始返回。"""
-        return append_upstream_detail(
-            OpenAIResponsesProvider._friendly_error_message(raw), raw
-        )
-
-    @staticmethod
-    def _friendly_error_message(raw: str) -> str:
-        lower = raw.lower()
-
-        if any(
-            k in lower
-            for k in ("401", "unauthorized", "invalid api key", "invalid_api_key",
-                      "authentication", "invalid token", "api key")
-        ):
-            return "API 密钥无效或已过期，请在设置中检查并更新密钥。"
-
-        # 余额/欠费类优先：这类响应常同时带 quota 字样，先判余额再判限流
-        if any(
-            k in lower
-            for k in ("余额", "资源包", "充值", "欠费", "insufficient balance",
-                      "insufficient_quota", "no credit")
-        ) or ("403" in lower and any(k in lower for k in ("quota", "balance", "额度"))):
-            return "API 账户余额不足或额度已用尽，请前往服务商控制台充值后重试。"
-
-        if any(
-            k in lower
-            for k in ("429", "rate limit", "rate_limit", "too many requests",
-                      "overloaded", "负载已饱和", "capacity")
-        ):
-            return "请求过于频繁，上游限流，请稍后重试。"
-
-        if any(
-            k in lower
-            for k in ("404", "model not found", "model_not_found", "does not exist")
-        ):
-            return "所选模型不可用，请在设置中确认模型名称是否正确。"
-
-        if any(
-            k in lower
-            for k in ("/responses", "responses api", "unknown url", "not supported")
-        ):
-            return (
-                "该供应商不支持 Responses API，请在供应商设置中把 API 格式"
-                "改为 chat.completions 后重试。"
-            )
-
-        if any(
-            k in lower
-            for k in ("context length", "max_output_tokens", "max.*token",
-                      "too long", "context_length_exceeded")
-        ):
-            return "对话上下文或输出长度超出限制，请尝试新建会话或减少输出长度。"
-
-        if any(k in lower for k in ("timeout", "timed out", "readtimeout")):
-            return "请求超时，请稍后重试或检查网络连接。"
-
-        for hint in ("connection error", "network", "ssl", "connection refused"):
-            if hint in lower:
-                return "网络连接异常，请检查网络设置后重试。"
-
-        # 兜底不再重复拼接原始文本，统一由 append_upstream_detail 附在提示后面
-        return "AI 调用出错"
 
     def get_default_model(self) -> str:
         """获取默认模型"""

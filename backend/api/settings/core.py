@@ -31,6 +31,7 @@ from backend.api.settings.models import (
     InjectionConfigResponse,
     ModelConfigResponse,
     PersonaConfigResponse,
+    PersonaSessionMemoryResponse,
     ProviderConfigResponse,
     ProviderMetadataResponse,
     SecurityConfigResponse,
@@ -185,6 +186,7 @@ async def get_settings() -> SettingsResponse:
                 max_tokens=config.model.max_tokens,
                 max_iterations=config.model.max_iterations,
                 thinking_enabled=config.model.thinking_enabled,
+                stream_enabled=config.model.stream_enabled,
                 reasoning_level=config.model.reasoning_level,
                 supports_image=config.model.supports_image,
             ),
@@ -214,6 +216,10 @@ async def get_settings() -> SettingsResponse:
                     config.persona,
                     'enable_short_context_summary',
                     False,
+                ),
+                session_memory=PersonaSessionMemoryResponse(
+                    enabled=getattr(config.persona.session_memory, "enabled", True),
+                    scope=getattr(config.persona.session_memory, "scope", "session"),
                 ),
                 heartbeat=HeartbeatConfigResponse(
                     enabled=config.persona.heartbeat.enabled,
@@ -339,6 +345,9 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
 
             if "thinking_enabled" in request.model:
                 config.model.thinking_enabled = request.model["thinking_enabled"]
+
+            if "stream_enabled" in request.model:
+                config.model.stream_enabled = bool(request.model["stream_enabled"])
 
             if "reasoning_level" in request.model:
                 # 空值表示清掉全局档位；其余按原样小写存储（自定义档位同样放行）
@@ -466,6 +475,23 @@ async def update_settings(request: UpdateSettingsRequest, req: Request) -> Setti
                     request.persona["enable_short_context_summary"],
                     field_name="persona.enable_short_context_summary",
                 )
+
+            if "session_memory" in request.persona:
+                memory_config = request.persona["session_memory"]
+                if isinstance(memory_config, dict):
+                    if "enabled" in memory_config:
+                        config.persona.session_memory.enabled = _coerce_boolean_value(
+                            memory_config["enabled"],
+                            field_name="persona.session_memory.enabled",
+                        )
+                    if "scope" in memory_config:
+                        scope = str(memory_config["scope"] or "").strip()
+                        if scope not in {"session", "persona"}:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="persona.session_memory.scope 只能是 session 或 persona",
+                            )
+                        config.persona.session_memory.scope = scope
             
             if "heartbeat" in request.persona:
                 hb = request.persona["heartbeat"]

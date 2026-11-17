@@ -244,6 +244,7 @@ def _prepare_message_handler_reload_params(
 
     if reload_provider_model:
         try:
+            from backend.modules.config.schema import resolve_stream_enabled
             from backend.modules.providers import create_provider
             from backend.modules.providers.runtime import find_first_selectable_provider, get_provider_runtime_state
 
@@ -255,6 +256,7 @@ def _prepare_message_handler_reload_params(
                     provider_id = fallback_state.provider_id
                     runtime_state = fallback_state
 
+            resolved_stream_enabled = resolve_stream_enabled(config, provider_id, config.model.model)
             reload_params['provider'] = create_provider(
                 api_key=runtime_state.api_key or None,
                 api_keys=runtime_state.api_keys or None,
@@ -265,12 +267,14 @@ def _prepare_message_handler_reload_params(
                 max_retries=3,
                 provider_id=provider_id,
                 api_type=runtime_state.api_type,
+                stream_enabled=resolved_stream_enabled,
             )
             reload_params['model'] = config.model.model
             reload_params['temperature'] = config.model.temperature
             reload_params['max_tokens'] = config.model.max_tokens
             reload_params['max_iterations'] = config.model.max_iterations
             reload_params['thinking_enabled'] = config.model.thinking_enabled
+            reload_params['stream_enabled'] = resolved_stream_enabled
             reload_params['reasoning_level'] = config.model.reasoning_level
             reload_params['max_history_messages'] = config.persona.max_history_messages
 
@@ -355,6 +359,9 @@ def _reload_cron_runtime(
             cron_agent.max_tokens = config.model.max_tokens
             cron_agent.max_iterations = config.model.max_iterations
             cron_agent.thinking_enabled = config.model.thinking_enabled
+            resolved_stream_mode = reload_params.get('stream_enabled')
+            if resolved_stream_mode is not None:
+                cron_agent.stream_enabled = bool(resolved_stream_mode)
             cron_agent.reasoning_level = config.model.reasoning_level
         if workspace_path is not None:
             cron_agent.workspace = workspace_path

@@ -20,6 +20,11 @@ ANTHROPIC_VERSION = "2023-06-01"
 class ModelCatalogError(Exception):
     """拉取模型清单失败，message 已是面向用户的文案。"""
 
+    def __init__(self, message: str, *, status_code: Optional[int] = None):
+        super().__init__(message)
+        # 上游 HTTP 状态码；网络/解析类错误为 None，用于判断换 Key 是否可能有用
+        self.status_code = status_code
+
 
 def _normalize_base_url(api_base: Optional[str]) -> str:
     base = str(api_base or "").strip().rstrip("/")
@@ -147,7 +152,10 @@ async def fetch_provider_models(
         raise ModelCatalogError(f"无法连接模型服务: {exc}") from exc
 
     if response.status_code >= 400:
-        raise ModelCatalogError(_normalize_error(response.status_code, response.text))
+        raise ModelCatalogError(
+            _normalize_error(response.status_code, response.text),
+            status_code=response.status_code,
+        )
 
     try:
         payload = response.json()
@@ -158,3 +166,41 @@ async def fetch_provider_models(
     if not models:
         raise ModelCatalogError("上游没有返回任何模型。")
     return models
+
+
+async def fetch_provider_models_with_key_failover(
+    *,
+    api_base: Optional[str],
+    api_keys: List[str],
+    api_type: str,
+    max_attempts: int = 3,
+) -> Tuple[List[Tuple[str, Optional[str], Optional[str], Optional[int]]], int]:
+    """按 Key 顺序拉取模型清单，遇到鉴权/限流错误自动换下一个 Key。
+
+    返回 (models, key_index)；只有 401/403/429 这类「换 Key 可能有用」的错误才继续尝试，
+    Base URL 错误、网络错误等直接抛出，避免无意义地把每个 Key 都试一遍。
+    """
+    keys = [str(key or "").strip() for key in (api_keys or [])]
+    keys = [key for key in keys if key][: max(1, max_attempts)]
+    if not keys:
+        keys = [""]
+
+    last_error: Optional[ModelCatalogError] = None
+    for index, key in enumerate(keys):
+        try:
+            models = await fetch_provider_models(
+                api_base=api_base,
+                api_key=key,
+                api_type=api_type,
+            )
+            return models, index
+        except ModelCatalogError as exc:
+            last_error = exc
+            if exc.status_code not in (401, 403, 429):
+                raise
+            logger.info(
+                f"Model catalog key #{index + 1} failed with HTTP {exc.status_code}, "
+                "trying next key"
+            )
+
+    raise last_error or ModelCatalogError("获取模型列表失败。")

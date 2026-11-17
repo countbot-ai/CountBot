@@ -8,29 +8,40 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 
+from . import openai_compat
 from .base import (
     LLMProvider,
     StreamChunk,
     ToolCall,
-    _TOOL_ARGUMENT_PARSE_ERROR_KEY,
-    _TOOL_ARGUMENT_RAW_KEY,
-    is_auth_error,
+    is_retryable_error,
+    retry_backoff_seconds,
     read_usage_detail_int,
-    append_upstream_detail,
     has_visible_text,
+)
+from .error_messages import (
+    format_openai_error,
+    is_expected_upstream_error,
+    is_invalid_params_error,
+    is_timeout_exception,
+    parse_json_arguments,
+    summarize_error_for_log,
 )
 from .thinking_profiles import (
     apply_reasoning_request_fields,
-    clear_reasoning_request_fields,
     is_reasoning_off,
     normalize_reasoning_level,
 )
+from backend.modules.native_caps import (
+    build_provider_overrides,
+    resolve_native_capabilities,
+)
+from backend.modules.native_caps import events as native_events
+from backend.modules.native_caps.deepseek import merge_tools
+from backend.modules.native_caps.registry import PROTOCOL_CHAT
 
 
 class OpenAIProvider(LLMProvider):
     """OpenAI Provider 实现（兼容 OpenAI API 格式的所有服务）"""
-
-    _compatibility_cache: Dict[str, Dict[str, Any]] = {}
 
     def __init__(
         self,
@@ -46,6 +57,7 @@ class OpenAIProvider(LLMProvider):
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
         self.api_mode = "chat_completions"
+        self.native_capabilities = kwargs.get("native_capabilities")
 
     async def chat_stream(
         self,
@@ -94,14 +106,14 @@ class OpenAIProvider(LLMProvider):
 
         except Exception as e:
             error_msg = str(e) or type(e).__name__
-            log_summary = self._summarize_error_for_log(e)
-            if self._is_expected_upstream_error(e):
+            log_summary = summarize_error_for_log(e)
+            if is_expected_upstream_error(e):
                 logger.error(f"OpenAI call failed [{type(e).__name__}]: {log_summary}")
             else:
                 logger.exception(
                     f"OpenAI call failed [{type(e).__name__}]: {log_summary}"
                 )
-            friendly_msg = self._format_error_message(error_msg)
+            friendly_msg = format_openai_error(error_msg)
             yield StreamChunk(error=friendly_msg, raw_error=error_msg)
 
     async def _chat_stream_via_chat_completions(
@@ -115,16 +127,21 @@ class OpenAIProvider(LLMProvider):
         temperature: float,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
-        compatibility_key = self._get_compatibility_cache_key(model)
+        compatibility_key = openai_compat.compatibility_cache_key(
+            self.provider_id, self.api_base, model
+        )
         compatibility_hints: Dict[str, Any] = {}
         compatibility_recorded = False
         request_trace_id = str(kwargs.pop("request_trace_id", "")).strip() or uuid.uuid4().hex[:8]
+        # 会话/全局模型配置可切换上游流式与非流式；两条路径最终都走同一套
+        # StreamChunk 协议，前端 SSE 通道无需感知差异
+        stream_enabled = bool(kwargs.pop("stream_enabled", self.stream_enabled))
         sanitized_messages = self._sanitize_messages_for_chat_completions(messages)
 
         request_params: Dict[str, Any] = {
             "model": model,
             "messages": sanitized_messages,
-            "stream": True,
+            "stream": stream_enabled,
         }
 
         if temperature and temperature > 0:
@@ -136,6 +153,28 @@ class OpenAIProvider(LLMProvider):
         if tools:
             request_params["tools"] = tools
             request_params["tool_choice"] = "auto"
+
+        native_caps = resolve_native_capabilities(
+            self.provider_id, model, self.native_capabilities
+        )
+        native_overrides = build_provider_overrides(
+            provider_id=self.provider_id,
+            model=model,
+            protocol=PROTOCOL_CHAT,
+            capabilities=native_caps,
+            thinking_enabled=kwargs.get("thinking_enabled"),
+        )
+        native_tools = native_overrides.get("tools") or []
+        if native_tools:
+            request_params["tools"] = merge_tools(
+                request_params.get("tools"), native_tools
+            )
+            request_params["tool_choice"] = "auto"
+        if native_overrides.get("safety_check"):
+            # OpenAI SDK 只接受已知顶层参数，DeepSeek 扩展字段需走 extra_body
+            extra_body = dict(request_params.get("extra_body") or {})
+            extra_body["safety_check"] = native_overrides["safety_check"]
+            request_params["extra_body"] = extra_body
 
         reasoning_level = kwargs.pop("reasoning_level", None)
         request_params.update(kwargs)
@@ -151,7 +190,7 @@ class OpenAIProvider(LLMProvider):
             )
             thinking_enabled = False
         self._apply_reasoning_config(request_params, thinking_enabled, reasoning_level)
-        self._apply_cached_compatibility(request_params, compatibility_key)
+        openai_compat.apply_cached_compatibility(request_params, compatibility_key)
 
         logger.debug(
             f"OpenAI 请求参数 [trace={request_trace_id}]: "
@@ -177,7 +216,7 @@ class OpenAIProvider(LLMProvider):
                 stream = await client.chat.completions.create(**request_params)
                 break
             except Exception as e:
-                fixed_temperature = self._extract_fixed_temperature(e)
+                fixed_temperature = openai_compat.extract_fixed_temperature(e)
                 current_temperature = request_params.get("temperature")
                 if (
                     fixed_temperature is not None
@@ -191,8 +230,8 @@ class OpenAIProvider(LLMProvider):
                     request_params["temperature"] = fixed_temperature
                     continue
 
-                if self._is_invalid_params_error(e):
-                    fallback_info = self._apply_invalid_params_fallback(
+                if is_invalid_params_error(e):
+                    fallback_info = openai_compat.apply_invalid_params_fallback(
                         request_params,
                         error=e,
                     )
@@ -204,25 +243,25 @@ class OpenAIProvider(LLMProvider):
                         )
                         continue
 
-                error_summary = self._summarize_error_for_log(e)
-                if self._looks_like_tool_mismatch_error(e):
+                error_summary = summarize_error_for_log(e)
+                if openai_compat.looks_like_tool_mismatch_error(e):
                     logger.error(
                         "检测到上游工具调用不匹配错误: "
                         f"trace={request_trace_id}, model={model}, sequence="
                         f"{self._summarize_tool_message_sequence(sanitized_messages)}, error={error_summary}"
                     )
 
-                if self._is_auth_error(e):
+                if not is_retryable_error(e):
                     logger.warning(
-                        f"OpenAI 认证/密钥错误 [trace={request_trace_id}]，不重试，直接上抛: {error_summary}"
+                        f"OpenAI 不可重试错误 [trace={request_trace_id}]，直接上抛: {error_summary}"
                     )
                     raise
 
                 if attempt < max_attempts:
-                    wait = min(2 ** attempt, 30)
+                    wait = retry_backoff_seconds(attempt, e)
                     logger.warning(
                         f"OpenAI 调用失败 [trace={request_trace_id}] (第{attempt}/{max_attempts}次)，"
-                        f"{wait}s 后重试: {error_summary}"
+                        f"{wait:.1f}s 后重试: {error_summary}"
                     )
                     attempt += 1
                     await asyncio.sleep(wait)
@@ -233,7 +272,15 @@ class OpenAIProvider(LLMProvider):
                     )
                     raise
 
+        if not stream_enabled:
+            if compatibility_hints and not compatibility_recorded:
+                openai_compat.remember_compatibility(compatibility_key, compatibility_hints)
+            for converted in self._convert_completion_to_chunks(stream):
+                yield converted
+            return
+
         tool_call_buffer: Dict[str, Dict[str, Any]] = {}
+        native_server_tool_calls: List[Dict[str, Any]] = []
         chunk_count = 0
         content_yielded = False
         stream_done = False
@@ -244,7 +291,7 @@ class OpenAIProvider(LLMProvider):
             try:
                 async for chunk in stream:
                     if not compatibility_recorded and compatibility_hints:
-                        self._remember_compatibility(
+                        openai_compat.remember_compatibility(
                             compatibility_key,
                             compatibility_hints,
                         )
@@ -270,6 +317,30 @@ class OpenAIProvider(LLMProvider):
                         # 上游偶尔只回零宽字符占位，照抄会让前端渲染出空的思考块
                         if has_visible_text(reasoning_delta):
                             yield StreamChunk(reasoning_content=reasoning_delta)
+
+                    delta_events = native_events.openai_message_events(
+                        delta, include_server_tool_calls=False
+                    )
+                    if delta_events:
+                        yield StreamChunk(native_events=delta_events)
+                    choice_events = native_events.openai_server_tool_event(
+                        getattr(choice, "server_tool_event", None)
+                    )
+                    if choice_events:
+                        yield StreamChunk(native_events=choice_events)
+                    raw_tool_calls = getattr(delta, "server_tool_calls", None)
+                    if raw_tool_calls:
+                        latest = [
+                            call.model_dump()
+                            if hasattr(call, "model_dump")
+                            else dict(call)
+                            if isinstance(call, dict)
+                            else {}
+                            for call in raw_tool_calls
+                        ]
+                        latest = [item for item in latest if item]
+                        if latest:
+                            native_server_tool_calls = latest
 
                     if hasattr(delta, "tool_calls") and delta.tool_calls:
                         content_yielded = True
@@ -308,8 +379,28 @@ class OpenAIProvider(LLMProvider):
                                 tool_call=ToolCall(
                                     id=tc_data["id"],
                                     name=tc_data["name"],
-                                    arguments=self._parse_json_arguments(tc_data["arguments"]),
+                                    arguments=parse_json_arguments(tc_data["arguments"]),
                                 )
+                            )
+
+                        if native_server_tool_calls:
+                            yield StreamChunk(
+                                native_events=[
+                                    {
+                                        "kind": "history_blocks",
+                                        "protocol": PROTOCOL_CHAT,
+                                        "server_tool_calls": native_server_tool_calls,
+                                    }
+                                ]
+                            )
+                        if choice.finish_reason == "content_filter":
+                            yield StreamChunk(
+                                native_events=[
+                                    {
+                                        "kind": "refusal",
+                                        "message": "内容未通过安全审核",
+                                    }
+                                ]
                             )
 
                         yield StreamChunk(
@@ -324,8 +415,8 @@ class OpenAIProvider(LLMProvider):
                     yield StreamChunk(finish_reason="stop")
 
             except Exception as stream_err:
-                if not content_yielded and self._is_invalid_params_error(stream_err):
-                    fallback_info = self._apply_invalid_params_fallback(
+                if not content_yielded and is_invalid_params_error(stream_err):
+                    fallback_info = openai_compat.apply_invalid_params_fallback(
                         request_params,
                         error=stream_err,
                     )
@@ -340,14 +431,18 @@ class OpenAIProvider(LLMProvider):
                         chunk_count = 0
                         continue
 
-                is_timeout = self._is_timeout_exception(stream_err)
+                is_timeout = is_timeout_exception(stream_err)
 
-                if not content_yielded and is_timeout and stream_retry < max_stream_retries:
+                if (
+                    not content_yielded
+                    and is_retryable_error(stream_err)
+                    and stream_retry < max_stream_retries
+                ):
                     stream_retry += 1
-                    wait = min(2 ** stream_retry, 30)
+                    wait = retry_backoff_seconds(stream_retry, stream_err)
                     logger.warning(
-                        f"OpenAI 流读取超时 [trace={request_trace_id}]（第{stream_retry}/{max_stream_retries}次），"
-                        f"{wait}s 后重试: {stream_err}"
+                        f"OpenAI 流中断 [trace={request_trace_id}]（第{stream_retry}/{max_stream_retries}次），"
+                        f"{wait:.1f}s 后重试: {summarize_error_for_log(stream_err)}"
                     )
                     await asyncio.sleep(wait)
                     stream = await client.chat.completions.create(**request_params)
@@ -362,48 +457,6 @@ class OpenAIProvider(LLMProvider):
                     stream_done = True
                 else:
                     raise
-
-    @staticmethod
-    def _parse_json_arguments(raw: str) -> Dict[str, Any]:
-        args_str = (raw or "").strip()
-        if not args_str:
-            return {}
-
-        try:
-            parsed = json.loads(args_str)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse failed: {e}, raw: {repr(args_str)}")
-            return {
-                _TOOL_ARGUMENT_PARSE_ERROR_KEY: f"{type(e).__name__}: {e}",
-                _TOOL_ARGUMENT_RAW_KEY: args_str,
-            }
-
-        if isinstance(parsed, dict):
-            return parsed
-        return {"value": parsed}
-
-    @staticmethod
-    def _is_timeout_exception(error: Exception) -> bool:
-        """Detect timeout-like failures even when str(error) is empty."""
-        try:
-            import httpx
-
-            if isinstance(error, httpx.TimeoutException):
-                return True
-        except Exception:
-            pass
-
-        err_type = type(error).__name__.lower()
-        err_text = f"{str(error)} {repr(error)}".lower()
-        timeout_hints = (
-            "timeout",
-            "timed out",
-            "readtimeout",
-            "connecttimeout",
-            "read error",
-            "socket",
-        )
-        return any(hint in err_type or hint in err_text for hint in timeout_hints)
 
     @staticmethod
     def _coerce_reasoning_text(value: Any) -> str:
@@ -452,6 +505,99 @@ class OpenAIProvider(LLMProvider):
 
         return ""
 
+    @staticmethod
+    def _flatten_message_content(content: Any) -> str:
+        """把非流式响应的 content 归一化成纯文本（兼容分段 content 数组）。"""
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+        parts: List[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") in ("text", "output_text"):
+                text = item.get("text")
+                if text:
+                    parts.append(str(text))
+        return "".join(parts)
+
+    def _convert_completion_to_chunks(self, completion: Any) -> List[StreamChunk]:
+        """非流式 chat.completions 响应 -> 统一 StreamChunk 序列。"""
+        chunks: List[StreamChunk] = []
+        choices = getattr(completion, "choices", None) or []
+        if not choices:
+            chunks.append(StreamChunk(finish_reason="stop"))
+            return chunks
+
+        choice = choices[0]
+        message = getattr(choice, "message", None)
+        if message is not None:
+            reasoning_text = self._extract_reasoning_delta(message)
+            if reasoning_text and has_visible_text(reasoning_text):
+                chunks.append(StreamChunk(reasoning_content=reasoning_text))
+
+            content_text = self._flatten_message_content(
+                getattr(message, "content", None)
+            )
+            if content_text:
+                chunks.append(StreamChunk(content=content_text))
+
+            for tool_call in getattr(message, "tool_calls", None) or []:
+                function = getattr(tool_call, "function", None)
+                name = getattr(function, "name", "") if function else ""
+                if not name:
+                    continue
+                raw_arguments = getattr(function, "arguments", "") or ""
+                if not isinstance(raw_arguments, str):
+                    raw_arguments = json.dumps(raw_arguments, ensure_ascii=False)
+                chunks.append(
+                    StreamChunk(
+                        tool_call=ToolCall(
+                            id=getattr(tool_call, "id", None) or "call_unknown",
+                            name=name,
+                            arguments=parse_json_arguments(raw_arguments),
+                        )
+                    )
+                )
+
+            message_events = native_events.openai_message_events(message)
+            if message_events:
+                chunks.append(StreamChunk(native_events=message_events))
+            server_tool_calls = getattr(message, "server_tool_calls", None) or []
+            history_calls = [
+                call.model_dump()
+                if hasattr(call, "model_dump")
+                else dict(call)
+                if isinstance(call, dict)
+                else {}
+                for call in server_tool_calls
+            ]
+            history_calls = [item for item in history_calls if item]
+            if history_calls:
+                chunks.append(
+                    StreamChunk(
+                        native_events=[
+                            {
+                                "kind": "history_blocks",
+                                "protocol": PROTOCOL_CHAT,
+                                "server_tool_calls": history_calls,
+                            }
+                        ]
+                    )
+                )
+
+        chunks.append(
+            StreamChunk(
+                finish_reason=getattr(choice, "finish_reason", None) or "stop",
+                usage=self._extract_chat_usage(getattr(completion, "usage", None)),
+            )
+        )
+        return chunks
+
     def _apply_reasoning_config(
         self,
         request_params: Dict[str, Any],
@@ -473,7 +619,7 @@ class OpenAIProvider(LLMProvider):
             and is_reasoning_off(reasoning_level)
         )
         if thinking_enabled is False or level_off:
-            self._strip_message_reasoning_content(request_params)
+            openai_compat.strip_message_reasoning_content(request_params)
 
         request_params.pop("thinking_enabled", None)
 
@@ -546,6 +692,11 @@ class OpenAIProvider(LLMProvider):
                 if text:
                     converted.append({"type": "text", "text": text})
                 continue
+            if block_type == "file":
+                file_id = str(block.get("file_id") or "").strip()
+                if file_id:
+                    converted.append({"type": "file", "file_id": file_id})
+                continue
             if block_type != "image":
                 continue
 
@@ -587,6 +738,9 @@ class OpenAIProvider(LLMProvider):
 
             if normalized_role == "assistant" and message.get("tool_calls"):
                 sanitized["tool_calls"] = message.get("tool_calls")
+
+            if normalized_role == "assistant" and message.get("server_tool_calls"):
+                sanitized["server_tool_calls"] = message.get("server_tool_calls")
 
             if normalized_role == "tool" and message.get("tool_call_id"):
                 sanitized["tool_call_id"] = message.get("tool_call_id")
@@ -788,513 +942,6 @@ class OpenAIProvider(LLMProvider):
             summary_parts.append(role)
 
         return " -> ".join(summary_parts) if summary_parts else "<empty>"
-
-    @staticmethod
-    def _extract_error_text(error: Exception) -> str:
-        response = getattr(error, "response", None)
-        text = getattr(response, "text", None)
-        if isinstance(text, str) and text.strip():
-            return text
-        return str(error) or repr(error)
-
-    @staticmethod
-    def _extract_status_code(error: Exception) -> Optional[int]:
-        status_code = getattr(error, "status_code", None)
-        if isinstance(status_code, int):
-            return status_code
-
-        response = getattr(error, "response", None)
-        response_status = getattr(response, "status_code", None)
-        if isinstance(response_status, int):
-            return response_status
-
-        return None
-
-    @classmethod
-    def _extract_fixed_temperature(cls, error: Exception) -> Optional[float]:
-        raw = cls._extract_error_text(error)
-        match = re.search(
-            r"only\s+([0-9]+(?:\.[0-9]+)?)\s+is\s+allowed\s+for\s+this\s+model",
-            raw,
-            flags=re.IGNORECASE,
-        )
-        if not match:
-            return None
-
-        try:
-            return float(match.group(1))
-        except ValueError:
-            return None
-
-    @classmethod
-    def _looks_like_tool_mismatch_error(cls, error: Exception) -> bool:
-        raw = cls._extract_error_text(error).lower()
-        return (
-            "tool call and result not match" in raw
-            or "tool_calls" in raw and "tool_call_id" in raw
-            or "tool use" in raw and "tool result" in raw and "match" in raw
-        )
-
-    @classmethod
-    def _is_expected_upstream_error(cls, error: Exception) -> bool:
-        status_code = cls._extract_status_code(error)
-        if status_code is not None and status_code >= 400:
-            return True
-
-        if cls._is_timeout_exception(error):
-            return True
-
-        raw = cls._extract_error_text(error).lower()
-        return "<html" in raw or "<!doctype html" in raw
-
-    @classmethod
-    def _is_auth_error(cls, error: Exception) -> bool:
-        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。
-
-        分类逻辑统一维护在 providers/base.py（单一来源），此处仅转发。
-        """
-        return is_auth_error(error)
-
-    @classmethod
-    def _is_invalid_params_error(cls, error: Exception) -> bool:
-        status_code = cls._extract_status_code(error)
-        raw = cls._extract_error_text(error).lower()
-        return (
-            status_code == 400
-            or "invalid params" in raw
-            or "invalid parameter" in raw
-            or "invalid_request_error" in raw
-            or "requestparamserror" in raw
-        )
-
-    @staticmethod
-    def _strip_reasoning_config(request_params: Dict[str, Any]) -> bool:
-        return bool(clear_reasoning_request_fields(request_params))
-
-    @staticmethod
-    def _strip_message_reasoning_content(request_params: Dict[str, Any]) -> bool:
-        messages = request_params.get("messages")
-        if not isinstance(messages, list):
-            return False
-
-        stripped = False
-        sanitized_messages: List[Dict[str, Any]] = []
-        for message in messages:
-            if not isinstance(message, dict):
-                sanitized_messages.append(message)
-                continue
-
-            if "reasoning_content" not in message:
-                sanitized_messages.append(message)
-                continue
-
-            stripped = True
-            sanitized = dict(message)
-            sanitized.pop("reasoning_content", None)
-            sanitized_messages.append(sanitized)
-
-        if stripped:
-            request_params["messages"] = sanitized_messages
-
-        return stripped
-
-    @staticmethod
-    def _strip_tool_choice(request_params: Dict[str, Any]) -> bool:
-        if "tool_choice" not in request_params:
-            return False
-
-        request_params.pop("tool_choice", None)
-        return True
-
-    @classmethod
-    def _simplify_tool_schemas(cls, request_params: Dict[str, Any]) -> bool:
-        tools = request_params.get("tools")
-        if not isinstance(tools, list):
-            return False
-
-        changed = False
-        simplified_tools: List[Dict[str, Any]] = []
-        for tool in tools:
-            if not isinstance(tool, dict):
-                simplified_tools.append(tool)
-                continue
-
-            simplified_tool = dict(tool)
-            function = tool.get("function")
-            if isinstance(function, dict):
-                simplified_function = dict(function)
-                original_parameters = function.get("parameters")
-                simplified_parameters = cls._simplify_json_schema(original_parameters)
-                if simplified_parameters != original_parameters:
-                    simplified_function["parameters"] = simplified_parameters
-                    changed = True
-                simplified_tool["function"] = simplified_function
-
-            simplified_tools.append(simplified_tool)
-
-        if changed:
-            request_params["tools"] = simplified_tools
-
-        return changed
-
-    @classmethod
-    def _simplify_json_schema(cls, schema: Any) -> Any:
-        if isinstance(schema, list):
-            return [cls._simplify_json_schema(item) for item in schema]
-
-        if not isinstance(schema, dict):
-            return schema
-
-        unsupported_keywords = {
-            "oneOf",
-            "anyOf",
-            "allOf",
-            "not",
-            "$ref",
-            "$defs",
-            "definitions",
-            "patternProperties",
-            "discriminator",
-            "dependentSchemas",
-            "dependentRequired",
-            "if",
-            "then",
-            "else",
-            "unevaluatedProperties",
-            "prefixItems",
-            "contains",
-            "minContains",
-            "maxContains",
-            "nullable",
-        }
-
-        simplified: Dict[str, Any] = {}
-        for key, value in schema.items():
-            if key in unsupported_keywords:
-                continue
-            simplified[key] = cls._simplify_json_schema(value)
-
-        return simplified
-
-    @staticmethod
-    def _clamp_temperature_to_unit_interval(
-        request_params: Dict[str, Any]
-    ) -> Optional[str]:
-        raw_temperature = request_params.get("temperature")
-        try:
-            temperature = float(raw_temperature)
-        except (TypeError, ValueError):
-            return None
-
-        clamped_temperature = min(max(temperature, 0.0), 1.0)
-        if clamped_temperature == temperature:
-            return None
-
-        request_params["temperature"] = clamped_temperature
-        return f"temperature {temperature} -> {clamped_temperature}"
-
-    def _get_compatibility_cache_key(self, model: str) -> str:
-        provider_id = (self.provider_id or "").strip().lower()
-        api_base = (self.api_base or "").strip().lower().rstrip("/")
-        normalized_model = (model or "").strip().lower()
-        return f"{provider_id}|{api_base}|{normalized_model}"
-
-    @classmethod
-    def _remember_compatibility(
-        cls,
-        compatibility_key: str,
-        compatibility_hints: Dict[str, Any],
-    ) -> None:
-        if not compatibility_hints:
-            return
-
-        existing = dict(cls._compatibility_cache.get(compatibility_key, {}))
-        existing.update(compatibility_hints)
-        cls._compatibility_cache[compatibility_key] = existing
-
-    @classmethod
-    def _apply_cached_compatibility(
-        cls,
-        request_params: Dict[str, Any],
-        compatibility_key: str,
-    ) -> None:
-        profile = cls._compatibility_cache.get(compatibility_key)
-        if not profile:
-            return
-
-        applied_changes: List[str] = []
-
-        if (
-            profile.get("strip_reasoning_request_fields")
-            or profile.get("strip_extra_body_thinking")
-        ) and cls._strip_reasoning_config(
-            request_params
-        ):
-            applied_changes.append("reasoning control params")
-
-        if profile.get(
-            "strip_message_reasoning_content"
-        ) and cls._strip_message_reasoning_content(request_params):
-            applied_changes.append("assistant reasoning_content")
-
-        if profile.get("strip_multimodal_image_content") and cls._strip_multimodal_image_content(
-            request_params
-        ):
-            applied_changes.append("multimodal image content")
-
-        if profile.get("strip_tool_choice") and cls._strip_tool_choice(request_params):
-            applied_changes.append("tool_choice")
-
-        if profile.get("simplify_tool_schemas") and cls._simplify_tool_schemas(
-            request_params
-        ):
-            applied_changes.append("advanced tool schema keywords")
-
-        has_explicit_temperature = "temperature" in request_params
-        fixed_temperature = profile.get("fixed_temperature")
-        if has_explicit_temperature and fixed_temperature is not None:
-            current_temperature = request_params.get("temperature")
-            if current_temperature != fixed_temperature:
-                request_params["temperature"] = fixed_temperature
-                applied_changes.append(
-                    f"temperature {current_temperature} -> {fixed_temperature}"
-                )
-        else:
-            max_temperature = profile.get("max_temperature")
-            if has_explicit_temperature and max_temperature is not None:
-                raw_temperature = request_params.get("temperature")
-                try:
-                    current_temperature = float(raw_temperature)
-                except (TypeError, ValueError):
-                    current_temperature = None
-
-                if (
-                    current_temperature is not None
-                    and current_temperature > float(max_temperature)
-                ):
-                    request_params["temperature"] = float(max_temperature)
-                    applied_changes.append(
-                        f"temperature {current_temperature} -> {float(max_temperature)}"
-                    )
-
-        if applied_changes:
-            logger.info(
-                "Applying learned compatibility profile for OpenAI-compatible upstream: "
-                + ", ".join(applied_changes)
-            )
-
-    @classmethod
-    def _apply_invalid_params_fallback(
-        cls,
-        request_params: Dict[str, Any],
-        *,
-        error: Optional[Exception] = None,
-    ) -> Optional[Dict[str, Any]]:
-        if error is not None and cls._is_image_content_unsupported_error(error):
-            if cls._strip_multimodal_image_content(request_params):
-                return {
-                    "description": "multimodal image content",
-                    "hints": {"strip_multimodal_image_content": True},
-                }
-
-        fallback_steps = (
-            (
-                "reasoning control params",
-                cls._strip_reasoning_config,
-                {
-                    "strip_reasoning_request_fields": True,
-                    "strip_extra_body_thinking": True,
-                },
-            ),
-            (
-                "assistant reasoning_content",
-                cls._strip_message_reasoning_content,
-                {"strip_message_reasoning_content": True},
-            ),
-            ("tool_choice", cls._strip_tool_choice, {"strip_tool_choice": True}),
-            (
-                "advanced tool schema keywords",
-                cls._simplify_tool_schemas,
-                {"simplify_tool_schemas": True},
-            ),
-        )
-
-        for description, fallback, hints in fallback_steps:
-            if fallback(request_params):
-                return {
-                    "description": description,
-                    "hints": hints,
-                }
-
-        temperature_fallback = cls._clamp_temperature_to_unit_interval(request_params)
-        if temperature_fallback:
-            return {
-                "description": temperature_fallback,
-                "hints": {"max_temperature": request_params.get("temperature")},
-            }
-
-        return None
-
-    @classmethod
-    def _is_image_content_unsupported_error(cls, error: Exception) -> bool:
-        raw = cls._extract_error_text(error)
-        lower = raw.lower()
-        return (
-            "image_url" in lower
-            and any(
-                token in lower
-                for token in (
-                    "unknown variant",
-                    "expected `text`",
-                    "expected text",
-                    "failed to deserialize",
-                    "deserialize the json body",
-                    "does not support image",
-                    "image input is not supported",
-                )
-            )
-        )
-
-    @staticmethod
-    def _strip_multimodal_image_content(request_params: Dict[str, Any]) -> bool:
-        messages = request_params.get("messages")
-        if not isinstance(messages, list):
-            return False
-
-        changed = False
-        sanitized_messages: List[Dict[str, Any]] = []
-
-        for message in messages:
-            if not isinstance(message, dict):
-                sanitized_messages.append(message)
-                continue
-
-            content = message.get("content")
-            if not isinstance(content, list):
-                sanitized_messages.append(message)
-                continue
-
-            saw_image = False
-            omitted_images = 0
-            text_parts: List[str] = []
-
-            for item in content:
-                if not isinstance(item, dict):
-                    continue
-
-                item_type = str(item.get("type", "") or "").strip().lower()
-                if item_type == "image_url":
-                    saw_image = True
-                    omitted_images += 1
-                    continue
-
-                if item_type == "text":
-                    text_value = item.get("text")
-                    if text_value is not None:
-                        text_parts.append(str(text_value))
-
-            if not saw_image:
-                sanitized_messages.append(message)
-                continue
-
-            # 不支持图片的上游已经明确拒绝过一次；降级时保留占位文本，
-            # 让模型知道这里原本有图片，而不是静默丢掉用户内容。
-            text_parts.append(
-                f"[{omitted_images} image(s) omitted: upstream model does not support image input]"
-            )
-            updated_message = dict(message)
-            updated_message["content"] = "\n".join(part for part in text_parts if part)
-            sanitized_messages.append(updated_message)
-            changed = True
-
-        if changed:
-            request_params["messages"] = sanitized_messages
-
-        return changed
-
-    @classmethod
-    def _summarize_error_for_log(cls, error: Exception) -> str:
-        status_code = cls._extract_status_code(error)
-        raw = cls._extract_error_text(error)
-        compact = " ".join((raw or "").split())
-        lower = compact.lower()
-
-        if "<html" in lower or "<!doctype html" in lower:
-            title_match = re.search(r"<title>(.*?)</title>", raw, flags=re.IGNORECASE | re.DOTALL)
-            ray_match = re.search(r"Cloudflare Ray ID:\s*([A-Za-z0-9-]+)", raw, flags=re.IGNORECASE)
-            title = title_match.group(1).strip() if title_match else "HTML error page"
-            parts = []
-            if status_code is not None:
-                parts.append(f"status={status_code}")
-            parts.append(title)
-            if ray_match:
-                parts.append(f"ray_id={ray_match.group(1)}")
-            return ", ".join(parts)
-
-        if status_code is not None:
-            compact = f"status={status_code}, {compact}"
-
-        return compact[:300]
-
-    @staticmethod
-    def _format_error_message(raw: str) -> str:
-        """将 OpenAI 原始错误转换为用户友好提示，并附上上游原始返回"""
-        return append_upstream_detail(
-            OpenAIProvider._friendly_error_message(raw), raw
-        )
-
-    @staticmethod
-    def _friendly_error_message(raw: str) -> str:
-        lower = raw.lower()
-
-        if "image_url" in lower and any(
-            token in lower
-            for token in (
-                "unknown variant",
-                "expected `text`",
-                "expected text",
-                "failed to deserialize",
-                "deserialize the json body",
-                "does not support image",
-                "image input is not supported",
-            )
-        ):
-            return "当前模型或接口不支持图片输入，请切换支持视觉的模型后重试。"
-
-        # 余额/欠费类：403 或明确提到余额、充值、资源包的场景（优先于限流判定，
-        # 因为这类响应里常同时带 quota 字样）
-        if any(
-            k in lower
-            for k in ("余额", "资源包", "充值", "欠费", "insufficient balance",
-                      "insufficient_quota", "insufficient_quota_exceeded", "no credit")
-        ) or ("403" in lower and any(k in lower for k in ("quota", "balance", "额度"))):
-            return "API 账户余额不足或额度已用尽，请前往服务商控制台充值后重试。"
-
-        # 429 / rate limit 类：限流，不是余额问题
-        if any(
-            k in lower
-            for k in ("429", "rate limit", "rate_limit", "too many requests",
-                      "overloaded", "负载已饱和", "capacity")
-        ):
-            return "请求过于频繁，上游限流，请稍后重试。"
-
-        if any(k in lower for k in ("401", "unauthorized", "invalid.*api.*key", "authentication", "token is unusable", "invalid token", "api key")):
-            return "API 密钥无效或已过期，请在设置中检查并更新密钥。"
-
-        if any(k in lower for k in ("404", "model not found", "model_not_found", "does not exist")):
-            return "所选模型不可用，请在设置中确认模型名称是否正确。"
-
-        if any(k in lower for k in ("context length", "max.*token", "too long", "context_length_exceeded")):
-            return "对话上下文过长，请尝试新建会话或清除历史消息。"
-
-        if any(k in lower for k in ("500", "502", "503", "504", "internal server error", "service unavailable")):
-            return "AI 服务暂时不可用，请稍后重试。"
-
-        if any(k in lower for k in ("timeout", "connection", "network", "ssl", "timed out")):
-            return "网络连接异常，请检查网络设置后重试。"
-
-        # 兜底不再重复拼接原始文本，统一由 append_upstream_detail 附在提示后面
-        return "AI 调用出错"
 
     def get_default_model(self) -> str:
         """获取默认模型"""

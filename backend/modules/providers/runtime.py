@@ -1,10 +1,10 @@
 """Provider 运行态状态与校验辅助。"""
 
 import threading
+import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from backend.modules.providers.base import is_auth_error, is_rate_limit_error
 from backend.modules.providers.registry import get_all_providers, get_provider_metadata
 
 
@@ -69,12 +69,14 @@ class ProviderRuntimeState:
 
 
 class KeyRotator:
-    """线程安全的 API Key 轮换器，支持轮询和故障转移。"""
+    """线程安全的 API Key 轮换器，支持轮询、故障转移与失败冷却。"""
 
     def __init__(self, api_keys: List[str]):
         self._keys = [k for k in api_keys if k and k.strip()]
         self._index = 0
         self._lock = threading.Lock()
+        # 失败 Key 的冷却截止时间（monotonic 秒）：限流/失效的 Key 不应被立刻再次选中
+        self._cooldowns: Dict[str, float] = {}
 
     @property
     def keys(self) -> List[str]:
@@ -84,14 +86,28 @@ class KeyRotator:
     def count(self) -> int:
         return len(self._keys)
 
+    def _next_available_index_locked(self, start: int, now: float) -> Optional[int]:
+        """从 start 开始找到第一个未处于冷却期的 Key；全部冷却时返回 None。"""
+        total = len(self._keys)
+        for offset in range(total):
+            idx = (start + offset) % total
+            if self._cooldowns.get(self._keys[idx], 0.0) <= now:
+                return idx
+        return None
+
     def next_key(self) -> Optional[str]:
-        """获取下一个 key（轮询策略）。"""
+        """获取下一个 key（轮询策略，优先跳过冷却中的 key）。"""
         with self._lock:
             if not self._keys:
                 return None
-            key = self._keys[self._index % len(self._keys)]
-            self._index = (self._index + 1) % len(self._keys)
-            return key
+            total = len(self._keys)
+            now = time.monotonic()
+            idx = self._next_available_index_locked(self._index, now)
+            if idx is None:
+                # 全部处于冷却期：仍然按轮询返回，避免因为冷却导致完全不可用
+                idx = self._index % total
+            self._index = (idx + 1) % total
+            return self._keys[idx]
 
     def current_key(self) -> Optional[str]:
         """获取当前 key（不移动指针）。"""
@@ -100,33 +116,40 @@ class KeyRotator:
                 return None
             return self._keys[self._index % len(self._keys)]
 
-    def mark_key_failed(self, failed_key: str) -> Optional[str]:
-        """标记某个 key 失败，返回下一个可用 key。"""
+    def mark_key_failed(
+        self,
+        failed_key: str,
+        *,
+        cooldown_seconds: float = 60.0,
+    ) -> Optional[str]:
+        """标记某个 key 失败并返回下一个可用 key。
+
+        cooldown_seconds 内的轮询会跳过这个 key；认证失效通常需要更长冷却，
+        由调用方按错误类型传入。
+        """
         with self._lock:
-            if len(self._keys) <= 1:
+            total = len(self._keys)
+            if total <= 1:
                 return None
+
+            now = time.monotonic()
+            if cooldown_seconds > 0 and failed_key in self._keys:
+                self._cooldowns[failed_key] = now + cooldown_seconds
+
             try:
-                idx = self._keys.index(failed_key)
+                failed_idx = self._keys.index(failed_key)
             except ValueError:
-                # failed_key 不在列表中（如 key 列表已变更或为空串）。
-                # 直接内联轮询取下一个 key —— 不能调用 self.next_key()，
-                # 因为它会再次获取非重入的 self._lock，导致同线程死锁。
-                key = self._keys[self._index % len(self._keys)]
-                self._index = (self._index + 1) % len(self._keys)
-                return key
-            next_idx = (idx + 1) % len(self._keys)
-            if self._keys[next_idx] == failed_key:
-                return None
-            self._index = next_idx
-            return self._keys[self._index]
+                # failed_key 不在列表中（如 Key 列表已变更或为空串）：从当前指针开始找
+                start = self._index % total
+            else:
+                start = (failed_idx + 1) % total
 
-    def is_auth_error(self, error: Exception) -> bool:
-        """判断错误是否为认证/密钥相关错误。"""
-        return is_auth_error(error)
-
-    def is_rate_limit_error(self, error: Exception) -> bool:
-        """判断错误是否为限流/配额错误。"""
-        return is_rate_limit_error(error)
+            next_idx = self._next_available_index_locked(start, now)
+            if next_idx is None:
+                # 所有 Key 都在冷却：退回轮询起点，避免没有任何 Key 可用
+                next_idx = start
+            self._index = (next_idx + 1) % total
+            return self._keys[next_idx]
 
 
 _PROVIDER_KEY_ROTATORS: dict[str, KeyRotator] = {}

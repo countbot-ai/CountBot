@@ -37,6 +37,7 @@ _MODEL_FAMILY_REASONING_LEVELS: Dict[str, Tuple[str, ...]] = {
     "claude-sonnet": ("low", "medium", "high", "xhigh", "max"),
     "glm-5": ("low", "medium", "high", "xhigh", "max"),
     "deepseek-v4": ("low", "high", "max"),
+    "deepseek-flash": ("low", "high", "max"),
     "qwen3": ("none", "low", "medium", "high", "xhigh", "max"),
     "minimax-m3": ("low", "medium", "high", "xhigh", "max"),
 }
@@ -84,6 +85,7 @@ _MODEL_REASONING_LEVELS: Dict[str, Tuple[str, ...]] = {
     "grok-4.6": ("low", "medium", "high", "xhigh"),
     "grok-4.7": ("low", "medium", "high", "xhigh"),
     "deepseek-v4": ("low", "high", "max"),
+    "deepseek-flash": ("low", "high", "max"),
     "glm-5.2": ("low", "medium", "high", "xhigh", "max"),
     "glm-5.3": ("low", "high", "max"),
     "kimi-k3": ("low", "high", "max"),
@@ -176,21 +178,102 @@ def _apply_reasoning_level_fields(
     request_params: Dict[str, Any],
     *,
     provider_id: str,
+    model: Optional[str],
     level: str,
 ) -> Tuple[str, ...]:
-    """把档位翻成 OpenAI 兼容 chat.completions 的请求字段。
-
-    - reasoning_effort：档位原样下发（none 表示关闭），主流中转/官方都认这个字段；
-    - thinking.type：国产厂商（GLM/DeepSeek/Kimi 等）习惯的开关字段，额外补上。
-    """
+    """把思考档位映射为各 provider 接受的请求字段。"""
     applied: List[str] = []
-    request_params["reasoning_effort"] = level
-    applied.append("reasoning_effort")
+    level_off = is_reasoning_off(level)
+    normalized_model = _normalized_model_name(model)
+
+    if provider_id == "openai":
+        effort = _resolve_openai_reasoning_effort(
+            model=model,
+            thinking_enabled=not level_off,
+        ) if level_off else level
+        if effort:
+            request_params["reasoning_effort"] = effort
+            applied.append("reasoning_effort")
+        return tuple(applied)
+
+    if provider_id == "openrouter":
+        fields = {
+            "reasoning": {
+                "effort": "none" if level_off else level,
+                "exclude": level_off,
+            }
+        }
+        applied.extend(_set_extra_body_fields(request_params, fields))
+        return tuple(applied)
+
+    if provider_id == "qwen" or normalized_model.startswith("qwen"):
+        applied.extend(
+            _set_extra_body_fields(
+                request_params,
+                {"enable_thinking": not level_off},
+            )
+        )
+        if not level_off:
+            request_params["reasoning_effort"] = level
+            applied.append("reasoning_effort")
+        return tuple(applied)
+
+    # 关闭档位：按模型家族选择上游接受的字段。
+    # gemini/gpt/o 系列/claude 省略思考参数；grok 不支持 reasoning_effort=none；
+    # 其余模型使用 thinking.type=disabled。
+    if level_off:
+        if normalized_model.startswith(
+            ("gemini", "gpt-", "o1", "o3", "o4", "codex", "claude")
+        ):
+            return tuple(applied)
+
+        if normalized_model.startswith(
+            (
+                "grok",
+                "deepseek",
+                "glm",
+                "kimi",
+                "minimax",
+                "moonshot",
+                "zhipu",
+                "doubao",
+                "hunyuan",
+                "ernie",
+                "yi",
+                "baichuan",
+                "siliconflow",
+            )
+        ):
+            applied.extend(
+                _set_extra_body_fields(
+                    request_params,
+                    {"thinking": {"type": "disabled"}},
+                )
+            )
+            return tuple(applied)
+
+        if provider_id in _THINKING_TYPE_PROVIDERS:
+            applied.extend(
+                _set_extra_body_fields(
+                    request_params,
+                    {"thinking": {"type": "disabled"}},
+                )
+            )
+        return tuple(applied)
 
     if provider_id in _THINKING_TYPE_PROVIDERS:
-        fields = {"thinking": {"type": "disabled" if is_reasoning_off(level) else "enabled"}}
-        applied.extend(_set_extra_body_fields(request_params, fields))
+        applied.extend(
+            _set_extra_body_fields(
+                request_params,
+                {"thinking": {"type": "enabled"}},
+            )
+        )
+        request_params["reasoning_effort"] = level
+        applied.append("reasoning_effort")
+        return tuple(applied)
 
+    request_params["reasoning_effort"] = level
+    applied.append("reasoning_effort")
     return tuple(applied)
 
 
@@ -304,6 +387,7 @@ def apply_reasoning_request_fields(
         return _apply_reasoning_level_fields(
             request_params,
             provider_id=effective_provider_id,
+            model=model,
             level=supported_level,
         )
 

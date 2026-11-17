@@ -14,12 +14,24 @@ from .base import (
     ToolCall,
     _TOOL_ARGUMENT_PARSE_ERROR_KEY,
     _TOOL_ARGUMENT_RAW_KEY,
-    append_upstream_detail,
     has_visible_text,
-    is_auth_error,
+    is_retryable_error,
+    retry_backoff_seconds,
 )
 
+from .error_messages import format_anthropic_error
+
 from .thinking_profiles import is_reasoning_off, resolve_supported_reasoning_level
+from backend.modules.native_caps import (
+    build_provider_overrides,
+    resolve_native_capabilities,
+)
+from backend.modules.native_caps import events as native_events
+from backend.modules.native_caps.deepseek import merge_tools
+from backend.modules.native_caps.registry import (
+    PROTOCOL_ANTHROPIC,
+    resolve_anthropic_base,
+)
 
 
 class AnthropicProvider(LLMProvider):
@@ -37,6 +49,7 @@ class AnthropicProvider(LLMProvider):
     ):
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
+        self.native_capabilities = kwargs.get("native_capabilities")
 
     async def chat_stream(
         self,
@@ -64,6 +77,13 @@ class AnthropicProvider(LLMProvider):
 
             logger.info(f"Calling Anthropic-compatible API: {model}, api_base: {self.api_base}")
 
+            if not bool(request_params.get("stream", True)):
+                async for chunk in self._chat_non_stream(
+                    request_params=request_params,
+                ):
+                    yield chunk
+                return
+
             if self._should_use_sdk():
                 try:
                     from anthropic import AsyncAnthropic
@@ -85,7 +105,7 @@ class AnthropicProvider(LLMProvider):
         except Exception as e:
             error_msg = str(e).strip() or e.__class__.__name__
             logger.error(f"Anthropic call failed: {error_msg!r}")
-            friendly_msg = self._format_error_message(error_msg)
+            friendly_msg = format_anthropic_error(error_msg)
             yield StreamChunk(error=friendly_msg, raw_error=error_msg)
 
     def _should_use_sdk(self) -> bool:
@@ -103,12 +123,13 @@ class AnthropicProvider(LLMProvider):
     ) -> Dict[str, Any]:
         thinking_enabled = kwargs.pop("thinking_enabled", None)
         reasoning_level = kwargs.pop("reasoning_level", None)
+        stream_enabled = bool(kwargs.pop("stream_enabled", self.stream_enabled))
         system_content, filtered_messages = self._normalize_messages(messages)
 
         request_params: Dict[str, Any] = {
             "model": model,
             "messages": filtered_messages,
-            "stream": True,
+            "stream": stream_enabled,
         }
         if temperature and temperature > 0:
             request_params["temperature"] = temperature
@@ -128,8 +149,23 @@ class AnthropicProvider(LLMProvider):
             ]
 
         anthropic_tools = self._convert_tools(tools)
+        native_caps = resolve_native_capabilities(
+            self.provider_id, model, self.native_capabilities
+        )
+        native_overrides = build_provider_overrides(
+            provider_id=self.provider_id,
+            model=model,
+            protocol=PROTOCOL_ANTHROPIC,
+            capabilities=native_caps,
+            thinking_enabled=thinking_enabled,
+        )
+        anthropic_tools = merge_tools(
+            anthropic_tools, native_overrides.get("tools")
+        )
         if anthropic_tools:
             request_params["tools"] = anthropic_tools
+        if native_overrides.get("safety_check"):
+            request_params["safety_check"] = native_overrides["safety_check"]
 
         self._apply_thinking_config(request_params, thinking_enabled, reasoning_level)
         request_params.update(kwargs)
@@ -280,6 +316,24 @@ class AnthropicProvider(LLMProvider):
                 text = str(block.get("text") or "")
                 if text:
                     converted.append({"type": "text", "text": text})
+                continue
+            if block_type == "file":
+                file_id = str(block.get("file_id") or "").strip()
+                if not file_id:
+                    continue
+                media_type = str(block.get("media_type") or "").strip()
+                declared_type = str(block.get("block_type") or "").strip().lower()
+                target_type = declared_type or (
+                    "image" if media_type.startswith("image/") else "document"
+                )
+                if target_type not in ("image", "document"):
+                    target_type = "document"
+                converted.append(
+                    {
+                        "type": target_type,
+                        "source": {"type": "file", "file_id": file_id},
+                    }
+                )
                 continue
             if block_type != "image":
                 continue
@@ -482,6 +536,17 @@ class AnthropicProvider(LLMProvider):
             reasoning_level,
             model=str(request_params.get("model") or ""),
         )
+        if str(self.provider_id or "").lower() == "deepseek":
+            # DeepSeek 的 Anthropic 兼容端点只认 thinking.type，不接受 budget_tokens
+            request_params.pop("output_config", None)
+            if thinking_enabled is False or (
+                supported_level is not None and is_reasoning_off(supported_level)
+            ):
+                request_params["thinking"] = {"type": "disabled"}
+            elif thinking_enabled is True:
+                request_params["thinking"] = {"type": "enabled"}
+            return
+
         if supported_level is not None:
             if is_reasoning_off(supported_level):
                 request_params.pop("thinking", None)
@@ -532,6 +597,227 @@ class AnthropicProvider(LLMProvider):
             "budget_tokens": budget_tokens,
         }
 
+    async def _chat_non_stream(
+        self,
+        *,
+        request_params: Dict[str, Any],
+    ) -> AsyncIterator[StreamChunk]:
+        """非流式请求：SDK 与裸 HTTP 两条实现都收敛到统一 StreamChunk。"""
+        if self._should_use_sdk():
+            try:
+                from anthropic import AsyncAnthropic
+            except ModuleNotFoundError:
+                logger.warning(
+                    "anthropic package not installed; falling back to raw HTTP client"
+                )
+            else:
+                payload = await self._create_message_with_retry(
+                    AsyncAnthropic=AsyncAnthropic,
+                    request_params=dict(request_params),
+                )
+                for chunk in self._convert_message_to_chunks(payload):
+                    yield chunk
+                return
+
+        payload = await self._create_message_via_httpx(
+            request_params=dict(request_params),
+        )
+        for chunk in self._convert_message_to_chunks(payload):
+            yield chunk
+
+    async def _create_message_with_retry(
+        self,
+        *,
+        AsyncAnthropic: Any,
+        request_params: Dict[str, Any],
+    ) -> Any:
+        client_kwargs: Dict[str, Any] = {
+            "api_key": self.api_key,
+            "timeout": self.timeout,
+            "max_retries": 0,
+        }
+        if self.api_base:
+            client_kwargs["base_url"] = self.api_base
+        client = AsyncAnthropic(**client_kwargs)
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                return await client.messages.create(**request_params)
+            except Exception as e:
+                if not is_retryable_error(e):
+                    raise
+                if attempt < self.max_retries:
+                    wait = retry_backoff_seconds(attempt, e)
+                    logger.warning(
+                        f"Anthropic SDK non-stream request failed ({attempt}/{self.max_retries}), "
+                        f"retrying in {wait:.1f}s: {e}"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+        raise RuntimeError("Anthropic SDK non-stream request exhausted retries")
+
+    async def _create_message_via_httpx(
+        self,
+        *,
+        request_params: Dict[str, Any],
+    ) -> Any:
+        request_url = self._build_messages_url()
+        headers = self._build_headers()
+        headers["Accept"] = "application/json"
+        if str(self.provider_id or "").lower() == "deepseek":
+            caps = resolve_native_capabilities(
+                self.provider_id,
+                request_params.get("model"),
+                self.native_capabilities,
+            )
+            if caps.document_parsing != "off":
+                headers["anthropic-beta"] = "files-api-2025-04-14"
+        request_payload = dict(request_params)
+        injected_fallback_max_tokens = False
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                timeout = httpx.Timeout(self.timeout)
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        request_url,
+                        headers=headers,
+                        json=request_payload,
+                    )
+                    await self._raise_for_status(response)
+                    return response.json()
+            except Exception as e:
+                if (
+                    not injected_fallback_max_tokens
+                    and not request_payload.get("max_tokens")
+                    and self._is_missing_max_tokens_error(e)
+                ):
+                    request_payload["max_tokens"] = 4096
+                    injected_fallback_max_tokens = True
+                    logger.warning(
+                        "Anthropic-compatible upstream rejected missing max_tokens; "
+                        "retrying with fallback max_tokens=4096"
+                    )
+                    continue
+
+                if not is_retryable_error(e):
+                    raise
+                if attempt < self.max_retries:
+                    wait = retry_backoff_seconds(attempt, e)
+                    logger.warning(
+                        f"Anthropic HTTP non-stream request failed ({attempt}/{self.max_retries}), "
+                        f"retrying in {wait:.1f}s: {e}"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+        raise RuntimeError("Anthropic HTTP non-stream request exhausted retries")
+
+    def _convert_message_to_chunks(self, payload: Any) -> List[StreamChunk]:
+        """非流式 Messages 响应 -> 统一 StreamChunk（含回放用 content blocks）。"""
+        if hasattr(payload, "model_dump"):
+            data = payload.model_dump()
+        elif isinstance(payload, dict):
+            data = payload
+        else:
+            data = {}
+
+        chunks: List[StreamChunk] = []
+        blocks: List[Dict[str, Any]] = []
+        tool_chunks: List[StreamChunk] = []
+
+        for block in data.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type") or "")
+
+            if block_type == "text":
+                text = str(block.get("text") or "")
+                if text:
+                    chunks.append(StreamChunk(content=text))
+                blocks.append({"type": "text", "text": text})
+                continue
+
+            if block_type == "thinking":
+                thinking = str(block.get("thinking") or "")
+                if thinking and has_visible_text(thinking):
+                    chunks.append(StreamChunk(reasoning_content=thinking))
+                thinking_block = {"type": "thinking", "thinking": thinking}
+                if block.get("signature"):
+                    thinking_block["signature"] = block["signature"]
+                blocks.append(thinking_block)
+                continue
+
+            if block_type == "redacted_thinking":
+                redacted = {"type": "redacted_thinking"}
+                for field in ("data", "thinking", "signature"):
+                    if block.get(field):
+                        redacted[field] = block[field]
+                blocks.append(redacted)
+                continue
+
+            if block_type == "tool_use":
+                tool_id = str(block.get("id") or "")
+                tool_name = str(block.get("name") or "")
+                tool_input = block.get("input")
+                if tool_name:
+                    arguments = (
+                        tool_input
+                        if isinstance(tool_input, dict)
+                        else self._parse_tool_arguments(tool_input)
+                    )
+                    tool_chunks.append(
+                        StreamChunk(
+                            tool_call=ToolCall(
+                                id=tool_id or "call_unknown",
+                                name=tool_name,
+                                arguments=arguments,
+                            )
+                        )
+                    )
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": tool_id,
+                        "name": tool_name,
+                        "input": tool_input if isinstance(tool_input, dict) else {},
+                    }
+                )
+
+        if blocks:
+            chunks.append(
+                StreamChunk(provider_payload={"anthropic_content_blocks": blocks})
+            )
+        chunks.extend(tool_chunks)
+
+        usage = data.get("usage") or {}
+        chunks.append(
+            StreamChunk(
+                finish_reason=str(data.get("stop_reason") or "stop"),
+                usage=self._build_usage(
+                    int(usage.get("input_tokens") or 0),
+                    int(usage.get("output_tokens") or 0),
+                    int(usage.get("cache_read_input_tokens") or 0),
+                    int(usage.get("cache_creation_input_tokens") or 0),
+                ),
+            )
+        )
+        return chunks
+
+    @staticmethod
+    def _parse_tool_arguments(raw: Any) -> Dict[str, Any]:
+        if isinstance(raw, dict):
+            return raw
+        text = str(raw or "").strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {_TOOL_ARGUMENT_RAW_KEY: text}
+        return parsed if isinstance(parsed, dict) else {"value": parsed}
+
     async def _chat_stream_via_sdk(
         self,
         *,
@@ -555,17 +841,15 @@ class AnthropicProvider(LLMProvider):
                 stream = await client.messages.create(**request_params)
                 break
             except Exception as e:
-                if self._is_auth_error(e):
-                    logger.warning(
-                        f"Anthropic 认证/密钥错误，不重试，直接上抛: {e}"
-                    )
+                if not is_retryable_error(e):
+                    logger.warning(f"Anthropic 不可重试错误，直接上抛: {e}")
                     raise
 
                 if attempt < self.max_retries:
-                    wait = min(2**attempt, 30)
+                    wait = retry_backoff_seconds(attempt, e)
                     logger.warning(
                         f"Anthropic SDK request failed ({attempt}/{self.max_retries}), "
-                        f"retrying in {wait}s: {e}"
+                        f"retrying in {wait:.1f}s: {e}"
                     )
                     await asyncio.sleep(wait)
                 else:
@@ -718,29 +1002,35 @@ class AnthropicProvider(LLMProvider):
                     yield StreamChunk(finish_reason="stop")
 
             except Exception as stream_err:
-                if self._is_timeout_error(stream_err):
-                    if not content_yielded and stream_retry < max_stream_retries:
-                        stream_retry += 1
-                        wait = min(2**stream_retry, 30)
-                        logger.warning(
-                            f"Anthropic SDK stream timeout ({stream_retry}/{max_stream_retries}), "
-                            f"retrying in {wait}s: {stream_err}"
-                        )
-                        await asyncio.sleep(wait)
-                        stream = await client.messages.create(**request_params)
-                        tool_call_buffer = {}
-                        content_block_buffer = {}
-                        chunk_count = 0
-                        continue
+                is_timeout = self._is_timeout_error(stream_err)
 
-                    if content_yielded:
-                        logger.warning(
-                            f"Anthropic SDK stream timed out after {chunk_count} chunks: "
-                            f"{stream_err}"
-                        )
-                        yield StreamChunk(finish_reason="length")
-                        stream_done = True
-                        continue
+                if (
+                    not content_yielded
+                    and is_retryable_error(stream_err)
+                    and stream_retry < max_stream_retries
+                ):
+                    stream_retry += 1
+                    wait = retry_backoff_seconds(stream_retry, stream_err)
+                    logger.warning(
+                        f"Anthropic SDK stream interrupted "
+                        f"({stream_retry}/{max_stream_retries}), "
+                        f"retrying in {wait:.1f}s: {stream_err}"
+                    )
+                    await asyncio.sleep(wait)
+                    stream = await client.messages.create(**request_params)
+                    tool_call_buffer = {}
+                    content_block_buffer = {}
+                    chunk_count = 0
+                    continue
+
+                if content_yielded and is_timeout:
+                    logger.warning(
+                        f"Anthropic SDK stream timed out after {chunk_count} chunks: "
+                        f"{stream_err}"
+                    )
+                    yield StreamChunk(finish_reason="length")
+                    stream_done = True
+                    continue
 
                 raise
 
@@ -750,6 +1040,14 @@ class AnthropicProvider(LLMProvider):
         """Stream using raw HTTP for Anthropic-compatible providers."""
         request_url = self._build_messages_url()
         headers = self._build_headers()
+        if str(self.provider_id or "").lower() == "deepseek":
+            caps = resolve_native_capabilities(
+                self.provider_id,
+                request_params.get("model"),
+                self.native_capabilities,
+            )
+            if caps.document_parsing != "off":
+                headers["anthropic-beta"] = "files-api-2025-04-14"
         request_payload = dict(request_params)
         injected_fallback_max_tokens = False
 
@@ -802,6 +1100,9 @@ class AnthropicProvider(LLMProvider):
                                     event.get("index", 0),
                                     block,
                                 )
+                                block_events = native_events.anthropic_block_events(block)
+                                if block_events:
+                                    yield StreamChunk(native_events=block_events)
                                 if block.get("type") == "tool_use":
                                     index = event.get("index", 0)
                                     initial_input = block.get("input")
@@ -874,10 +1175,35 @@ class AnthropicProvider(LLMProvider):
                                     block["input_json"] = (
                                         f"{block.get('input_json', '')}{delta.get('partial_json', '')}"
                                     )
+                                elif delta_type == "citations_delta":
+                                    citation = delta.get("citation") or {}
+                                    citation_events = native_events.anthropic_delta_events(delta)
+                                    block = self._ensure_content_block(
+                                        content_block_buffer,
+                                        event.get("index", 0),
+                                        "text",
+                                    )
+                                    if isinstance(citation, dict) and citation.get("url"):
+                                        block.setdefault("citations", []).append(citation)
+                                    if citation_events:
+                                        yield StreamChunk(native_events=citation_events)
 
                             elif event_type == "message_delta":
                                 delta = event.get("delta") or {}
                                 finish_reason = delta.get("stop_reason") or finish_reason
+                                if finish_reason == "refusal":
+                                    stop_details = delta.get("stop_details") or {}
+                                    yield StreamChunk(
+                                        native_events=[
+                                            {
+                                                "kind": "refusal",
+                                                "message": str(
+                                                    stop_details.get("explanation")
+                                                    or "内容未通过安全审核"
+                                                ),
+                                            }
+                                        ]
+                                    )
                                 usage = event.get("usage") or {}
                                 output_tokens = usage.get("output_tokens", output_tokens)
                                 cache_read_input_tokens = usage.get(
@@ -889,6 +1215,19 @@ class AnthropicProvider(LLMProvider):
 
                             elif event_type == "message_stop":
                                 finalized_blocks = self._finalize_content_blocks(content_block_buffer)
+                                history_blocks = native_events.history_blocks_from_anthropic(
+                                    finalized_blocks
+                                )
+                                if history_blocks:
+                                    yield StreamChunk(
+                                        native_events=[
+                                            {
+                                                "kind": "history_blocks",
+                                                "protocol": PROTOCOL_ANTHROPIC,
+                                                "blocks": history_blocks,
+                                            }
+                                        ]
+                                    )
                                 if finalized_blocks:
                                     yield StreamChunk(
                                         provider_payload={
@@ -943,17 +1282,15 @@ class AnthropicProvider(LLMProvider):
                     yield StreamChunk(finish_reason="length")
                     return
 
-                if self._is_auth_error(e):
-                    logger.warning(
-                        f"Anthropic HTTP 认证/密钥错误，不重试，直接上抛: {e}"
-                    )
+                if not is_retryable_error(e):
+                    logger.warning(f"Anthropic HTTP 不可重试错误，直接上抛: {e}")
                     raise
 
                 if attempt < self.max_retries:
-                    wait = min(2**attempt, 30)
+                    wait = retry_backoff_seconds(attempt, e)
                     logger.warning(
                         f"Anthropic HTTP request failed ({attempt}/{self.max_retries}), "
-                        f"retrying in {wait}s: {e}"
+                        f"retrying in {wait:.1f}s: {e}"
                     )
                     await asyncio.sleep(wait)
                     continue
@@ -962,7 +1299,10 @@ class AnthropicProvider(LLMProvider):
 
     def _build_messages_url(self) -> str:
         """Resolve the messages endpoint from api_base."""
-        base = (self.api_base or "https://api.anthropic.com").rstrip("/")
+        if str(self.provider_id or "").lower() == "deepseek":
+            base = resolve_anthropic_base(self.api_base).rstrip("/")
+        else:
+            base = (self.api_base or "https://api.anthropic.com").rstrip("/")
         if base.endswith("/v1/messages"):
             return base
         if base.endswith("/messages"):
@@ -1129,67 +1469,6 @@ class AnthropicProvider(LLMProvider):
 
         err_str = str(error).lower()
         return any(token in err_str for token in ("timeout", "timed out", "read error", "socket"))
-
-    @staticmethod
-    def _is_auth_error(error: Exception) -> bool:
-        """判断是否为认证/密钥错误，此类错误不应在 Provider 内部重试。
-
-        分类逻辑统一维护在 providers/base.py（单一来源），此处仅转发。
-        """
-        return is_auth_error(error)
-
-    @staticmethod
-    def _format_error_message(raw: str) -> str:
-        """Convert raw provider errors to user-facing messages（附上游原始返回）。"""
-        return append_upstream_detail(
-            AnthropicProvider._friendly_error_message(raw), raw
-        )
-
-    @staticmethod
-    def _friendly_error_message(raw: str) -> str:
-        lower = raw.lower()
-
-        if lower in {"", "readtimeout", "timeoutexception"}:
-            return "请求超时，请检查 Base URL 是否正确，或稍后重试。"
-
-        if "no module named 'anthropic'" in lower or 'no module named "anthropic"' in lower:
-            return "未安装 anthropic Python 依赖，或当前运行环境未打包该模块。"
-
-        # 余额/欠费类优先：这类响应常同时带 quota 字样，先判余额再判限流
-        if any(
-            k in lower
-            for k in ("余额", "资源包", "充值", "欠费", "insufficient balance",
-                      "insufficient_quota", "no credit", "credit balance")
-        ) or ("403" in lower and any(k in lower for k in ("quota", "balance", "额度"))):
-            return "API 账户余额不足或额度已用尽，请前往服务商控制台充值后重试。"
-
-        if any(
-            k in lower
-            for k in ("429", "rate limit", "rate_limit", "too many requests",
-                      "overloaded", "负载已饱和", "capacity")
-        ):
-            return "请求过于频繁，上游限流，请稍后重试。"
-
-        if any(k in lower for k in ("401", "unauthorized", "invalid api key", "authentication")):
-            return "API 密钥无效或已过期，请检查并更新。"
-
-        if "http 404: not found" in lower:
-            return "接口地址不存在，请检查 Base URL 是否为 Anthropic 兼容入口。"
-
-        if any(k in lower for k in ("404", "model not found", "model_not_found")):
-            return "所选模型不可用，请确认模型名称是否正确。"
-
-        if any(k in lower for k in ("context length", "max token", "too long")):
-            return "上下文过长，请减少历史消息或缩短输入。"
-
-        if any(k in lower for k in ("500", "502", "503", "504", "internal server error")):
-            return "AI 服务暂时不可用，请稍后重试。"
-
-        if any(k in lower for k in ("timeout", "connection", "network", "ssl")):
-            return "网络连接异常，请检查网络或代理设置。"
-
-        # 兜底不再重复拼接原始文本，统一由 append_upstream_detail 附在提示后面
-        return "AI 调用出错"
 
     def get_default_model(self) -> str:
         """Return the configured default model."""

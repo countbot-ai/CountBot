@@ -97,6 +97,9 @@ class ProviderModelPayload(BaseModel):
         None, description="上下文窗口（token）：决定压缩触发阈值"
     )
     supports_image: Optional[bool] = None
+    stream_enabled: Optional[bool] = Field(
+        None, description="输出模式：空=跟随全局，True=流式，False=非流式"
+    )
     reasoning_levels: Optional[List[str]] = Field(
         None, description="该模型支持的思考档位；空=用内置建议，可自定义增删"
     )
@@ -105,6 +108,18 @@ class ProviderModelPayload(BaseModel):
     )
     source: Optional[str] = Field(
         None, description="builtin / manual / fetched；空则跟随批量提交的 source"
+    )
+    native_capabilities: Optional[Dict[str, Any]] = Field(
+        None, description="供应商原生能力开关；不传则保持默认全关"
+    )
+    # 多用户共享元数据；仅管理员可写，用户侧接口永不返回这些字段的敏感部分
+    shared: bool = Field(False, description="是否共享给普通用户")
+    shared_alias: Optional[str] = Field(
+        None, description="用户可见别名；为空时回落到 display_name 或 id"
+    )
+    shared_note: Optional[str] = Field(None, description="共享说明")
+    user_daily_limit: Optional[int] = Field(
+        None, ge=1, description="共享模型的每用户每日调用上限；空=不限"
     )
 
 
@@ -122,14 +137,33 @@ class UpdateProviderModelRequest(BaseModel):
     enabled: Optional[bool] = None
     context_window: Optional[int] = None
     supports_image: Optional[bool] = None
+    stream_enabled: Optional[bool] = Field(
+        None, description="输出模式：空=不修改，True=流式，False=非流式"
+    )
     reasoning_levels: Optional[List[str]] = Field(
         None, description="思考档位列表；传空数组表示改用内置建议"
     )
     reasoning_level: Optional[str] = Field(None, description="默认思考档位")
+    native_capabilities: Optional[Dict[str, Any]] = Field(
+        None, description="供应商原生能力开关；不传则不修改"
+    )
     clear_display_name: bool = False
     clear_context_window: bool = False
     clear_supports_image: bool = False
+    clear_stream_enabled: bool = Field(
+        False, description="清空模型级输出模式，回落到跟随全局"
+    )
     clear_reasoning_level: bool = False
+    # 多用户共享元数据
+    shared: Optional[bool] = Field(None, description="是否共享给普通用户")
+    shared_alias: Optional[str] = Field(None, description="用户可见别名")
+    shared_note: Optional[str] = Field(None, description="共享说明")
+    user_daily_limit: Optional[int] = Field(
+        None, ge=1, description="每用户每日调用上限；空=不限"
+    )
+    clear_shared_alias: bool = False
+    clear_shared_note: bool = False
+    clear_user_daily_limit: bool = False
 
 
 class ReorderProviderModelsRequest(BaseModel):
@@ -188,6 +222,9 @@ class ModelConfigResponse(BaseModel):
     max_tokens: int = Field(..., description="最大 token 数")
     max_iterations: int = Field(..., description="最大迭代次数")
     thinking_enabled: bool = Field(..., description="是否启用思考模式")
+    stream_enabled: bool = Field(
+        True, description="是否以流式方式请求上游模型；关闭后一次性返回"
+    )
     reasoning_level: Optional[str] = Field(
         None, description="思考档位（全局默认；空=按模型条目/旧逻辑）"
     )
@@ -237,6 +274,13 @@ class HeartbeatConfigResponse(BaseModel):
     max_greets_per_day: int = Field(..., description="每天最多问候次数")
 
 
+class PersonaSessionMemoryResponse(BaseModel):
+    """克隆人格的对话记忆配置"""
+
+    enabled: bool = Field(..., description="是否记录并注入克隆人格的对话摘要")
+    scope: str = Field(..., description="注入范围：session 仅当前会话，persona 含其他会话")
+
+
 class PersonaConfigResponse(BaseModel):
     """用户信息和AI人设配置响应"""
     
@@ -253,6 +297,10 @@ class PersonaConfigResponse(BaseModel):
     enable_short_context_summary: bool = Field(
         default=False,
         description="是否启用短期上下文摘要缓存，默认关闭",
+    )
+    session_memory: PersonaSessionMemoryResponse = Field(
+        ...,
+        description="克隆人格的对话记忆配置",
     )
     heartbeat: HeartbeatConfigResponse = Field(..., description="主动问候配置")
 
@@ -308,6 +356,9 @@ class TestConnectionRequest(BaseModel):
     temperature: Optional[float] = Field(None, description="温度参数（可选，0 表示不发送）")
     max_tokens: Optional[int] = Field(None, description="最大 token 数（可选，0 表示不发送）")
     thinking_enabled: Optional[bool] = Field(None, description="是否启用思考模式（可选）")
+    stream_enabled: Optional[bool] = Field(
+        None, description="输出模式（可选）：空=按已保存配置解析，True=流式，False=非流式"
+    )
 
 
 class TestConnectionResponse(BaseModel):
