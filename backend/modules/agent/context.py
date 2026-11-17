@@ -735,17 +735,15 @@ You are "{ai_name}", a dedicated assistant running inside CountBot.
         """构造注入首条 user 消息的动态上下文，避免破坏 prompt cache 前缀。"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
 
-        # 用户资料取值规则与 _get_identity 保持一致：无 persona 配置用默认值，有则覆盖
+        # 用户资料取自 persona 配置，缺省使用默认值
         user_name = "老板"
         user_address = ""
         output_language = "中文"
-        personality_id = ""
         active_persona_config = persona_config or self.persona_config
         if active_persona_config:
             user_name = active_persona_config.user_name or "用户"
             user_address = getattr(active_persona_config, 'user_address', '') or ""
             output_language = getattr(active_persona_config, 'output_language', None) or "中文"
-            personality_id = str(getattr(active_persona_config, "personality", "") or "")
 
         blocks: List[str] = []
 

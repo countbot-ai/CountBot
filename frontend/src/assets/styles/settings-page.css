@@ -157,16 +157,6 @@
   text-overflow: ellipsis;
 }
 
-.co-nav-clone-badge {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--color-primary-light, rgba(59, 130, 246, 0.12));
-  color: var(--color-primary);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.6;
-}
 
 /* ---------- 右侧内容区 ---------- */
 
@@ -575,7 +565,7 @@
   border-color: var(--color-border-strong);
 }
 
-/* 禁用态：克隆人格接管身份字段时，控件整体降一级灰 */
+/* 禁用态：字段不可编辑时控件降级显示 */
 .co-input:disabled,
 .co-select:disabled,
 .co-textarea:disabled {
@@ -902,7 +892,6 @@
 
   .co-nav-back-label,
   .co-nav-item-label,
-  .co-nav-clone-badge,
   .co-nav-group-label {
     display: none;
   }

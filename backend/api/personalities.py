@@ -1,6 +1,6 @@
 """性格管理 API"""
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
@@ -44,7 +44,7 @@ class PersonalityCreate(BaseModel):
     id: str = Field(..., min_length=1, max_length=50, pattern="^[a-z0-9_-]+$")
     name: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
-    traits: List[str] = Field(..., min_items=1)
+    traits: List[str] = Field(..., min_length=1)
     speaking_style: str = Field(..., min_length=1)
     icon: str = Field(default="Smile", max_length=50)
 
@@ -53,7 +53,7 @@ class PersonalityUpdate(BaseModel):
     """更新性格请求"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, min_length=1)
-    traits: Optional[List[str]] = Field(None, min_items=1)
+    traits: Optional[List[str]] = Field(None, min_length=1)
     speaking_style: Optional[str] = Field(None, min_length=1)
     icon: Optional[str] = Field(None, max_length=50)
     is_active: Optional[bool] = None
