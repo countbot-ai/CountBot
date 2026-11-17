@@ -61,7 +61,7 @@
           <div class="modal-header">
             <div>
               <h3 class="modal-title">{{ $t('settings.importExport.exportOptions') }}</h3>
-              <p class="modal-subtitle">选择要打包的配置块，并决定是否附带敏感信息</p>
+              <p class="modal-subtitle">{{ $t('settings.configTransfer.exportSubtitle') }}</p>
             </div>
             <button class="modal-close" @click="showExportDialog = false">
               <XIcon :size="20" />
@@ -75,8 +75,8 @@
                   <KeyIcon :size="16" />
                 </div>
                 <div>
-                  <h4>敏感信息</h4>
-                  <p>默认关闭，导出文件更适合跨机器迁移或共享给他人</p>
+                  <h4>{{ $t('settings.configTransfer.sensitiveTitle') }}</h4>
+                  <p>{{ $t('settings.configTransfer.sensitiveHint') }}</p>
                 </div>
               </div>
 
@@ -99,7 +99,7 @@
                 </div>
                 <div>
                   <h4>{{ $t('settings.importExport.selectSections') }}</h4>
-                  <p>后端配置、本地 Coding Plan 和智能体团队可以一起导出</p>
+                  <p>{{ $t('settings.configTransfer.sectionsHint') }}</p>
                 </div>
               </div>
 
@@ -128,8 +128,8 @@
 
             <section class="summary-panel">
               <div class="summary-top">
-                <span>导出摘要</span>
-                <strong>已选择 {{ exportOptions.sections.length }} 个配置块</strong>
+                <span>{{ $t('settings.configTransfer.summaryTitle') }}</span>
+                <strong>{{ $t('settings.configTransfer.selectedBlocks', { n: exportOptions.sections.length }) }}</strong>
               </div>
               <div v-if="selectedSectionLabels.length" class="summary-tags">
                 <span
@@ -169,7 +169,7 @@
           <div class="modal-header">
             <div>
               <h3 class="modal-title">{{ $t('settings.importExport.confirmImport') }}</h3>
-              <p class="modal-subtitle">先确认文件内容，再决定采用合并还是覆盖策略</p>
+              <p class="modal-subtitle">{{ $t('settings.configTransfer.importSubtitle') }}</p>
             </div>
             <button class="modal-close" @click="showImportDialog = false">
               <XIcon :size="20" />
@@ -200,11 +200,11 @@
                     {{ label }}
                   </span>
                 </div>
-                <p v-else class="summary-note">未识别到可导入的配置节</p>
+                <p v-else class="summary-note">{{ $t('settings.configTransfer.noSections') }}</p>
               </div>
 
               <p v-if="importedTeamCount > 0" class="summary-note">
-                当前文件包含 {{ importedTeamCount }} 个智能体团队。
+                {{ $t('settings.configTransfer.teamCount', { n: importedTeamCount }) }}
               </p>
             </section>
 
@@ -219,8 +219,8 @@
                   <RefreshCwIcon :size="16" />
                 </div>
                 <div>
-                  <h4>导入策略</h4>
-                  <p>合并模式保留未导入内容，覆盖模式按文件内容替换当前配置</p>
+                  <h4>{{ $t('settings.configTransfer.strategyTitle') }}</h4>
+                  <p>{{ $t('settings.configTransfer.strategyHint') }}</p>
                 </div>
               </div>
 
@@ -234,8 +234,8 @@
 
               <p v-if="hasImportedTeams" class="team-hint">
                 {{ importOptions.merge
-                  ? '智能体团队会按名称执行新增或更新，未出现在文件中的团队会保留。'
-                  : '智能体团队会按名称执行替换，文件中不存在的现有团队会被删除。' }}
+                  ? $t('settings.configTransfer.mergeTeamNote')
+                  : $t('settings.configTransfer.overwriteTeamNote') }}
               </p>
             </section>
           </div>

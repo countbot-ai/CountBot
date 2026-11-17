@@ -17,11 +17,11 @@
         <div class="team-actions">
           <button class="co-btn co-btn--secondary" @click="triggerImport">
             <component :is="UploadIcon" :size="14" />
-            导入
+            {{ $t('settings.multiagent.importTeams') }}
           </button>
           <button class="co-btn co-btn--secondary" :disabled="!teams.length" @click="exportTeams">
             <component :is="DownloadIcon" :size="14" />
-            导出
+            {{ $t('settings.multiagent.exportTeams') }}
           </button>
           <button class="co-btn co-btn--secondary" @click="showTemplateDialog = true">
             <component :is="LayoutTemplateIcon" :size="14" />
@@ -56,14 +56,14 @@
         </div>
         <select v-model="filterMode" class="co-select team-filter">
           <option value="">{{ $t('settings.multiagent.allModes') }}</option>
-          <option value="pipeline">流水线</option>
-          <option value="graph">依赖图</option>
-          <option value="council">多视角</option>
+          <option value="pipeline">{{ $t('settings.multiagent.modePipeline') }}</option>
+          <option value="graph">{{ $t('settings.multiagent.modeGraph') }}</option>
+          <option value="council">{{ $t('settings.multiagent.modeCouncil') }}</option>
         </select>
         <select v-model="filterStatus" class="co-select team-filter">
           <option value="">{{ $t('settings.multiagent.allStatus') }}</option>
-          <option value="active">已激活</option>
-          <option value="inactive">未激活</option>
+          <option value="active">{{ $t('settings.multiagent.statusActive') }}</option>
+          <option value="inactive">{{ $t('settings.multiagent.statusInactive') }}</option>
         </select>
       </div>
 
@@ -109,9 +109,9 @@
             <span class="team-name">{{ team.name }}</span>
             <span class="team-badge">{{ modeLabelMap[team.mode] }}</span>
             <span v-if="team.mode === 'council'" class="team-badge">
-              {{ team.cross_review ? '交叉模式' : '独立模式' }}
+              {{ team.cross_review ? $t('settings.multiagent.crossMode') : $t('settings.multiagent.independentMode') }}
             </span>
-            <span v-if="!team.is_active" class="team-badge team-badge--muted">未启用</span>
+            <span v-if="!team.is_active" class="team-badge team-badge--muted">{{ $t('settings.multiagent.inactiveBadge') }}</span>
           </div>
 
           <span class="team-member-count">
@@ -144,8 +144,8 @@
       <!-- 模板选择对话框 -->
       <Modal :model-value="showTemplateDialog" @close="showTemplateDialog = false" size="large">
         <div class="dialog-content">
-          <h3>从模板创建团队</h3>
-          <p class="template-hint">选择一个预定义模板快速创建团队，您可以在创建后修改配置</p>
+          <h3>{{ $t('settings.multiagent.templateTitle') }}</h3>
+          <p class="template-hint">{{ $t('settings.multiagent.templateHint') }}</p>
 
           <!-- 分类过滤 -->
           <div class="template-categories">
@@ -156,7 +156,7 @@
               :class="{ active: selectedCategory === category }"
               @click="selectedCategory = category"
             >
-              {{ category }}
+              {{ category === '全部' ? $t('settings.multiagent.allCategories') : category }}
             </button>
           </div>
 
@@ -176,7 +176,7 @@
               <div class="template-footer">
                 <span class="template-agents">
                   <component :is="UsersIcon" :size="14" />
-                  {{ template.agents.length }} 个成员
+                  {{ $t('settings.multiagent.memberCount', { n: template.agents.length }) }}
                 </span>
                 <span class="template-category">{{ template.category }}</span>
               </div>
@@ -401,15 +401,15 @@ const formData = ref({
 })
 
 const modeLabelMap: Record<string, string> = {
-  pipeline: '流水线',
-  graph: '依赖图',
-  council: '多视角',
+  pipeline: t('settings.multiagent.modePipeline'),
+  graph: t('settings.multiagent.modeGraph'),
+  council: t('settings.multiagent.modeCouncil'),
 }
 
 const modes = [
-  { id: 'pipeline', name: '流水线 (Pipeline)', desc: '顺序执行，每步接收前序输出' },
-  { id: 'graph', name: '依赖图 (Graph)', desc: '无依赖项并行执行' },
-  { id: 'council', name: '多视角 (Council)', desc: '全员并行分析 → 交叉互评' },
+  { id: 'pipeline', name: t('settings.multiagent.modePipelineLong'), desc: t('settings.multiagent.modePipelineDesc') },
+  { id: 'graph', name: t('settings.multiagent.modeGraphLong'), desc: t('settings.multiagent.modeGraphDesc') },
+  { id: 'council', name: t('settings.multiagent.modeCouncilLong'), desc: t('settings.multiagent.modeCouncilDesc') },
 ]
 
 onMounted(async () => {
@@ -482,16 +482,16 @@ async function handleImportChange(event: Event) {
     const parsed = JSON.parse(await file.text())
     const rows = Array.isArray(parsed) ? parsed : parsed?.teams
     if (!Array.isArray(rows) || rows.length === 0) {
-      throw new Error('文件里没有团队数据')
+      throw new Error(t('settings.multiagent.noTeamData'))
     }
     const normalized = rows.map(normalizeImportedTeam).filter(Boolean) as AgentTeamCreate[]
     if (!normalized.length) {
-      throw new Error('没有可导入的团队')
+      throw new Error(t('settings.multiagent.noImportableTeams'))
     }
     const names = new Set<string>()
     for (const team of normalized) {
       if (names.has(team.name)) {
-        throw new Error(`导入文件里存在重复团队名：${team.name}`)
+        throw new Error(t('settings.multiagent.duplicateTeamName', { name: team.name }))
       }
       names.add(team.name)
     }
@@ -503,9 +503,9 @@ async function handleImportChange(event: Event) {
       else await teamsStore.createTeam(payload)
     }
     await loadTeams()
-    toast.success(`已导入 ${normalized.length} 个团队`)
+    toast.success(t('settings.multiagent.importedTeams', { n: normalized.length }))
   } catch (err: any) {
-    toast.error(err?.message || '导入失败')
+    toast.error(err?.message || t('settings.multiagent.importFailed'))
   }
 }
 
@@ -554,7 +554,7 @@ const confirmDelete = async (team: AgentTeam) => {
 const copyPayload = (team: AgentTeam) => {
   const payload = {
     mode: team.mode,
-    goal: "在这里描述你的目标...",
+    goal: t('settings.multiagent.goalPlaceholder'),
     cross_review: team.cross_review,
     agents: team.agents.map(a => ({
       id: a.id,

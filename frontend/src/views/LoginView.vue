@@ -19,24 +19,24 @@
       <!-- Form -->
       <form @submit.prevent="handleSubmit" class="login-form" autocomplete="on">
         <div class="field">
-          <label for="username">账号</label>
+          <label for="username">{{ $t('login.page.username') }}</label>
           <input
             id="username"
             v-model="username"
             type="text"
-            :placeholder="isSetup ? '设置管理员账号' : '请输入账号'"
+            :placeholder="isSetup ? $t('login.page.usernameSetupPlaceholder') : $t('login.page.usernamePlaceholder')"
             autocomplete="username"
             required
           />
         </div>
 
         <div class="field">
-          <label for="password">密码</label>
+          <label for="password">{{ $t('login.page.password') }}</label>
           <input
             id="password"
             v-model="password"
             type="password"
-            :placeholder="isSetup ? '设置密码' : '请输入密码'"
+            :placeholder="isSetup ? $t('login.page.passwordSetupPlaceholder') : $t('login.page.passwordPlaceholder')"
             :autocomplete="isSetup ? 'new-password' : 'current-password'"
             required
           />
@@ -44,12 +44,12 @@
 
         <!-- 设置管理员与注册均需确认密码，两处提交都会校验 confirmPassword -->
         <div v-if="isSetup || isRegister" class="field">
-          <label for="confirmPassword">确认密码</label>
+          <label for="confirmPassword">{{ $t('login.page.confirmPassword') }}</label>
           <input
             id="confirmPassword"
             v-model="confirmPassword"
             type="password"
-            placeholder="再次输入密码"
+            :placeholder="$t('login.page.confirmPasswordPlaceholder')"
             autocomplete="new-password"
             required
           />
@@ -57,29 +57,29 @@
 
         <!-- Registration mode: display name is optional -->
         <div v-if="isRegister" class="field">
-          <label for="displayName">显示名称（可选）</label>
+          <label for="displayName">{{ $t('login.page.displayName') }}</label>
           <input
             id="displayName"
             v-model="displayName"
             type="text"
-            placeholder="例如：小王"
+            :placeholder="$t('login.page.displayNamePlaceholder')"
             autocomplete="nickname"
           />
         </div>
 
         <!-- Password requirements (always visible in setup/register mode) -->
         <div v-if="isSetup || isRegister" class="password-rules">
-          密码要求：至少 8 位，必须同时包含大写字母、小写字母和数字
+          {{ $t('login.page.passwordRequirement') }}
         </div>
 
         <div v-if="isRegister && approvalManual" class="password-rules">
-          当前注册需要管理员审批，提交后请等待管理员通过。
+          {{ $t('login.page.pendingApprovalNotice') }}
         </div>
 
         <div v-if="infoMsg" class="password-rules">{{ infoMsg }}</div>
 
         <div v-if="needsLocalSetup" class="error-box" role="alert">
-          管理员尚未在本机完成初始化。请先在 CountBot 所在机器本地打开页面设置管理员账号和密码，然后再进行远程登录。
+          {{ $t('login.page.localSetupNotice') }}
         </div>
 
         <!-- Error message -->
@@ -87,20 +87,20 @@
 
         <button type="submit" class="submit-btn" :disabled="loading || needsLocalSetup">
           <span v-if="loading" class="spinner"></span>
-          {{ loading ? '请稍候...' : (isSetup ? '设置并登录' : (isRegister ? '注册' : '登录')) }}
+          {{ loading ? $t('login.page.loading') : (isSetup ? $t('login.page.setupAndLogin') : (isRegister ? $t('login.page.register') : $t('login.page.login'))) }}
         </button>
       </form>
 
       <!-- 注册 / 登录切换 -->
       <div v-if="canRegister && !isSetup" class="login-footer">
-        <a v-if="!isRegister" href="#" @click.prevent="switchMode('register')">还没有账号？注册</a>
-        <a v-else href="#" @click.prevent="switchMode('login')">已有账号？去登录</a>
+        <a v-if="!isRegister" href="#" @click.prevent="switchMode('register')">{{ $t('login.page.noAccount') }}</a>
+        <a v-else href="#" @click.prevent="switchMode('login')">{{ $t('login.page.hasAccount') }}</a>
       </div>
 
       <!-- Footer -->
       <div class="login-footer">
-        <span v-if="!isSetup">密码要求：至少 8 位，包含大写字母、小写字母和数字</span>
-        <span v-else>设置完成后将自动登录</span>
+        <span v-if="!isSetup">{{ $t('login.page.passwordRequirementShort') }}</span>
+        <span v-else>{{ $t('login.page.autoLogin') }}</span>
       </div>
     </div>
   </div>
@@ -108,11 +108,13 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { authAPI } from '@/api/endpoints'
 
 const router = useRouter()
+const { t } = useI18n()
 const route = useRoute()
 
 const isSetup = ref(false)
@@ -134,17 +136,17 @@ const setupSecret = computed(() => {
 
 const setupBlockedText = computed(() => {
   return setupSecret.value
-    ? '初始化入口无效、已过期，或系统已经完成初始化'
-    : '远程初始化需要专用入口，请查看本机控制台输出的初始化路径'
+    ? t('login.page.setupInvalid')
+    : t('login.page.setupRemote')
 })
 
 const hintText = computed(() => {
   if (needsLocalSetup.value) {
-    return setupSecret.value ? '初始化入口不可用' : '远程初始化需要专用入口'
+    return setupSecret.value ? t('login.page.setupUnavailable') : t('login.page.remoteSetupOnly')
   }
-  if (isSetup.value) return '首次初始化，请设置管理员账号和密码'
-  if (isRegister.value) return '注册账号后即可使用'
-  return '远程访问需要身份验证'
+  if (isSetup.value) return t('login.page.firstSetupHint')
+  if (isRegister.value) return t('login.page.registerHint')
+  return t('login.page.loginHint')
 })
 
 function switchMode(mode: 'login' | 'register') {
@@ -191,7 +193,7 @@ async function handleSubmit() {
   try {
     if (isSetup.value) {
       if (password.value !== confirmPassword.value) {
-        errorMsg.value = '两次输入的密码不一致'
+        errorMsg.value = t('login.page.passwordMismatch')
         return
       }
       const { data } = await axios.post(
@@ -210,7 +212,7 @@ async function handleSubmit() {
       router.replace('/')
     } else if (isRegister.value) {
       if (password.value !== confirmPassword.value) {
-        errorMsg.value = '两次输入的密码不一致'
+        errorMsg.value = t('login.page.passwordMismatch')
         return
       }
       const data = await authAPI.register({
@@ -219,7 +221,7 @@ async function handleSubmit() {
         display_name: displayName.value || undefined,
       })
       if (data?.status === 'pending') {
-        infoMsg.value = '注册成功，请等待管理员审批后登录'
+        infoMsg.value = t('login.page.registerSuccess')
         isRegister.value = false
         return
       }
@@ -240,12 +242,12 @@ async function handleSubmit() {
     const detail = payload?.detail
     const code = payload?.code
     if (code === 'ACCOUNT_PENDING') {
-      infoMsg.value = '账号待管理员审批，请稍后再试'
+      infoMsg.value = t('login.page.accountPending')
     } else {
       const text =
         (typeof detail === 'string' ? detail : detail?.detail) ||
         payload?.message ||
-        '操作失败，请重试'
+        t('login.page.operationFailed')
       errorMsg.value = text
     }
   } finally {

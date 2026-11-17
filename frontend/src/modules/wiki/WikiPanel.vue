@@ -8,7 +8,7 @@
           @click="activeTab = 'entries'"
         >
           <component :is="BookOpenIcon" :size="16" />
-          条目库
+          {{ $t('wiki.panel.library') }}
         </button>
         <button
           class="top-tab"
@@ -16,7 +16,7 @@
           @click="activeTab = 'guide'"
         >
           <component :is="LightbulbIcon" :size="16" />
-          使用指南
+          {{ $t('wiki.panel.guide') }}
         </button>
       </div>
 
@@ -27,7 +27,7 @@
           @click="handleCreate"
         >
           <component :is="PlusIcon" :size="16" />
-          新建条目
+          {{ $t('wiki.panel.newEntry') }}
         </button>
         <button
           v-if="activeTab === 'entries'"
@@ -35,7 +35,7 @@
           @click="showCompileDialog = true"
         >
           <component :is="SparklesIcon" :size="16" />
-          AI 编译
+          {{ $t('wiki.panel.aiCompile') }}
         </button>
         <button
           class="refresh-btn"
@@ -59,15 +59,15 @@
       >
         <div class="stat">
           <component :is="BookOpenIcon" :size="16" />
-          共 {{ entries.length }} 条
+          {{ $t('wiki.panel.totalEntries', { n: entries.length }) }}
         </div>
         <div class="stat">
           <component :is="TagIcon" :size="16" />
-          {{ uniqueTags.length }} 个标签
+          {{ $t('wiki.panel.tags', { n: uniqueTags.length }) }}
         </div>
         <div class="stat">
           <component :is="ClockIcon" :size="16" />
-          最近更新：{{ latestUpdate }}
+          {{ $t('wiki.panel.recentlyUpdated', { time: latestUpdate }) }}
         </div>
       </div>
 
@@ -84,7 +84,7 @@
               @click="filterTag = 'all'"
             >
               <component :is="BookOpenIcon" :size="16" />
-              全部 ({{ entries.length }})
+              {{ $t('wiki.panel.allWithCount', { n: entries.length }) }}
             </button>
             <button
               v-for="tag in uniqueTags.slice(0, 4)"
@@ -104,8 +104,8 @@
               v-model="searchQuery"
               class="search-input"
               type="search"
-              placeholder="搜索 Wiki 条目..."
-              aria-label="搜索 Wiki"
+              :placeholder="$t('wiki.panel.searchPlaceholder')"
+              :aria-label="$t('wiki.panel.searchAria')"
               @keyup.escape="searchQuery = ''"
             >
             <button
@@ -114,7 +114,7 @@
               class="search-clear-btn"
               @click="searchQuery = ''"
             >
-              清除
+              {{ $t('wiki.panel.clear') }}
             </button>
           </div>
         </div>
@@ -130,7 +130,7 @@
         class="loading-state"
       >
         <component :is="LoaderIcon" :size="32" class="spin" />
-        <p>加载中...</p>
+        <p>{{ $t('wiki.panel.loading') }}</p>
       </div>
 
       <!-- Error State -->
@@ -140,7 +140,7 @@
       >
         <component :is="AlertCircleIcon" :size="32" />
         <p>{{ error }}</p>
-        <button class="retry-btn" @click="handleRefresh">重试</button>
+        <button class="retry-btn" @click="handleRefresh">{{ $t('wiki.panel.retry') }}</button>
       </div>
 
       <!-- Entries Grid -->
@@ -188,7 +188,7 @@
               @click.stop="handleView(entry)"
             >
               <component :is="EyeIcon" :size="16" />
-              查看
+              {{ $t('wiki.panel.view') }}
             </button>
             <button
               class="edit-btn"
@@ -231,7 +231,7 @@
           class="empty-state-actions"
         >
           <button type="button" class="retry-btn" @click="resetFilters">
-            重置筛选
+            {{ $t('wiki.panel.resetFilters') }}
           </button>
         </div>
       </div>
@@ -266,8 +266,8 @@
     <ConfirmDialog
       v-if="deletingEntry"
       :show="true"
-      title="删除 Wiki 条目"
-      :message="`确定要删除「${deletingEntry.title}」吗？此操作不可恢复。`"
+      :title="$t('wiki.panel.deleteTitle')"
+      :message="$t('wiki.panel.deleteMessage', { title: deletingEntry.title })"
       @confirm="handleDelete"
       @cancel="deletingEntry = null"
     />
@@ -276,6 +276,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { useWiki } from './composables/useWiki'
 import {
@@ -300,6 +301,7 @@ import WikiEditor from './components/WikiEditor.vue'
 import WikiViewer from './components/WikiViewer.vue'
 import WikiCompiler from './components/WikiCompiler.vue'
 
+const { t } = useI18n()
 const toast = useToast()
 
 // 使用组合式函数
@@ -336,29 +338,29 @@ const deletingEntry = ref<any>(null)
 // 计算属性
 const filteredSummary = computed(() => {
   if (!hasActiveFilters.value) {
-    return `显示全部 ${entries.value.length} 条 Wiki 条目`
+    return t('wiki.panel.showAll', { n: entries.value.length })
   }
-  return `显示 ${filteredEntries.value.length} / ${entries.value.length} 条`
+  return t('wiki.panel.showFiltered', { n: filteredEntries.value.length, total: entries.value.length })
 })
 
 const emptyStateTitle = computed(() =>
-  entries.value.length > 0 ? '未找到匹配的条目' : '暂无 Wiki 条目'
+  entries.value.length > 0 ? t('wiki.panel.noMatch') : t('wiki.panel.noEntries')
 )
 
 const emptyStateDescription = computed(() => {
   if (entries.value.length === 0) {
-    return '点击「新建条目」创建第一个知识库条目，或使用「AI 编译」从文档自动生成'
+    return t('wiki.panel.createFirst')
   }
   if (searchQuery.value.trim()) {
-    return `未找到包含「${searchQuery.value}」的条目`
+    return t('wiki.panel.noSearchMatch', { query: searchQuery.value })
   }
-  return '当前标签下没有条目'
+  return t('wiki.panel.noTagEntries')
 })
 
 // 方法
 const handleRefresh = async () => {
   await loadEntries()
-  toast.success('刷新成功')
+  toast.success(t('wiki.panel.refreshSuccess'))
 }
 
 const handleCreate = () => {
@@ -378,7 +380,7 @@ const handleView = async (entry: any) => {
     viewingEntry.value = await wikiApi.getEntry(entry.slug)
     showViewModal.value = true
   } catch (err: any) {
-    toast.error('加载详情失败')
+    toast.error(t('wiki.panel.loadDetailFailed'))
   }
 }
 
@@ -396,14 +398,14 @@ const handleSave = async (form: any) => {
   try {
     if (editingEntry.value) {
       await updateEntry(editingEntry.value.slug, form)
-      toast.success(`已更新：${form.title}`)
+      toast.success(t('wiki.panel.updated', { title: form.title }))
     } else {
       await createEntry(form)
-      toast.success(`已创建：${form.title}`)
+      toast.success(t('wiki.panel.created', { title: form.title }))
     }
     closeEditor()
   } catch (err: any) {
-    toast.error(err.message || '保存失败')
+    toast.error(err.message || t('wiki.panel.saveFailed'))
   }
 }
 
@@ -415,10 +417,10 @@ const handleDelete = async () => {
   if (!deletingEntry.value) return
   try {
     await deleteEntry(deletingEntry.value.slug)
-    toast.success(`已删除：${deletingEntry.value.title}`)
+    toast.success(t('wiki.panel.deleted', { title: deletingEntry.value.title }))
     deletingEntry.value = null
   } catch (err: any) {
-    toast.error(err.message || '删除失败')
+    toast.error(err.message || t('wiki.panel.deleteFailed'))
   }
 }
 
@@ -426,7 +428,7 @@ const useCompileResult = () => {
   editingEntry.value = null
   showCompileDialog.value = false
   showEditorModal.value = true
-  toast.success('已填入编译结果，请编辑后保存')
+  toast.success(t('wiki.panel.compileFilled'))
 }
 </script>
 <style scoped>

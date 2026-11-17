@@ -3,37 +3,37 @@
     <div v-if="modelValue" class="modal-overlay" @click.self="close">
       <div class="modal-container">
         <div class="modal-header">
-          <h3>AI 编译</h3>
+          <h3>{{ $t('wiki.compiler.title') }}</h3>
           <button class="close-btn" @click="close">
             <XIcon :size="20" />
           </button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label>原始内容</label>
+            <label>{{ $t('wiki.compiler.rawContent') }}</label>
             <textarea
               v-model="form.content"
               rows="10"
-              placeholder="粘贴原始内容，AI 会自动编译为结构化的知识条目"
+              :placeholder="$t('wiki.compiler.rawContentPlaceholder')"
             ></textarea>
           </div>
           <div class="form-group">
-            <label>来源类型</label>
+            <label>{{ $t('wiki.compiler.sourceType') }}</label>
             <select v-model="form.sourceType">
-              <option value="article">文章</option>
-              <option value="documentation">文档</option>
-              <option value="notes">笔记</option>
-              <option value="conversation">对话</option>
+              <option value="article">{{ $t('wiki.compiler.article') }}</option>
+              <option value="documentation">{{ $t('wiki.compiler.documentation') }}</option>
+              <option value="notes">{{ $t('wiki.compiler.notes') }}</option>
+              <option value="conversation">{{ $t('wiki.compiler.conversation') }}</option>
             </select>
           </div>
           <div class="form-group">
-            <label>标题提示（可选）</label>
-            <input v-model="form.titleHint" type="text" placeholder="建议的标题方向">
+            <label>{{ $t('wiki.compiler.titleHint') }}</label>
+            <input v-model="form.titleHint" type="text" :placeholder="$t('wiki.compiler.titleHintPlaceholder')">
           </div>
 
           <!-- 编译结果 -->
           <div v-if="result" class="compile-result">
-            <h4>编译结果</h4>
+            <h4>{{ $t('wiki.compiler.resultTitle') }}</h4>
             <div class="result-preview">
               <h5>{{ result.title }}</h5>
               <div class="tags" v-if="result.tags?.length">
@@ -44,7 +44,7 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button class="cancel-btn" @click="close">取消</button>
+          <button class="cancel-btn" @click="close">{{ $t('common.cancel') }}</button>
           <button
             v-if="!result"
             class="compile-btn"
@@ -53,17 +53,17 @@
           >
             <LoaderIcon v-if="compiling" :size="16" class="spin" />
             <SparklesIcon v-else :size="16" />
-            {{ compiling ? '编译中...' : '开始编译' }}
+            {{ compiling ? $t('wiki.compiler.compiling') : $t('wiki.compiler.startCompile') }}
           </button>
           <template v-else>
             <button class="use-btn" @click="useResult">
               <EditIcon :size="16" />
-              编辑后保存
+              {{ $t('wiki.compiler.editAndSave') }}
             </button>
             <button class="save-btn" :disabled="saving" @click="saveDirectly">
               <LoaderIcon v-if="saving" :size="16" class="spin" />
               <CheckIcon v-else :size="16" />
-              {{ saving ? '保存中...' : '直接保存' }}
+              {{ saving ? $t('wiki.compiler.saving') : $t('wiki.compiler.saveDirectly') }}
             </button>
           </template>
         </div>
@@ -74,6 +74,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { X as XIcon, Sparkles as SparklesIcon, Loader2 as LoaderIcon, Check as CheckIcon, Edit as EditIcon } from 'lucide-vue-next'
 import { wikiApi } from '../services/wikiApi'
 
@@ -81,6 +82,7 @@ defineProps<{
   modelValue: boolean
 }>()
 
+const { t } = useI18n()
 const emit = defineEmits(['update:modelValue', 'result'])
 
 const form = ref({
@@ -109,7 +111,7 @@ const handleCompile = async () => {
     })
     result.value = data
   } catch (err: any) {
-    alert(err.message || '编译失败')
+    alert(err.message || t('wiki.compiler.compileFailed'))
   } finally {
     compiling.value = false
   }
@@ -130,12 +132,12 @@ const saveDirectly = async () => {
       content: result.value.content,
       tags: result.value.tags || []
     })
-    alert('保存成功！')
+    alert(t('wiki.compiler.saveSuccess'))
     close()
     // 通知父组件刷新列表
     window.location.reload()
   } catch (err: any) {
-    alert(err.message || '保存失败')
+    alert(err.message || t('wiki.compiler.saveFailed'))
   } finally {
     saving.value = false
   }
