@@ -23,6 +23,7 @@ const THINKING_CONTROL_NOTE_KEYS: Record<string, string> = {
   deepseek: 'settings.providers.thinkingControl.notes.deepseek',
   moonshot: 'settings.providers.thinkingControl.notes.moonshot',
   zhipu: 'settings.providers.thinkingControl.notes.zhipu',
+  zhipu_coding: 'settings.providers.thinkingControl.notes.zhipu',
   groq: 'settings.providers.thinkingControl.notes.groq',
   qwen: 'settings.providers.thinkingControl.notes.qwen',
   minimax: 'settings.providers.thinkingControl.notes.minimax',

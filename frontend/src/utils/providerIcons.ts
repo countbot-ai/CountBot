@@ -79,6 +79,7 @@ const BRAND_GLYPHS: Record<string, { glyph: string; color: string }> = {
   moonshot: { glyph: kimiGlyph, color: '#1f2937' },
   kimi: { glyph: kimiGlyph, color: '#1f2937' },
   zhipu: { glyph: zhipuGlyph, color: '#2563eb' },
+  zhipu_coding: { glyph: zhipuGlyph, color: '#2563eb' },
   glm: { glyph: zhipuGlyph, color: '#2563eb' },
   chatglm: { glyph: chatglmGlyph, color: '#2563eb' },
   qwen: { glyph: qwenGlyph, color: '#ff6a00' },
@@ -133,7 +134,10 @@ export function resolveProviderVisual(providerId: string | undefined): ProviderV
   if (!providerId) {
     return FALLBACK
   }
-  const brand = BRAND_GLYPHS[providerId]
+  const brand =
+    BRAND_GLYPHS[providerId]
+    // 套餐变体（如 zhipu_coding）默认沿用主品牌图标，避免新增 variant 时退回占位图。
+    || BRAND_GLYPHS[providerId.replace(/_coding$/i, '')]
   if (brand) {
     return { glyph: brand.glyph, color: brand.color }
   }
