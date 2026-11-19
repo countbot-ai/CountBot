@@ -198,6 +198,7 @@ async def lifespan(app: FastAPI):
     logger.info("Creating shared components...")
     shared = _create_shared_components(config, config_loader)
     app.state.shared = shared
+    app.state.user_runtime_manager = user_runtime_manager
     app.state.skills = shared["skills"]
     app.state.memory = shared["memory"]
     logger.info("Shared components created")
@@ -205,6 +206,34 @@ async def lifespan(app: FastAPI):
     # 设置全局 SubagentManager
     from backend.api.chat import set_global_subagent_manager
     set_global_subagent_manager(shared["subagent_manager"])
+
+    # Dynamic Workflow 与 Agent Team 共用子代理执行层，使用独立 JSON AST 运行时。
+    from backend.api.dynamic_workflow import set_dynamic_workflow_service
+    from backend.modules.workflow.factory import DynamicActorFactory
+    from backend.modules.workflow.journal import WorkflowJournal
+    from backend.modules.workflow.service import DynamicWorkflowService
+
+    dynamic_journal = WorkflowJournal(get_db_session_factory())
+    dynamic_factory = DynamicActorFactory(
+        subagent_manager=shared["subagent_manager"],
+        workspace=shared["workspace"],
+        owner_id=None,
+        session_id=None,
+    )
+
+    def dynamic_driver_factory(**kwargs):
+        return dynamic_factory.build_dynamic_driver(
+            run_id=kwargs["run_id"],
+            program=kwargs["program"],
+            journal=dynamic_journal,
+            lineage=kwargs.get("lineage", ()),
+        )
+
+    app.state.dynamic_workflow_service = DynamicWorkflowService(
+        dynamic_driver_factory,
+        dynamic_journal,
+    )
+    set_dynamic_workflow_service(app.state.dynamic_workflow_service)
 
     logger.info("Creating message queue and rate limiter...")
     message_queue = EnterpriseMessageQueue(
@@ -502,6 +531,8 @@ from backend.api.wiki import router as wiki_router
 from backend.api.admin import router as admin_router
 from backend.api.me import router as me_router
 from backend.api.native_caps import router as native_caps_router
+from backend.api.dynamic_workflow import router as dynamic_workflow_router
+from backend.modules.multiuser.runtime import user_runtime_manager
 
 app.include_router(auth_router)
 app.include_router(chat_router)
@@ -529,6 +560,7 @@ from backend.api.me_providers import router as me_providers_router
 
 app.include_router(me_providers_router)
 app.include_router(native_caps_router)
+app.include_router(dynamic_workflow_router)
 
 
 # WebSocket 端点

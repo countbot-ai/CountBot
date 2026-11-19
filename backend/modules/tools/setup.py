@@ -134,6 +134,42 @@ def register_all_tools(
         except Exception as e:
             logger.error(f"Failed to register workflow_run tool: {e}")
     
+    # 4c. 注册 Dynamic Workflow 工具（独立 JSON AST 运行时）
+    if subagent_manager is not None:
+        try:
+            from backend.database import get_db_session_factory
+            from backend.modules.workflow.factory import DynamicActorFactory
+            from backend.modules.workflow.journal import WorkflowJournal
+            from backend.modules.workflow.service import DynamicWorkflowService
+            from backend.modules.tools.dynamic_workflow_tool import DynamicWorkflowTool
+
+            journal = WorkflowJournal(get_db_session_factory())
+            factory = DynamicActorFactory(
+                subagent_manager=subagent_manager,
+                workspace=workspace,
+                owner_id=owner_id,
+                session_id=session_id,
+            )
+
+            def driver_factory(**kwargs):
+                return factory.build_dynamic_driver(
+                    run_id=kwargs["run_id"],
+                    program=kwargs["program"],
+                    journal=journal,
+                    lineage=kwargs.get("lineage", ()),
+                )
+
+            service = DynamicWorkflowService(driver_factory, journal)
+            tools.register(DynamicWorkflowTool(
+                service,
+                owner_id=owner_id,
+                session_id=session_id,
+                workspace=workspace,
+            ))
+            logger.debug("Registered dynamic_workflow_run tool")
+        except Exception as e:
+            logger.error(f"Failed to register dynamic_workflow_run tool: {e}")
+
     # 5. 注册发送媒体工具（如果提供了 ChannelManager）
     if channel_manager is not None:
         try:

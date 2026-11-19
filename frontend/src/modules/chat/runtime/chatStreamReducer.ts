@@ -50,6 +50,7 @@ const workflowEventTypes = new Set([
   'workflow_agent_tool_call',
   'workflow_agent_tool_result',
   'workflow_agent_complete',
+  'workflow_agent_failed',
 ])
 
 const spawnEventTypes = new Set([
@@ -579,8 +580,9 @@ function reduceWorkflowEvent(
       if (toolCallRecords[index].tool === message.tool && toolCallRecords[index].status === 'running') {
         toolCallRecords[index] = {
           ...toolCallRecords[index],
-          status: 'success',
+          status: message.status === 'success' ? 'success' : 'error',
           result: message.result,
+          error: message.status === 'success' ? null : message.error || message.result,
         }
         break
       }
@@ -588,6 +590,14 @@ function reduceWorkflowEvent(
     workflowAgents[agentId] = {
       ...agent,
       toolCalls: toolCallRecords,
+    }
+  } else if (message.type === 'workflow_agent_failed') {
+    const agent = ensureWorkflowAgent(workflowAgents, agentId)
+    workflowAgents[agentId] = {
+      ...agent,
+      status: 'failed',
+      result: message.result,
+      agentResult: message.result || '',
     }
   } else if (message.type === 'workflow_agent_complete') {
     const agent = ensureWorkflowAgent(workflowAgents, agentId)
@@ -719,8 +729,9 @@ function reduceSpawnEvent(
           : undefined
         toolCallRecords[index] = {
           ...toolCallRecords[index],
-          status: 'success',
+          status: message.status === 'success' ? 'success' : 'error',
           result: message.result,
+          error: message.status === 'success' ? null : message.error || message.result,
           duration_ms: durationMs,
         }
         break
