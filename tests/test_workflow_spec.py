@@ -92,17 +92,19 @@ def test_graph_validation_rejects_unknown_dependencies_and_cycles():
     assert "cycle" in cyclic.value.result.display_text
 
 
-def test_spec_validation_rejects_duplicate_ids():
+def test_spec_validation_keeps_legacy_duplicate_id_collapse():
+    replacement = _node("a")
     spec = WorkflowSpec(
         goal="goal",
-        nodes=[_node("a"), _node("a")],
+        nodes=[_node("a"), replacement, _node("b")],
         render=lambda run: "",
     )
 
-    with pytest.raises(ChildOutcomeError) as raised:
-        spec.validate()
+    spec.validate()
 
-    assert "Duplicate slot id 'a'" in raised.value.result.display_text
+    assert spec.nodes == [replacement, spec.nodes[1]]
+    assert spec.nodes[0] is replacement
+    assert [node.node_id for node in spec.nodes] == ["a", "b"]
 
 
 def test_has_cycle_handles_diamonds_and_self_loops():

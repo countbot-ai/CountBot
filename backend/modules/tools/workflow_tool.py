@@ -10,8 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from backend.database import SessionLocal
-from backend.models.session import Session
+from backend import database
 from backend.modules.agent.workflow import WorkflowEngine
 from backend.modules.config.loader import config_loader
 from backend.modules.session.runtime_config import (
@@ -82,7 +81,9 @@ class WorkflowTool(Tool):
             return None
 
         try:
-            with SessionLocal() as session:
+            from backend.models.session import Session
+
+            with database.SessionLocal() as session:
                 db_session = session.get(Session, self._session_id)
                 if not db_session or not db_session.use_custom_config:
                     return None
@@ -218,11 +219,10 @@ class WorkflowTool(Tool):
         if team_name:
             try:
                 import json
-                from backend.database import SessionLocal
                 from backend.models.agent_team import AgentTeam
                 from sqlalchemy import select
 
-                with SessionLocal() as session:
+                with database.SessionLocal() as session:
                     team_query = select(AgentTeam).where(AgentTeam.name == team_name)
                     if self._owner_id:
                         team_query = team_query.where(AgentTeam.owner_id == self._owner_id)

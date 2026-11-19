@@ -20,6 +20,7 @@ from backend.modules.agent.workflow_spec import (
     POLICY_ABORT,
     ChildOutcomeError,
     NodeResult,
+    NodeResults,
     NodeState,
     PromptContext,
     WorkflowNode,
@@ -32,6 +33,7 @@ from backend.modules.agent.workflow_spec import (
 from backend.modules.tools.execution import (
     ErrorCategory,
     ExecutionState,
+    SideEffectState,
     ToolExecutionOutcome,
     ToolExecutionRejected,
     ToolResult,
@@ -126,20 +128,62 @@ class WorkflowEngine:
         置为 blocked；``abort``（pipeline / council）在当前波次跑完后抛出，不再
         调度后续节点。
 
-        校验不在这里做：graph 在编译期已校验；将来从 JSON 反序列化 spec 时，
-        校验应发生在解析边界（``WorkflowSpec.validate``），而不是每个节点执行前。
+        调度前统一执行 spec 校验；重复外部 id 使用独立实例键，
+        以保留 graph 的折叠和 council 的逐成员派发语义。
         """
+        spec.validate()
+        # 重复的外部节点 id 在 legacy graph 中已折叠；council 每个声明仍执行，
+        # 但其结果按外部 id 覆盖。调度使用独立实例键，不能反向影响调用次数。
         run = WorkflowRun(
             spec=spec,
             goal=spec.goal,
-            nodes={node.node_id: NodeResult() for node in spec.nodes},
+            nodes=NodeResults({
+                f"{node.node_id}#{index}": NodeResult()
+                for index, node in enumerate(spec.nodes)
+            }),
             order=list(spec.nodes),
         )
+        node_instances = {
+            id(node): f"{node.node_id}#{index}"
+            for index, node in enumerate(spec.nodes)
+        }
+        run.instance_ids = node_instances
+        # graph 的依赖节点至多一个成功实例；council 重复成员按最后一个成功结果。
+        for candidate in spec.nodes:
+            key = node_instances[id(candidate)]
+            result = run.nodes[key]
+            if result.state is NodeState.DONE:
+                run.external_outputs[candidate.node_id] = result.output or ""
+
+        def instance_id(node):
+            return node_instances[id(node)]
+
+        def dependency_state(dep):
+            matches = [
+                run.nodes[key] for key in run.nodes
+                if key == dep or key.startswith(f"{dep}#")
+            ]
+            if not matches:
+                return NodeState.WAITING
+            if any(result.state is NodeState.FAILED for result in matches):
+                return NodeState.FAILED
+            if all(result.state in (NodeState.DONE, NodeState.SKIPPED) for result in matches):
+                return NodeState.DONE
+            return NodeState.WAITING
+
+        def output_of(dep):
+            for candidate in reversed(spec.nodes):
+                if candidate.node_id != dep:
+                    continue
+                result = run.nodes[instance_id(candidate)]
+                if result.state is NodeState.DONE:
+                    return result.output or ""
+            return ""
 
         while True:
             waiting = [
                 node for node in spec.nodes
-                if run.nodes[node.node_id].state is NodeState.WAITING
+                if run.nodes[instance_id(node)].state is NodeState.WAITING
             ]
             if not waiting:
                 break
@@ -151,15 +195,15 @@ class WorkflowEngine:
             ready = [
                 node for node in waiting
                 if all(
-                    run.nodes[dep].state in (NodeState.DONE, NodeState.SKIPPED)
+                    dependency_state(dep) in (NodeState.DONE, NodeState.SKIPPED)
                     for dep in node.needs
                 )
             ]
             if not ready:
                 # 剩下的都在等已经失败的节点：标红并停止，避免静默挂起
                 for node in waiting:
-                    if any(run.nodes[dep].state is NodeState.FAILED for dep in node.needs):
-                        result = run.nodes[node.node_id]
+                    if any(dependency_state(dep) is NodeState.FAILED for dep in node.needs):
+                        result = run.nodes[instance_id(node)]
                         result.state = NodeState.FAILED
                         result.error = "Blocked by upstream failure"
                 break
@@ -169,13 +213,13 @@ class WorkflowEngine:
                 if self._condition_met(node.condition, run):
                     to_execute.append(node)
                 else:
-                    result = run.nodes[node.node_id]
+                    result = run.nodes[instance_id(node)]
                     result.state = NodeState.SKIPPED
                     result.output = "[Skipped: condition not met]"
                     logger.info(f"[Workflow] Node '{node.node_id}' skipped (condition not met)")
 
             for node in to_execute:
-                run.nodes[node.node_id].state = NodeState.ACTIVE
+                run.nodes[instance_id(node)].state = NodeState.ACTIVE
             if to_execute:
                 logger.info(
                     "[Workflow] Dispatching "
@@ -184,13 +228,29 @@ class WorkflowEngine:
                 )
 
             results = await asyncio.gather(
-                *[self._run_node(node, run, spec) for node in to_execute],
+                *[
+                    self._run_node(node, run, spec, instance_id(node))
+                    for node in to_execute
+                ],
                 return_exceptions=True,
             )
             for item in results:
                 if isinstance(item, asyncio.CancelledError):
                     raise item
-            if spec.failure_policy == POLICY_ABORT:
+            if spec.failure_policy == POLICY_ABORT and any(
+                isinstance(item, BaseException) for item in results
+            ):
+                if spec.preset == "council" and self._child_failures:
+                    # council 的既有终态不是声明顺序第一个错误：不确定性优先。
+                    priority = {
+                        ExecutionState.UNKNOWN_OUTCOME: 0,
+                        ExecutionState.CANCELLED: 1,
+                        ExecutionState.FAILED: 2,
+                    }
+                    raise ChildOutcomeError(min(
+                        self._child_failures,
+                        key=lambda item: priority[item.state],
+                    ))
                 for item in results:
                     if isinstance(item, BaseException):
                         raise item
@@ -202,9 +262,10 @@ class WorkflowEngine:
         node: WorkflowNode,
         run: WorkflowRun,
         spec: WorkflowSpec,
+        instance_id: str,
     ) -> None:
         """执行单个节点：拼 prompt → 派子 Agent → 记录结构化结果。"""
-        result = run.nodes[node.node_id]
+        result = run.nodes[instance_id]
         try:
             prompt = node.prompt(PromptContext(goal=spec.goal, node=node, run=run))
             output = await self._invoke_agent(
@@ -216,6 +277,7 @@ class WorkflowEngine:
             )
             result.state = NodeState.DONE
             result.output = output
+            run.external_outputs[node.node_id] = output
         except Exception as exc:
             result.state = NodeState.FAILED
             result.error = str(exc)

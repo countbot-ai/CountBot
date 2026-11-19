@@ -7,8 +7,9 @@
 
 这里把拓扑搬进数据：``WorkflowSpec`` 是唯一执行入口，三种模式由编译器翻译成
 spec，行为逐字节保持一致（``tests/test_workflow_characterization.py`` 是护栏）。
-后续要加的 ``map`` / ``branch`` / ``loop`` / ``checkpoint`` 节点也说同一套话，
-不再新增 mode。
+这里只负责旧团队的预设编译：prompt、依赖和渲染保持在编译产物上，
+执行器复用一套 DAG 调度。Dynamic Workflow 的程序、actor 和 journal
+由独立运行时负责，不把这份闭包式 spec 当作其序列化格式。
 
 设计上刻意不做的事：
 
@@ -58,6 +59,22 @@ class NodeResult:
     error: Optional[str] = None
 
 
+class NodeResults(dict):
+    """实例键保持唯一，外部节点 id 读取最后一个声明的结果。"""
+
+    def __getitem__(self, node_id: str) -> NodeResult:
+        for key in reversed(list(self)):
+            if key == node_id or key.startswith(f"{node_id}#"):
+                return dict.__getitem__(self, key)
+        raise KeyError(node_id)
+
+    def get(self, node_id: str, default=None):
+        try:
+            return self[node_id]
+        except KeyError:
+            return default
+
+
 @dataclass
 class WorkflowNode:
     """执行图上的一个节点。
@@ -81,12 +98,25 @@ class WorkflowRun:
     goal: str
     nodes: Dict[str, NodeResult]
     order: List[WorkflowNode]
+    instance_ids: Dict[int, str] = field(default_factory=dict)
+    external_outputs: Dict[str, str] = field(default_factory=dict)
+
+    def instance_id(self, node: WorkflowNode) -> str:
+        return self.instance_ids.get(id(node), node.node_id)
 
     def output_of(self, node_id: str) -> str:
+        if node_id in self.external_outputs:
+            return self.external_outputs[node_id]
         result = self.nodes.get(node_id)
         return (result.output or "") if result is not None else ""
 
     def state_of(self, node_id: str) -> NodeState:
+        for node in reversed(self.order):
+            if node.node_id != node_id:
+                continue
+            result = self.nodes.get(self.instance_id(node))
+            if result is not None and result.state is NodeState.FAILED:
+                return NodeState.FAILED
         result = self.nodes.get(node_id)
         return result.state if result is not None else NodeState.WAITING
 
@@ -114,7 +144,9 @@ class WorkflowSpec:
     cross_review: bool = True
 
     def validate(self) -> None:
+        """校验唯一实例键与依赖，同时保留 legacy member 的折叠语义。"""
         seen = set()
+        unique_nodes = []
         for node in self.nodes:
             if not node.node_id:
                 raise ChildOutcomeError(ToolResult.failure(
@@ -123,12 +155,19 @@ class WorkflowSpec:
                     side_effect_state=SideEffectState.NOT_ATTEMPTED,
                 ))
             if node.node_id in seen:
-                raise ChildOutcomeError(ToolResult.failure(
-                    ErrorCategory.VALIDATION,
-                    f"Duplicate slot id '{node.node_id}'.",
-                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
-                ))
+                if self.preset == "council":
+                    # council 旧实现按成员列表派发，重复 id 也会各跑一次。
+                    unique_nodes.append(node)
+                else:
+                    # graph 的重复 slot 采用「最后值、原位置」折叠。
+                    for index, existing in enumerate(unique_nodes):
+                        if existing.node_id == node.node_id:
+                            unique_nodes[index] = node
+                            break
+                continue
             seen.add(node.node_id)
+            unique_nodes.append(node)
+        self.nodes = unique_nodes
 
         for node in self.nodes:
             for dep in node.needs:
@@ -430,82 +469,71 @@ def compile_council(
         ))
 
     perspectives = {m["id"]: m.get("perspective", "neutral analyst") for m in members}
-    # 与改造前的 member_map 一致：重复 id 折叠为一项
-    built: Dict[str, WorkflowNode] = {}
+    # 成员列表是有序的：旧实现重复 id 也会真实派出子任务，但 execution_data
+    # 按 id 折叠，最后一个同 id 成员覆盖先前结果。不能用字典先去重。
+    def build_initial(ctx: PromptContext) -> str:
+        _perspective = ctx.node.meta["perspective"]
+        return (
+            f"# Council Question\n{ctx.goal}\n\n"
+            f"# Your Perspective\n{_perspective}\n\n"
+            "Analyze this question thoroughly from your specific perspective. "
+            "Provide a well-reasoned, detailed response."
+        )
 
+    def build_review(ctx: PromptContext) -> str:
+        _mid = ctx.node.meta["member"]
+        _perspective = ctx.node.meta["perspective"]
+        others_text = "\n\n".join(
+            f"**{label} ({oid}):**\n{ctx.run.output_of(oid + ':R1')}"
+            for oid, label in ctx.run.spec.members
+            if oid != _mid
+        )
+        return (
+            f"# Council Question\n{ctx.goal}\n\n"
+            f"# Your Perspective\n{_perspective}\n\n"
+            f"# Your Initial Position\n{ctx.run.output_of(_mid + ':R1')}\n\n"
+            f"# Other Members' Positions\n{others_text}\n\n"
+            "Review the other positions carefully. "
+            "Do you agree or disagree with their analyses? "
+            "What did they miss or get right? "
+            "Refine or defend your position in light of their input."
+        )
+
+    nodes = []
     for member in members:
         mid = member["id"]
         perspective = perspectives[mid]
-        custom = member.get("system_prompt") or None
-        system_prompt = custom or (
+        system_prompt = member.get("system_prompt") or (
             f"You are a council member representing the perspective of: {perspective}. "
             "You analyse questions rigorously from that viewpoint, defend your position "
             "with evidence, and engage constructively with other members' arguments."
         )
-
-        def build(ctx: PromptContext, _perspective: str = perspective) -> str:
-            return (
-                f"# Council Question\n{ctx.goal}\n\n"
-                f"# Your Perspective\n{_perspective}\n\n"
-                "Analyze this question thoroughly from your specific perspective. "
-                "Provide a well-reasoned, detailed response."
-            )
-
-        built[f"{mid}:R1"] = WorkflowNode(
+        nodes.append(WorkflowNode(
             node_id=f"{mid}:R1",
             label=f"{perspective} — 第1轮",
-            prompt=build,
+            prompt=build_initial,
             system_prompt=system_prompt,
             meta={"member": mid, "perspective": perspective, "round": 1},
-        )
+        ))
 
     if cross_review:
         for member in members:
             mid = member["id"]
             perspective = perspectives[mid]
-            custom = member.get("system_prompt") or None
-            system_prompt = custom or (
+            system_prompt = member.get("system_prompt") or (
                 f"You are a council member representing the perspective of: {perspective}. "
                 "You analyse questions rigorously from that viewpoint, defend your position "
                 "with evidence, and engage constructively with other members' arguments."
             )
-            others = tuple(
-                (other["id"], perspectives[other["id"]])
-                for other in members
-                if other["id"] != mid
-            )
-
-            def build(
-                ctx: PromptContext,
-                _mid: str = mid,
-                _perspective: str = perspective,
-                _others: Tuple[Tuple[str, str], ...] = others,
-            ) -> str:
-                others_text = "\n\n".join(
-                    f"**{label} ({oid}):**\n{ctx.run.output_of(oid + ':R1')}"
-                    for oid, label in _others
-                )
-                return (
-                    f"# Council Question\n{ctx.goal}\n\n"
-                    f"# Your Perspective\n{_perspective}\n\n"
-                    f"# Your Initial Position\n{ctx.run.output_of(_mid + ':R1')}\n\n"
-                    f"# Other Members' Positions\n{others_text}\n\n"
-                    "Review the other positions carefully. "
-                    "Do you agree or disagree with their analyses? "
-                    "What did they miss or get right? "
-                    "Refine or defend your position in light of their input."
-                )
-
-            built[f"{mid}:R2"] = WorkflowNode(
+            nodes.append(WorkflowNode(
                 node_id=f"{mid}:R2",
                 label=f"{perspective} — 交叉评审",
-                prompt=build,
+                prompt=build_review,
                 system_prompt=system_prompt,
                 needs=tuple(f"{m['id']}:R1" for m in members),
                 meta={"member": mid, "perspective": perspective, "round": 2},
-            )
+            ))
 
-    nodes = list(built.values())
     return WorkflowSpec(
         goal=question,
         nodes=nodes,
