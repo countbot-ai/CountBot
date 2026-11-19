@@ -16,7 +16,7 @@ export interface WorkflowAgentToolCall {
 export interface WorkflowAgentState {
   id: string
   label: string
-  status: 'running' | 'complete'
+  status: 'running' | 'complete' | 'failed'
   toolCalls?: WorkflowAgentToolCall[]
   streamingText?: string
   result?: string | null

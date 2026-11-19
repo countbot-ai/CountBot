@@ -403,92 +403,20 @@ class SubagentManager:
                 runtime_stream_enabled,
             ) = self._resolve_task_runtime(task)
 
-            response_chunks = []
-            iteration = 0
-
-            while iteration < max_iterations:
-                iteration += 1
-
-                # 检查取消令牌
-                if task.cancel_token and task.cancel_token.is_cancelled:
-                    logger.info(f"Task {task.task_id} cancelled by user at iteration {iteration}")
-                    raise asyncio.CancelledError("Task cancelled by user")
-
-                tool_definitions = tools.get_definitions()
-                turn = {
-                    "content": "",
-                    "reasoning": "",
-                    "emitted_reasoning_header": False,
-                    "emitted_reply_header": False,
-                    "provider_payload": None,
-                    "tool_calls": [],
-                    "usage": None,
-                }
-
-                async for chunk in active_provider.chat_stream(
-                    messages=messages,
-                    tools=tool_definitions,
-                    model=runtime_model,
-                    temperature=runtime_temperature,
-                    max_tokens=runtime_max_tokens,
-                    thinking_enabled=runtime_thinking_enabled,
-                    stream_enabled=runtime_stream_enabled,
-                ):
-                    task.last_activity = time.monotonic()
-
-                    if chunk.is_content and chunk.content:
-                        turn["content"] += chunk.content
-                        if task.event_callback:
-                            try:
-                                if turn["emitted_reasoning_header"] and not turn["emitted_reply_header"]:
-                                    turn["emitted_reply_header"] = True
-                                    await task.event_callback("chunk", "", "\n\n## Response\n\n")
-                                await task.event_callback("chunk", "", chunk.content)
-                            except Exception as e:
-                                logger.warning(f"Failed to call event_callback for chunk: {e}")
-                    if chunk.is_reasoning and chunk.reasoning_content:
-                        turn["reasoning"] += chunk.reasoning_content
-                        if task.event_callback:
-                            try:
-                                if not turn["emitted_reasoning_header"]:
-                                    turn["emitted_reasoning_header"] = True
-                                    await task.event_callback("chunk", "", "\n\n## Reasoning\n\n")
-                                await task.event_callback("chunk", "", chunk.reasoning_content)
-                            except Exception as e:
-                                logger.warning(f"Failed to call event_callback for reasoning chunk: {e}")
-                    if chunk.has_provider_payload and chunk.provider_payload:
-                        turn["provider_payload"] = chunk.provider_payload
-                    if chunk.is_tool_call and chunk.tool_call:
-                        turn["tool_calls"].append(chunk.tool_call)
-                    if chunk.usage:
-                        turn["usage"] = chunk.usage
-
-                # 子代理的消耗同样计入用量统计，否则成本报表会系统性偏低：
-                # 团队工作流往往由多个子代理并行跑，占总消耗的比例可能很高。
-                if turn["usage"]:
-                    await record_usage(
-                        session_id=getattr(task, "session_id", None),
-                        provider=getattr(active_provider, "provider_id", None),
-                        model=runtime_model or getattr(active_provider, "default_model", None),
-                        kind=USAGE_KIND_SUBAGENT,
-                        raw_usage=turn["usage"],
-                    )
-
-                formatted_content = self._compose_reasoning_sections(
-                    turn["reasoning"],
-                    turn["content"],
-                )
-                if formatted_content:
-                    response_chunks.append(formatted_content)
-
-                if turn["tool_calls"]:
-                    await self._run_child_tool_batch(
-                        task, handler, messages, turn, tools, tool_timeout,
-                    )
-                else:
-                    break
-
-            task.result = self._truncate_output("".join(response_chunks))
+            task.result = await self._run_message_loop(
+                task=task,
+                messages=messages,
+                tools=tools,
+                active_provider=active_provider,
+                runtime_model=runtime_model,
+                runtime_temperature=runtime_temperature,
+                runtime_max_tokens=runtime_max_tokens,
+                runtime_thinking_enabled=runtime_thinking_enabled,
+                runtime_stream_enabled=runtime_stream_enabled,
+                tool_timeout=tool_timeout,
+                max_iterations=max_iterations,
+                handler=handler,
+            )
             task.status = TaskStatus.COMPLETED
             if task.propagated_failure:
                 task.outcome = task.propagated_failure
@@ -579,6 +507,111 @@ class SubagentManager:
 
             # 任务失败时保存到数据库
             await self._save_task_to_db(task)
+
+    async def _run_message_loop(
+        self,
+        *,
+        task: SubagentTask,
+        messages: List[Dict[str, Any]],
+        tools,
+        active_provider,
+        runtime_model: str,
+        runtime_temperature: float,
+        runtime_max_tokens: int,
+        runtime_thinking_enabled: bool,
+        runtime_stream_enabled: bool,
+        tool_timeout: int,
+        max_iterations: int,
+        handler,
+    ) -> str:
+        """在调用方持有的消息历史上执行一轮模型/工具循环。
+
+        一次性子任务和 Dynamic actor 共用此循环；actor 由此可以在下一次
+        ask 保留 assistant/tool 配对消息，而不是重新创建上下文。
+        """
+        response_chunks = []
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            if task.cancel_token and task.cancel_token.is_cancelled:
+                logger.info(f"Task {task.task_id} cancelled by user at iteration {iteration}")
+                raise asyncio.CancelledError("Task cancelled by user")
+
+            tool_definitions = tools.get_definitions()
+            turn = {
+                "content": "",
+                "reasoning": "",
+                "emitted_reasoning_header": False,
+                "emitted_reply_header": False,
+                "provider_payload": None,
+                "tool_calls": [],
+                "usage": None,
+            }
+
+            async for chunk in active_provider.chat_stream(
+                messages=messages,
+                tools=tool_definitions,
+                model=runtime_model,
+                temperature=runtime_temperature,
+                max_tokens=runtime_max_tokens,
+                thinking_enabled=runtime_thinking_enabled,
+                stream_enabled=runtime_stream_enabled,
+            ):
+                task.last_activity = time.monotonic()
+
+                if chunk.is_content and chunk.content:
+                    turn["content"] += chunk.content
+                    if task.event_callback:
+                        try:
+                            if turn["emitted_reasoning_header"] and not turn["emitted_reply_header"]:
+                                turn["emitted_reply_header"] = True
+                                await task.event_callback("chunk", "", "\n\n## Response\n\n")
+                            await task.event_callback("chunk", "", chunk.content)
+                        except Exception as e:
+                            logger.warning(f"Failed to call event_callback for chunk: {e}")
+                if chunk.is_reasoning and chunk.reasoning_content:
+                    turn["reasoning"] += chunk.reasoning_content
+                    if task.event_callback:
+                        try:
+                            if not turn["emitted_reasoning_header"]:
+                                turn["emitted_reasoning_header"] = True
+                                await task.event_callback("chunk", "", "\n\n## Reasoning\n\n")
+                            await task.event_callback("chunk", "", chunk.reasoning_content)
+                        except Exception as e:
+                            logger.warning(f"Failed to call event_callback for reasoning chunk: {e}")
+                if chunk.has_provider_payload and chunk.provider_payload:
+                    turn["provider_payload"] = chunk.provider_payload
+                if chunk.is_tool_call and chunk.tool_call:
+                    turn["tool_calls"].append(chunk.tool_call)
+                if chunk.usage:
+                    turn["usage"] = chunk.usage
+
+            if turn["usage"]:
+                await record_usage(
+                    session_id=getattr(task, "session_id", None),
+                    provider=getattr(active_provider, "provider_id", None),
+                    model=runtime_model or getattr(active_provider, "default_model", None),
+                    kind=USAGE_KIND_SUBAGENT,
+                    raw_usage=turn["usage"],
+                )
+
+            formatted_content = self._compose_reasoning_sections(
+                turn["reasoning"],
+                turn["content"],
+            )
+            if formatted_content:
+                response_chunks.append(formatted_content)
+
+            if turn["tool_calls"]:
+                await self._run_child_tool_batch(
+                    task, handler, messages, turn, tools, tool_timeout,
+                )
+            else:
+                break
+
+        return self._truncate_output("".join(response_chunks))
 
     def _truncate_output(self, text: str) -> str:
         """结果预算：超限截断并标注，防止子代理长输出撑爆父上下文。"""

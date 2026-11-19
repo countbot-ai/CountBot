@@ -370,6 +370,11 @@ async def init_db() -> None:
         UserConfig,
         UserNotificationChannel,
         UserSkillState,
+        WorkflowActor,
+        WorkflowAsk,
+        WorkflowEvent,
+        WorkflowRun,
+        WorkflowTemplate,
     )
 
     async with engine.begin() as conn:

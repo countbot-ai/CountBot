@@ -16,6 +16,13 @@ from backend.models.user import (
     UserConfig,
     UserNotificationChannel,
 )
+from backend.models.workflow_run import (
+    WorkflowActor,
+    WorkflowAsk,
+    WorkflowEvent,
+    WorkflowRun,
+    WorkflowTemplate,
+)
 
 __all__ = [
     "AgentTeam",
@@ -33,4 +40,9 @@ __all__ = [
     "UserConfig",
     "AuditLog",
     "UserNotificationChannel",
+    "WorkflowRun",
+    "WorkflowActor",
+    "WorkflowAsk",
+    "WorkflowEvent",
+    "WorkflowTemplate",
 ]
