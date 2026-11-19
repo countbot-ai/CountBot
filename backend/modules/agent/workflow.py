@@ -94,9 +94,15 @@ class WorkflowEngine:
                           cross_review: bool = True, enable_skills: bool = False) -> ToolResult:
         """Bridge a workflow's structured child state to its parent Tool."""
         try:
-            if mode == "pipeline":
+            if mode not in {item.value for item in WorkflowMode}:
+                return ToolResult.failure(
+                    ErrorCategory.VALIDATION,
+                    f"Error: unknown workflow mode '{mode}'. Valid choices are: pipeline, graph, council.",
+                    side_effect_state=SideEffectState.NOT_ATTEMPTED,
+                )
+            if mode == WorkflowMode.PIPELINE.value:
                 text = await self.run_pipeline(goal, agents, enable_skills=enable_skills)
-            elif mode == "graph":
+            elif mode == WorkflowMode.GRAPH.value:
                 text = await self.run_graph(goal, agents, enable_skills=enable_skills)
             else:
                 text = await self.run_council(

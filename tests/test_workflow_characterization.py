@@ -343,3 +343,56 @@ async def test_council_failure_surfaces_child_outcome_instead_of_partial_text():
 
     assert result.state is ExecutionState.FAILED
     assert result.display_text == "member exploded"
+
+
+@pytest.mark.asyncio
+async def test_council_mixed_failures_keep_uncertainty_priority():
+    failure = ToolResult.failure(ErrorCategory.EXECUTION, "known failure")
+    uncertain = ToolResult.unknown_outcome(ErrorCategory.TIMEOUT, "outcome unknown")
+    manager = _ScriptedManager(failures={0: failure, 1: uncertain})
+    engine = WorkflowEngine(manager)
+    members = [
+        {"id": "a", "perspective": "optimist"},
+        {"id": "b", "perspective": "skeptic"},
+    ]
+
+    result = await engine.run_outcome("council", "q", members)
+
+    assert result.state is ExecutionState.UNKNOWN_OUTCOME
+    assert result.display_text == "outcome unknown"
+
+
+@pytest.mark.asyncio
+async def test_council_duplicate_member_ids_still_invoke_each_member():
+    manager = _ScriptedManager(["first", "second", "third", "fourth"])
+    engine = WorkflowEngine(manager)
+    members = [
+        {"id": "same", "perspective": "first perspective"},
+        {"id": "same", "perspective": "second perspective"},
+    ]
+
+    text = await engine.run_council("q", members)
+
+    assert len(manager.calls) == 4
+    assert all(call["system_prompt"].startswith(
+        "You are a council member representing the perspective of: second perspective."
+    ) for call in manager.calls)
+    body, metadata = _split_metadata(text)
+    assert "共 2 位成员" in body
+    assert set(metadata) == {"same:R1", "same:R2"}
+    assert metadata["same:R1"]["result"] == "second"
+    assert metadata["same:R2"]["result"] == "fourth"
+
+
+@pytest.mark.asyncio
+async def test_unknown_mode_is_validation_failure_not_council():
+    manager = _ScriptedManager()
+    engine = WorkflowEngine(manager)
+
+    for mode in (None, "", "Pipeline", "dag"):
+        result = await engine.run_outcome(mode, "q", [{"id": "a"}])
+        assert result.state is ExecutionState.FAILED
+        assert result.error_category is ErrorCategory.VALIDATION
+        assert result.side_effect_state.value == "NOT_ATTEMPTED"
+
+    assert manager.calls == []

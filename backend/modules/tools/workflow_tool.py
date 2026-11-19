@@ -274,6 +274,13 @@ class WorkflowTool(Tool):
                 "Error: 'mode' must be provided when using custom agents.",
                 side_effect_state=SideEffectState.NOT_ATTEMPTED)
 
+        if mode not in ("pipeline", "graph", "council"):
+            return ToolResult.failure(
+                ErrorCategory.VALIDATION,
+                f"Error: unknown workflow mode '{mode}'. Valid choices are: pipeline, graph, council.",
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+
         engine = WorkflowEngine(
             self._manager,
             session_id=self._session_id,
@@ -283,12 +290,6 @@ class WorkflowTool(Tool):
             event_callback=_event_callback_context.get(),
         )
 
-        if mode not in ("pipeline", "graph", "council"):
-            return ToolResult.failure(
-                ErrorCategory.VALIDATION,
-                f"Error: unknown workflow mode '{mode}'. Valid choices are: pipeline, graph, council.",
-                side_effect_state=SideEffectState.NOT_ATTEMPTED,
-            )
         return await engine.run_outcome(
             mode, goal, agents, cross_review=cross_review, enable_skills=enable_skills,
         )
