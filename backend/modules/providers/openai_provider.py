@@ -113,7 +113,11 @@ class OpenAIProvider(LLMProvider):
                 logger.exception(
                     f"OpenAI call failed [{type(e).__name__}]: {log_summary}"
                 )
-            friendly_msg = format_openai_error(error_msg)
+            friendly_msg = format_openai_error(
+                error_msg,
+                provider_id=self.provider_id,
+                api_base=self.api_base,
+            )
             yield StreamChunk(error=friendly_msg, raw_error=error_msg)
 
     async def _chat_stream_via_chat_completions(

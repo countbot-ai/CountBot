@@ -11,6 +11,10 @@ from .base import (
     _TOOL_ARGUMENT_RAW_KEY,
     append_upstream_detail,
 )
+from .registry import (
+    ZHIPU_CODING_API_BASE,
+    ZHIPU_STANDARD_API_BASE,
+)
 
 
 def parse_json_arguments(raw: str) -> Dict[str, Any]:
@@ -138,12 +142,60 @@ def summarize_responses_error_for_log(error: Exception) -> str:
     return f"{prefix}{type(error).__name__}: {compact[:300]}"
 
 
-def format_openai_error(raw: str) -> str:
+def _zhipu_coding_plan_hint(
+    raw: str,
+    *,
+    provider_id: Optional[str],
+    api_base: Optional[str],
+) -> str:
+    """识别智谱 Coding Plan Key 误用标准端点的情况。
+
+    智谱对两种额度体系共用 Key，但标准开放平台端点不认 Coding Plan 资源包，
+    会返回 429/1113（“余额不足或无可用资源包”）。仅凭错误文本无法区分
+    “真的没余额”和“端点不匹配”，所以只在标准 bigmodel 端点上给切换提示。
+    """
+    if "1113" not in raw:
+        return ""
+
+    normalized_provider = str(provider_id or "").strip().lower()
+    normalized_base = str(api_base or "").strip().rstrip("/").lower()
+
+    if normalized_base and not normalized_base.startswith(
+        ZHIPU_STANDARD_API_BASE.lower()
+    ):
+        return ""
+    elif not normalized_base and normalized_provider not in {
+        "zhipu",
+        "zhipu_coding",
+    }:
+        return ""
+
+    return (
+        "API 返回 1113：账户余额不足或没有可用资源包。"
+        "如果这是 GLM Coding Plan 的 Key，请改用 “Zhipu AI (GLM Coding Plan)” "
+        f"提供商，或将 Base URL 改为 {ZHIPU_CODING_API_BASE} 后重试。"
+    )
+
+
+def format_openai_error(
+    raw: str,
+    *,
+    provider_id: Optional[str] = None,
+    api_base: Optional[str] = None,
+) -> str:
     """将 OpenAI 原始错误转换为用户友好提示，并附上上游原始返回。"""
-    return append_upstream_detail(friendly_openai_error(raw), raw)
+    return append_upstream_detail(
+        friendly_openai_error(raw, provider_id=provider_id, api_base=api_base),
+        raw,
+    )
 
 
-def friendly_openai_error(raw: str) -> str:
+def friendly_openai_error(
+    raw: str,
+    *,
+    provider_id: Optional[str] = None,
+    api_base: Optional[str] = None,
+) -> str:
     lower = raw.lower()
 
     if "image_url" in lower and any(
@@ -159,6 +211,14 @@ def friendly_openai_error(raw: str) -> str:
         )
     ):
         return "当前模型或接口不支持图片输入，请切换支持视觉的模型后重试。"
+
+    zhipu_hint = _zhipu_coding_plan_hint(
+        raw,
+        provider_id=provider_id,
+        api_base=api_base,
+    )
+    if zhipu_hint:
+        return zhipu_hint
 
     # 余额/欠费类：403 或明确提到余额、充值、资源包的场景（优先于限流判定，
     # 因为这类响应里常同时带 quota 字样）

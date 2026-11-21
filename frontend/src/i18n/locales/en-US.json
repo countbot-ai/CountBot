@@ -1013,6 +1013,7 @@
           "deepseek": "DeepSeek maps to thinking.type and can switch between reasoning and direct-response modes.",
           "moonshot": "Moonshot/Kimi maps to thinking.type. Tool-enabled requests still prefer disabling thinking to preserve argument budget.",
           "zhipu": "Zhipu GLM maps to thinking.type and can explicitly request reasoning on or off.",
+          "zhipu_coding": "Zhipu GLM Coding Plan maps to thinking.type and can explicitly request reasoning on or off.",
           "groq": "Groq currently prioritizes include_reasoning. It can usually hide reasoning output, but not every model can truly stop internal reasoning.",
           "qwen": "Alibaba Bailian maps to enable_thinking and can explicitly request reasoning on or off.",
           "minimax": "MiniMax currently enters through an Anthropic-compatible layer, where thinking behavior may be ignored or unstable."
@@ -1042,6 +1043,7 @@
       "gemini": "Google Gemini",
       "moonshot": "Moonshot/Kimi",
       "zhipu": "Zhipu GLM",
+      "zhipu_coding": "Zhipu GLM Coding Plan",
       "groq": "Groq",
       "mistral": "Mistral AI",
       "cohere": "Cohere",

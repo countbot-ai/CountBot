@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 
+ZHIPU_STANDARD_API_BASE = "https://open.bigmodel.cn/api/paas/v4"
+ZHIPU_CODING_API_BASE = "https://open.bigmodel.cn/api/coding/paas/v4"
+
+
 @dataclass
 class ProviderMetadata:
     """Provider 元数据"""
@@ -67,8 +71,18 @@ PROVIDER_REGISTRY = {
     "zhipu": ProviderMetadata(
         id="zhipu",
         name="Zhipu AI (GLM)",
-        default_api_base="https://open.bigmodel.cn/api/paas/v4",
+        default_api_base=ZHIPU_STANDARD_API_BASE,
         default_model="glm-4.7-flash",
+        env_key="OPENAI_API_KEY",
+        env_extras=(("ZHIPUAI_API_KEY", "{api_key}"),),
+        provider_group="recommended",
+        thinking_control_tier="native",
+    ),
+    "zhipu_coding": ProviderMetadata(
+        id="zhipu_coding",
+        name="Zhipu AI (GLM Coding Plan)",
+        default_api_base=ZHIPU_CODING_API_BASE,
+        default_model="GLM-5",
         env_key="OPENAI_API_KEY",
         env_extras=(("ZHIPUAI_API_KEY", "{api_key}"),),
         provider_group="recommended",
@@ -249,6 +263,9 @@ def find_provider_by_api_base(api_base: str) -> Optional[ProviderMetadata]:
     if "moonshot.cn" in api_base_lower or "moonshot.ai" in api_base_lower:
         return PROVIDER_REGISTRY.get("moonshot")
     elif "bigmodel.cn" in api_base_lower:
+        # Coding Plan 与开放平台共用域名但额度和模型权限不同，必须区分端点。
+        if "/api/coding/" in api_base_lower:
+            return PROVIDER_REGISTRY.get("zhipu_coding")
         return PROVIDER_REGISTRY.get("zhipu")
     elif "openrouter" in api_base_lower:
         return PROVIDER_REGISTRY.get("openrouter")

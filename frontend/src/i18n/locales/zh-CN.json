@@ -971,6 +971,7 @@
           "deepseek": "DeepSeek 走 thinking.type 开关，可在思考和直答模式间切换。",
           "moonshot": "Moonshot/Kimi 走 thinking.type 开关；带工具调用时会优先关闭思考，避免参数预算被思考流挤占。",
           "zhipu": "智谱 GLM 走 thinking.type 开关，可明确请求开启或关闭思考模式。",
+          "zhipu_coding": "智谱 GLM Coding Plan 走 thinking.type 开关，可明确请求开启或关闭思考模式。",
           "groq": "Groq 当前优先控制 include_reasoning，能尽量隐藏思考流，但并非所有模型都能真正关闭内部思考。",
           "qwen": "阿里云百炼走 enable_thinking 开关，可直接请求开启或关闭思考模式。",
           "minimax": "MiniMax 当前通过 Anthropic 兼容层接入，thinking 行为存在忽略或不稳定的风险。"
@@ -1003,6 +1004,7 @@
       "gemini": "Google Gemini",
       "moonshot": "Moonshot/Kimi",
       "zhipu": "智谱 GLM",
+      "zhipu_coding": "智谱 GLM Coding Plan",
       "groq": "Groq",
       "mistral": "Mistral AI",
       "cohere": "Cohere",

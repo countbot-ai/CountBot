@@ -101,6 +101,7 @@ _MODEL_REASONING_LEVELS: Dict[str, Tuple[str, ...]] = {
 _THINKING_TYPE_PROVIDERS = {
     "deepseek",
     "zhipu",
+    "zhipu_coding",
     "moonshot",
     "minimax",
     "qwen",
@@ -394,7 +395,7 @@ def apply_reasoning_request_fields(
     if thinking_enabled is None:
         return ()
 
-    if effective_provider_id in {"deepseek", "zhipu", "moonshot"}:
+    if effective_provider_id in {"deepseek", "zhipu", "zhipu_coding", "moonshot"}:
         return _set_extra_body_fields(
             request_params,
             {
