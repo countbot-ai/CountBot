@@ -139,7 +139,7 @@ async def amend_run(run_id: str, payload: DynamicWorkflowAmendRequest, request: 
     return await get_dynamic_workflow_service().amend(
         run_id=run_id,
         owner_id=user.owner_id,
-        program=payload["program"],
+        program=payload.program,
         runtime=context["runtime"],
         user=user,
     )
@@ -148,7 +148,4 @@ async def amend_run(run_id: str, payload: DynamicWorkflowAmendRequest, request: 
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(run_id: str, user: AuthUser = Depends(require_active_user)):
     service = get_dynamic_workflow_service()
-    record = await service.get_run(run_id, owner_id=user.owner_id)
-    if record is None:
-        return {"cancelled": False}
-    return {"cancelled": service.cancel(run_id)}
+    return {"cancelled": await service.cancel(run_id, owner_id=user.owner_id)}

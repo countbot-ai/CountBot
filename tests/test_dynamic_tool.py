@@ -27,7 +27,7 @@ async def test_dynamic_tool_runs_json_program_not_python():
         "body": [{"kind": "return", "site_id": "done", "value": {"kind": "literal", "value": "ok"}}],
     }
 
-    result = await tool.execute_outcome(program=program)
+    result = await tool.execute_outcome(program=program, confirmed=True)
 
     assert result.state is ExecutionState.SUCCEEDED
     assert result.output["result"] == "ok"

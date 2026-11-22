@@ -1,6 +1,7 @@
 """Dynamic Workflow 的运行控制与预算。"""
 
 import asyncio
+import inspect
 from typing import Any, Dict, Optional
 
 from backend.modules.agent.task_manager import CancellationToken
@@ -95,6 +96,8 @@ class DynamicWorkflowService:
             user=user,
             runtime=runtime,
         )
+        if inspect.isawaitable(driver):
+            driver = await driver
         timeout = compiled["limits"].get("wall_clock_timeout")
         try:
             if timeout:
@@ -140,7 +143,7 @@ class DynamicWorkflowService:
                 "Workflow run was not found.",
                 side_effect_state=SideEffectState.NOT_ATTEMPTED,
             )
-        if record["status"] not in {"cancelled", "failed", "unknown_outcome"}:
+        if record["status"] not in {"cancelled", "failed", "unknown_outcome", "running"}:
             return ToolResult.failure(
                 ErrorCategory.VALIDATION,
                 f"Run in state {record['status']} cannot be resumed.",
@@ -179,9 +182,22 @@ class DynamicWorkflowService:
             runtime=runtime,
         )
 
-    def cancel(self, run_id: str) -> bool:
-        run = self.runs.get(run_id)
-        if run is None or run["status"] != "running":
+    async def cancel(self, run_id: str, *, owner_id: Optional[str] = None) -> bool:
+        record = await self.journal.get_run(run_id, owner_id=owner_id)
+        if record is None:
             return False
-        run["token"].cancel()
-        return True
+        cancelled = False
+        run = self.runs.get(run_id)
+        if run is not None and run["status"] == "running":
+            run["token"].cancel()
+            run["status"] = "CANCELLED"
+            cancelled = True
+        # 跨进程或重启后的 run：直接在 journal 里落终态
+        if record["status"] == "running":
+            await self.journal.settle_run(
+                run_id=run_id,
+                status="cancelled",
+                result=ToolResult.cancelled("Workflow was cancelled by the user."),
+            )
+            cancelled = True
+        return cancelled

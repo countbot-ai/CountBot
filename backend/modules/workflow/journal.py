@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from sqlalchemy import select
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.database import Base
@@ -34,19 +35,21 @@ def input_hash(value: Any) -> str:
 
 
 class WorkflowJournal:
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory, engine=None) -> None:
         self._sessions = session_factory
+        self.engine = engine
 
     @classmethod
     def memory(cls):
         """独立内存 SQLite；不读取或污染应用开发数据库。"""
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-        return cls(factory, engine)
-
-    def __init__(self, session_factory, engine=None) -> None:
-        self._sessions = session_factory
-        self.engine = engine
+        journal = cls(factory, engine)
+        return journal
 
     async def init(self) -> None:
         if self.engine is not None:
@@ -145,14 +148,28 @@ class WorkflowJournal:
 
     async def begin_ask(self, *, run_id: str, site_id: str, ordinal: int,
                         actor_id: str, instructions: str, schema=None) -> bool:
-        """先写 running，保证崩溃后有未完成事实可恢复。"""
+        """先写 running，保证崩溃后有未完成事实可恢复。
+
+        对已完成（completed）的 ask 返回 False 以触发 replay。
+        对失败/取消/未知的 ask 重置为 running，允许 resume 重试。
+        """
         async with self._sessions() as db:
             row = await db.get(WorkflowAsk, f"{run_id}:{site_id}:{ordinal}")
             if row is not None:
                 if row.instructions_hash != input_hash(instructions):
                     raise ValueError(f"Input hash mismatch at {site_id}@{ordinal}")
-                if row.status != "running":
+                if row.actor_id != actor_id:
+                    raise ValueError(
+                        f"Ask actor mismatch at {site_id}@{ordinal}: "
+                        f"{row.actor_id} != {actor_id}"
+                    )
+                if row.status == "completed":
                     return False
+                # failed / cancelled / unknown_outcome / running：重置为 running
+                row.status = "running"
+                row.result_json = None
+                row.error_json = None
+                row.ended_at = None
             actor = await db.scalar(select(WorkflowActor).where(
                 WorkflowActor.run_id == run_id,
                 WorkflowActor.actor_id == actor_id,
@@ -311,6 +328,9 @@ class WorkflowJournal:
             run = await db.get(WorkflowRun, run_id)
             if run is None:
                 raise ValueError(f"Unknown run: {run_id}")
+            # cancel 可能在 engine 结束前已落终态；不要覆盖用户主动取消。
+            if run.status not in ("running", status):
+                return
             run.status = status
             run.result_json = canonical_json(result.output) if succeeded else None
             run.failure_json = None if succeeded else canonical_json({

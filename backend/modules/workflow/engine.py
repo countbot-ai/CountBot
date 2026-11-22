@@ -1,6 +1,7 @@
 """受限 JSON AST 的解释执行；副作用只经 driver 协议发生。"""
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from backend.modules.tools.execution import (
@@ -9,6 +10,34 @@ from backend.modules.tools.execution import (
     SideEffectState,
     ToolResult,
 )
+
+
+class _Missing:
+    pass
+
+
+_MISSING = _Missing()
+
+
+class _AskFailedError(Exception):
+    """Ask 结束于非成功状态；保留原 ToolResult 供上层按终态传播。"""
+
+    def __init__(self, result: ToolResult) -> None:
+        super().__init__(result.display_text)
+        self.result = result
+
+
+@dataclass
+class _AskBudget:
+    """跨并行分支共享的 ask 计数器，保证 max_asks 不被分支绕过。"""
+    count: int = 0
+    maximum: Optional[int] = None
+
+    def try_acquire(self) -> bool:
+        if self.maximum is not None and self.count >= self.maximum:
+            return False
+        self.count += 1
+        return True
 
 
 class DynamicWorkflowEngine:
@@ -20,9 +49,11 @@ class DynamicWorkflowEngine:
         self.ordinals: Dict[str, int] = {}
         self.variables: Dict[str, Any] = dict(program.get("args", {}))
         self._returned = False
-        self._return_value: Any = None
+        self._return_value: Any = _MISSING
         self._branch_path = ""
-        self._ask_count = 0
+        self._ask_budget = _AskBudget(
+            maximum=self.program["limits"].get("max_asks"),
+        )
         self._max_parallel_asks = self.program["limits"].get("max_parallel_asks")
         self._ask_semaphore = (
             asyncio.Semaphore(self._max_parallel_asks)
@@ -33,7 +64,12 @@ class DynamicWorkflowEngine:
     async def run(self) -> ToolResult:
         try:
             await self._run_statements(self.program["body"])
-            return ToolResult.success(self._return_value)
+            output = self._return_value
+            if output is _MISSING:
+                output = ""
+            return ToolResult.success(output)
+        except _AskFailedError as exc:
+            return exc.result
         except asyncio.CancelledError:
             return ToolResult.cancelled("Workflow was cancelled.")
         except Exception as exc:
@@ -103,9 +139,7 @@ class DynamicWorkflowEngine:
         ordinal = self.ordinals.get(site_id, 0) + 1
         self.ordinals[site_id] = ordinal
         instance_id = f"{self._branch_path}{site_id}"
-        self._ask_count += 1
-        maximum = self.program["limits"].get("max_asks")
-        if maximum is not None and self._ask_count > maximum:
+        if not self._ask_budget.try_acquire():
             raise ValueError(f"{site_id}: max_asks exceeded")
         instructions = self._eval(node["instructions"])
         if not isinstance(instructions, str) or not instructions.strip():
@@ -114,7 +148,7 @@ class DynamicWorkflowEngine:
         if not isinstance(result, ToolResult):
             raise TypeError("driver.ask must return ToolResult")
         if result.state is not ExecutionState.SUCCEEDED:
-            raise RuntimeError(result.display_text)
+            raise _AskFailedError(result)
         if node.get("assign"):
             self.variables[node["assign"]] = getattr(result, "value", result.output)
 
@@ -128,6 +162,8 @@ class DynamicWorkflowEngine:
         child.variables = dict(self.variables)
         child.ordinals = dict(self.ordinals)
         child._branch_path = f"{self._branch_path}branch-{index}/"
+        child._ask_budget = self._ask_budget
+        child._ask_semaphore = self._ask_semaphore
         return child
 
     async def _dispatch_ask(self, node, instructions, instance_id=None):
@@ -203,13 +239,6 @@ class DynamicWorkflowEngine:
     def _check_cancelled(self) -> None:
         if self.cancel_token and self.cancel_token.is_cancelled:
             raise asyncio.CancelledError("Workflow cancelled")
-
-
-class _Missing:
-    pass
-
-
-_MISSING = _Missing()
 
 
 def _restore(variables: Dict[str, Any], name: str, previous: Any) -> None:

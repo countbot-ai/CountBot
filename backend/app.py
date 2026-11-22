@@ -221,12 +221,22 @@ async def lifespan(app: FastAPI):
         session_id=None,
     )
 
-    def dynamic_driver_factory(**kwargs):
+    async def dynamic_driver_factory(**kwargs):
+        # 普通用户必须走自己的运行时，不能回落到管理员共享 Provider。
+        actual_runtime = kwargs.get("runtime")
+        actual_user = kwargs.get("user")
+        if actual_runtime is None:
+            actual_runtime = shared
+        if actual_user is None:
+            from backend.modules.multiuser.identity import anonymous_admin
+            actual_user = anonymous_admin()
         return dynamic_factory.build_dynamic_driver(
             run_id=kwargs["run_id"],
             program=kwargs["program"],
             journal=dynamic_journal,
             lineage=kwargs.get("lineage", ()),
+            user=actual_user,
+            runtime=actual_runtime,
         )
 
     app.state.dynamic_workflow_service = DynamicWorkflowService(

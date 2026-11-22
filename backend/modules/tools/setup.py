@@ -25,6 +25,7 @@ def register_all_tools(
     memory_store=None,
     config_loader=None,
     disabled_tools: Optional[Iterable[str]] = None,
+    current_user=None,
 ) -> ToolRegistry:
     """注册所有可用工具并返回工具注册表。"""
     # 保存构建参数，供 sync_disabled_tools 重建注册表
@@ -143,28 +144,31 @@ def register_all_tools(
             from backend.modules.workflow.service import DynamicWorkflowService
             from backend.modules.tools.dynamic_workflow_tool import DynamicWorkflowTool
 
-            journal = WorkflowJournal(get_db_session_factory())
-            factory = DynamicActorFactory(
+            dwf_journal = WorkflowJournal(get_db_session_factory())
+            dwf_factory = DynamicActorFactory(
                 subagent_manager=subagent_manager,
                 workspace=workspace,
                 owner_id=owner_id,
                 session_id=session_id,
             )
 
-            def driver_factory(**kwargs):
-                return factory.build_dynamic_driver(
+            async def dwf_driver_factory(**kwargs):
+                return await dwf_factory.build_dynamic_driver(
                     run_id=kwargs["run_id"],
                     program=kwargs["program"],
-                    journal=journal,
+                    journal=dwf_journal,
                     lineage=kwargs.get("lineage", ()),
+                    user=kwargs.get("user"),
+                    runtime=kwargs.get("runtime"),
                 )
 
-            service = DynamicWorkflowService(driver_factory, journal)
+            dwf_service = DynamicWorkflowService(dwf_driver_factory, dwf_journal)
             tools.register(DynamicWorkflowTool(
-                service,
+                dwf_service,
                 owner_id=owner_id,
                 session_id=session_id,
                 workspace=workspace,
+                user=current_user,
             ))
             logger.debug("Registered dynamic_workflow_run tool")
         except Exception as e:

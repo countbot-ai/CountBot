@@ -68,6 +68,14 @@ class NodeResults(dict):
                 return dict.__getitem__(self, key)
         raise KeyError(node_id)
 
+    def __contains__(self, node_id: object) -> bool:
+        if not isinstance(node_id, str):
+            return False
+        return any(
+            key == node_id or key.startswith(f"{node_id}#")
+            for key in self
+        )
+
     def get(self, node_id: str, default=None):
         try:
             return self[node_id]
