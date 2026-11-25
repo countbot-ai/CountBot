@@ -174,3 +174,106 @@ async def test_max_asks_budget_stops_before_next_call():
     assert result.state is ExecutionState.UNKNOWN_OUTCOME
     assert "max_asks" in result.display_text
     assert len(drivers[0].calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_app_driver_factory_awaits_inner_async_factory():
+    from backend.app import _build_dynamic_driver_factory
+
+    class _InnerFactory:
+        async def build_dynamic_driver(self, **kwargs):
+            return _Driver()
+
+    factory = _build_dynamic_driver_factory(_InnerFactory(), {})
+
+    driver = await factory(run_id="run", program=_program(), user=None, runtime=None)
+
+    assert hasattr(driver, "ask")
+    assert not asyncio.iscoroutine(driver)
+
+
+@pytest.mark.asyncio
+async def test_app_driver_factory_rejects_regular_user_without_runtime():
+    from backend.app import _build_dynamic_driver_factory
+    from backend.modules.multiuser.identity import AuthUser
+
+    class _InnerFactory:
+        async def build_dynamic_driver(self, **kwargs):
+            return _Driver()
+
+    factory = _build_dynamic_driver_factory(_InnerFactory(), {"workspace": "E:/admin"})
+    user = AuthUser(id="user-b", username="bob", role="user")
+
+    with pytest.raises(PermissionError, match="requires the user's runtime"):
+        await factory(
+            run_id="run", program=_program(), user=user, runtime=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_driver_factory_failure_settles_run_instead_of_escaping():
+    from backend.modules.multiuser.identity import AuthUser
+
+    journal = WorkflowJournal.memory()
+    await journal.init()
+
+    def factory(**kwargs):
+        raise PermissionError("Regular user Dynamic Workflow requires the user's runtime.")
+
+    service = DynamicWorkflowService(factory, journal)
+    user = AuthUser(id="user-b", username="bob", role="user")
+
+    result = await service.start(
+        run_id="no-runtime", owner_id=user.owner_id, session_id=None,
+        workspace="E:/workspace", program=_program(), user=user, runtime=None,
+    )
+
+    assert result.state is ExecutionState.FAILED
+    assert result.error_category.value == "PERMISSION"
+    record = await service.get_run("no-runtime", owner_id="user-b")
+    assert record["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_amend_uses_new_uuid_and_no_replay_lineage():
+    journal = WorkflowJournal.memory()
+    await journal.init()
+    captured = []
+
+    def factory(**kwargs):
+        captured.append(kwargs)
+        return _Driver()
+
+    service = DynamicWorkflowService(factory, journal)
+    original = await service.start(
+        run_id="parent-run", owner_id=None, session_id=None,
+        workspace="E:/workspace", program=_program(),
+    )
+    assert original.state is ExecutionState.SUCCEEDED
+
+    changed = _program()
+    changed["body"][0]["instructions"] = "changed work"
+    amended = await service.amend(
+        run_id="parent-run", owner_id=None, program=changed,
+    )
+
+    assert amended.state is ExecutionState.SUCCEEDED
+    assert amended.run_id.startswith("parent-run:amend-")
+    assert captured[-1]["lineage"] == ()
+    record = await service.get_run(
+        amended.run_id,
+        owner_id=None,
+    )
+    assert record["resumed_from"] == "parent-run"
+
+    # 重启后 self.runs 为空；旧 len+1 方案会重新生成 amend-1，与已存在的 run 冲突。
+    service.runs.clear()
+    await journal.create_run(
+        run_id="parent-run:amend-1", owner_id=None, session_id=None,
+        workspace="E:/workspace", program=_program(), caps={},
+    )
+    second = await service.amend(
+        run_id="parent-run", owner_id=None, program=changed,
+    )
+    assert second.state is ExecutionState.SUCCEEDED
+    assert second.run_id != "parent-run:amend-1"

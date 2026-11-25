@@ -2,6 +2,8 @@
 
 import asyncio
 import inspect
+import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from backend.modules.agent.task_manager import CancellationToken
@@ -13,6 +15,26 @@ from backend.modules.tools.execution import (
 )
 from backend.modules.workflow.engine import DynamicWorkflowEngine
 from backend.modules.workflow.program import ProgramError, compile_program, preview_program
+
+
+@dataclass(frozen=True)
+class AmendResult(ToolResult):
+    """修订会创建新 run；把新 id 一并返回给调用方。"""
+
+    run_id: str = ""
+
+
+def _amended(result: ToolResult, run_id: str) -> AmendResult:
+    return AmendResult(
+        state=result.state,
+        display_text=result.display_text,
+        output=result.output,
+        error_category=result.error_category,
+        retryable=result.retryable,
+        retry_safety=result.retry_safety,
+        side_effect_state=result.side_effect_state,
+        run_id=run_id,
+    )
 
 
 class DynamicWorkflowService:
@@ -87,29 +109,39 @@ class DynamicWorkflowService:
                 persona={"system": declaration["persona"]},
                 model_ref=declaration.get("model_ref"),
             )
-        driver = self.driver_factory(
-            run_id=run_id,
-            owner_id=owner_id,
-            program=compiled,
-            journal=self.journal,
-            lineage=(resumed_from,) if resumed_from else (),
-            user=user,
-            runtime=runtime,
-        )
-        if inspect.isawaitable(driver):
-            driver = await driver
-        timeout = compiled["limits"].get("wall_clock_timeout")
         try:
-            if timeout:
-                async with asyncio.timeout(timeout):
-                    result = await DynamicWorkflowEngine(compiled, driver, cancel_token=token).run()
-            else:
-                result = await DynamicWorkflowEngine(compiled, driver, cancel_token=token).run()
-        except asyncio.TimeoutError:
-            result = ToolResult.unknown_outcome(
-                ErrorCategory.TIMEOUT,
-                "Workflow exceeded its wall-clock budget; side effects may have occurred.",
+            driver = self.driver_factory(
+                run_id=run_id,
+                owner_id=owner_id,
+                program=compiled,
+                journal=self.journal,
+                lineage=(),
+                user=user,
+                runtime=runtime,
             )
+            if inspect.isawaitable(driver):
+                driver = await driver
+        except Exception as exc:
+            result = ToolResult.failure(
+                ErrorCategory.PERMISSION
+                if isinstance(exc, PermissionError)
+                else ErrorCategory.EXECUTION,
+                str(exc) or exc.__class__.__name__,
+                side_effect_state=SideEffectState.NOT_ATTEMPTED,
+            )
+        else:
+            timeout = compiled["limits"].get("wall_clock_timeout")
+            try:
+                if timeout:
+                    async with asyncio.timeout(timeout):
+                        result = await DynamicWorkflowEngine(compiled, driver, cancel_token=token).run()
+                else:
+                    result = await DynamicWorkflowEngine(compiled, driver, cancel_token=token).run()
+            except asyncio.TimeoutError:
+                result = ToolResult.unknown_outcome(
+                    ErrorCategory.TIMEOUT,
+                    "Workflow exceeded its wall-clock budget; side effects may have occurred.",
+                )
         self.runs[run_id]["status"] = result.state.value
         await self.journal.settle_run(
             run_id=run_id,
@@ -170,17 +202,20 @@ class DynamicWorkflowService:
                 "Workflow run was not found.",
                 side_effect_state=SideEffectState.NOT_ATTEMPTED,
             )
-        amended_id = f"{run_id}:amend-{len(self.runs) + 1}"
-        return await self.start(
+        amended_id = f"{run_id}:amend-{uuid.uuid4().hex[:12]}"
+        result = await self.start(
             run_id=amended_id,
             owner_id=owner_id,
             session_id=record["session_id"],
             workspace=record["workspace"],
             program=program,
             resumed_from=run_id,
+            # 修订后的程序不能复用父 run 的 ask 缓存：同一 site 的输入可能已变化，
+            # journal 会按旧 ask 的输入哈希误判。
             user=user,
             runtime=runtime,
         )
+        return _amended(result, amended_id)
 
     async def cancel(self, run_id: str, *, owner_id: Optional[str] = None) -> bool:
         record = await self.journal.get_run(run_id, owner_id=owner_id)

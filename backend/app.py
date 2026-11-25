@@ -154,6 +154,34 @@ def _create_shared_components(config, config_loader=None):
     )
 
 
+def _build_dynamic_driver_factory(dynamic_factory, shared):
+    """构造 API 使用的 async driver factory，供 lifespan 与测试共用。"""
+
+    async def dynamic_driver_factory(**kwargs):
+        # 普通用户必须使用自己的 runtime，不能回落到管理员共享 Provider。
+        actual_user = kwargs.get("user")
+        if actual_user is None:
+            from backend.modules.multiuser.identity import anonymous_admin
+            actual_user = anonymous_admin()
+        actual_runtime = kwargs.get("runtime")
+        if actual_runtime is None:
+            if not actual_user.is_admin:
+                raise PermissionError(
+                    "Regular user Dynamic Workflow requires the user's runtime."
+                )
+            actual_runtime = shared
+        return await dynamic_factory.build_dynamic_driver(
+            run_id=kwargs["run_id"],
+            program=kwargs["program"],
+            journal=kwargs.get("journal"),
+            lineage=kwargs.get("lineage", ()),
+            user=actual_user,
+            runtime=actual_runtime,
+        )
+
+    return dynamic_driver_factory
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
@@ -221,23 +249,10 @@ async def lifespan(app: FastAPI):
         session_id=None,
     )
 
-    async def dynamic_driver_factory(**kwargs):
-        # 普通用户必须走自己的运行时，不能回落到管理员共享 Provider。
-        actual_runtime = kwargs.get("runtime")
-        actual_user = kwargs.get("user")
-        if actual_runtime is None:
-            actual_runtime = shared
-        if actual_user is None:
-            from backend.modules.multiuser.identity import anonymous_admin
-            actual_user = anonymous_admin()
-        return dynamic_factory.build_dynamic_driver(
-            run_id=kwargs["run_id"],
-            program=kwargs["program"],
-            journal=dynamic_journal,
-            lineage=kwargs.get("lineage", ()),
-            user=actual_user,
-            runtime=actual_runtime,
-        )
+    dynamic_driver_factory = _build_dynamic_driver_factory(
+        dynamic_factory,
+        shared,
+    )
 
     app.state.dynamic_workflow_service = DynamicWorkflowService(
         dynamic_driver_factory,

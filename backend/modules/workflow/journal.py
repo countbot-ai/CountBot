@@ -86,7 +86,7 @@ class WorkflowJournal:
             run.program_json = canonical_json(program)
             run.program_hash = input_hash(program)
             run.caps_json = canonical_json(caps)
-            run.resumed_from = resumed_from
+            run.resumed_from = resumed_from or run.resumed_from
             run.status = "running"
             run.stop_reason = None
             run.failure_json = None

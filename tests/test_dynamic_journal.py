@@ -49,3 +49,22 @@ async def test_journal_persists_owner_and_replays_completed_ask():
     assert replay.value == {"approved": True}
     with pytest.raises(ValueError, match="Input hash mismatch"):
         await journal.completed_ask("run-1", "ask-1", 1, "changed")
+
+
+@pytest.mark.asyncio
+async def test_reopen_run_preserves_resumed_from():
+    journal = WorkflowJournal.memory()
+    await journal.init()
+    program = {"version": 1, "agents": [], "body": [], "args": {}}
+    await journal.create_run(
+        run_id="child", owner_id=None, session_id=None, workspace="E:/workspace",
+        program=program, caps={}, resumed_from="parent",
+    )
+
+    await journal.reopen_run(
+        run_id="child", owner_id=None, session_id=None, workspace="E:/workspace",
+        program=program, caps={},
+    )
+
+    record = await journal.get_run("child", owner_id=None)
+    assert record["resumed_from"] == "parent"
