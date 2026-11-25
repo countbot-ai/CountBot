@@ -235,6 +235,53 @@ async def test_driver_factory_failure_settles_run_instead_of_escaping():
 
 
 @pytest.mark.asyncio
+async def test_model_resolution_failure_settles_run(monkeypatch):
+    from backend.modules.multiuser import effective
+    from backend.modules.multiuser.identity import AuthUser
+
+    journal = WorkflowJournal.memory()
+    await journal.init()
+
+    async def deny(*args, **kwargs):
+        raise effective.ModelResolutionError("模型不可用或未共享给你")
+
+    monkeypatch.setattr(effective, "resolve_model_ref_for_user", deny)
+    service = DynamicWorkflowService(lambda **kwargs: _Driver(), journal)
+    user = AuthUser(id="user-b", username="bob", role="user")
+    program = _program()
+    program["agents"][0]["model_ref"] = {"provider": "own", "model": "private"}
+
+    result = await service.start(
+        run_id="denied-model", owner_id=user.owner_id, session_id=None,
+        workspace="E:/workspace", program=program, user=user,
+    )
+
+    assert result.state is ExecutionState.FAILED
+    assert result.error_category.value == "PERMISSION"
+    record = await service.get_run("denied-model", owner_id="user-b")
+    assert record["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_amend_failure_does_not_return_phantom_run_id():
+    journal = WorkflowJournal.memory()
+    await journal.init()
+    service = DynamicWorkflowService(lambda **kwargs: _Driver(), journal)
+    await service.start(
+        run_id="parent-run", owner_id=None, session_id=None,
+        workspace="E:/workspace", program=_program(),
+    )
+
+    result = await service.amend(
+        run_id="parent-run", owner_id=None,
+        program={"version": 1, "agents": "not-a-list", "body": []},
+    )
+
+    assert result.state is ExecutionState.FAILED
+    assert not hasattr(result, "run_id")
+
+
+@pytest.mark.asyncio
 async def test_amend_uses_new_uuid_and_no_replay_lineage():
     journal = WorkflowJournal.memory()
     await journal.init()

@@ -95,21 +95,21 @@ class DynamicWorkflowService:
             )
         token = CancellationToken()
         self.runs[run_id] = {"owner_id": owner_id, "token": token, "status": "running"}
-        for declaration in compiled["agents"]:
-            if user is not None and declaration.get("model_ref") is not None:
-                from backend.modules.multiuser.effective import resolve_model_ref_for_user
-                await resolve_model_ref_for_user(
-                    user,
-                    declaration["model_ref"]["provider"],
-                    declaration["model_ref"]["model"],
-                )
-            await self.journal.create_actor(
-                run_id=run_id,
-                actor_id=declaration["id"],
-                persona={"system": declaration["persona"]},
-                model_ref=declaration.get("model_ref"),
-            )
         try:
+            for declaration in compiled["agents"]:
+                if user is not None and declaration.get("model_ref") is not None:
+                    from backend.modules.multiuser.effective import resolve_model_ref_for_user
+                    await resolve_model_ref_for_user(
+                        user,
+                        declaration["model_ref"]["provider"],
+                        declaration["model_ref"]["model"],
+                    )
+                await self.journal.create_actor(
+                    run_id=run_id,
+                    actor_id=declaration["id"],
+                    persona={"system": declaration["persona"]},
+                    model_ref=declaration.get("model_ref"),
+                )
             driver = self.driver_factory(
                 run_id=run_id,
                 owner_id=owner_id,
@@ -122,9 +122,10 @@ class DynamicWorkflowService:
             if inspect.isawaitable(driver):
                 driver = await driver
         except Exception as exc:
+            from backend.modules.multiuser.effective import ModelResolutionError
             result = ToolResult.failure(
                 ErrorCategory.PERMISSION
-                if isinstance(exc, PermissionError)
+                if isinstance(exc, (PermissionError, ModelResolutionError))
                 else ErrorCategory.EXECUTION,
                 str(exc) or exc.__class__.__name__,
                 side_effect_state=SideEffectState.NOT_ATTEMPTED,
@@ -215,6 +216,9 @@ class DynamicWorkflowService:
             user=user,
             runtime=runtime,
         )
+        # 校验失败时 start() 不会创建 run，不能把不存在的 id 返回给调用方。
+        if await self.journal.get_run(amended_id, owner_id=owner_id) is None:
+            return result
         return _amended(result, amended_id)
 
     async def cancel(self, run_id: str, *, owner_id: Optional[str] = None) -> bool:
