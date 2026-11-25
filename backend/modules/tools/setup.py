@@ -25,6 +25,7 @@ def register_all_tools(
     memory_store=None,
     config_loader=None,
     disabled_tools: Optional[Iterable[str]] = None,
+    current_user=None,
 ) -> ToolRegistry:
     """注册所有可用工具并返回工具注册表。"""
     # 保存构建参数，供 sync_disabled_tools 重建注册表
@@ -134,6 +135,45 @@ def register_all_tools(
         except Exception as e:
             logger.error(f"Failed to register workflow_run tool: {e}")
     
+    # 4c. 注册 Dynamic Workflow 工具（独立 JSON AST 运行时）
+    if subagent_manager is not None:
+        try:
+            from backend.database import get_db_session_factory
+            from backend.modules.workflow.factory import DynamicActorFactory
+            from backend.modules.workflow.journal import WorkflowJournal
+            from backend.modules.workflow.service import DynamicWorkflowService
+            from backend.modules.tools.dynamic_workflow_tool import DynamicWorkflowTool
+
+            dwf_journal = WorkflowJournal(get_db_session_factory())
+            dwf_factory = DynamicActorFactory(
+                subagent_manager=subagent_manager,
+                workspace=workspace,
+                owner_id=owner_id,
+                session_id=session_id,
+            )
+
+            async def dwf_driver_factory(**kwargs):
+                return await dwf_factory.build_dynamic_driver(
+                    run_id=kwargs["run_id"],
+                    program=kwargs["program"],
+                    journal=dwf_journal,
+                    lineage=kwargs.get("lineage", ()),
+                    user=kwargs.get("user"),
+                    runtime=kwargs.get("runtime"),
+                )
+
+            dwf_service = DynamicWorkflowService(dwf_driver_factory, dwf_journal)
+            tools.register(DynamicWorkflowTool(
+                dwf_service,
+                owner_id=owner_id,
+                session_id=session_id,
+                workspace=workspace,
+                user=current_user,
+            ))
+            logger.debug("Registered dynamic_workflow_run tool")
+        except Exception as e:
+            logger.error(f"Failed to register dynamic_workflow_run tool: {e}")
+
     # 5. 注册发送媒体工具（如果提供了 ChannelManager）
     if channel_manager is not None:
         try:

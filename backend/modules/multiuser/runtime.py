@@ -163,6 +163,7 @@ class UserRuntimeManager:
             owner_id=user.owner_id,
             memory_store=memory,
             disabled_tools=list(config.injection.disabled_tools),
+            current_user=user,
         )
 
         # 共享模式：管理员 MCP 只读复用；隔离模式完全不暴露
